@@ -1,0 +1,27 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Farm field base -->
+  <rect x="4" y="32" width="40" height="3" rx="1.5" fill="#10B981"/>
+  <rect x="4" y="37" width="40" height="3" rx="1.5" fill="#059669"/>
+  <rect x="4" y="42" width="40" height="3" rx="1.5" fill="#047857"/>
+  
+  <!-- AI Brain/Cloud representing "Mai" -->
+  <path d="M24 8C19.5817 8 16 11.5817 16 16C16 16.3344 16.0209 16.6637 16.0615 16.9864C14.2847 17.4465 13 19.0537 13 21C13 23.2091 14.7909 25 17 25H31C33.2091 25 35 23.2091 35 21C35 19.0537 33.7153 17.4465 31.9385 16.9864C31.9791 16.6637 32 16.3344 32 16C32 11.5817 28.4183 8 24 8Z" fill="url(#gradient1)" opacity="0.9"/>
+  
+  <!-- Neural network dots -->
+  <circle cx="20" cy="15" r="1.5" fill="#6366F1"/>
+  <circle cx="24" cy="13" r="1.5" fill="#6366F1"/>
+  <circle cx="28" cy="15" r="1.5" fill="#6366F1"/>
+  <circle cx="22" cy="18" r="1.5" fill="#6366F1"/>
+  <circle cx="26" cy="18" r="1.5" fill="#6366F1"/>
+  
+  <!-- Connection lines -->
+  <path d="M20 15L24 13M24 13L28 15M20 15L22 18M28 15L26 18M22 18L26 18" stroke="#6366F1" stroke-width="0.5" opacity="0.5"/>
+  
+  <!-- Gradient definitions -->
+  <defs>
+    <linearGradient id="gradient1" x1="24" y1="8" x2="24" y2="25" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+  </defs>
+</svg>

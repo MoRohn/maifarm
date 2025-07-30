@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradient definitions for modern depth -->
+    <linearGradient id="primaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0ea5e9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0284c7;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="secondaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+    
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0" />
+    </radialGradient>
+    
+    <!-- Shadow filter for depth -->
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feFlood flood-color="#000000" flood-opacity="0.1"/>
+      <feComposite in2="offsetblur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background with subtle gradient -->
+  <rect width="240" height="240" rx="40" fill="#f8fafc"/>
+  <rect width="240" height="240" rx="40" fill="url(#primaryGradient)" opacity="0.05"/>
+  
+  <!-- Central AI Core - Modernized -->
+  <g id="ai-core" transform="translate(120, 120)">
+    <!-- Outer ring -->
+    <circle r="45" fill="none" stroke="url(#primaryGradient)" stroke-width="2" opacity="0.3"/>
+    
+    <!-- Main core -->
+    <rect x="-25" y="-25" width="50" height="50" rx="12" fill="url(#primaryGradient)" filter="url(#softShadow)"/>
+    <rect x="-18" y="-18" width="36" height="36" rx="8" fill="#ffffff" opacity="0.9"/>
+    
+    <!-- AI symbol - simplified and modern -->
+    <g stroke="url(#primaryGradient)" stroke-width="3" stroke-linecap="round" fill="none">
+      <!-- Neural pathways -->
+      <path d="M0 -12 L0 -8 M0 8 L0 12 M-12 0 L-8 0 M8 0 L12 0"/>
+      <circle cx="0" cy="0" r="5" fill="url(#primaryGradient)"/>
+    </g>
+    
+    <!-- Glow effect -->
+    <circle r="30" fill="url(#centerGlow)" opacity="0.6"/>
+  </g>
+  
+  <!-- Agent Ecosystem - Apple-inspired minimalism -->
+  <g id="agent-ecosystem">
+    <!-- Agents positioned in elegant formation -->
+    <!-- Top cluster -->
+    <g transform="translate(120, 50)">
+      <circle r="20" fill="url(#secondaryGradient)" opacity="0.8" filter="url(#softShadow)"/>
+      <circle r="14" fill="#ffffff" opacity="0.9"/>
+      <circle r="8" fill="url(#secondaryGradient)"/>
+    </g>
+    
+    <!-- Right cluster -->
+    <g transform="translate(180, 90)">
+      <circle r="18" fill="#8b5cf6" opacity="0.8" filter="url(#softShadow)"/>
+      <circle r="12" fill="#ffffff" opacity="0.9"/>
+      <circle r="6" fill="#8b5cf6"/>
+    </g>
+    
+    <!-- Bottom-right -->
+    <g transform="translate(180, 150)">
+      <circle r="16" fill="#f59e0b" opacity="0.8" filter="url(#softShadow)"/>
+      <circle r="11" fill="#ffffff" opacity="0.9"/>
+      <circle r="6" fill="#f59e0b"/>
+    </g>
+    
+    <!-- Bottom cluster -->
+    <g transform="translate(120, 190)">
+      <circle r="20" fill="#06b6d4" opacity="0.8" filter="url(#softShadow)"/>
+      <circle r="14" fill="#ffffff" opacity="0.9"/>
+      <circle r="8" fill="#06b6d4"/>
+    </g>
+    
+    <!-- Bottom-left -->
+    <g transform="translate(60, 150)">
+      <circle r="16" fill="#ec4899" opacity="0.8" filter="url(#softShadow)"/>
+      <circle r="11" fill="#ffffff" opacity="0.9"/>
+      <circle r="6" fill="#ec4899"/>
+    </g>
+    
+    <!-- Left cluster -->
+    <g transform="translate(60, 90)">
+      <circle r="18" fill="#14b8a6" opacity="0.8" filter="url(#softShadow)"/>
+      <circle r="12" fill="#ffffff" opacity="0.9"/>
+      <circle r="6" fill="#14b8a6"/>
+    </g>
+  </g>
+  
+  <!-- Elegant connection lines -->
+  <g id="connections" stroke="url(#primaryGradient)" stroke-width="1.5" fill="none" opacity="0.2">
+    <!-- Dynamic curved paths -->
+    <path d="M120 95 Q120 120 120 145"/>
+    <path d="M145 120 Q162 120 162 138"/>
+    <path d="M162 102 Q162 120 162 138"/>
+    <path d="M95 120 Q78 120 78 138"/>
+    <path d="M78 102 Q78 120 78 138"/>
+    
+    <!-- Orbital paths -->
+    <circle cx="120" cy="120" r="70" stroke-dasharray="4 8" opacity="0.5"/>
+  </g>
+  
+  <!-- Modern wordmark -->
+  <g transform="translate(120, 220)">
+    <text text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="24" font-weight="600" fill="#0f172a">
+      Mai<tspan fill="url(#primaryGradient)">Farm</tspan>
+    </text>
+    <text text-anchor="middle" y="18" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="10" font-weight="400" fill="#64748b" letter-spacing="1.5">
+      MULTI-AGENT ORCHESTRATOR
+    </text>
+  </g>
+</svg>

@@ -1,0 +1,1 @@
+export { MaiFarmLogo, default } from './MaiFarmLogo';
