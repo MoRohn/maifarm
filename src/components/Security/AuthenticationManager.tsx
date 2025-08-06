@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import { AuthCredentials } from '../../types/security';
 import { securityService } from '../../services/securityService';
+import { useThemeStore } from '../../store/themeStore';
 
 interface AuthenticationManagerProps {
   onAuthSuccess?: () => void;
@@ -23,6 +24,30 @@ export const AuthenticationManager: React.FC<AuthenticationManagerProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [showMFA, setShowMFA] = useState(false);
+  const theme = useThemeStore((state) => state.theme);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  
+  useEffect(() => {
+    const checkDarkMode = () => {
+      if (theme === 'dark') {
+        setIsDarkMode(true);
+      } else if (theme === 'light') {
+        setIsDarkMode(false);
+      } else {
+        // System theme
+        setIsDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+    };
+    
+    checkDarkMode();
+    
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => checkDarkMode();
+    mediaQuery.addEventListener('change', handleChange);
+    
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [theme]);
 
   useEffect(() => {
     if (isAuthenticated && onAuthSuccess) {
@@ -73,9 +98,9 @@ export const AuthenticationManager: React.FC<AuthenticationManagerProps> = ({
       >
         <div className="text-center mb-8">
           <img 
-            src="/src/assets/logo/maifarm-v2-icon.svg" 
+            src={isDarkMode ? "/favicon-dark.svg" : "/favicon-light.svg"} 
             alt="MaiFarm" 
-            className="w-20 h-20 mx-auto mb-4"
+            className="w-16 h-16 mx-auto mb-4"
           />
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
             {mode === 'login' ? 'Welcome Back' : 'Create Account'}

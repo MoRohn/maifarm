@@ -58,9 +58,9 @@ const ExplorationGraph: React.FC<ExplorationGraphProps> = ({ path, onNodeClick }
     }));
 
     const links = path.edges.map(edge => ({
+      ...edge,
       source: nodes.find(n => n.id === edge.source)!,
-      target: nodes.find(n => n.id === edge.target)!,
-      ...edge
+      target: nodes.find(n => n.id === edge.target)!
     }));
 
     // Create force simulation
@@ -176,7 +176,7 @@ const ExplorationGraph: React.FC<ExplorationGraphProps> = ({ path, onNodeClick }
     nodeGroup.append('circle')
       .attr('r', (d: any) => 30 + d.creativity * 0.2)
       .attr('fill', 'none')
-      .attr('stroke', (d: any) => `rgba(168, 85, 247, ${d.confidence})`}
+      .attr('stroke', (d: any) => `rgba(168, 85, 247, ${d.confidence})`)
       .attr('stroke-width', 2)
       .attr('stroke-dasharray', (d: any) => {
         const radius = 30 + d.creativity * 0.2;
@@ -227,7 +227,7 @@ const ExplorationGraph: React.FC<ExplorationGraphProps> = ({ path, onNodeClick }
         d.fy = null;
       });
 
-    nodeGroup.call(drag);
+    nodeGroup.call(drag as any);
 
     return () => {
       simulation.stop();
@@ -269,12 +269,10 @@ const ExplorationGraph: React.FC<ExplorationGraphProps> = ({ path, onNodeClick }
         <button
           onClick={() => {
             const svg = d3.select(svgRef.current);
+            const zoom = d3.zoom<SVGSVGElement, unknown>();
             svg.transition()
               .duration(750)
-              .call(
-                d3.zoom<SVGSVGElement, unknown>().transform,
-                d3.zoomIdentity
-              );
+              .call(zoom.transform as any, d3.zoomIdentity);
           }}
           className="px-3 py-1 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-lg text-sm hover:bg-white dark:hover:bg-gray-700 transition-colors"
         >
@@ -282,7 +280,7 @@ const ExplorationGraph: React.FC<ExplorationGraphProps> = ({ path, onNodeClick }
         </button>
       </div>
 
-      <style jsx>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @keyframes pulse {
           0% {
             opacity: 0.6;
@@ -298,10 +296,10 @@ const ExplorationGraph: React.FC<ExplorationGraphProps> = ({ path, onNodeClick }
           }
         }
 
-        :global(.pulse-ring) {
+        .pulse-ring {
           animation: pulse 2s infinite;
         }
-      `}</style>
+      `}} />
     </div>
   );
 };

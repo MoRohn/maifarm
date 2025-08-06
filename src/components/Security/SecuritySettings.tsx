@@ -14,21 +14,32 @@ export const SecuritySettings: React.FC = () => {
   const { isAdmin } = usePermissions();
   
   const [config, setConfig] = useState<SecurityConfig>({
-    encryptionEnabled: true,
-    sessionTimeout: 30,
-    maxLoginAttempts: 5,
-    twoFactorEnabled: false,
-    auditRetentionDays: 90,
-    allowedOrigins: ['http://localhost:3000'],
     passwordPolicy: {
       minLength: 8,
       requireUppercase: true,
       requireLowercase: true,
       requireNumbers: true,
       requireSpecialChars: true,
+      maxAge: 90,
       preventReuse: 5,
-      expirationDays: 90,
     },
+    sessionPolicy: {
+      maxDuration: 30,
+      idleTimeout: 15,
+      maxConcurrentSessions: 3,
+      requireMFA: false,
+    },
+    apiPolicy: {
+      rateLimit: 100,
+      maxRequestSize: 10485760, // 10MB
+      allowedOrigins: ['http://localhost:3000'],
+      requireApiKey: true,
+    },
+    encryptionEnabled: true,
+    auditLoggingEnabled: true,
+    twoFactorRequired: false,
+    allowedIPs: undefined,
+    blockedIPs: undefined,
   });
 
   const [showApiKeys, setShowApiKeys] = useState(false);
@@ -155,8 +166,8 @@ export const SecuritySettings: React.FC = () => {
             </span>
             <input
               type="checkbox"
-              checked={config.twoFactorEnabled}
-              onChange={(e) => setConfig(prev => ({ ...prev, twoFactorEnabled: e.target.checked }))}
+              checked={config.twoFactorRequired}
+              onChange={(e) => setConfig(prev => ({ ...prev, twoFactorRequired: e.target.checked }))}
               className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
             />
           </label>
@@ -167,8 +178,14 @@ export const SecuritySettings: React.FC = () => {
             </label>
             <input
               type="number"
-              value={config.sessionTimeout}
-              onChange={(e) => setConfig(prev => ({ ...prev, sessionTimeout: parseInt(e.target.value) }))}
+              value={config.sessionPolicy.maxDuration}
+              onChange={(e) => setConfig(prev => ({ 
+                ...prev, 
+                sessionPolicy: { 
+                  ...prev.sessionPolicy, 
+                  maxDuration: parseInt(e.target.value) 
+                } 
+              }))}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
               min="5"
               max="1440"
@@ -177,15 +194,21 @@ export const SecuritySettings: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Maximum login attempts
+              API Rate Limit (requests/minute)
             </label>
             <input
               type="number"
-              value={config.maxLoginAttempts}
-              onChange={(e) => setConfig(prev => ({ ...prev, maxLoginAttempts: parseInt(e.target.value) }))}
+              value={config.apiPolicy.rateLimit}
+              onChange={(e) => setConfig(prev => ({ 
+                ...prev, 
+                apiPolicy: { 
+                  ...prev.apiPolicy, 
+                  rateLimit: parseInt(e.target.value) 
+                } 
+              }))}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-              min="3"
-              max="10"
+              min="10"
+              max="1000"
             />
           </div>
         </div>
@@ -226,8 +249,8 @@ export const SecuritySettings: React.FC = () => {
             </label>
             <input
               type="number"
-              value={config.passwordPolicy.expirationDays}
-              onChange={(e) => handlePasswordPolicyChange('expirationDays', parseInt(e.target.value))}
+              value={config.passwordPolicy.maxAge}
+              onChange={(e) => handlePasswordPolicyChange('maxAge', parseInt(e.target.value))}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
               min="0"
               max="365"
@@ -359,16 +382,19 @@ export const SecuritySettings: React.FC = () => {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Audit log retention (days)
+              Audit Logging
             </label>
-            <input
-              type="number"
-              value={config.auditRetentionDays}
-              onChange={(e) => setConfig(prev => ({ ...prev, auditRetentionDays: parseInt(e.target.value) }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900"
-              min="30"
-              max="365"
-            />
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={config.auditLoggingEnabled}
+                onChange={(e) => setConfig(prev => ({ ...prev, auditLoggingEnabled: e.target.checked }))}
+                className="w-4 h-4 text-blue-600 rounded"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                Enable audit logging for all actions
+              </span>
+            </label>
           </div>
 
           <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">

@@ -86,6 +86,57 @@ export class TaskGeneratorService {
   }
 
   /**
+   * Generate image generation tasks with specific parameters
+   */
+  async generateImageTask(
+    prompt: string,
+    style?: string,
+    format?: string
+  ): Promise<GeneratedTask> {
+    const task: GeneratedTask = {
+      id: `img_task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      title: 'AI Image Generation Task',
+      description: 'Generate visual content using AI image generation models',
+      prompt: `Generate an image with the following specifications:
+        
+        Main Prompt: ${prompt}
+        ${style ? `Style: ${style}` : ''}
+        ${format ? `Format: ${format}` : 'Format: PNG'}
+        
+        Requirements:
+        1. Generate multiple variations (at least 3)
+        2. Ensure high quality output (minimum 1024x1024)
+        3. Optimize for web use if needed
+        4. Maintain consistency with brand guidelines
+        
+        Process:
+        1. Analyze the prompt and identify key visual elements
+        2. Generate initial concepts
+        3. Refine based on style requirements
+        4. Export in specified format`,
+      estimatedComplexity: 6,
+      requiredAgents: 2,
+      suggestedApproach: [
+        'Parse and enhance the prompt',
+        'Generate initial image variations',
+        'Apply style and formatting',
+        'Quality check and optimization',
+        'Export final assets'
+      ],
+      dependencies: [],
+      expectedOutcomes: [
+        'High-quality generated images',
+        'Multiple variations for selection',
+        'Optimized file sizes',
+        'Consistent style application'
+      ],
+      riskLevel: 'low'
+    };
+    
+    return task;
+  }
+
+  /**
    * Generate creative, out-of-the-box tasks
    */
   private generateCreativeTasks(
@@ -104,7 +155,7 @@ export class TaskGeneratorService {
         3. Art and design patterns (e.g., generative art, fractals)
         4. Game theory and strategy
         
-        Focus on: ${config.focusAreas.join(', ') || 'general improvements'}`,
+        Focus on: ${config.focusAreas?.join(', ') || 'general improvements'}`,
       complexity: 8,
       approach: [
         'Research cross-domain applications',
@@ -113,6 +164,30 @@ export class TaskGeneratorService {
         'Evaluate feasibility and impact'
       ]
     }));
+    
+    // Add image generation task
+    if (config.focusAreas?.includes('visual') || config.focusAreas?.includes('design')) {
+      tasks.push(this.createTask({
+        title: 'AI-Powered Visual Content Generator',
+        description: 'Generate visual content using AI image generation models',
+        prompt: `Create visual assets using AI image generation:
+          1. Design system illustrations and icons
+          2. Generate hero images for marketing
+          3. Create abstract backgrounds and patterns
+          4. Develop visual metaphors for complex concepts
+          
+          Style guidelines: modern, minimalist, professional
+          Output formats: PNG, SVG where applicable
+          Resolution: 1920x1080 for hero images, varied for other assets`,
+        complexity: 7,
+        approach: [
+          'Define visual requirements and style guide',
+          'Generate initial image concepts',
+          'Iterate based on brand guidelines',
+          'Export and optimize for web use'
+        ]
+      }));
+    }
     
     // Generate paradigm-shifting tasks
     tasks.push(this.createTask({
@@ -261,7 +336,7 @@ export class TaskGeneratorService {
       prompt: partial.prompt || '',
       estimatedComplexity: partial.complexity || 5,
       requiredAgents: partial.complexity ? Math.ceil(partial.complexity / 3) : 1,
-      suggestedApproach: partial.approach || [],
+      suggestedApproach: (partial as any).approach || [],
       dependencies: [],
       expectedOutcomes: this.generateExpectedOutcomes(partial),
       riskLevel: this.calculateRiskLevel(partial.complexity || 5)
@@ -274,16 +349,16 @@ export class TaskGeneratorService {
   ): GeneratedTask[] {
     return tasks.map(task => {
       // Modify prompts based on boundaries
-      if (!boundaries.allowExternalAPIs) {
+      if (!boundaries?.allowExternalAPIs) {
         task.prompt += '\n\nNote: Do not use external APIs.';
       }
-      if (!boundaries.allowFileSystem) {
+      if (!boundaries?.allowFileSystem) {
         task.prompt += '\n\nNote: Avoid file system operations.';
       }
-      if (!boundaries.allowNetworkRequests) {
+      if (!boundaries?.allowNetworkRequests) {
         task.prompt += '\n\nNote: No network requests allowed.';
       }
-      if (boundaries.restrictedDomains.length > 0) {
+      if (boundaries?.restrictedDomains && boundaries.restrictedDomains.length > 0) {
         task.prompt += `\n\nRestricted domains: ${boundaries.restrictedDomains.join(', ')}`;
       }
       
@@ -302,8 +377,8 @@ export class TaskGeneratorService {
       const creativityDiffB = Math.abs(b.estimatedComplexity * 10 - config.creativityLevel);
       
       // Also consider focus areas
-      const focusRelevanceA = this.calculateFocusRelevance(a, config.focusAreas);
-      const focusRelevanceB = this.calculateFocusRelevance(b, config.focusAreas);
+      const focusRelevanceA = this.calculateFocusRelevance(a, config.focusAreas || []);
+      const focusRelevanceB = this.calculateFocusRelevance(b, config.focusAreas || []);
       
       const scoreA = focusRelevanceA * 2 - creativityDiffA;
       const scoreB = focusRelevanceB * 2 - creativityDiffB;
@@ -313,7 +388,7 @@ export class TaskGeneratorService {
   }
 
   private calculateFocusRelevance(task: GeneratedTask, focusAreas: string[]): number {
-    if (focusAreas.length === 0) return 1;
+    if (!focusAreas || focusAreas.length === 0) return 1;
     
     const taskText = `${task.title} ${task.description} ${task.prompt}`.toLowerCase();
     let relevance = 0;
@@ -461,7 +536,7 @@ Expected deliverables:
       config.creativityLevel > 80,
       node.confidence < 0.5,
       node.type === 'branch',
-      config.boundaries.allowExternalAPIs
+      config.boundaries?.allowExternalAPIs || false
     ];
     
     const riskScore = riskFactors.filter(f => f).length;
@@ -472,7 +547,7 @@ Expected deliverables:
   }
 
   private generateExpectedOutcomes(task: Partial<GeneratedTask>): string[] {
-    const outcomes = [];
+    const outcomes: string[] = [];
     
     if (task.complexity && task.complexity > 7) {
       outcomes.push('Breakthrough innovations');

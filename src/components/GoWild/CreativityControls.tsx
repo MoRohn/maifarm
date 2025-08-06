@@ -120,20 +120,41 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
               Max Duration
             </label>
           </div>
-          <span className="text-sm text-gray-600 dark:text-gray-400">
-            {localConfig.maxDuration} minutes
-          </span>
         </div>
-        <input
-          type="range"
-          min="5"
-          max="120"
-          step="5"
-          value={localConfig.maxDuration}
-          onChange={(e) => handleUpdate({ maxDuration: parseInt(e.target.value) })}
-          disabled={disabled}
-          className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
-        />
+        <div className="flex items-center space-x-2">
+          <div className="flex-1">
+            <input
+              type="number"
+              value={Math.floor(localConfig.maxDuration / 60)}
+              onChange={(e) => {
+                const hours = parseInt(e.target.value) || 0;
+                const minutes = localConfig.maxDuration % 60;
+                handleUpdate({ maxDuration: hours * 60 + minutes });
+              }}
+              min="0"
+              max="24"
+              disabled={disabled}
+              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+            <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">Hours</span>
+          </div>
+          <div className="flex-1">
+            <input
+              type="number"
+              value={localConfig.maxDuration % 60}
+              onChange={(e) => {
+                const hours = Math.floor(localConfig.maxDuration / 60);
+                const minutes = parseInt(e.target.value) || 0;
+                handleUpdate({ maxDuration: hours * 60 + Math.min(minutes, 59) });
+              }}
+              min="0"
+              max="59"
+              disabled={disabled}
+              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+            <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">Minutes</span>
+          </div>
+        </div>
       </div>
 
       {/* Focus Areas */}
@@ -234,7 +255,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         input[type="range"]::-webkit-slider-thumb {
           appearance: none;
           width: 20px;
@@ -268,4 +289,5 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
   );
 };
 
+export { CreativityControls };
 export default CreativityControls;

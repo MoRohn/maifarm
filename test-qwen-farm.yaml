@@ -1,0 +1,97 @@
+name: Qwen Test Farm - Multi-Agent Development
+description: Test farm to validate Qwen3-Coder integration with MaiFarm
+provider: qwen
+agents: 3
+settings:
+  useLocalModel: true  # Try local Ollama first, fallback to API
+  contextWindow: 256000
+  chainOfThought: true
+  temperature: 0.7
+  
+prompt: |
+  Create a simple REST API with the following requirements:
+  - Express.js server with TypeScript
+  - Three endpoints: GET /status, POST /data, GET /data/:id
+  - In-memory data storage
+  - Input validation and error handling
+  - Basic tests using Jest
+  
+  This is a test task to validate Qwen3-Coder integration.
+  
+steps:
+  - step: 1
+    content: Design API architecture and data models
+    description: Create the overall structure and define interfaces
+    agent: architect
+    
+  - step: 2
+    content: Implement Express server and endpoints
+    description: Build the core API functionality with TypeScript
+    agent: developer
+    
+  - step: 3
+    content: Add validation and error handling
+    description: Implement input validation and proper error responses
+    agent: developer
+    
+  - step: 4
+    content: Create test suite
+    description: Write unit tests for all endpoints using Jest
+    agent: tester
+    
+  - step: 5
+    content: Documentation and review
+    description: Add API documentation and review code quality
+    agent: reviewer
+
+collaborative: true  # Enable collaborative mode for agents
+
+# Qwen-specific optimizations
+qwen_config:
+  prompt_template: qwen-collaborative-development
+  optimization_hints:
+    - Use chain-of-thought reasoning for complex decisions
+    - Leverage the 256K context window for comprehensive analysis
+    - Generate complete, production-ready code
+    - Include detailed comments explaining the implementation
+  
+  # Agent-specific instructions
+  agent_instructions:
+    architect: |
+      Use your analytical capabilities to design a clean, scalable architecture.
+      Consider best practices for TypeScript and Express.js applications.
+    developer: |
+      Implement the code with focus on maintainability and performance.
+      Use TypeScript features effectively for type safety.
+    tester: |
+      Create comprehensive test coverage including edge cases.
+      Use Jest best practices and proper mocking strategies.
+    reviewer: |
+      Perform thorough code review focusing on quality and standards.
+      Generate clear, helpful documentation.
+
+# Expected outputs
+outputs:
+  - file: src/server.ts
+    description: Main Express server file
+  - file: src/routes/api.ts
+    description: API route definitions
+  - file: src/types/index.ts
+    description: TypeScript type definitions
+  - file: src/validators/index.ts
+    description: Input validation schemas
+  - file: tests/api.test.ts
+    description: Jest test suite
+  - file: README.md
+    description: API documentation
+
+# Monitoring configuration
+monitoring:
+  track_metrics: true
+  log_level: info
+  report_frequency: 30s
+  metrics:
+    - response_time
+    - context_usage
+    - chain_of_thought_steps
+    - tokens_per_second

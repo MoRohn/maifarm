@@ -4,6 +4,9 @@ import { useUserStore } from '../store/userStore';
 import { AISuggestion, ConfigTemplate } from '../types/settings';
 import { aiSettingsService } from '../services/aiSettingsService';
 
+// Type for store settings
+type StoreSettings = Parameters<ReturnType<typeof useSettingsStore>['updateSettings']>[0];
+
 export const useAISettings = () => {
   const { settings, updateSettings } = useSettingsStore();
   const { user } = useUserStore();
@@ -83,11 +86,11 @@ export const useAISettings = () => {
 
   // Auto-optimize settings
   const autoOptimizeSettings = useCallback(async () => {
-    if (!settings.user?.aiAssistant?.autoOptimize) return;
+    if (!settings.aiAssistance?.enabled) return;
 
     try {
-      const optimizedSettings = await aiSettingsService.optimizeSettings(settings);
-      updateSettings(optimizedSettings);
+      const optimizedSettings = await aiSettingsService.optimizeSettings(settings as any);
+      updateSettings(optimizedSettings as StoreSettings);
     } catch (error) {
       console.error('Failed to optimize settings:', error);
     }
@@ -95,10 +98,10 @@ export const useAISettings = () => {
 
   // Load suggestions on mount
   useEffect(() => {
-    if (settings.user?.aiAssistant?.enabled) {
+    if (settings.aiAssistance?.enabled) {
       analyzeUserBehavior();
     }
-  }, []);
+  }, [analyzeUserBehavior]);
 
   return {
     suggestions,

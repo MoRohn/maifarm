@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../../services/auth';
 import { LoginCredentials } from '../../types/auth';
 import toast from 'react-hot-toast';
+import { useThemeStore } from '../../store/themeStore';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -16,6 +17,30 @@ export const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const theme = useThemeStore((state) => state.theme);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  
+  useEffect(() => {
+    const checkDarkMode = () => {
+      if (theme === 'dark') {
+        setIsDarkMode(true);
+      } else if (theme === 'light') {
+        setIsDarkMode(false);
+      } else {
+        // System theme
+        setIsDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+    };
+    
+    checkDarkMode();
+    
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => checkDarkMode();
+    mediaQuery.addEventListener('change', handleChange);
+    
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [theme]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +50,7 @@ export const Login: React.FC = () => {
     try {
       await authService.login(credentials);
       toast.success('Login successful!');
-      navigate('/dashboard');
+      navigate('/home');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please try again.');
       toast.error(err.message || 'Login failed');
@@ -48,7 +73,7 @@ export const Login: React.FC = () => {
     try {
       await authService.login(demoCredentials[role]);
       toast.success(`Logged in as ${role}!`);
-      navigate('/dashboard');
+      navigate('/home');
     } catch (err: any) {
       setError(err.message || 'Demo login failed');
       toast.error('Demo login failed');
@@ -68,9 +93,9 @@ export const Login: React.FC = () => {
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <img
-            src="/src/assets/logos/maifarm-v2-logo.svg"
+            src={isDarkMode ? "/favicon-dark.svg" : "/favicon-light.svg"}
             alt="MaiFarm Logo"
-            className="h-20 w-20"
+            className="h-16 w-16"
           />
         </div>
 

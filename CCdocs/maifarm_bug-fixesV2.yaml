@@ -1,0 +1,100 @@
+name: MaiFarm - Production-Ready, Live version of the localized AI Orchestration Application
+description: Address operational errors in MaiFarm, including CORS issues, duplicate key warnings, and backend server unavailability, while finalizing the YAML Generator configuration and adding settings and alert notifications for a fully operational AI orchestration platform.
+
+initial_prompt: |
+  You are tasked with resolving operational errors in MaiFarm, a production-ready, locally web-based application for the Multi-Agent Claude Code Orchestrator, as observed in the browser console logs. Issues include CORS misconfigurations, duplicate React keys, and backend server unavailability. Additionally, finalize the YAML Generator configuration for success, enhance its effectiveness, and implement settings and alert notifications. Use React, Tailwind CSS, and TypeScript for the UI, focusing on a stable, scalable, and user-friendly experience.
+  
+  Key Requirements:
+  - Resolve CORS and Access-Control-Allow-Origin errors
+  - Fix duplicate key warnings in React components
+  - Ensure backend server availability and WebSocket connectivity
+  - Validate and enhance YAML Generator functionality
+  - Implement settings page and alert notifications
+  - Maintain end-to-end functionality for AI agent orchestration
+
+  Architecture Guidelines:
+  - Use React components with Tailwind CSS and TypeScript
+  - Configure CORS properly on the backend server
+  - Ensure unique keys for React components
+  - Implement WebSocket and REST API with error handling
+  - Use local storage for settings persistence
+  - Write comprehensive tests (unit, integration)
+
+  Before starting:
+  - Analyze console logs for error details
+  - Check backend server CORS settings
+  - Review React component keys
+  - Test YAML Generator with sample prompts
+  - Plan settings and alert notification integration
+
+steps:
+
+  - content: Enhance & Focus on a clean & intuitive 'Harvest' for the results of the Farm, Go Wild, or Quick Task modes.
+    description: |
+      Complete the development process & optimal design for the Harvest page:
+      - Identify the most significant digital arifacts from each agent farm to keep, clean, name, and organize for the user after the farming process comes to an end
+      - Using the standard Apple-like design, create a Harvest page that is both analytical in the results & performance of the farm. - Have an option to save Seed for future reference/ability to use in future farm creation
+      - Focus on brevity and headlines when it comes to the Harvest details on tasks and responses.
+      - Give the user an awe-inspiring effect when the Farming is completed and the Harvest is created
+
+  - content: Resolve CORS and Access-Control-Allow-Origin
+    description: |
+      Complete the debugging process and preparation for go-live:
+      - Identify the CORS misconfiguration causing "Access-Control-Allow-Origin cannot contain more than one origin"
+      - Update backend server (e.g., on port 4567) to set a single, correct Access-Control-Allow-Origin header (e.g., http://localhost:3000)
+      - Test API requests (e.g., GET /api/metrics/dashboard) with Postman or cURL to verify CORS headers
+      - Implement a middleware to dynamically set the origin based on the request if needed
+      - Ensure WebSocket connections respect CORS policies
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Fix duplicate key warnings in React components
+    description: |
+      Complete the development process and preparation for go-live:
+      - Review components (e.g., Dashboard, MotionComponent) for duplicate keys in lists or iterations
+      - Assign unique keys to each child element using a stable identifier (e.g., index with a prefix or unique ID)
+      - Test the application to ensure components render correctly without warnings
+      - Update framer-motion animations to maintain identity with unique keys
+      - Validate UI behavior after key fixes
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - conent: Ensure backend server availability and WebSocket connectivity
+    description: | 
+      Complete the development process and preparation for go-live:
+      - Verify backend server is running on ports 4567 and 3000
+      - Restart server if down and check logs for errors
+      - Ensure WebSocket endpoint (e.g., ws://localhost:4567) is active and sending metrics updates
+      - Implement a fallback to mock data with clear user notifications when the server is unavailable
+      - Add retry logic for WebSocket connections
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Validate and enhance YAML Generator configuration
+    description: |
+      Complete the development process and preparation for go-live:
+      - Test YAML Generator with various prompts (e.g., "Create a farm with 4 agents for testing my React app") to ensure correct output
+      - Enhance prompt parsing to handle complex requirements (e.g., technology stack, agent roles)
+      - Validate generated YAML against a schema to ensure correctness
+      - Add detailed feedback in the UI for successful/failed generations
+      - Optimize generation speed and accuracy with backend improvements
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Implement settings page and alert notifications
+    description: |
+      Complete the development process and preparation for go-live:
+      - Create a Settings component with options (e.g., theme, notifications, server port)
+      - Use local storage to persist settings across sessions
+      - Implement alert notifications for server status, WebSocket updates, and errors using a toast library
+      - Integrate alerts with WebSocket data (e.g., metrics updates)
+      - Test settings persistence and alert visibility
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+  - conent: Testing and Validation
+    description: | 
+      Complete testing and validation on:
+      - Run unit tests for CORS middleware and key uniqueness.
+      - Perform integration tests for WebSocket and YAML generation.
+      - Validate settings persistence and alert functionality in the UI.
+      - Deploy and monitor in a staging environment.

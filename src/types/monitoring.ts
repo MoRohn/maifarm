@@ -63,6 +63,14 @@ export interface CommunicationNode {
   position: { x: number; y: number; z: number };
   activity: number; // 0-1 scale
   status: 'active' | 'idle' | 'error';
+  // D3 simulation properties
+  x?: number;
+  y?: number;
+  fx?: number | null;
+  fy?: number | null;
+  vx?: number;
+  vy?: number;
+  index?: number;
 }
 
 export interface CommunicationEdge {

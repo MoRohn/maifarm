@@ -1,0 +1,58 @@
+name: deletion-test-farm-2025-08-04
+description: Test farm for deletion testing - created at 2025-08-04T11:29:36.721Z
+agents:
+  - name: agent-alpha
+    role: Task Processor
+    model: claude-3-sonnet
+    tasks:
+      - id: task-001
+        type: data_analysis
+        description: Analyze test dataset
+        priority: medium
+        status: pending
+    capabilities:
+      - data_processing
+      - report_generation
+    coordination:
+      broadcast_channel: test-deletion-channel
+      status_update_interval: 30
+
+  - name: agent-beta
+    role: Quality Checker
+    model: claude-3-haiku
+    tasks:
+      - id: task-002
+        type: validation
+        description: Validate results from agent-alpha
+        priority: low
+        dependencies:
+          - task-001
+    capabilities:
+      - validation
+      - testing
+    coordination:
+      broadcast_channel: test-deletion-channel
+
+config:
+  max_agents: 2
+  coordination_enabled: true
+  auto_scale: false
+  deletion_test_metadata:
+    created_at: "2025-08-04T11:29:36.721Z"
+    test_id: "del-test-20250804-112936"
+    purpose: "Validate farm deletion functionality"
+  resource_limits:
+    max_concurrent_tasks: 5
+    memory_limit: "2GB"
+    timeout_seconds: 300
+
+tags:
+  - test
+  - deletion
+  - temporary
+  - automated-test
+
+output:
+  format: json
+  destination: ./test-outputs/deletion-test-results
+  include_logs: true

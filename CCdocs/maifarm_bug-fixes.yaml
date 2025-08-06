@@ -1,0 +1,67 @@
+name: MaiFarm - Production-Ready, Live version of the localized AI Orchestration Application
+description: Address operational errors in MaiFarm, focusing on resolving WebSocket connection failures and backend server unavailability to ensure a stable, production-ready AI orchestration platform.
+
+initial_prompt: |
+  You are tasked with resolving operational errors in MaiFarm, a production-ready, locally web-based application for the Multi-Agent Claude Code Orchestrator. The current issue involves multiple WebSocket connection failures and backend server unavailability, as observed in the browser console logs. The goal is to stabilize the application, ensuring reliable communication between the frontend and backend, and provide a seamless user experience. Use React, Tailwind CSS, and TypeScript for the UI, and focus on debugging and fixing the backend infrastructure.
+  
+  Key Requirements:
+  - Resolve WebSocket connection errors (e.g., "Could not connect to the server", "There was a bad response from the server")
+  - Ensure backend server availability on localhost ports (e.g., 4567, 3000)
+  - Implement fallback mechanisms using mock data when the backend is unavailable
+  - Maintain end-to-end functionality for AI agent orchestration
+  Ensure robust monitoring and logging for production support
+
+  Architecture Guidelines:
+  - Use existing React components with Tailwind CSS and TypeScript
+  - Verify WebSocket and REST API configurations
+  - Ensure proper server setup and port availability
+  - Implement error handling and retries for network requests
+  - Write comprehensive tests (unit, integration) to validate fixes
+
+  Before starting:
+  - Analyze console logs for specific error patterns
+  - Check server status and port configurations
+  - Validate WebSocket endpoint URLs and protocols
+  - Test network connectivity and firewall settings
+  - Coordinate with team to ensure server restarts or redeployments
+
+steps:
+
+  - content: Diagnose and resolve WebSocket connection failures
+    description: |
+      Complete the debugging process and preparation for go-live:
+      - Identify the root cause of WebSocket errors (e.g., server not running, incorrect port, firewall blocking)
+      - Verify WebSocket endpoints (e.g., ws://localhost:4567/socket.io/?EIO=4&transport=websocket) are correctly configured
+      - Ensure the backend server (e.g., on ports 4567, 3000) is running and accessible
+      - Implement retry logic in the frontend for WebSocket connections
+      - Update the WebSocket client code to handle bad responses gracefully
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Ensure backend server availability
+    description: |
+      Complete the development process and preparation for go-live:
+      - Check if the backend server is running on localhost ports (e.g., 4567, 3000)
+      - Restart the server if it’s down and verify logs for startup errors
+      - Configure port forwarding or firewall rules if necessary
+      - Implement a health check endpoint (e.g., /api/health) to monitor server status
+      - Ensure mock data fallback works seamlessly when the server is unavailable
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Enhance error handling and logging
+    description: |
+      Complete the development process and preparation for go-live:
+      - Add detailed error logging for WebSocket and API failures
+      - Implement user-friendly error messages in the UI for connection issues
+      - Test the application with mock data to ensure functionality during outages
+      - Integrate monitoring tools to alert on server downtime
+      - Validate that service worker registration succeeds without conflicts
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+  - conent: Testing and Validation
+    description: | 
+      Complete the testing and validation process:
+      - Run unit tests for WebSocket reconnection logic.
+      - Perform integration tests with mock data fallback.
+      - Validate UI updates with real-time data after fixes.

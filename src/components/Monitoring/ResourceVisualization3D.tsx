@@ -110,7 +110,6 @@ const CentralResourceSphere: React.FC<{ metrics: ResourceMetrics }> = ({ metrics
     <group position={[0, 2, 0]}>
       <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
         <motion.mesh
-          ref={meshRef}
           animate={{ scale: [1, 1.1, 1] }}
           transition={{ duration: 3, repeat: Infinity }}
         >
@@ -170,13 +169,23 @@ const AgentNode: React.FC<{ agent: AgentMonitoringData; position: [number, numbe
     working: '#3B82F6',
     completed: '#10B981',
     error: '#EF4444',
-    paused: '#F59E0B'
-  }[agent.status];
+    paused: '#F59E0B',
+    busy: '#3B82F6',
+    draining: '#F59E0B',
+    failed: '#EF4444',
+    initializing: '#6B7280',
+    provisioning: '#6B7280',
+    running: '#3B82F6',
+    starting: '#6B7280',
+    stopped: '#6B7280',
+    stopping: '#F59E0B',
+    terminated: '#6B7280',
+    terminating: '#F59E0B'
+  }[agent.status] || '#6B7280';
 
   return (
     <group position={position}>
       <motion.mesh
-        ref={meshRef}
         animate={isActive ? { rotateY: Math.PI * 2 } : {}}
         transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
       >
@@ -217,7 +226,7 @@ const AgentNode: React.FC<{ agent: AgentMonitoringData; position: [number, numbe
         label="MEM"
       />
       <ResourceBar
-        value={agent.resources.network}
+        value={agent.resourceHistory?.network?.[0]?.value ?? 0}
         position={[0.6, 0, 0]}
         color="#10B981"
         label="NET"

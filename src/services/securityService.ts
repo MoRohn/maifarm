@@ -14,7 +14,7 @@ import * as bcrypt from 'bcryptjs';
 class SecurityService {
   private currentUser: AuthUser | null = null;
   private sessionToken: string | null = null;
-  private refreshToken: string | null = null;
+  public userRefreshToken: string | null = null;
   private permissions: Map<string, Permission> = new Map();
   private encryptionKey: CryptoKey | null = null;
 
@@ -76,7 +76,7 @@ class SecurityService {
         if (this.isSessionValid(session)) {
           this.currentUser = session.user;
           this.sessionToken = session.token;
-          this.refreshToken = session.refreshToken;
+          this.userRefreshToken = session.refreshToken;
           this.loadPermissions(session.user.permissions);
         } else {
           this.clearSession();
@@ -93,7 +93,7 @@ class SecurityService {
     return new Date(session.expiresAt) > new Date();
   }
 
-  private loadPermissions(permissions: Permission[]) {
+  private loadPermissions(permissions: Permission[] = []) {
     this.permissions.clear();
     permissions.forEach(permission => {
       const key = `${permission.resource}:${permission.action}`;
@@ -110,6 +110,48 @@ class SecurityService {
   }
 
   // Authentication methods
+  public async authenticate(credentials: AuthCredentials): Promise<AuthResponse> {
+    return this.login(credentials);
+  }
+
+  public async register(credentials: AuthCredentials & { email: string; name: string }): Promise<AuthResponse> {
+    try {
+      const hashedPassword = await this.hashPassword(credentials.password);
+      
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...credentials,
+          password: hashedPassword
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.user) {
+        this.currentUser = data.user;
+        this.sessionToken = data.accessToken;
+        this.refreshToken = data.refreshToken;
+        this.loadPermissions(data.user?.permissions);
+
+        this.logAuditEvent('register', 'authentication', true);
+
+        if (this.sessionToken && websocketService && typeof websocketService.connect === 'function') {
+          websocketService.connect(this.sessionToken);
+        }
+      }
+
+      return data;
+    } catch (error) {
+      this.logAuditEvent('register', 'authentication', false, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Registration failed'
+      };
+    }
+  }
+
   public async login(credentials: AuthCredentials): Promise<AuthResponse> {
     try {
       // Hash password before sending
@@ -131,7 +173,7 @@ class SecurityService {
         this.currentUser = data.user;
         this.sessionToken = data.accessToken;
         this.refreshToken = data.refreshToken;
-        this.loadPermissions(data.user.permissions);
+        this.loadPermissions(data.user?.permissions);
 
         // Store session if remember me is enabled
         if (credentials.rememberMe) {
@@ -148,12 +190,14 @@ class SecurityService {
         this.logAuditEvent('login', 'authentication', true);
 
         // Connect WebSocket with auth token
-        websocketService.connect(`ws://localhost:8765?token=${data.accessToken}`);
+        if (websocketService && typeof websocketService.connect === 'function') {
+          websocketService.connect(`http://localhost:4567?token=${data.accessToken}`);
+        }
       }
 
       return data;
     } catch (error) {
-      this.logAuditEvent('login', 'authentication', false, error.message);
+      this.logAuditEvent('login', 'authentication', false, error instanceof Error ? error.message : 'Unknown error');
       return {
         success: false,
         error: 'Authentication failed'
@@ -177,18 +221,23 @@ class SecurityService {
       console.error('Logout error:', error);
     } finally {
       this.clearSession();
-      websocketService.disconnect();
+      if (websocketService && typeof websocketService.disconnect === 'function') {
+        websocketService.disconnect();
+      }
     }
   }
 
-  public async refreshSession(): Promise<boolean> {
-    if (!this.refreshToken) return false;
+  public async refreshToken(token?: string): Promise<AuthResponse> {
+    const tokenToUse = token || this.refreshToken;
+    if (!tokenToUse) {
+      return { success: false, error: 'No refresh token available' };
+    }
 
     try {
       const response = await fetch('/api/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: this.refreshToken })
+        body: JSON.stringify({ refreshToken: tokenToUse })
       });
 
       const data = await response.json();
@@ -196,14 +245,25 @@ class SecurityService {
       if (data.success) {
         this.sessionToken = data.accessToken;
         this.refreshToken = data.refreshToken;
-        return true;
+        if (data.user) {
+          this.currentUser = data.user;
+          this.loadPermissions(data.user?.permissions);
+        }
       }
 
-      return false;
+      return data;
     } catch (error) {
-      console.error('Failed to refresh session:', error);
-      return false;
+      console.error('Failed to refresh token:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to refresh token' 
+      };
     }
+  }
+
+  public async refreshSession(): Promise<boolean> {
+    const result = await this.refreshToken();
+    return result.success;
   }
 
   // Authorization methods
@@ -218,12 +278,12 @@ class SecurityService {
     }
 
     // Check role-based permissions
-    return this.currentUser.roles.some(role => 
-      role.permissions.some(p => 
+    return this.currentUser?.roles?.some(role => 
+      role.permissions?.some(p => 
         p.resource === resource && p.action === action &&
         this.evaluatePermissionConditions(p)
       )
-    );
+    ) ?? false;
   }
 
   private evaluatePermissionConditions(permission: Permission): boolean {
@@ -232,7 +292,7 @@ class SecurityService {
     }
 
     // Evaluate all conditions
-    return permission.conditions.every(condition => {
+    return permission.conditions.every((condition: any) => {
       // Implement condition evaluation logic
       // This is a simplified version
       switch (condition.operator) {
@@ -245,7 +305,7 @@ class SecurityService {
         case 'lt':
           return Number(this.getContextValue(condition.field)) < condition.value;
         case 'in':
-          return condition.value.includes(this.getContextValue(condition.field));
+          return Array.isArray(condition.value) ? condition.value.includes(this.getContextValue(condition.field)) : false;
         default:
           return false;
       }
@@ -401,6 +461,44 @@ class SecurityService {
     });
 
     return response.ok;
+  }
+
+  // Additional authentication method for compatibility (renamed to avoid duplicate)
+  public async authenticateWithToken(credentials: AuthCredentials): Promise<any> {
+    const result = await this.login(credentials);
+    if (result.success && result.accessToken) {
+      return {
+        user: result.user,
+        token: {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken,
+          expiresAt: result.expiresIn || 3600
+        },
+        requiresMFA: false
+      };
+    }
+    throw new Error(result.error || 'Authentication failed');
+  }
+
+  public async register(credentials: AuthCredentials): Promise<void> {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...credentials,
+        password: await this.hashPassword(credentials.password)
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Registration failed');
+    }
+  }
+
+  public async logoutWithToken(token: string): Promise<void> {
+    // This is for the authStore compatibility
+    await this.logout();
   }
 
   // Public getters

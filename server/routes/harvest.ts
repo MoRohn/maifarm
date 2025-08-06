@@ -1,0 +1,408 @@
+import { Router, Response } from 'express';
+import { harvestService } from '../services/harvestService';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { HarvestCreateInput, HarvestFilter } from '../types/harvest';
+
+const router = Router();
+
+// Apply authentication to all routes
+router.use(authenticateToken);
+
+// Get all harvests for the user
+router.get('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId || req.user?.id || 'default-user';
+    const filter: HarvestFilter = {
+      farmId: req.query.farmId as string,
+      status: req.query.status as any,
+      startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
+      endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+      sortBy: req.query.sortBy as any,
+      sortOrder: req.query.sortOrder as any
+    };
+
+    const harvests = await harvestService.getUserHarvests(userId, filter);
+
+    res.json({
+      success: true,
+      data: harvests,
+      count: harvests.length
+    });
+  } catch (error) {
+    console.error('Error fetching harvests:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch harvests'
+    });
+  }
+});
+
+// Get a specific harvest
+router.get('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId || req.user?.id || 'default-user';
+    
+    const harvest = await harvestService.getHarvest(id, userId);
+    
+    if (!harvest) {
+      return res.status(404).json({
+        success: false,
+        error: 'Harvest not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: harvest
+    });
+  } catch (error) {
+    console.error('Error fetching harvest:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch harvest'
+    });
+  }
+});
+
+// Create a new harvest (usually triggered automatically by farm completion)
+router.post('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId || req.user?.id || 'default-user';
+    const harvestData: Omit<HarvestCreateInput, 'userId'> = req.body;
+
+    if (!harvestData.farmId || !harvestData.farmName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: farmId and farmName'
+      });
+    }
+
+    const harvest = await harvestService.createHarvest({
+      ...harvestData,
+      userId
+    });
+
+    // Emit WebSocket event
+    req.app.get('wsServer')?.broadcast('harvest:created', harvest);
+
+    res.status(201).json({
+      success: true,
+      data: harvest
+    });
+  } catch (error) {
+    console.error('Error creating harvest:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create harvest'
+    });
+  }
+});
+
+// Start collecting harvest data from a farm
+router.post('/:farmId/collect', async (req: AuthRequest, res: Response) => {
+  try {
+    const { farmId } = req.params;
+    const userId = req.user?.userId || req.user?.id || 'default-user';
+
+    // Get farm details to create harvest
+    const farmManager = require('../services/farmManager').farmManager;
+    const farm = await farmManager.getFarm(farmId, userId);
+
+    if (!farm) {
+      return res.status(404).json({
+        success: false,
+        error: 'Farm not found'
+      });
+    }
+
+    const harvest = await harvestService.startHarvest(farmId, farm.name, userId);
+
+    // Emit WebSocket event
+    req.app.get('wsServer')?.broadcast('harvest:started', harvest);
+
+    res.json({
+      success: true,
+      data: harvest,
+      message: 'Harvest collection started'
+    });
+  } catch (error) {
+    console.error('Error starting harvest:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to start harvest'
+    });
+  }
+});
+
+// Complete a harvest and store in barn
+router.post('/:id/complete', async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId || req.user?.id || 'default-user';
+    const { data, summary } = req.body;
+
+    const harvest = await harvestService.completeHarvest(id, userId, { data, summary });
+
+    if (!harvest) {
+      return res.status(404).json({
+        success: false,
+        error: 'Harvest not found'
+      });
+    }
+
+    // Store in barn
+    const barnService = require('../services/barnService').barnService;
+    const barnEntry = await barnService.storeHarvest(harvest);
+
+    // Emit WebSocket events
+    req.app.get('wsServer')?.broadcast('harvest:completed', harvest);
+    req.app.get('wsServer')?.broadcast('barn:stored', barnEntry);
+
+    res.json({
+      success: true,
+      data: harvest,
+      barnEntry: barnEntry,
+      message: 'Harvest completed and stored in barn'
+    });
+  } catch (error) {
+    console.error('Error completing harvest:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to complete harvest'
+    });
+  }
+});
+
+// Delete a harvest
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.userId || req.user?.id || 'default-user';
+
+    const deleted = await harvestService.deleteHarvest(id, userId);
+    
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        error: 'Harvest not found'
+      });
+    }
+
+    // Emit WebSocket event
+    req.app.get('wsServer')?.broadcast('harvest:deleted', { id });
+
+    res.json({
+      success: true,
+      message: 'Harvest deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting harvest:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete harvest'
+    });
+  }
+});
+
+// Get terminal output for a harvest's Claude agents
+router.get('/terminal/sessions', async (req: AuthRequest, res: Response) => {
+  try {
+    const { farmId } = req.query;
+    const { spawn } = require('child_process');
+    
+    // List all tmux sessions that look like farm or claude_agents sessions
+    const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}']);
+    let output = '';
+    
+    listSessions.stdout?.on('data', (data: Buffer) => {
+      output += data.toString();
+    });
+    
+    await new Promise(resolve => listSessions.on('exit', resolve));
+    
+    let sessions = output.trim().split('\n').filter(line => 
+      line.includes('farm_') || line.includes('claude_agents')
+    );
+    
+    // Filter by farmId if provided
+    if (farmId && typeof farmId === 'string') {
+      sessions = sessions.filter(sessionName => {
+        // Check if session name contains the farmId or its substring
+        if (sessionName.includes(farmId)) return true;
+        if (sessionName === `farm_${farmId}`) return true;
+        // Check for farmId substring (first 8 chars)
+        if (farmId.length >= 8) {
+          const shortId = farmId.substring(0, 8);
+          if (sessionName.includes(shortId)) return true;
+        }
+        return false;
+      });
+    }
+    
+    // Get details for each session
+    const sessionDetails = await Promise.all(sessions.map(async (sessionName) => {
+      const paneCount = await new Promise<number>((resolve) => {
+        const countPanes = spawn('tmux', ['list-panes', '-t', `${sessionName}:0`, '-F', '#{pane_index}']);
+        let paneOutput = '';
+        countPanes.stdout?.on('data', (data: Buffer) => { paneOutput += data.toString(); });
+        countPanes.on('exit', () => {
+          const count = paneOutput.trim().split('\n').filter(Boolean).length;
+          resolve(count);
+        });
+      });
+      
+      // Extract farmId from session name
+      let extractedFarmId: string | undefined;
+      const farmIdMatch = sessionName.match(/farm[_-]([a-zA-Z0-9-]+)/);
+      if (farmIdMatch) {
+        extractedFarmId = farmIdMatch[1];
+      } else if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(sessionName)) {
+        extractedFarmId = sessionName;
+      }
+      
+      return {
+        sessionName,
+        farmId: extractedFarmId,
+        paneCount,
+        windowName: 'agents',
+        active: true
+      };
+    }));
+    
+    res.json({
+      success: true,
+      data: sessionDetails
+    });
+  } catch (error) {
+    console.error('Error getting terminal sessions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get terminal sessions'
+    });
+  }
+});
+
+// Get terminal output for a specific agent
+router.get('/terminal/:sessionName/:agentId', async (req: AuthRequest, res: Response) => {
+  try {
+    const { sessionName, agentId } = req.params;
+    const { lines = 100 } = req.query;
+    const { spawn } = require('child_process');
+    
+    // Capture terminal output from tmux pane
+    const captureProcess = spawn('tmux', [
+      'capture-pane',
+      '-t', `${sessionName}:0.${agentId}`,
+      '-p',
+      '-S', `-${lines}` // Get last N lines
+    ]);
+    
+    let output = '';
+    let errorOutput = '';
+    
+    captureProcess.stdout?.on('data', (data: Buffer) => {
+      output += data.toString();
+    });
+    
+    captureProcess.stderr?.on('data', (data: Buffer) => {
+      errorOutput += data.toString();
+    });
+    
+    const exitCode = await new Promise<number>(resolve => {
+      captureProcess.on('exit', (code) => resolve(code || 0));
+    });
+    
+    if (exitCode !== 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Terminal session not found',
+        details: errorOutput
+      });
+    }
+    
+    // Parse terminal output to identify Claude agent
+    const lines_array = output.split('\n');
+    const agentInfo = {
+      id: agentId,
+      sessionName,
+      status: 'active'
+    };
+    
+    res.json({
+      success: true,
+      data: {
+        agent: agentInfo,
+        terminal: lines_array,
+        timestamp: new Date()
+      }
+    });
+  } catch (error) {
+    console.error('Error getting terminal output:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get terminal output'
+    });
+  }
+});
+
+// Send command to a specific agent terminal
+router.post('/terminal/:sessionName/:agentId/command', async (req: AuthRequest, res: Response) => {
+  try {
+    const { sessionName, agentId } = req.params;
+    const { command } = req.body;
+    const { spawn } = require('child_process');
+    
+    if (!command) {
+      return res.status(400).json({
+        success: false,
+        error: 'Command is required'
+      });
+    }
+    
+    // Send command to tmux pane
+    const sendProcess = spawn('tmux', [
+      'send-keys',
+      '-t', `${sessionName}:0.${agentId}`,
+      command,
+      'C-m' // Enter key
+    ]);
+    
+    const exitCode = await new Promise<number>(resolve => {
+      sendProcess.on('exit', (code) => resolve(code || 0));
+    });
+    
+    if (exitCode !== 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Failed to send command to terminal'
+      });
+    }
+    
+    // Emit WebSocket event
+    req.app.get('wsServer')?.broadcast('harvest:terminal:command', {
+      sessionName,
+      agentId,
+      command,
+      timestamp: new Date()
+    });
+    
+    res.json({
+      success: true,
+      message: 'Command sent successfully',
+      data: {
+        sessionName,
+        agentId,
+        command
+      }
+    });
+  } catch (error) {
+    console.error('Error sending command:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to send command'
+    });
+  }
+});
+
+export default router;

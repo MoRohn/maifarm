@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  LightBulbIcon, 
-  CheckCircleIcon, 
-  XCircleIcon,
-  ClockIcon,
-  DocumentTextIcon,
-  CodeBracketIcon,
-  ExclamationTriangleIcon,
-  ArrowPathIcon
-} from '@heroicons/react/24/outline';
-import { StarIcon } from '@heroicons/react/24/solid';
+  Lightbulb as LightBulbIcon, 
+  CheckCircle as CheckCircleIcon, 
+  XCircle as XCircleIcon,
+  Clock as ClockIcon,
+  FileText as DocumentTextIcon,
+  Code as CodeBracketIcon,
+  AlertTriangle as ExclamationTriangleIcon,
+  RefreshCw as ArrowPathIcon,
+  Star as StarIcon
+} from 'lucide-react';
 
 interface Discovery {
   id: string;
@@ -316,15 +316,6 @@ export const DiscoveryFeedback: React.FC<DiscoveryFeedbackProps> = ({
                           >
                             Reject
                           </button>
-                          {discovery.status === 'accepted' && (
-                            <button
-                              onClick={() => onImplement(discovery.id)}
-                              className="px-3 py-1 text-sm bg-indigo-600 text-white rounded-lg
-                                       hover:bg-indigo-700 transition-colors"
-                            >
-                              Implement
-                            </button>
-                          )}
                         </div>
                       )}
 

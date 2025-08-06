@@ -1,6 +1,31 @@
 /// <reference lib="webworker" />
+/* eslint-disable no-restricted-globals */
 
-declare const self: ServiceWorkerGlobalScope;
+declare let self: ServiceWorkerGlobalScope;
+export {};
+
+// Override event listener types to use proper service worker events
+interface ServiceWorkerGlobalScope {
+  caches: CacheStorage;
+  clients: Clients;
+  registration: ServiceWorkerRegistration;
+  skipWaiting(): Promise<void>;
+  addEventListener(type: 'install', listener: (event: ExtendableEvent) => void): void;
+  addEventListener(type: 'activate', listener: (event: ExtendableEvent) => void): void;
+  addEventListener(type: 'fetch', listener: (event: FetchEvent) => void): void;
+  addEventListener(type: 'push', listener: (event: PushEvent) => void): void;
+  addEventListener(type: 'sync', listener: (event: ExtendableEvent & { tag: string }) => void): void;
+  addEventListener(type: 'notificationclick', listener: (event: NotificationEvent) => void): void;
+}
+
+interface NotificationEvent extends ExtendableEvent {
+  readonly notification: Notification;
+  readonly action: string;
+}
+
+interface SyncEvent extends ExtendableEvent {
+  readonly tag: string;
+}
 
 const CACHE_NAME = 'maifarm-v2-cache-v1';
 const OFFLINE_CACHE_NAME = 'maifarm-v2-offline-v1';
@@ -24,7 +49,7 @@ const OFFLINE_API_PATTERNS = [
 ];
 
 // Install event - cache static assets
-self.addEventListener('install', (event) => {
+self.addEventListener('install', (event: ExtendableEvent) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[Service Worker] Caching static assets');
@@ -35,7 +60,7 @@ self.addEventListener('install', (event) => {
 });
 
 // Activate event - clean up old caches
-self.addEventListener('activate', (event) => {
+self.addEventListener('activate', (event: ExtendableEvent) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -54,7 +79,7 @@ self.addEventListener('activate', (event) => {
 });
 
 // Fetch event - implement caching strategies
-self.addEventListener('fetch', (event) => {
+self.addEventListener('fetch', (event: FetchEvent) => {
   const { request } = event;
   const url = new URL(request.url);
 
@@ -80,7 +105,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 // Handle background sync for failed requests
-self.addEventListener('sync', (event) => {
+self.addEventListener('sync', (event: SyncEvent) => {
   if (event.tag === 'sync-farms') {
     event.waitUntil(syncFarms());
   } else if (event.tag === 'sync-analytics') {
@@ -89,7 +114,7 @@ self.addEventListener('sync', (event) => {
 });
 
 // Handle push notifications
-self.addEventListener('push', (event) => {
+self.addEventListener('push', (event: PushEvent) => {
   if (!event.data) return;
 
   const data = event.data.json();
@@ -97,21 +122,10 @@ self.addEventListener('push', (event) => {
     body: data.body,
     icon: '/assets/logo-192.png',
     badge: '/assets/badge-72.png',
-    vibrate: [100, 50, 100],
     data: {
       dateOfArrival: Date.now(),
       primaryKey: data.id,
     },
-    actions: [
-      {
-        action: 'view',
-        title: 'View',
-      },
-      {
-        action: 'dismiss',
-        title: 'Dismiss',
-      },
-    ],
   };
 
   event.waitUntil(
@@ -120,12 +134,12 @@ self.addEventListener('push', (event) => {
 });
 
 // Handle notification clicks
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close();
 
   if (event.action === 'view') {
     event.waitUntil(
-      self.clients.openWindow('/farms/' + event.notification.data.primaryKey)
+      (self as any).clients.openWindow('/farms/' + event.notification.data.primaryKey)
     );
   }
 });
@@ -208,7 +222,7 @@ async function networkFirst(request: Request): Promise<Response> {
 }
 
 function isStaticAsset(pathname: string): boolean {
-  return pathname.match(/\.(js|css|png|jpg|jpeg|svg|gif|woff|woff2|ttf|eot)$/);
+  return !!pathname.match(/\.(js|css|png|jpg|jpeg|svg|gif|woff|woff2|ttf|eot)$/);
 }
 
 async function syncFarms(): Promise<void> {

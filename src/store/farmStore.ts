@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Farm, Agent, FarmMetrics } from '../types'
+import { farmService } from '../services/farmService'
 
 interface FarmStats {
   activeFarms: number
@@ -19,16 +20,23 @@ interface FarmState {
     avgCpuUsage: number
     efficiencyScore: number
   }
+  loading: boolean
+  error: string | null
   addFarm: (farm: Farm) => void
   updateFarm: (id: string, updates: Partial<Farm>) => void
   removeFarm: (id: string) => void
   setActiveFarms: (farms: Farm[]) => void
   updateStats: (stats: Partial<FarmStats>) => void
+  fetchFarms: () => Promise<void>
+  setError: (error: string | null) => void
+  reorderFarms: (startIndex: number, endIndex: number) => void
+  reorderAgentsInFarm: (farmId: string, startIndex: number, endIndex: number) => void
+  moveAgentBetweenFarms: (sourceFarmId: string, destFarmId: string, agentId: string, destIndex: number) => void
 }
 
 export const useFarmStore = create<FarmState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       farms: [],
       activeFarms: [],
       recentFarms: [],
@@ -43,14 +51,20 @@ export const useFarmStore = create<FarmState>()(
         avgCpuUsage: 45,
         efficiencyScore: 88,
       },
+      loading: false,
+      error: null,
       
-      addFarm: (farm) => set((state) => ({
-        farms: [...state.farms, farm],
-        activeFarms: farm.status === 'active' 
-          ? [...state.activeFarms, farm]
-          : state.activeFarms,
-        recentFarms: [farm, ...state.recentFarms].slice(0, 5),
-      })),
+      addFarm: (farm) => set((state) => {
+        // Ensure farm has agents array
+        const normalizedFarm = { ...farm, agents: farm.agents || [] };
+        return {
+          farms: [...state.farms, normalizedFarm],
+          activeFarms: (normalizedFarm.status === 'active' || normalizedFarm.status === 'launching')
+            ? [...state.activeFarms, normalizedFarm]
+            : state.activeFarms,
+          recentFarms: [normalizedFarm, ...state.recentFarms].slice(0, 5),
+        };
+      }),
       
       updateFarm: (id, updates) => set((state) => ({
         farms: state.farms.map((f) => 
@@ -71,6 +85,72 @@ export const useFarmStore = create<FarmState>()(
       updateStats: (stats) => set((state) => ({
         stats: { ...state.stats, ...stats },
       })),
+      
+      fetchFarms: async () => {
+        set({ loading: true, error: null });
+        try {
+          const { farms } = await farmService.fetchFarms();
+          // Ensure all farms have agents arrays
+          const normalizedFarms = farms.map(f => ({ ...f, agents: f.agents || [] }));
+          const activeFarms = normalizedFarms.filter(f => f.status === 'active' || f.status === 'launching');
+          set({ 
+            farms: normalizedFarms, 
+            activeFarms,
+            recentFarms: normalizedFarms.slice(0, 5),
+            stats: {
+              activeFarms: activeFarms.length,
+              totalAgents: farms.reduce((sum, f) => sum + (f.agents?.length || 0), 0),
+              tasksCompleted: farms.reduce((sum, f) => sum + f.metrics.completedTasks, 0),
+              successRate: farms.length > 0 
+                ? Math.round(farms.reduce((sum, f) => sum + (f.metrics.completedTasks / (f.metrics.totalTasks || 1) * 100), 0) / farms.length)
+                : 0
+            },
+            loading: false 
+          });
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to fetch farms',
+            loading: false 
+          });
+        }
+      },
+      
+      setError: (error) => set({ error }),
+
+      reorderFarms: (startIndex, endIndex) => set((state) => {
+        const result = Array.from(state.farms);
+        const [removed] = result.splice(startIndex, 1);
+        result.splice(endIndex, 0, removed);
+        return { farms: result };
+      }),
+
+      reorderAgentsInFarm: (farmId, startIndex, endIndex) => set((state) => ({
+        farms: state.farms.map(farm => {
+          if (farm.id === farmId) {
+            const agents = Array.from(farm.agents);
+            const [removed] = agents.splice(startIndex, 1);
+            agents.splice(endIndex, 0, removed);
+            return { ...farm, agents };
+          }
+          return farm;
+        })
+      })),
+
+      moveAgentBetweenFarms: (sourceFarmId, destFarmId, agentId, destIndex) => set((state) => {
+        const farms = [...state.farms];
+        const sourceFarm = farms.find(f => f.id === sourceFarmId);
+        const destFarm = farms.find(f => f.id === destFarmId);
+        
+        if (!sourceFarm || !destFarm) return state;
+        
+        const agentIndex = sourceFarm.agents.findIndex(a => a.id === agentId);
+        if (agentIndex === -1) return state;
+        
+        const [agent] = sourceFarm.agents.splice(agentIndex, 1);
+        destFarm.agents.splice(destIndex, 0, agent);
+        
+        return { farms };
+      }),
     }),
     {
       name: 'maifarm-farms',

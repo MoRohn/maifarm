@@ -1,0 +1,189 @@
+name: Trump Infog
+description: Generate a newspaper level quality infographic about current Trump administration news and policies
+project_type: collaborative
+max_agents: 5
+resource_limits:
+  cpu: 4000m
+  memory: 8Gi
+
+agents:
+  - name: Backend API Specialist
+    id: agent_backend
+    role: Backend API and business logic
+    capabilities:
+      - Design and implement RESTful APIs
+      - Handle data processing and transformation
+      - Integrate with news APIs and data sources
+      - Implement business logic for infographic generation
+      - Ensure API security and rate limiting
+    initial_prompt: |
+      You are the Backend API Specialist for Trump Infog. Your responsibilities include:
+      1. Design and implement APIs for fetching news data
+      2. Create endpoints for infographic generation
+      3. Implement data aggregation and processing
+      4. Set up authentication and authorization
+      5. Ensure scalable backend architecture
+      
+      Coordinate with other agents through:
+      - API documentation in /docs/api/
+      - Interface definitions in /src/types/
+      - Status updates in /tmp/claude_coordination/
+
+  - name: Frontend UI Designer
+    id: agent_frontend
+    role: Frontend UI and user experience
+    capabilities:
+      - Build responsive React components
+      - Create interactive infographic visualizations
+      - Implement smooth user workflows
+      - Design intuitive interfaces
+      - Optimize performance and accessibility
+    initial_prompt: |
+      You are the Frontend UI Designer for Trump Infog. Your responsibilities include:
+      1. Create React components for infographic display
+      2. Build interactive data visualizations
+      3. Design responsive layouts
+      4. Implement user-friendly navigation
+      5. Ensure accessibility standards
+      
+      Coordinate with other agents through:
+      - Component interfaces in /src/components/
+      - Shared types in /src/types/
+      - API integration specs
+
+  - name: Data Manager
+    id: agent_data
+    role: Database and data management
+    capabilities:
+      - Design database schemas
+      - Implement data models
+      - Set up caching strategies
+      - Handle data migrations
+      - Optimize query performance
+    initial_prompt: |
+      You are the Data Manager for Trump Infog. Your responsibilities include:
+      1. Design PostgreSQL schemas for news data
+      2. Implement Redis caching for performance
+      3. Create data models and migrations
+      4. Set up data retention policies
+      5. Ensure data integrity and security
+      
+      Coordinate with other agents through:
+      - Schema definitions in /server/database/
+      - Model interfaces in /server/models/
+      - Migration scripts in /server/migrations/
+
+  - name: Quality Assurance Engineer
+    id: agent_testing
+    role: Testing, CI/CD, and deployment
+    capabilities:
+      - Write comprehensive test suites
+      - Set up CI/CD pipelines
+      - Implement monitoring and logging
+      - Configure deployment environments
+      - Ensure code quality standards
+    initial_prompt: |
+      You are the Quality Assurance Engineer for Trump Infog. Your responsibilities include:
+      1. Write unit and integration tests
+      2. Set up E2E testing with Cypress
+      3. Configure GitHub Actions CI/CD
+      4. Implement monitoring with Prometheus
+      5. Ensure 80%+ test coverage
+      
+      Coordinate with other agents through:
+      - Test specifications in /tests/
+      - CI/CD configs in /.github/workflows/
+      - Quality reports in /docs/qa/
+
+  - name: News Integration Specialist
+    id: agent_news
+    role: News API integration and content curation
+    capabilities:
+      - Integrate multiple news sources
+      - Implement content filtering and validation
+      - Handle real-time news updates
+      - Ensure factual accuracy
+      - Manage API rate limits
+    initial_prompt: |
+      You are the News Integration Specialist for Trump Infog. Your responsibilities include:
+      1. Integrate major news APIs (Reuters, AP, etc.)
+      2. Implement content validation and fact-checking
+      3. Set up real-time news monitoring
+      4. Create content categorization system
+      5. Handle API authentication and rate limiting
+      
+      Coordinate with other agents through:
+      - News service interfaces in /server/services/news/
+      - Content models in /src/types/news/
+      - API documentation in /docs/integrations/
+
+orchestration:
+  coordination_path: /tmp/claude_coordination
+  shared_workspace: /Users/rohnspringfield/maifarm/trump-infog
+  communication:
+    - type: file_based
+      path: /tmp/claude_coordination/messages
+    - type: git_commits
+      repo: ./
+  
+workflows:
+  - name: Initial Setup
+    steps:
+      - Create project structure
+      - Set up development environment
+      - Initialize database schemas
+      - Configure API integrations
+    
+  - name: Core Development
+    steps:
+      - Implement news fetching APIs
+      - Build infographic generation engine
+      - Create frontend components
+      - Set up data processing pipeline
+    
+  - name: Integration and Testing
+    steps:
+      - Integrate all components
+      - Write comprehensive tests
+      - Set up monitoring
+      - Deploy to staging
+
+key_requirements:
+  - code_quality:
+      - Follow TypeScript best practices
+      - Maintain consistent code style
+      - Document all public APIs
+      - Use meaningful variable names
+  
+  - error_handling:
+      - Implement try-catch blocks
+      - Create custom error classes
+      - Log errors with context
+      - Provide user-friendly error messages
+  
+  - testing:
+      - Unit tests for all utilities
+      - Integration tests for APIs
+      - E2E tests for critical flows
+      - Performance testing for visualizations
+  
+  - scalability:
+      - Use connection pooling
+      - Implement caching strategies
+      - Optimize database queries
+      - Enable horizontal scaling
+  
+  - modern_practices:
+      - Use ESM modules
+      - Implement CI/CD pipelines
+      - Follow SOLID principles
+      - Use dependency injection
+
+success_criteria:
+  - All APIs respond within 200ms
+  - 80%+ test coverage
+  - Zero critical security vulnerabilities
+  - Supports 1000+ concurrent users
+  - Generates infographics in < 5 seconds
+  - Mobile-responsive design
+  - WCAG 2.1 AA compliance

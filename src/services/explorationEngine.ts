@@ -163,7 +163,7 @@ export class ExplorationEngine {
   }
 
   private generatePathName(strategy: string, concepts: string[]): string {
-    const names = {
+    const names: Record<string, string> = {
       incremental: `Iterative Enhancement: ${concepts[0] || 'System'}`,
       revolutionary: `Paradigm Shift: ${concepts[0] || 'Architecture'}`,
       experimental: `Experimental Exploration: ${concepts[0] || 'Features'}`
@@ -172,7 +172,7 @@ export class ExplorationEngine {
   }
 
   private generatePathDescription(strategy: string, concepts: string[]): string {
-    const descriptions = {
+    const descriptions: Record<string, string> = {
       incremental: `Gradual improvements focusing on ${concepts.join(', ')}`,
       revolutionary: `Complete reimagining of ${concepts.join(' and ')}`,
       experimental: `Exploratory approach to discover new possibilities in ${concepts.join(', ')}`
@@ -207,7 +207,7 @@ export class ExplorationEngine {
   }
 
   private getTaskTemplates(strategy: string): any[] {
-    const templates = {
+    const templates: Record<string, any[]> = {
       incremental: [
         { category: 'optimization', priority: 'medium', complexity: 3 },
         { category: 'refactor', priority: 'low', complexity: 4 },
@@ -254,7 +254,7 @@ export class ExplorationEngine {
   }
 
   private generateTaskTitle(category: string, concept: string): string {
-    const titles = {
+    const titles: Record<string, string> = {
       feature: `Implement enhanced ${concept} capabilities`,
       optimization: `Optimize ${concept} performance`,
       refactor: `Refactor ${concept} architecture`,
@@ -265,7 +265,7 @@ export class ExplorationEngine {
   }
 
   private generateTaskDescription(category: string, concept: string): string {
-    const descriptions = {
+    const descriptions: Record<string, string> = {
       feature: `Add new capabilities to the ${concept} system with focus on user experience`,
       optimization: `Improve performance and efficiency of ${concept} operations`,
       refactor: `Restructure ${concept} code for better maintainability`,
@@ -282,7 +282,7 @@ export class ExplorationEngine {
   }
 
   private generateApproach(category: string, concept: string): string {
-    const approaches = {
+    const approaches: Record<string, string> = {
       feature: `1. Analyze user needs\n2. Design interface\n3. Implement core logic\n4. Add tests`,
       optimization: `1. Profile current performance\n2. Identify bottlenecks\n3. Implement optimizations\n4. Measure improvements`,
       refactor: `1. Analyze current structure\n2. Design new architecture\n3. Incremental refactoring\n4. Update tests`,
@@ -293,7 +293,7 @@ export class ExplorationEngine {
   }
 
   private identifyRisks(category: string, complexity: number): string[] {
-    const baseRisks = {
+    const baseRisks: Record<string, string[]> = {
       feature: ['Scope creep', 'User adoption'],
       optimization: ['Breaking changes', 'Marginal gains'],
       refactor: ['Regression bugs', 'Time investment'],
@@ -315,7 +315,7 @@ export class ExplorationEngine {
   }
 
   private generateExpectedOutcome(category: string, concept: string): string {
-    const outcomes = {
+    const outcomes: Record<string, string> = {
       feature: `Enhanced ${concept} with new capabilities improving user productivity`,
       optimization: `30-50% performance improvement in ${concept} operations`,
       refactor: `Cleaner, more maintainable ${concept} codebase`,
@@ -336,7 +336,7 @@ export class ExplorationEngine {
   }
 
   private determineRequiredSkills(category: string): string[] {
-    const skillMap = {
+    const skillMap: Record<string, string[]> = {
       feature: ['React', 'TypeScript', 'UI/UX', 'Testing'],
       optimization: ['Performance', 'Profiling', 'Algorithms', 'Caching'],
       refactor: ['Architecture', 'Design Patterns', 'Clean Code', 'Testing'],
@@ -407,7 +407,7 @@ export class ExplorationEngine {
     let innovation = 50; // Base innovation
     
     // Strategy bonus
-    const strategyBonus = {
+    const strategyBonus: Record<string, number> = {
       incremental: 10,
       revolutionary: 40,
       experimental: 30
@@ -424,7 +424,7 @@ export class ExplorationEngine {
     innovation += experimentalTasks * 10;
     
     // Risk tolerance bonus
-    const riskBonus = {
+    const riskBonus: Record<string, number> = {
       conservative: -10,
       moderate: 0,
       aggressive: 15,

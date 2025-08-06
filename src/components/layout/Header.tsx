@@ -1,21 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, CreditCard, Menu, X, User, Settings, LogOut } from 'lucide-react';
-import { User as UserType, Notification } from '@/types';
+import { CreditCard, Menu, X, User, Settings, LogOut } from 'lucide-react';
+import { User as UserType } from '@/types';
+import { useThemeStore } from '@/store/themeStore';
 
 interface HeaderProps {
   user: UserType;
-  notifications: Notification[];
   onMenuClick?: () => void;
 }
 
-export function Header({ user, notifications, onMenuClick }: HeaderProps) {
-  const [showNotifications, setShowNotifications] = useState(false);
+export function Header({ user, onMenuClick }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const theme = useThemeStore((state) => state.theme);
+  
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  
+  useEffect(() => {
+    const checkDarkMode = () => {
+      if (theme === 'dark') {
+        setIsDarkMode(true);
+        console.log('Theme is dark, using dark favicon');
+      } else if (theme === 'light') {
+        setIsDarkMode(false);
+        console.log('Theme is light, using light favicon');
+      } else {
+        // System theme
+        const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setIsDarkMode(isSystemDark);
+        console.log('Theme is system, detected:', isSystemDark ? 'dark' : 'light');
+      }
+    };
+    
+    checkDarkMode();
+    
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => checkDarkMode();
+    mediaQuery.addEventListener('change', handleChange);
+    
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [theme]);
 
   return (
-    <header className="sticky top-0 z-50 glass border-b border-gray-200/50 dark:border-gray-700/50">
+    <header className="sticky top-0 z-[100] glass border-b border-gray-200/50 dark:border-gray-700/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Left section */}
@@ -29,9 +56,13 @@ export function Header({ user, notifications, onMenuClick }: HeaderProps) {
             
             <div className="flex items-center space-x-2">
               <img 
-                src="/assets/logos/maifarm-icon.svg" 
+                src={isDarkMode ? "/favicon-dark.svg" : "/favicon-light.svg"} 
                 alt="MaiFarm" 
-                className="w-8 h-8"
+                className="w-7 h-7"
+                onError={(e) => {
+                  console.error('Failed to load favicon:', e.currentTarget.src);
+                  e.currentTarget.src = '/favicon-light.svg'; // Fallback
+                }}
               />
               <h1 className="text-xl font-semibold hidden sm:block">MaiFarm</h1>
             </div>
@@ -45,58 +76,6 @@ export function Header({ user, notifications, onMenuClick }: HeaderProps) {
               <span className="text-sm font-medium text-primary-700 dark:text-primary-300">
                 {user.credits.toLocaleString()} credits
               </span>
-            </div>
-
-            {/* Notifications */}
-            <div className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-smooth"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-
-              <AnimatePresence>
-                {showNotifications && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute right-0 mt-2 w-80 card p-4 space-y-3"
-                  >
-                    <h3 className="font-semibold text-sm">Notifications</h3>
-                    {notifications.length === 0 ? (
-                      <p className="text-sm text-gray-500">No new notifications</p>
-                    ) : (
-                      <div className="space-y-2 max-h-96 overflow-y-auto">
-                        {notifications.map((notification) => (
-                          <div
-                            key={notification.id}
-                            className={`p-3 rounded-lg ${
-                              notification.read 
-                                ? 'bg-gray-50 dark:bg-gray-800/50' 
-                                : 'bg-primary-50 dark:bg-primary-900/20'
-                            }`}
-                          >
-                            <h4 className="font-medium text-sm">{notification.title}</h4>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                              {notification.message}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-2">
-                              {new Date(notification.timestamp).toLocaleTimeString()}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
             {/* User menu */}
@@ -127,7 +106,7 @@ export function Header({ user, notifications, onMenuClick }: HeaderProps) {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute right-0 mt-2 w-56 card divide-y divide-gray-100 dark:divide-gray-800"
+                    className="absolute right-0 mt-2 w-56 card divide-y divide-gray-100 dark:divide-gray-800 z-[110]"
                   >
                     <div className="p-4">
                       <p className="text-sm font-medium">{user.name}</p>

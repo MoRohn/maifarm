@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Connection Test</title>
+    <script type="module">
+        import { io } from '/node_modules/socket.io-client/dist/socket.io.esm.min.js';
+        
+        window.testWebSocket = function() {
+            const logs = document.getElementById('logs');
+            
+            function log(message, type = 'info') {
+                const div = document.createElement('div');
+                div.className = `log ${type}`;
+                div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                logs.appendChild(div);
+                console.log(message);
+            }
+            
+            log('Starting WebSocket connection test...');
+            
+            // Test the same way the app connects
+            const socket = io('http://localhost:4567', {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                reconnectionAttempts: 10,
+                path: '/socket.io/',
+                timeout: 20000,
+                autoConnect: true,
+                withCredentials: true,
+                auth: {
+                    userId: 'local-user'
+                },
+                upgrade: true,
+                rememberUpgrade: true
+            });
+            
+            socket.on('connect', () => {
+                log('✅ WebSocket connected successfully!', 'success');
+                log(`Socket ID: ${socket.id}`, 'info');
+                log(`Transport: ${socket.io.engine.transport.name}`, 'info');
+                
+                // Subscribe to metrics
+                socket.emit('metrics:subscribe', {});
+            });
+            
+            socket.on('disconnect', (reason) => {
+                log(`❌ WebSocket disconnected: ${reason}`, 'error');
+            });
+            
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection error: ${error.message}`, 'error');
+                log(`Error type: ${error.type}`, 'error');
+            });
+            
+            socket.on('ping', () => {
+                log('← Received ping from server', 'info');
+                socket.emit('pong');
+                log('→ Sent pong to server', 'info');
+            });
+            
+            socket.on('connected', (data) => {
+                log(`✅ Server acknowledged connection: ${JSON.stringify(data)}`, 'success');
+            });
+            
+            socket.on('metrics:update', (event) => {
+                if (event.data?.dashboard) {
+                    log(`📊 Metrics: Farms=${event.data.dashboard.activeFarms}, Agents=${event.data.dashboard.totalAgents}, Tasks=${event.data.dashboard.tasksCompleted}, Success=${event.data.dashboard.successRate}%`, 'info');
+                }
+            });
+            
+            window.socket = socket;
+        }
+    </script>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .log {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #333;
+            font-size: 14px;
+        }
+        .error {
+            color: #ff0000;
+            border-left-color: #ff0000;
+        }
+        .success {
+            color: #00ff00;
+            border-left-color: #00ff00;
+        }
+        .info {
+            color: #0088ff;
+            border-left-color: #0088ff;
+        }
+        button {
+            background: #0088ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        button:hover {
+            background: #0066cc;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <p>This test page simulates the exact connection method used by the MaiFarm app.</p>
+    <button onclick="testWebSocket()">Test WebSocket Connection</button>
+    <button onclick="location.reload()">Reload Page</button>
+    <div id="logs"></div>
+</body>
+</html>

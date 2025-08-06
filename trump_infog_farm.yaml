@@ -1,0 +1,278 @@
+name: Trump Infog
+description: Generate newspaper-quality infographics analyzing Trump-related news using specialized AI agents for data collection, analysis, design, and assembly
+
+agents:
+  - name: 📰 Data Collector
+    role: News gathering and validation specialist
+    capabilities:
+      - News API Integration
+      - RSS Feed Processing
+      - Web Scraping (BeautifulSoup/Puppeteer)
+      - Content Validation
+      - Source Attribution Management
+      - Duplicate Detection
+      - Rate Limiting Compliance
+    personality: Thorough and methodical with strong attention to source credibility
+    responsibilities:
+      - Collect Trump-related articles from multiple news sources
+      - Validate article relevance and authenticity
+      - Extract and store metadata (dates, authors, sources)
+      - Maintain proper attribution and citations
+      - Output structured JSON data for processing
+    
+  - name: 🧠 Content Analyzer
+    role: NLP and content analysis expert
+    capabilities:
+      - Natural Language Processing
+      - Sentiment Analysis
+      - Theme Extraction
+      - Entity Recognition
+      - Fact Verification
+      - Statistical Analysis
+      - Trend Detection
+    personality: Analytical and detail-oriented with focus on accuracy
+    responsibilities:
+      - Process articles from Data Collector
+      - Extract key themes and talking points
+      - Perform sentiment analysis on content
+      - Identify patterns and trends
+      - Create hierarchical content structure
+      - Generate summary statistics
+    
+  - name: 🎨 Design Generator
+    role: Visual design and layout specialist
+    capabilities:
+      - Infographic Layout Design
+      - Color Theory Application
+      - Typography Selection
+      - Data Visualization (D3.js/Chart.js)
+      - SVG/Canvas Manipulation
+      - Responsive Design Principles
+      - Brand Consistency
+    personality: Creative and visually-focused with eye for impactful design
+    responsibilities:
+      - Create dynamic infographic templates
+      - Design visual elements and icons
+      - Select appropriate chart types for data
+      - Implement color schemes and typography
+      - Ensure accessibility standards
+      - Optimize for multiple output formats
+    
+  - name: 🏭 Output Assembler
+    role: Final production and quality assurance
+    capabilities:
+      - Image Generation (Canvas/SVG to PNG)
+      - PDF Creation and Optimization
+      - Multi-format Export
+      - Quality Validation
+      - Performance Optimization
+      - Distribution Preparation
+    personality: Detail-oriented perfectionist ensuring publication-ready output
+    responsibilities:
+      - Merge analyzed content with design templates
+      - Generate high-quality infographic files
+      - Perform quality checks and validation
+      - Create multiple format exports (PNG/PDF/SVG)
+      - Optimize file sizes and performance
+      - Prepare distribution-ready packages
+
+initial_prompt: |
+  Welcome to the Trump Infog project! You are part of a specialized 4-agent team creating 
+  newspaper-quality infographics analyzing Trump-related news and information.
+  
+  Project Architecture:
+  - Sequential Pipeline: Data Collection → Content Analysis → Design Generation → Output Assembly
+  - Event-Driven Coordination: WebSocket + file-based messaging for real-time updates
+  - Quality Gates: Validation checkpoints between each processing stage
+  
+  Your Specialized Role:
+  - Agent 0 (Data Collector): Gather and validate Trump-related news from multiple sources
+  - Agent 1 (Content Analyzer): Extract themes, sentiment, and create content hierarchy
+  - Agent 2 (Design Generator): Create visual layouts and design elements
+  - Agent 3 (Output Assembler): Combine content and design into final infographic
+  
+  Coordination Protocol:
+  1. Monitor /tmp/claude_coordination/trump_infog/ for task assignments
+  2. Check shared_state.json for current pipeline status
+  3. Emit events when your phase completes (via WebSocket)
+  4. Watch for upstream completion events before starting
+  5. Store outputs in your designated directory
+  
+  Quality Standards:
+  - Content accuracy: >95%
+  - Design consistency: >90%
+  - Processing time: <15 minutes total
+  - Zero data loss between stages
+  
+  Begin by checking your agent ID and reviewing the current pipeline state.
+
+steps:
+  - content: Phase 1 - Data Collection
+    description: |
+      Agent 0 (Data Collector) executes news gathering pipeline:
+      - Query NewsAPI for Trump-related articles (last 24-48 hours)
+      - Parse RSS feeds from major news outlets
+      - Validate content relevance using keyword matching
+      - Remove duplicate articles based on similarity threshold
+      - Extract metadata (title, source, author, date, URL)
+      - Store raw data in /tmp/trump_infog/raw_data/articles.json
+      - Emit "data_collected" event with article count
+
+  - content: Phase 2 - Content Analysis
+    description: |
+      Agent 1 (Content Analyzer) processes collected articles:
+      - Load articles from Data Collector output
+      - Perform NLP analysis on article content
+      - Extract key themes and entities
+      - Calculate sentiment scores per article
+      - Identify trending topics and patterns
+      - Create hierarchical content structure
+      - Generate summary statistics
+      - Store analysis in /tmp/trump_infog/analyzed_content/
+      - Emit "analysis_complete" event
+
+  - content: Phase 3 - Design Generation
+    description: |
+      Agent 2 (Design Generator) creates visual framework:
+      - Load analysis data and statistics
+      - Select appropriate infographic template
+      - Design data visualizations (charts, graphs)
+      - Create visual hierarchy for content
+      - Apply consistent color scheme and typography
+      - Generate SVG elements for icons and graphics
+      - Prepare responsive layout structure
+      - Store designs in /tmp/trump_infog/design_assets/
+      - Emit "design_ready" event
+
+  - content: Phase 4 - Output Assembly
+    description: |
+      Agent 3 (Output Assembler) produces final infographic:
+      - Merge analyzed content with design templates
+      - Render data visualizations with actual data
+      - Generate high-resolution PNG (1920x1080, 300 DPI)
+      - Create print-ready PDF (A4, CMYK)
+      - Export scalable SVG version
+      - Perform quality validation checks
+      - Optimize file sizes for distribution
+      - Store outputs in /tmp/trump_infog/final_output/
+      - Emit "infographic_complete" event
+
+config:
+  autoScale: false
+  maxAgents: 4
+  timeout: 3600
+  coordination: sequential_pipeline
+  stagger: 15
+  resources:
+    cpu: "4000m"
+    memory: "8Gi"
+    storage: "10Gi"
+  environment:
+    NODE_ENV: development
+    BYPASS_AUTH: true
+    AI_PROVIDER: claude
+    NEWS_API_KEY: "${NEWS_API_KEY}"
+    ENABLE_WEBSOCKET: true
+    COORDINATION_PATH: "/tmp/claude_coordination/trump_infog"
+
+workflow:
+  type: sequential_pipeline
+  phases:
+    - name: initialization
+      duration: 2m
+      agents: all
+      parallel: true
+      tasks:
+        - validate_api_credentials
+        - create_working_directories
+        - load_shared_configuration
+    
+    - name: data_collection
+      duration: 5m
+      agents: ["agent_0"]
+      tasks:
+        - fetch_news_articles
+        - validate_content
+        - store_raw_data
+    
+    - name: content_analysis
+      duration: 5m
+      agents: ["agent_1"]
+      dependencies: ["data_collection"]
+      tasks:
+        - nlp_processing
+        - theme_extraction
+        - sentiment_analysis
+    
+    - name: design_generation
+      duration: 3m
+      agents: ["agent_2"]
+      parallel_with: ["content_analysis"]
+      tasks:
+        - template_selection
+        - visual_design
+        - layout_preparation
+    
+    - name: output_assembly
+      duration: 5m
+      agents: ["agent_3"]
+      dependencies: ["content_analysis", "design_generation"]
+      tasks:
+        - merge_components
+        - render_outputs
+        - quality_validation
+
+coordination:
+  strategy: event_driven_file_based
+  communication:
+    primary: websocket
+    fallback: file_monitoring
+  shared_state: /tmp/trump_infog/shared_state.json
+  event_types:
+    - data_collected
+    - analysis_complete
+    - design_ready
+    - infographic_complete
+  health_check_interval: 30s
+
+quality_metrics:
+  content_accuracy: 0.95
+  design_consistency: 0.90
+  processing_speed: 15m
+  error_tolerance: 0.02
+  output_quality: 0.95
+
+output_specifications:
+  formats:
+    - type: png
+      resolution: 1920x1080
+      dpi: 300
+      color_mode: RGB
+    - type: pdf
+      size: A4
+      orientation: portrait
+      color_mode: CMYK
+    - type: svg
+      scalable: true
+      optimized: true
+  storage:
+    path: /tmp/trump_infog/final_output/
+    retention: 7d
+
+metadata:
+  created_at: 2025-08-05T16:30:00.000Z
+  updated_at: 2025-08-05T16:30:00.000Z
+  version: 2.0.0
+  ai_generated: true
+  purpose: infographic_generation
+  project_type: specialized_pipeline
+  num_agents: 4
+  complexity: high
+  estimated_duration: 20m
+  tags:
+    - trump-news
+    - infographic
+    - data-visualization
+    - multi-agent
+    - specialized-pipeline
+    - real-time-analysis

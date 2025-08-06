@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Plus, 
@@ -8,61 +8,96 @@ import {
   Wand2,
   Rocket,
   Brain,
-  Code2
+  Code2,
+  Terminal,
+  Leaf
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useNavigate } from 'react-router-dom';
+import { FarmCreator } from '../Farm/FarmCreator';
+import { GoWildModal } from '../GoWild/GoWildModal';
+import { QuickTaskModal } from '../Task/QuickTaskModal';
+import { useFarmStore } from '../../store/farmStore';
+import { api } from '../../services/apiClient';
 
 interface QuickAction {
   id: string;
   title: string;
   description: string;
   icon: React.ElementType;
-  color: 'primary' | 'green' | 'purple' | 'orange';
+  color: 'blue' | 'green' | 'purple' | 'orange';
   onClick: () => void;
 }
 
 export const QuickActions: React.FC = () => {
+  const navigate = useNavigate();
+  const [showFarmCreator, setShowFarmCreator] = useState(false);
+  const [showGoWild, setShowGoWild] = useState(false);
+  const [showAIYAML, setShowAIYAML] = useState(false);
+  const [showQuickTask, setShowQuickTask] = useState(false);
+  
+  const { addFarm } = useFarmStore();
+
+  const handleNewFarm = () => {
+    setShowFarmCreator(true);
+  };
+
+  const handleGoWild = () => {
+    // Go Wild modal now handles its own farm creation
+    setShowGoWild(true);
+  };
+
+  const handleAIYAML = () => {
+    setShowAIYAML(true);
+    // For now, redirect to farm creator with YAML tab selected
+    setShowFarmCreator(true);
+  };
+
+  const handleQuickTask = () => {
+    setShowQuickTask(true);
+  };
+
   const actions: QuickAction[] = [
     {
       id: 'new-farm',
       title: 'New Farm',
       description: 'Create a new agent farm',
       icon: Plus,
-      color: 'primary',
-      onClick: () => console.log('New Farm'),
+      color: 'blue',
+      onClick: handleNewFarm,
     },
     {
-      id: 'ai-yaml',
-      title: 'AI YAML',
-      description: 'Generate config from prompt',
-      icon: Wand2,
-      color: 'purple',
-      onClick: () => console.log('AI YAML'),
+      id: 'seeds',
+      title: 'Seeds',
+      description: 'Start from a template',
+      icon: Leaf,
+      color: 'green',
+      onClick: () => navigate('/farms/new'),
     },
     {
       id: 'go-wild',
       title: 'Go Wild',
       description: 'Let agents explore freely',
       icon: Sparkles,
-      color: 'green',
-      onClick: () => console.log('Go Wild'),
+      color: 'orange',
+      onClick: handleGoWild,
     },
     {
       id: 'quick-task',
       title: 'Quick Task',
       description: 'Start a simple task',
       icon: Zap,
-      color: 'orange',
-      onClick: () => console.log('Quick Task'),
+      color: 'purple',
+      onClick: handleQuickTask,
     },
   ];
 
   const colorClasses = {
-    primary: {
-      bg: 'bg-primary-100 dark:bg-primary-900/30',
-      hover: 'hover:bg-primary-200 dark:hover:bg-primary-900/50',
-      icon: 'text-primary-600 dark:text-primary-400',
-      border: 'border-primary-200 dark:border-primary-800',
+    blue: {
+      bg: 'bg-blue-100 dark:bg-blue-900/30',
+      hover: 'hover:bg-blue-200 dark:hover:bg-blue-900/50',
+      icon: 'text-blue-600 dark:text-blue-400',
+      border: 'border-blue-200 dark:border-blue-800',
     },
     green: {
       bg: 'bg-green-100 dark:bg-green-900/30',
@@ -148,29 +183,29 @@ export const QuickActions: React.FC = () => {
         })}
       </div>
 
-      {/* Featured Actions */}
-      <div className="mt-6 p-4 bg-gradient-to-r from-primary-50 to-purple-50 dark:from-primary-900/20 dark:to-purple-900/20 rounded-apple-lg border border-primary-200 dark:border-primary-800">
-        <div className="flex items-start space-x-3">
-          <div className="p-2 bg-white dark:bg-gray-900 rounded-apple shadow-sm">
-            <Brain className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-          </div>
-          <div className="flex-1">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-1">
-              Pro Tip: Try the AI YAML Generator
-            </h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Simply describe what you want to build, and our AI will generate the perfect YAML configuration for your farm.
-            </p>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="mt-3 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-            >
-              Learn more →
-            </motion.button>
+      {/* Modals */}
+      {showFarmCreator && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-apple-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <FarmCreator
+              onClose={() => {
+                setShowFarmCreator(false);
+                setShowAIYAML(false);
+              }}
+            />
           </div>
         </div>
-      </div>
+      )}
+
+      <GoWildModal
+        isOpen={showGoWild}
+        onClose={() => setShowGoWild(false)}
+      />
+
+      <QuickTaskModal
+        isOpen={showQuickTask}
+        onClose={() => setShowQuickTask(false)}
+      />
     </div>
   );
 };

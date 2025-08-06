@@ -18,17 +18,23 @@ export const useAIPreferences = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
-    if (preferences?.aiSuggestions?.enabled && userActivity) {
+    if (preferences?.aiSettings?.autoOptimize && userActivity) {
       analyzeUserBehavior();
     }
-  }, [userActivity, preferences?.aiSuggestions?.enabled]);
+  }, [userActivity, preferences?.aiSettings?.autoOptimize]);
 
   const analyzeUserBehavior = async () => {
     if (!user || !userActivity || isAnalyzing) return;
 
     setIsAnalyzing(true);
     try {
-      const suggestions = await aiPreferences.generateSuggestions(userActivity, preferences);
+      const activityData = {
+        ...userActivity,
+        totalActions: userActivity?.totalActions || 0,
+        sessionDuration: userActivity?.sessionDuration || 0,
+        featureUsage: userActivity?.featureUsage || {}
+      };
+      const suggestions = await aiPreferences.generateSuggestions(activityData, preferences as any || {});
       setAiSuggestions(suggestions);
     } catch (error) {
       console.error('Failed to generate AI suggestions:', error);
@@ -62,9 +68,15 @@ export const useAIPreferences = () => {
   const requestSuggestions = async (category?: string) => {
     setIsAnalyzing(true);
     try {
+      const activityData = userActivity ? {
+        ...userActivity,
+        totalActions: userActivity?.totalActions || 0,
+        sessionDuration: userActivity?.sessionDuration || 0,
+        featureUsage: userActivity?.featureUsage || {}
+      } : undefined;
       const suggestions = await aiPreferences.generateSuggestions(
-        userActivity, 
-        preferences,
+        activityData || { lastAction: '', timestamp: new Date(), frequentActions: [] }, 
+        preferences as any || {},
         category
       );
       setAiSuggestions(suggestions);

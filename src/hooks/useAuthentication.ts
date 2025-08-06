@@ -35,7 +35,7 @@ export function useAuthentication() {
         setUser(response.user!);
         setIsAuthenticated(true);
         toast.success('Welcome back!');
-        navigate('/dashboard');
+        navigate('/home');
         return response;
       } else {
         setError(response.error || 'Login failed');

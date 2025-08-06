@@ -38,12 +38,17 @@ export const useAuthStore = create<AuthStore>()(
             return { requiresMFA: true };
           }
           
-          if (response.user && response.token) {
+          if (response.user && response.accessToken) {
             const session: SessionData = {
-              user: response.user,
-              token: response.token,
-              permissions: response.user.permissions,
-              expiresAt: Date.now() + (response.token.expiresAt * 1000),
+              id: crypto.randomUUID(),
+              userId: response.user.id,
+              token: response.accessToken,
+              createdAt: new Date(),
+              expiresAt: new Date(Date.now() + ((response.expiresIn || 3600) * 1000)),
+              lastActivity: new Date(),
+              ipAddress: '',
+              userAgent: navigator.userAgent,
+              isActive: true
             };
             
             set({
@@ -54,7 +59,7 @@ export const useAuthStore = create<AuthStore>()(
             });
             
             // Set up token refresh
-            const refreshInterval = (response.token.expiresAt - 300) * 1000; // 5 minutes before expiry
+            const refreshInterval = ((response.expiresIn || 3600) - 300) * 1000; // 5 minutes before expiry
             setTimeout(() => get().refreshToken(), refreshInterval);
           }
           
@@ -88,7 +93,7 @@ export const useAuthStore = create<AuthStore>()(
         
         if (session?.token) {
           try {
-            await securityService.logout(session.token.accessToken);
+            await securityService.logoutWithToken(session.token);
           } catch (error) {
             console.error('Logout error:', error);
           }
@@ -105,25 +110,28 @@ export const useAuthStore = create<AuthStore>()(
       refreshToken: async () => {
         const { session } = get();
         
-        if (!session?.token?.refreshToken) {
+        if (!session) {
           return;
         }
         
         try {
-          const response = await securityService.refreshToken(session.token.refreshToken);
+          const success = await securityService.refreshSession();
           
-          if (response.token) {
-            set({
-              session: {
-                ...session,
-                token: response.token,
-                expiresAt: Date.now() + (response.token.expiresAt * 1000),
-              },
-            });
-            
-            // Set up next refresh
-            const refreshInterval = (response.token.expiresAt - 300) * 1000;
-            setTimeout(() => get().refreshToken(), refreshInterval);
+          if (success) {
+            // Session was refreshed successfully
+            const newToken = securityService.token;
+            if (newToken && session) {
+              set({
+                session: {
+                  ...session,
+                  token: newToken,
+                  lastActivity: new Date(),
+                },
+              });
+              
+              // Set up next refresh (refresh 5 minutes before expiry)
+              setTimeout(() => get().refreshToken(), 55 * 60 * 1000); // 55 minutes
+            }
           }
         } catch (error) {
           // Token refresh failed, logout user
@@ -134,11 +142,11 @@ export const useAuthStore = create<AuthStore>()(
       checkSession: () => {
         const { session } = get();
         
-        if (session && session.expiresAt > Date.now()) {
+        if (session && session.expiresAt && session.expiresAt.getTime() > Date.now()) {
           set({ isAuthenticated: true });
           
           // Set up token refresh if needed
-          const timeUntilExpiry = session.expiresAt - Date.now();
+          const timeUntilExpiry = (session.expiresAt?.getTime() || Date.now()) - Date.now();
           if (timeUntilExpiry < 300000) { // Less than 5 minutes
             get().refreshToken();
           } else {

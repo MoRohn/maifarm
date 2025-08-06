@@ -1,0 +1,93 @@
+name: MaiFarm - Production-Ready iOS, AI Orchestration Application
+description: Prepare MaiFarm, a production-ready AI orchestration platform, for registration and distribution as an iOS application downloadable from a website, ensuring compliance with Apple App Store guidelines and a seamless user experience.
+
+initial_prompt: |
+  You are tasked with preparing MaiFarm, a production-ready, locally web-based AI orchestration platform for the Multi-Agent Claude Code Orchestrator, for registration as an iOS application. The goal is to enable users to download it from a website, adhering to Apple App Store guidelines. Use React Native with TypeScript for a responsive, Apple-inspired UI, and focus on converting the existing web application, setting up iOS build environments, and ensuring compliance. Prioritize end-to-end functionality, operational excellence, and a polished user experience.
+
+  Key Requirements:
+  - Convert the existing React web app to a React Native iOS app
+  - Ensure compliance with Apple App Store guidelines (e.g., privacy policy, App Store Connect setup)
+  - Set up a website for app download and distribution
+  - Maintain end-to-end functionality for AI agent orchestration
+  - Implement iOS-specific features (e.g., push notifications, local storage)
+  - Provide a seamless onboarding experience for iOS users
+
+  Architecture Guidelines:
+  - Use React Native with TypeScript for cross-platform compatibility
+  - Integrate WebSocket and REST APIs from the web version
+  - Configure Xcode for iOS build and deployment
+  - Use CocoaPods for native dependencies
+  - Implement secure storage with AsyncStorage for offline functionality
+  - Write comprehensive tests (unit, integration) for iOS
+
+  Before starting:
+  - Review existing React codebase for conversion compatibility
+  - Set up an Apple Developer account and App Store Connect
+  - Install Xcode and configure a macOS environment
+  - Define iOS-specific API endpoints and UI adjustments
+  - Plan website integration for app distribution
+
+
+steps:
+  - content: Convert React web app to React Native for iOS
+    description: |
+      Complete the development process and preparation for go-live:
+      - Install React Native and required dependencies (e.g., react-native-cli, TypeScript)
+      - Refactor existing React components to React Native equivalents (e.g., use View instead of div)
+      - Adapt Tailwind CSS styles to React Native's StyleSheet or a library like Tailwind-RN
+      - Test core features (e.g., farm creation, harvest monitoring) on iOS Simulator
+      - Ensure responsiveness across iPhone screen sizes (e.g., iPhone 14, iPad)
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Configure iOS build environment and Apple Developer account
+    description: |
+      Complete the development process and preparation for go-live:
+      - Set up Xcode with a valid Apple Developer account (enroll at developer.apple.com)
+      - Create a new app in App Store Connect with a unique bundle ID (e.g., com.xai.maifarm)
+      - Generate certificates, provisioning profiles, and signing identities in Xcode
+      - Configure CocoaPods to manage native iOS dependencies
+      - Build and run the app on a physical iOS device for testing
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Ensure compliance with Apple App Store guidelines
+    description: |
+      Complete the development process and preparation for go-live:
+      - Add a privacy policy link and terms of use in App Store Connect
+      - Implement data encryption and secure API communication (e.g., HTTPS, OAuth)
+      - Test for App Store Review Guideline compliance (e.g., no crashes, proper permissions)
+      - Prepare app metadata (e.g., screenshots, description, keywords) for submission
+      - Submit the app for review through App Store Connect
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Set up website for app download and distribution
+    description: |
+      Complete the development process and preparation for go-live:
+      - Design a simple website (e.g., using HTML/CSS or a static site generator) with a download section
+      - Integrate a link to the App Store listing after approval
+      - Add a QR code for easy iOS device scanning
+      - Include system requirements and installation instructions
+      - Test website accessibility and link functionality
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Implement iOS-specific features and testing
+    description: |
+      Complete the development process and preparation for go-live:
+      - Add push notifications using React Native Firebase for farm status updates
+      - Use AsyncStorage for offline farm data persistence
+      - Test WebSocket connectivity on iOS for real-time updates
+      - Conduct unit tests with Jest and integration tests with Detox
+      - Perform end-to-end testing on multiple iOS devices
+      - Do not stop working on this feature until it is fully operational and 100% ready to go live.
+
+
+  - content: Conduct iOS app testing and validation on desktop
+    description: |
+      Testing and Validation:
+      - Conduct unit tests for React Native components.
+      - Perform integration tests for WebSocket and API calls.
+      - Validate app submission and website functionality.
+      - Test on iOS 14+ devices and simulators.

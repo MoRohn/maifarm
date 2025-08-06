@@ -78,6 +78,12 @@ export const ThemeEngine: React.FC<ThemeEngineProps> = ({ onThemeChange }) => {
     setCustomTheme(prev => ({
       ...prev,
       colors: {
+        primary: prev.colors?.primary || '#3B82F6',
+        secondary: prev.colors?.secondary || '#10B981',
+        background: prev.colors?.background || '#FFFFFF',
+        surface: prev.colors?.surface || '#F9FAFB',
+        text: prev.colors?.text || '#111827',
+        textSecondary: prev.colors?.textSecondary || '#6B7280',
         ...prev.colors,
         [colorKey]: value,
       },

@@ -11,7 +11,8 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
-  MoreVertical
+  MoreVertical,
+  type LucideIcon
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AgentStatus } from '../../services/websocket';

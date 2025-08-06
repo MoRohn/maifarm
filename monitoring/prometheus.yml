@@ -1,0 +1,76 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'maifarm-prod'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Load rules
+rule_files:
+  - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # MaiFarm application metrics
+  - job_name: 'maifarm-app'
+    static_configs:
+      - targets: ['app:3000']
+    metrics_path: '/api/metrics'
+    scrape_interval: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # PostgreSQL exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # Nginx metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+
+  # Agent metrics
+  - job_name: 'maifarm-agents'
+    static_configs:
+      - targets: []
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/agents/*.json'
+        refresh_interval: 30s
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [agent_id]
+        target_label: agent
+      - source_labels: [farm_id]
+        target_label: farm
+
+# Remote write disabled for local deployment
+# Uncomment and configure for production use
+# remote_write:
+#   - url: 'https://your-metrics-storage.example.com/api/v1/write'
+#     write_relabel_configs:
+#       - source_labels: [__name__]
+#         regex: 'go_.*'
+#         action: drop

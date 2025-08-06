@@ -1,0 +1,87 @@
+name: "Development Test Farm"
+description: "Test farm for development and debugging"
+version: "1.0.0"
+environment: development
+
+agents:
+  - id: "test-agent-1"
+    name: "Code Analyzer"
+    type: "analyzer"
+    model: "claude-3-sonnet"
+    role: "Analyze code quality and suggest improvements"
+    tasks:
+      - "Review TypeScript code for type safety"
+      - "Identify potential performance issues"
+      - "Check for security vulnerabilities"
+    config:
+      temperature: 0.3
+      max_tokens: 4000
+      timeout: 60000
+
+  - id: "test-agent-2"  
+    name: "Bug Hunter"
+    type: "debugger"
+    model: "claude-3-sonnet"
+    role: "Find and fix bugs in the codebase"
+    tasks:
+      - "Identify runtime errors"
+      - "Debug failing tests"
+      - "Trace error logs"
+    config:
+      temperature: 0.2
+      max_tokens: 4000
+      timeout: 60000
+
+  - id: "test-agent-3"
+    name: "Test Writer"
+    type: "tester"
+    model: "claude-3-sonnet"
+    role: "Write and maintain test suites"
+    tasks:
+      - "Write unit tests for new features"
+      - "Create integration tests"
+      - "Maintain test coverage above 80%"
+    config:
+      temperature: 0.4
+      max_tokens: 4000
+      timeout: 60000
+
+workflow:
+  type: "parallel"
+  stages:
+    - name: "analysis"
+      agents: ["test-agent-1"]
+      timeout: 120000
+      
+    - name: "debugging"
+      agents: ["test-agent-2"]
+      dependencies: ["analysis"]
+      timeout: 180000
+      
+    - name: "testing"
+      agents: ["test-agent-3"]
+      dependencies: ["debugging"]
+      timeout: 180000
+
+resources:
+  cpu_limit: "2"
+  memory_limit: "4Gi"
+  max_concurrent_agents: 3
+
+monitoring:
+  metrics_enabled: true
+  logging_level: "debug"
+  health_check_interval: 30000
+  alerts:
+    - type: "agent_failure"
+      threshold: 3
+      action: "restart"
+    - type: "memory_usage"
+      threshold: 80
+      action: "alert"
+
+output:
+  format: "json"
+  destination: "./output/test-farm-results"
+  include_logs: true
+  include_metrics: true

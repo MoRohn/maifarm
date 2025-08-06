@@ -84,7 +84,7 @@ class ThemeEngine {
       large: 1.125
     };
     
-    const scale = scales[fontSize] || 1;
+    const scale = scales[fontSize as keyof typeof object] || 1;
     this.root.style.setProperty('--font-scale', scale.toString());
     
     // Update base font size
@@ -94,7 +94,7 @@ class ThemeEngine {
       large: '18px'
     };
     
-    this.root.style.fontSize = baseSizes[fontSize] || '16px';
+    this.root.style.fontSize = baseSizes[fontSize as keyof typeof object] || '16px';
   }
 
   private applyAccessibilitySettings(theme: ThemeConfig): void {

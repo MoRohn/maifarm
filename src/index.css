@@ -1,43 +1,58 @@
+@import './styles/theme.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent white flash on load */
+html {
+  background-color: #0a0a0a;
+  /* Ensure smooth transition when theme is applied */
+  transition: background-color 0.3s ease-in-out;
+}
+
+body {
+  background-color: inherit;
+  min-height: 100vh;
+}
+
 @layer base {
   :root {
+    /* Bridge old variables to new theme system */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
-    --primary: 198 93% 60%;
+    --primary: var(--color-primary);
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
+    --accent: var(--color-accent);
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 198 93% 60%;
+    --ring: var(--color-primary);
     --radius: 0.5rem;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    --primary: 198 93% 60%;
+    --primary: var(--color-primary);
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
+    --accent: var(--color-accent);
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 198 93% 60%;
+    --ring: var(--color-primary);
   }
 }
 
@@ -80,5 +95,24 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+  
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  .animate-slideIn {
+    animation: slideIn 0.3s ease-out;
+  }
+  
+  .animate-spin-slow {
+    animation: spin 3s linear infinite;
   }
 }

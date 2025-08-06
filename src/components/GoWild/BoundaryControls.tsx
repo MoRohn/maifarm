@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ShieldCheckIcon, SparklesIcon, RocketLaunchIcon, BeakerIcon } from '@heroicons/react/24/outline';
+import { ShieldCheck, Sparkles, Rocket, Beaker } from 'lucide-react';
 
 interface BoundaryControlsProps {
   onBoundaryChange: (boundaries: ExplorationBoundaries) => void;
@@ -29,7 +29,7 @@ export interface ExplorationBoundaries {
 const riskProfiles = {
   conservative: {
     label: 'Conservative',
-    icon: ShieldCheckIcon,
+    icon: ShieldCheck,
     color: 'text-green-600',
     bgColor: 'bg-green-50',
     borderColor: 'border-green-200',
@@ -37,7 +37,7 @@ const riskProfiles = {
   },
   moderate: {
     label: 'Moderate',
-    icon: BeakerIcon,
+    icon: Beaker,
     color: 'text-blue-600',
     bgColor: 'bg-blue-50',
     borderColor: 'border-blue-200',
@@ -45,7 +45,7 @@ const riskProfiles = {
   },
   aggressive: {
     label: 'Aggressive',
-    icon: SparklesIcon,
+    icon: Sparkles,
     color: 'text-purple-600',
     bgColor: 'bg-purple-50',
     borderColor: 'border-purple-200',
@@ -53,7 +53,7 @@ const riskProfiles = {
   },
   wild: {
     label: 'Go Wild!',
-    icon: RocketLaunchIcon,
+    icon: Rocket,
     color: 'text-red-600',
     bgColor: 'bg-red-50',
     borderColor: 'border-red-200',

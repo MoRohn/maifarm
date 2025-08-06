@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, Download, Archive, Trash2, Clock, TrendingUp } from 'lucide-react';
 import { HistoricalFarm, HistoricalFilters, BulkAction } from '../../types/historical';
-import FarmTimeline from './FarmTimeline';
-import FarmInsights from './FarmInsights';
+// TODO: Implement these components
+// import FarmTimeline from './FarmTimeline';
+// import FarmInsights from './FarmInsights';
 import { useHistoricalData } from '../../hooks/useHistoricalData';
 import { format } from 'date-fns';
 
@@ -50,7 +51,7 @@ const HistoricalFarms: React.FC<HistoricalFarmsProps> = ({ onFarmSelect }) => {
       farmIds: Array.from(selectedFarms)
     };
 
-    await performBulkAction(action);
+    await performBulkAction(action.type, action.farmIds);
     setSelectedFarms(new Set());
   };
 
@@ -115,7 +116,7 @@ const HistoricalFarms: React.FC<HistoricalFarmsProps> = ({ onFarmSelect }) => {
 
           {/* Export Button */}
           <button
-            onClick={() => exportData('json')}
+            onClick={() => exportData()}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
             <Download className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -377,13 +378,13 @@ const HistoricalFarms: React.FC<HistoricalFarmsProps> = ({ onFarmSelect }) => {
           ))}
         </div>
       ) : (
-        <FarmTimeline farms={farms} onFarmSelect={onFarmSelect} />
+        <div className="text-center py-8 text-gray-500">
+          Timeline view coming soon
+        </div>
       )}
 
       {/* Insights Section */}
-      {stats && (
-        <FarmInsights stats={stats} farms={farms} />
-      )}
+      {/* TODO: Implement FarmInsights component */}
     </div>
   );
 };

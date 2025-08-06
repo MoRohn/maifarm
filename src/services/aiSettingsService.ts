@@ -58,10 +58,12 @@ class AISettingsService {
     if (activity.peakUsageHours.some(h => h >= 18 || h <= 6)) {
       suggestions.push({
         id: 'enable-dark-mode',
+        type: 'setting',
         title: 'Enable Dark Mode',
         description: 'You often work during evening hours. Dark mode can reduce eye strain.',
         category: 'theme',
         impact: 'medium',
+        confidence: 75,
         action: async () => {
           // Action will be implemented by the component
         }
@@ -72,10 +74,12 @@ class AISettingsService {
     if (activity.errorRate > 0.1) {
       suggestions.push({
         id: 'error-notifications',
+        type: 'setting',
         title: 'Enable Error Notifications',
         description: 'Your farms have a higher error rate. Enable notifications to catch issues early.',
         category: 'notifications',
         impact: 'high',
+        confidence: 85,
         action: async () => {
           // Action implemented by component
         }
@@ -86,10 +90,12 @@ class AISettingsService {
     if (activity.mostUsedCategories.length > 0) {
       suggestions.push({
         id: 'create-templates',
+        type: 'template',
         title: 'Create Farm Templates',
         description: `You frequently use ${activity.mostUsedCategories[0]} farms. Save time with templates.`,
         category: 'efficiency',
         impact: 'high',
+        confidence: 90,
         action: async () => {
           // Action implemented by component
         }
@@ -100,10 +106,12 @@ class AISettingsService {
     if (activity.averageAgentsPerFarm > 5) {
       suggestions.push({
         id: 'optimize-performance',
+        type: 'optimization',
         title: 'Optimize Performance Settings',
         description: 'Your farms use many agents. Enable performance optimizations.',
         category: 'performance',
         impact: 'medium',
+        confidence: 80,
         action: async () => {
           // Action implemented by component
         }

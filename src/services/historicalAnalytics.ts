@@ -135,15 +135,15 @@ export class HistoricalAnalyticsService {
 
   private calculateSuccessRate(farms: Farm[]): number {
     if (farms.length === 0) return 0;
-    const successful = farms.filter(f => f.metrics?.successScore > 70).length;
+    const successful = farms.filter(f => (f.metrics as any)?.successScore > 70).length;
     return Math.round((successful / farms.length) * 100);
   }
 
   private calculateAverageDuration(farms: Farm[]): number {
     if (farms.length === 0) return 0;
     const totalDuration = farms.reduce((sum, farm) => {
-      if (farm.startTime && farm.endTime) {
-        return sum + (new Date(farm.endTime).getTime() - new Date(farm.startTime).getTime());
+      if ((farm as any).startTime && (farm as any).endTime) {
+        return sum + (new Date((farm as any).endTime).getTime() - new Date((farm as any).startTime).getTime());
       }
       return sum;
     }, 0);
@@ -160,8 +160,8 @@ export class HistoricalAnalyticsService {
     const hourBuckets: { [hour: number]: number } = {};
     
     farms.forEach(farm => {
-      if (farm.startTime && farm.metrics?.successScore > 70) {
-        const hour = new Date(farm.startTime).getHours();
+      if ((farm as any).startTime && (farm.metrics as any)?.successScore > 70) {
+        const hour = new Date((farm as any).startTime).getHours();
         hourBuckets[hour] = (hourBuckets[hour] || 0) + 1;
       }
     });
@@ -197,7 +197,7 @@ export class HistoricalAnalyticsService {
     }
 
     // Iterative refinement detection
-    if (farm.metrics?.iterationCount > 3) {
+    if ((farm.metrics as any)?.iterationCount > 3) {
       this.incrementPattern('iterative-refinement');
     }
 
@@ -207,19 +207,19 @@ export class HistoricalAnalyticsService {
     }
 
     // Exploratory phase detection
-    if (farm.metrics?.explorationTime > 0.2 * (farm.metrics?.totalTime || 1)) {
+    if ((farm.metrics as any)?.explorationTime > 0.2 * ((farm.metrics as any)?.totalTime || 1)) {
       this.incrementPattern('exploratory-phase');
     }
   }
 
   private detectParallelTasks(farm: Farm): number {
     // Simplified parallel task detection
-    return farm.agents?.filter(a => a.status === 'active').length || 0;
+    return farm.agents?.filter(a => a.status === 'working' || a.status === 'running').length || 0;
   }
 
   private hasSpecializedAgents(farm: Farm): boolean {
     if (!farm.agents) return false;
-    const roles = new Set(farm.agents.map(a => a.role || 'general'));
+    const roles = new Set(farm.agents.map(a => (a as any).role || 'general'));
     return roles.size > 1;
   }
 
@@ -235,8 +235,8 @@ export class HistoricalAnalyticsService {
     
     // Sort farms by date
     const sortedFarms = farms
-      .filter(f => f.startTime)
-      .sort((a, b) => new Date(a.startTime!).getTime() - new Date(b.startTime!).getTime());
+      .filter(f => (f as any).startTime)
+      .sort((a, b) => new Date((a as any).startTime!).getTime() - new Date((b as any).startTime!).getTime());
     
     if (sortedFarms.length < 5) {
       return trends; // Not enough data for trends
@@ -245,7 +245,7 @@ export class HistoricalAnalyticsService {
     // Analyze success rate trend
     const successTrend = this.calculateTrend(
       sortedFarms,
-      f => f.metrics?.successScore || 0
+      f => (f.metrics as any)?.successScore || 0
     );
     trends.push({
       metric: 'Success Rate',
@@ -259,8 +259,8 @@ export class HistoricalAnalyticsService {
     const durationTrend = this.calculateTrend(
       sortedFarms,
       f => {
-        if (f.startTime && f.endTime) {
-          return new Date(f.endTime).getTime() - new Date(f.startTime).getTime();
+        if ((f as any).startTime && (f as any).endTime) {
+          return new Date((f as any).endTime).getTime() - new Date((f as any).startTime).getTime();
         }
         return 0;
       }
@@ -276,7 +276,7 @@ export class HistoricalAnalyticsService {
     // Analyze agent efficiency trend
     const efficiencyTrend = this.calculateTrend(
       sortedFarms,
-      f => (f.metrics?.successScore || 0) / (f.agents?.length || 1)
+      f => ((f.metrics as any)?.successScore || 0) / (f.agents?.length || 1)
     );
     trends.push({
       metric: 'Agent Efficiency',
@@ -326,7 +326,7 @@ export class HistoricalAnalyticsService {
     this.addEvent({
       id: `event-${Date.now()}-start`,
       farmId: farm.id,
-      timestamp: new Date(farm.startTime || Date.now()),
+      timestamp: new Date((farm as any).startTime || Date.now()),
       type: 'start',
       title: `Farm "${farm.name}" started`,
       description: `Started with ${farm.agents?.length || 0} agents`,
@@ -361,13 +361,13 @@ export class HistoricalAnalyticsService {
     const similarFarms = this.findSimilarFarms(farm);
     if (similarFarms.length > 0) {
       const bestPerformer = similarFarms
-        .sort((a, b) => (b.metrics?.successScore || 0) - (a.metrics?.successScore || 0))[0];
+        .sort((a, b) => ((b.metrics as any)?.successScore || 0) - ((a.metrics as any)?.successScore || 0))[0];
       
       this.insights.push({
         id: `insight-${Date.now()}-similar`,
         type: 'success_factor',
         title: 'Similar Successful Farm Found',
-        description: `Farm "${bestPerformer.name}" had similar configuration and achieved ${bestPerformer.metrics?.successScore}% success`,
+        description: `Farm "${bestPerformer.name}" had similar configuration and achieved ${(bestPerformer.metrics as any)?.successScore}% success`,
         recommendation: `Review the approach used in "${bestPerformer.name}" for potential optimizations`,
         confidence: 75,
         relatedFarms: [farm.id, bestPerformer.id],
@@ -385,7 +385,7 @@ export class HistoricalAnalyticsService {
       if (agentDiff > 2) return false;
       
       // Similar configuration
-      if (farm.type !== targetFarm.type) return false;
+      if ((farm as any).type !== (targetFarm as any).type) return false;
       
       return true;
     });
@@ -442,10 +442,10 @@ export class HistoricalAnalyticsService {
     const performanceComparison: FarmComparison['performanceComparison'] = [];
     
     // Compare basic properties
-    if (farmA.type === farmB.type) {
-      similarities.push(`Both are ${farmA.type} farms`);
+    if ((farmA as any).type === (farmB as any).type) {
+      similarities.push(`Both are ${(farmA as any).type} farms`);
     } else {
-      differences.push(`Different farm types: ${farmA.type} vs ${farmB.type}`);
+      differences.push(`Different farm types: ${(farmA as any).type} vs ${(farmB as any).type}`);
     }
     
     // Compare agent counts
@@ -460,21 +460,21 @@ export class HistoricalAnalyticsService {
     if (farmA.metrics && farmB.metrics) {
       performanceComparison.push({
         metric: 'Success Score',
-        farmAValue: farmA.metrics.successScore,
-        farmBValue: farmB.metrics.successScore,
-        winner: farmA.metrics.successScore > farmB.metrics.successScore ? farmIdA : farmIdB
+        farmAValue: (farmA.metrics as any).successScore || 0,
+        farmBValue: (farmB.metrics as any).successScore || 0,
+        winner: ((farmA.metrics as any).successScore || 0) > ((farmB.metrics as any).successScore || 0) ? farmIdA : farmIdB
       });
       
       performanceComparison.push({
         metric: 'Tasks Completed',
-        farmAValue: farmA.metrics.tasksCompleted,
-        farmBValue: farmB.metrics.tasksCompleted,
-        winner: farmA.metrics.tasksCompleted > farmB.metrics.tasksCompleted ? farmIdA : farmIdB
+        farmAValue: farmA.metrics.completedTasks,
+        farmBValue: farmB.metrics.completedTasks,
+        winner: farmA.metrics.completedTasks > farmB.metrics.completedTasks ? farmIdA : farmIdB
       });
       
-      if (farmA.startTime && farmA.endTime && farmB.startTime && farmB.endTime) {
-        const durationA = new Date(farmA.endTime).getTime() - new Date(farmA.startTime).getTime();
-        const durationB = new Date(farmB.endTime).getTime() - new Date(farmB.startTime).getTime();
+      if ((farmA as any).startTime && (farmA as any).endTime && (farmB as any).startTime && (farmB as any).endTime) {
+        const durationA = new Date((farmA as any).endTime).getTime() - new Date((farmA as any).startTime).getTime();
+        const durationB = new Date((farmB as any).endTime).getTime() - new Date((farmB as any).startTime).getTime();
         
         performanceComparison.push({
           metric: 'Duration (minutes)',
@@ -498,17 +498,17 @@ export class HistoricalAnalyticsService {
     const searchTerms = query.toLowerCase().split(' ');
     
     return Array.from(this.farms.values()).filter(farm => {
-      const farmText = `${farm.name} ${farm.description} ${farm.type}`.toLowerCase();
+      const farmText = `${farm.name} ${farm.description ?? ''} ${(farm as any).type ?? ''}`.toLowerCase();
       
       return searchTerms.every(term => {
         // Check basic properties
         if (farmText.includes(term)) return true;
         
         // Check metrics
-        if (term === 'successful' && farm.metrics?.successScore > 70) return true;
-        if (term === 'failed' && farm.metrics?.successScore <= 30) return true;
-        if (term === 'fast' && farm.metrics?.totalTime < 600) return true; // Less than 10 minutes
-        if (term === 'slow' && farm.metrics?.totalTime > 1800) return true; // More than 30 minutes
+        if (term === 'successful' && (farm.metrics as any)?.successScore > 70) return true;
+        if (term === 'failed' && (farm.metrics as any)?.successScore <= 30) return true;
+        if (term === 'fast' && (farm.metrics as any)?.totalTime < 600) return true; // Less than 10 minutes
+        if (term === 'slow' && (farm.metrics as any)?.totalTime > 1800) return true; // More than 30 minutes
         
         // Check agent properties
         if (term === 'collaborative' && (farm.agents?.length || 0) > 3) return true;

@@ -1,6 +1,6 @@
-# Contributing to MaiFarm V2
+# Contributing to MaiFarm
 
-We love your input! We want to make contributing to MaiFarm V2 as easy and transparent as possible, whether it's:
+We love your input! We want to make contributing to MaiFarm as easy and transparent as possible, whether it's:
 
 - Reporting a bug
 - Discussing the current state of the code
@@ -29,9 +29,9 @@ We use GitHub to host code, to track issues and feature requests, as well as acc
 
 In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
 
-## Report bugs using Github's [issue tracker](https://github.com/yourusername/maifarm-v2/issues)
+## Report bugs using Github's [issue tracker](https://github.com/yourusername/maifarm/issues)
 
-We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/yourusername/maifarm-v2/issues/new); it's that easy!
+We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/yourusername/maifarm/issues/new); it's that easy!
 
 ## Write bug reports with detail, background, and sample code
 
@@ -49,8 +49,8 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 
 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/maifarm-v2.git
-cd maifarm-v2
+git clone https://github.com/yourusername/maifarm.git
+cd maifarm
 ```
 
 2. Install dependencies

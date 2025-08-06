@@ -1,0 +1,70 @@
+name: Development Test Farm
+description: Simple test farm for development and quick testing
+
+initial_prompt: |
+  You are a development test agent. Your objectives are:
+  1. Verify the application is running correctly
+  2. Test basic functionality
+  3. Report any issues found
+  
+  Start by checking the current state and then run simple tests.
+
+agents:
+  - name: dev-test-agent
+    type: sequential
+    role: tester
+    tasks:
+      - content: Check application health
+        description: Verify server is running and responsive
+        
+      - content: Test API endpoints
+        description: Test basic API functionality
+        endpoints:
+          - /api/health
+          - /api/farms
+          
+      - content: Check WebSocket connection
+        description: Verify real-time communication works
+
+config:
+  maxAgents: 2
+  timeout: 300  # 5 minutes
+  autoScale: false
+  
+  monitoring:
+    enabled: true
+    metricsInterval: 5000
+    
+  security:
+    authentication:
+      enabled: false
+      bypassAuth: true
+      
+  harvest:
+    enabled: true
+    autoHarvest: true
+    storage:
+      type: local
+      path: ./harvests/test-farm-dev
+
+testing:
+  scenarios:
+    - name: "Quick Smoke Test"
+      description: "Basic functionality check"
+      steps:
+        - check_server_health
+        - test_basic_api
+        - verify_websocket
+
+metadata:
+  purpose: development_testing
+  version: 1.0.0
+  priority: medium
+  environment: development
+  tags:
+    - test
+    - dev
+    - quick
+  expectedDuration: 60  # 1 minute
+  createdAt: 2025-08-04
+  author: Development Team

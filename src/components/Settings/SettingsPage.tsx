@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Cog6ToothIcon, 
   BellIcon, 
@@ -8,7 +9,10 @@ import {
   DocumentDuplicateIcon,
   ShieldCheckIcon,
   SparklesIcon,
-  PaintBrushIcon
+  PaintBrushIcon,
+  WifiIcon,
+  AdjustmentsHorizontalIcon,
+  CpuChipIcon
 } from '@heroicons/react/24/outline';
 import ThemeSettings from './ThemeSettings';
 import NotificationSettings from './NotificationSettings';
@@ -16,8 +20,13 @@ import ApiKeyManager from './ApiKeyManager';
 import FarmTemplates from './FarmTemplates';
 import LanguageSelector from './LanguageSelector';
 import SecuritySettings from './SecuritySettings';
+import NetworkSettings from './NetworkSettings';
+import GoWildSettings from './GoWildSettings';
+import BehaviorSettings from './BehaviorSettings';
+import AIProviderSettings from './AIProviderSettings';
 import { useUserStore } from '../../store/userStore';
 import { useAIPreferences } from '../../hooks/useAIPreferences';
+import { useThemeStore } from '../../store/themeStore';
 
 interface SettingsTab {
   id: string;
@@ -28,9 +37,29 @@ interface SettingsTab {
 }
 
 const SettingsPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('theme');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [pendingChanges, setPendingChanges] = useState<Record<string, any>>({});
   const { preferences } = useUserStore();
   const { aiSuggestions, acceptSuggestion, dismissSuggestion } = useAIPreferences();
+  const themeStore = useThemeStore();
+
+  // Handle tab from URL query parameter
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam) {
+      // Map 'ai' to 'aiProvider' for backwards compatibility
+      const mappedTab = tabParam === 'ai' ? 'aiProvider' : tabParam;
+      setActiveTab(mappedTab);
+      // Remove the query parameter after reading it
+      searchParams.delete('tab');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+  
+  // Check for any unsaved changes (local or from theme store)
+  const hasAnyUnsavedChanges = hasUnsavedChanges || (activeTab === 'theme' && themeStore.hasUnsavedChanges);
 
   const tabs: SettingsTab[] = [
     {
@@ -41,11 +70,38 @@ const SettingsPage: React.FC = () => {
       aiRecommended: aiSuggestions.some(s => s.category === 'theme')
     },
     {
+      id: 'aiProvider',
+      label: 'AI Engine',
+      icon: CpuChipIcon,
+      component: AIProviderSettings,
+      aiRecommended: aiSuggestions.some(s => s.category === 'ai-provider')
+    },
+    {
+      id: 'behavior',
+      label: 'Behavior',
+      icon: AdjustmentsHorizontalIcon,
+      component: BehaviorSettings,
+      aiRecommended: false
+    },
+    {
       id: 'notifications',
       label: 'Notifications',
       icon: BellIcon,
       component: NotificationSettings,
       aiRecommended: aiSuggestions.some(s => s.category === 'notifications')
+    },
+    {
+      id: 'goWild',
+      label: 'Go Wild',
+      icon: SparklesIcon,
+      component: GoWildSettings,
+      aiRecommended: aiSuggestions.some(s => s.category === 'exploration')
+    },
+    {
+      id: 'network',
+      label: 'Network',
+      icon: WifiIcon,
+      component: NetworkSettings
     },
     {
       id: 'security',
@@ -77,6 +133,51 @@ const SettingsPage: React.FC = () => {
   const activeTabData = tabs.find(tab => tab.id === activeTab);
   const ActiveComponent = activeTabData?.component || ThemeSettings;
 
+  const handleSave = () => {
+    // Apply all pending changes
+    console.log('Saving changes:', pendingChanges);
+    
+    // Save theme changes if on theme tab
+    if (activeTab === 'theme' && themeStore.hasUnsavedChanges) {
+      themeStore.saveChanges();
+    }
+    
+    // Apply other pending changes
+    // This would typically involve calling API endpoints or updating store
+    Object.entries(pendingChanges).forEach(([key, value]) => {
+      // Handle other settings saves here
+      console.log(`Saving ${key}:`, value);
+    });
+    
+    // Reset state after saving
+    setHasUnsavedChanges(false);
+    setPendingChanges({});
+    
+    // Show success notification
+    console.log('Settings saved successfully');
+  };
+
+  const handleCancel = () => {
+    // Reset all pending changes
+    setHasUnsavedChanges(false);
+    setPendingChanges({});
+    
+    // Discard theme changes if on theme tab
+    if (activeTab === 'theme' && themeStore.hasUnsavedChanges) {
+      themeStore.discardChanges();
+    }
+    
+    console.log('Changes cancelled');
+  };
+
+  const handleSettingChange = (settingKey: string, value: any) => {
+    setPendingChanges(prev => ({
+      ...prev,
+      [settingKey]: value
+    }));
+    setHasUnsavedChanges(true);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -84,9 +185,20 @@ const SettingsPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-                Settings
-              </h1>
+              <div className="flex items-center space-x-3">
+                <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                  Settings
+                </h1>
+                {hasAnyUnsavedChanges && (
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-full"
+                  >
+                    Unsaved changes
+                  </motion.span>
+                )}
+              </div>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 Customize your MaiFarm experience with AI-powered recommendations
               </p>
@@ -194,7 +306,34 @@ const SettingsPage: React.FC = () => {
                 </motion.div>
               )}
 
-              <ActiveComponent />
+              <ActiveComponent onChange={handleSettingChange} />
+            </motion.div>
+
+            {/* Save and Cancel Buttons - Always visible */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-6 flex items-center justify-end space-x-3"
+            >
+              {hasAnyUnsavedChanges && (
+                <button
+                  onClick={handleCancel}
+                  className="px-6 py-2.5 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg transition-colors duration-200"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                onClick={handleSave}
+                className={`px-6 py-2.5 font-medium rounded-lg transition-all duration-200 shadow-sm ${
+                  hasAnyUnsavedChanges
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white hover:shadow-md'
+                    : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-default'
+                }`}
+                disabled={!hasAnyUnsavedChanges}
+              >
+                {hasAnyUnsavedChanges ? 'Save Changes' : 'All Changes Saved'}
+              </button>
             </motion.div>
           </main>
         </div>

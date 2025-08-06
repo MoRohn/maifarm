@@ -1,12 +1,12 @@
 import { AuthTokens, LoginCredentials, User } from '../types/auth';
 import { SecurityEvent, SecurityEventType } from '../types/security';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4567/api';
 
 class AuthService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
-  private refreshTimer: NodeJS.Timeout | null = null;
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.loadTokensFromStorage();
@@ -90,7 +90,7 @@ class AuthService {
       // Log failed login attempt
       await this.logSecurityEvent({
         type: SecurityEventType.LOGIN_FAILURE,
-        details: { email: credentials.email, error: error.message },
+        details: { email: credentials.email, error: error instanceof Error ? error.message : 'Unknown error' },
         severity: 'medium',
         timestamp: new Date().toISOString(),
       });

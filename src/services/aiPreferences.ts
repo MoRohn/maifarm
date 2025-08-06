@@ -52,7 +52,7 @@ class AIPreferencesService {
     preferences: UserPreferences
   ): AIPreferenceSuggestion | null {
     // Check if user frequently changes themes at certain times
-    const themeChanges = activity.actions.filter(a => a.type === 'theme_change');
+    const themeChanges = activity.actions?.filter(a => a.type === 'theme_change') || [];
     if (themeChanges.length < 5) return null;
 
     // Analyze time patterns
@@ -95,8 +95,8 @@ class AIPreferencesService {
     preferences: UserPreferences
   ): AIPreferenceSuggestion | null {
     // Check dismissal patterns
-    const dismissals = activity.actions.filter(a => a.type === 'notification_dismissed');
-    const interactions = activity.actions.filter(a => a.type === 'notification_clicked');
+    const dismissals = activity.actions?.filter(a => a.type === 'notification_dismissed') || [];
+    const interactions = activity.actions?.filter(a => a.type === 'notification_clicked') || [];
 
     if (dismissals.length + interactions.length < 10) return null;
 
@@ -113,7 +113,7 @@ class AIPreferencesService {
             end: '08:00'
           },
           categories: {
-            ...preferences.notifications?.categories,
+            ...(preferences.notifications as any)?.categories,
             aiDiscovery: false // Disable less critical notifications
           }
         },
@@ -134,13 +134,13 @@ class AIPreferencesService {
     const suggestions: AIPreferenceSuggestion[] = [];
     
     // Analyze most used farm configurations
-    const farmCreations = activity.actions.filter(a => a.type === 'farm_created');
+    const farmCreations = activity.actions?.filter(a => a.type === 'farm_created') || [];
     if (farmCreations.length < 3) return suggestions;
 
     // Group by similar configurations
     const configPatterns = new Map<string, number>();
     farmCreations.forEach(creation => {
-      const key = this.getConfigurationKey(creation.data);
+      const key = this.getConfigurationKey((creation as any).data);
       configPatterns.set(key, (configPatterns.get(key) || 0) + 1);
     });
 

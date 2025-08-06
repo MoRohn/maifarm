@@ -1,0 +1,42 @@
+# Development Dockerfile for MaiFarm
+FROM node:20-alpine
+
+# Install development dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies)
+RUN npm install --legacy-peer-deps && \
+    npm cache clean --force
+
+# Copy source code (will be overridden by volume mount in docker-compose)
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/uploads /tmp/claude_coordination
+
+# Set environment variables for development
+ENV NODE_ENV=development \
+    BYPASS_AUTH=true \
+    PORT=4567 \
+    VITE_API_URL=http://localhost:4567 \
+    VITE_WS_URL=ws://localhost:4567
+
+# Expose ports
+EXPOSE 3000 4567
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:4567/health || exit 1
+
+# Start both frontend and backend in development mode
+CMD ["npm", "run", "dev"]

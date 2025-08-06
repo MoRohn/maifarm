@@ -70,7 +70,7 @@ steps:
   }
 ];
 
-const FarmTemplates: React.FC = () => {
+export const FarmTemplates: React.FC = () => {
   const { preferences, updatePreferences } = useUserStore();
   const [templates, setTemplates] = useState<FarmTemplate[]>([
     ...defaultTemplates,
@@ -282,7 +282,7 @@ const FarmTemplates: React.FC = () => {
                 </h4>
                 <ol className="list-decimal list-inside space-y-1">
                   {selectedTemplate.steps.map((step, index) => (
-                    <li key={index} className="text-sm text-gray-600 dark:text-gray-400">
+                    <li key={`step-${index}`} className="text-sm text-gray-600 dark:text-gray-400">
                       {step}
                     </li>
                   ))}

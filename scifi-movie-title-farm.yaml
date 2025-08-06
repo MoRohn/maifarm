@@ -1,0 +1,125 @@
+name: "Title for the next big SciFi Movie"
+description: "A sequential farm of AI agents collaborating to generate creative and compelling titles for a SciFi movie"
+type: sequential
+max_agents: 5
+resource_limits:
+  cpu: "4000m"
+  memory: "8Gi"
+
+agents:
+  - id: theme_explorer
+    name: "SciFi Theme Explorer"
+    role: "Research and identify trending SciFi themes, tropes, and concepts"
+    instructions: |
+      Your task is to research and identify compelling SciFi themes and concepts:
+      - Explore current trends in SciFi literature, films, and media
+      - Identify unique technological concepts (AI, space exploration, time travel, etc.)
+      - Consider philosophical and societal themes common in SciFi
+      - Generate a list of 10-15 core themes/concepts that could inspire titles
+      - Output your findings in a structured format for the next agent
+    output_format: "themes_and_concepts.md"
+    
+  - id: word_craftsman
+    name: "SciFi Word Craftsman"
+    role: "Generate powerful words and phrases related to the identified themes"
+    instructions: |
+      Based on the themes from the previous agent:
+      - Create evocative word combinations
+      - Develop futuristic terminology
+      - Blend scientific terms with emotional concepts
+      - Generate 20-30 potential title components (nouns, verbs, adjectives)
+      - Focus on words that create visual imagery and emotional impact
+    dependencies:
+      - theme_explorer
+    output_format: "word_bank.md"
+    
+  - id: title_generator
+    name: "Title Generator"
+    role: "Combine words and concepts into potential movie titles"
+    instructions: |
+      Using the word bank and themes:
+      - Generate 50+ potential movie titles
+      - Vary the structure (single word, phrases, questions, statements)
+      - Ensure titles are memorable and pronounceable
+      - Consider marketability and uniqueness
+      - Include brief rationale for each title's appeal
+    dependencies:
+      - word_craftsman
+    output_format: "title_candidates.md"
+    
+  - id: cultural_validator
+    name: "Cultural & Linguistic Validator"
+    role: "Ensure titles work across cultures and languages"
+    instructions: |
+      Review the generated titles for:
+      - Cultural sensitivity and global appeal
+      - Ease of translation and pronunciation
+      - Potential trademark or copyright conflicts
+      - Unintended meanings in major languages
+      - Filter out problematic titles and flag concerns
+      - Produce a refined list of 20-25 validated titles
+    dependencies:
+      - title_generator
+    output_format: "validated_titles.md"
+    
+  - id: final_curator
+    name: "Final Title Curator"
+    role: "Select and present the top SciFi movie titles"
+    instructions: |
+      From the validated titles:
+      - Select the top 10 titles based on:
+        * Originality and uniqueness
+        * Emotional impact and intrigue
+        * Marketability and memorability
+        * Genre appropriateness
+      - Provide detailed analysis for each title
+      - Rank them with clear justification
+      - Suggest potential taglines for the top 3
+      - Create a final presentation document
+    dependencies:
+      - cultural_validator
+    output_format: "final_titles_presentation.md"
+
+coordination:
+  work_directory: "/tmp/claude_coordination"
+  claim_directory: "/tmp/claude_coordination/work_claims"
+  completion_log: "/tmp/claude_coordination/completed_work.log"
+  
+quality_checks:
+  - type: "milestone_review"
+    after_agent: "title_generator"
+    criteria:
+      - "At least 50 title candidates generated"
+      - "Variety in title structures and themes"
+      
+  - type: "final_review"
+    after_agent: "final_curator"
+    criteria:
+      - "Top 10 titles with full analysis"
+      - "Clear ranking and justification"
+      - "Professional presentation format"
+
+error_handling:
+  retry_attempts: 3
+  fallback_strategy: "continue_with_partial_results"
+  notification_channel: "farm_status"
+
+performance_metrics:
+  track:
+    - "titles_generated_count"
+    - "validation_pass_rate"
+    - "agent_completion_time"
+    - "creativity_score"
+  
+logging:
+  level: "info"
+  format: "json"
+  destination: "/tmp/claude_coordination/farm_logs/scifi_titles.log"
+
+best_practices:
+  - "Each agent must document their reasoning process"
+  - "Maintain version control for all outputs"
+  - "Include timestamps in all generated files"
+  - "Follow consistent naming conventions"
+  - "Implement graceful error handling"
+  - "Create comprehensive test cases for validation logic"

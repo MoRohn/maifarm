@@ -51,25 +51,67 @@ const notificationCategories: NotificationCategory[] = [
   }
 ];
 
-const NotificationSettings: React.FC = () => {
+interface NotificationSettings {
+  enabled: boolean;
+  sound: boolean;
+  desktop: boolean;
+  email: boolean;
+  categories: {
+    farmComplete: boolean;
+    agentError: boolean;
+    systemUpdate: boolean;
+    aiDiscovery: boolean;
+  };
+  quietHours: {
+    enabled: boolean;
+    start: string;
+    end: string;
+  };
+}
+
+export const NotificationSettings: React.FC = () => {
   const { preferences, updatePreferences } = useUserStore();
-  const [notifications, setNotifications] = useState(preferences?.notifications || {
-    enabled: true,
-    sound: true,
-    desktop: true,
-    email: false,
-    categories: {
-      farmComplete: true,
-      agentError: true,
-      systemUpdate: true,
-      aiDiscovery: false
-    },
-    quietHours: {
-      enabled: false,
-      start: '22:00',
-      end: '08:00'
+  
+  // Handle both boolean and object notification preferences
+  const getInitialNotifications = (): NotificationSettings => {
+    const defaultSettings: NotificationSettings = {
+      enabled: true,
+      sound: true,
+      desktop: true,
+      email: false,
+      categories: {
+        farmComplete: true,
+        agentError: true,
+        systemUpdate: true,
+        aiDiscovery: false
+      },
+      quietHours: {
+        enabled: false,
+        start: '22:00',
+        end: '08:00'
+      }
+    };
+
+    if (!preferences?.notifications) {
+      return defaultSettings;
     }
-  });
+
+    // If notifications is a boolean, convert to object
+    if (typeof preferences.notifications === 'boolean') {
+      return {
+        ...defaultSettings,
+        enabled: preferences.notifications
+      };
+    }
+
+    // If it's already an object, merge with defaults
+    return {
+      ...defaultSettings,
+      ...preferences.notifications as NotificationSettings
+    };
+  };
+
+  const [notifications, setNotifications] = useState<NotificationSettings>(getInitialNotifications());
 
   const handleToggle = (key: string, value: boolean) => {
     const updated = { ...notifications, [key]: value };
@@ -82,7 +124,7 @@ const NotificationSettings: React.FC = () => {
       ...notifications,
       categories: {
         ...notifications.categories,
-        [categoryId]: !notifications.categories[categoryId]
+        [categoryId]: !(notifications.categories as any)[categoryId]
       }
     };
     setNotifications(updated);
@@ -256,7 +298,7 @@ const NotificationSettings: React.FC = () => {
                       </div>
                       <input
                         type="checkbox"
-                        checked={notifications.categories[category.id]}
+                        checked={(notifications.categories as any)[category.id]}
                         onChange={() => handleCategoryToggle(category.id)}
                         className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                       />

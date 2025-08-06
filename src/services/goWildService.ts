@@ -1,7 +1,7 @@
 import { GoWildSession, GoWildConfig } from '../types/goWild';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8080/api';
-const WS_BASE = process.env.REACT_APP_WS_BASE || 'ws://localhost:8080';
+const API_BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4567/api';
+const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:4567';
 
 class GoWildService {
   private wsConnections: Map<string, WebSocket> = new Map();
@@ -12,7 +12,18 @@ class GoWildService {
       return existingWs;
     }
 
-    const ws = new WebSocket(`${WS_BASE}/go-wild/${farmId}`);
+    // Connect to the main WebSocket endpoint, not a specific Go Wild endpoint
+    const ws = new WebSocket(WS_BASE);
+    
+    // Once connected, subscribe to Go Wild events for this farm
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({
+        type: 'subscribe',
+        channel: 'goWild',
+        farmId: farmId
+      }));
+    });
+
     this.wsConnections.set(farmId, ws);
     return ws;
   }
@@ -26,7 +37,8 @@ class GoWildService {
       if (!response.ok) {
         throw new Error(`Failed to fetch session: ${response.statusText}`);
       }
-      return await response.json();
+      const result = await response.json();
+      return result.data || result;
     } catch (error) {
       console.error('Error fetching session:', error);
       throw error;
@@ -46,7 +58,8 @@ class GoWildService {
       throw new Error(`Failed to start exploration: ${response.statusText}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    return result.data || result;
   }
 
   async pauseExploration(sessionId: string): Promise<void> {
@@ -101,6 +114,53 @@ class GoWildService {
     if (!response.ok) {
       throw new Error(`Failed to save discovery: ${response.statusText}`);
     }
+  }
+
+  async saveDefaultConfig(config: GoWildConfig): Promise<void> {
+    // Save to localStorage for client-side persistence
+    localStorage.setItem('goWildDefaultConfig', JSON.stringify(config));
+    
+    // Also try to save to backend if available
+    try {
+      const response = await fetch(`${API_BASE}/go-wild/config/default`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(config)
+      });
+
+      if (!response.ok) {
+        console.warn('Failed to save default config to backend:', response.statusText);
+      }
+    } catch (error) {
+      console.warn('Failed to save default config to backend:', error);
+      // Not critical - localStorage save is sufficient
+    }
+  }
+
+  async getDefaultConfig(): Promise<GoWildConfig | null> {
+    // First try to get from localStorage
+    const stored = localStorage.getItem('goWildDefaultConfig');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (error) {
+        console.error('Failed to parse stored config:', error);
+      }
+    }
+
+    // Fallback to backend
+    try {
+      const response = await fetch(`${API_BASE}/go-wild/config/default`);
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (error) {
+      console.warn('Failed to fetch default config from backend:', error);
+    }
+
+    return null;
   }
 
   closeConnection(farmId: string): void {

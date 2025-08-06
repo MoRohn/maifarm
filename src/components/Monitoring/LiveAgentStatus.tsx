@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { AgentMonitoringData, TimeSeriesData } from '../../types/monitoring';
+import { AgentStatus } from '../../types';
 import { useMonitoring } from '../../hooks/useMonitoring';
 
 interface LiveAgentStatusProps {
@@ -32,7 +33,12 @@ export const LiveAgentStatus: React.FC<LiveAgentStatusProps> = ({ farmId, classN
     return unsubscribe;
   }, [subscribeToAgentUpdates]);
 
-  const statusConfig = {
+  const statusConfig: Record<AgentStatus, {
+    icon: typeof Activity;
+    color: string;
+    bgColor: string;
+    pulseColor: string;
+  }> = {
     idle: { 
       icon: Pause, 
       color: 'text-gray-500 dark:text-gray-400',
@@ -62,6 +68,72 @@ export const LiveAgentStatus: React.FC<LiveAgentStatusProps> = ({ farmId, classN
       color: 'text-yellow-600 dark:text-yellow-400',
       bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
       pulseColor: 'bg-yellow-500'
+    },
+    busy: { 
+      icon: Activity, 
+      color: 'text-blue-600 dark:text-blue-400',
+      bgColor: 'bg-blue-100 dark:bg-blue-900/30',
+      pulseColor: 'bg-blue-500'
+    },
+    running: { 
+      icon: Play, 
+      color: 'text-green-600 dark:text-green-400',
+      bgColor: 'bg-green-100 dark:bg-green-900/30',
+      pulseColor: 'bg-green-500'
+    },
+    failed: { 
+      icon: XCircle, 
+      color: 'text-red-600 dark:text-red-400',
+      bgColor: 'bg-red-100 dark:bg-red-900/30',
+      pulseColor: 'bg-red-500'
+    },
+    provisioning: { 
+      icon: RotateCw, 
+      color: 'text-indigo-600 dark:text-indigo-400',
+      bgColor: 'bg-indigo-100 dark:bg-indigo-900/30',
+      pulseColor: 'bg-indigo-500'
+    },
+    starting: { 
+      icon: Zap, 
+      color: 'text-purple-600 dark:text-purple-400',
+      bgColor: 'bg-purple-100 dark:bg-purple-900/30',
+      pulseColor: 'bg-purple-500'
+    },
+    stopping: { 
+      icon: RotateCw, 
+      color: 'text-orange-600 dark:text-orange-400',
+      bgColor: 'bg-orange-100 dark:bg-orange-900/30',
+      pulseColor: 'bg-orange-500'
+    },
+    stopped: { 
+      icon: XCircle, 
+      color: 'text-gray-600 dark:text-gray-400',
+      bgColor: 'bg-gray-100 dark:bg-gray-900/30',
+      pulseColor: 'bg-gray-500'
+    },
+    initializing: { 
+      icon: RotateCw, 
+      color: 'text-cyan-600 dark:text-cyan-400',
+      bgColor: 'bg-cyan-100 dark:bg-cyan-900/30',
+      pulseColor: 'bg-cyan-500'
+    },
+    draining: { 
+      icon: TrendingDown, 
+      color: 'text-amber-600 dark:text-amber-400',
+      bgColor: 'bg-amber-100 dark:bg-amber-900/30',
+      pulseColor: 'bg-amber-500'
+    },
+    terminating: { 
+      icon: XCircle, 
+      color: 'text-red-700 dark:text-red-300',
+      bgColor: 'bg-red-100 dark:bg-red-900/30',
+      pulseColor: 'bg-red-600'
+    },
+    terminated: { 
+      icon: XCircle, 
+      color: 'text-gray-700 dark:text-gray-300',
+      bgColor: 'bg-gray-100 dark:bg-gray-900/30',
+      pulseColor: 'bg-gray-600'
     }
   };
 
@@ -98,7 +170,7 @@ export const LiveAgentStatus: React.FC<LiveAgentStatusProps> = ({ farmId, classN
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <AnimatePresence mode="popLayout">
           {agents.map(agent => {
-            const config = statusConfig[agent.status];
+            const config = statusConfig[agent.status] || statusConfig.idle;
             const StatusIcon = config.icon;
             const trend = getTrend(agent.resourceHistory.cpu);
 

@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { useEffect, useRef, useCallback } from 'react';
+import { Socket } from 'socket.io-client';
 import { WebSocketMessage } from '@/types';
+import { wsManager } from '@/services/websocket/singletonManager';
+import { useWebSocketStore } from '@/store/websocketStore';
 
 interface UseWebSocketOptions {
   url: string;
@@ -9,93 +11,45 @@ interface UseWebSocketOptions {
   reconnectDelay?: number;
 }
 
-interface UseWebSocketReturn {
+export interface UseWebSocketReturn {
   connected: boolean;
+  isConnected: boolean; // Alias for connected
   lastMessage: WebSocketMessage | null;
   sendMessage: (message: WebSocketMessage) => void;
   disconnect: () => void;
   reconnect: () => void;
+  subscribe: (event: string, handler: (data: any) => void) => () => void;
+  unsubscribe: (event: string, handler: (data: any) => void) => void;
+  socket: Socket | null;
 }
 
 export function useWebSocket({
   url,
   reconnect = true,
-  reconnectAttempts = 5,
+  reconnectAttempts = 10,
   reconnectDelay = 1000,
 }: UseWebSocketOptions): UseWebSocketReturn {
-  const [connected, setConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
   const socketRef = useRef<Socket | null>(null);
-  const reconnectAttemptsRef = useRef(0);
+  const hasReleasedRef = useRef(false);
+  const { connected, lastMessage } = useWebSocketStore();
 
   const connect = useCallback(() => {
-    if (socketRef.current?.connected) return;
+    // Use singleton manager
+    const socket = wsManager.initialize(url);
+    socketRef.current = socket;
+    hasReleasedRef.current = false;
 
-    socketRef.current = io(url, {
-      transports: ['websocket'],
-      reconnection: reconnect,
-      reconnectionAttempts: reconnectAttempts,
-      reconnectionDelay: reconnectDelay,
-    });
-
-    socketRef.current.on('connect', () => {
-      console.log('WebSocket connected');
-      setConnected(true);
-      reconnectAttemptsRef.current = 0;
-    });
-
-    socketRef.current.on('disconnect', () => {
-      console.log('WebSocket disconnected');
-      setConnected(false);
-    });
-
-    socketRef.current.on('message', (message: WebSocketMessage) => {
-      setLastMessage(message);
-    });
-
-    socketRef.current.on('error', (error) => {
-      console.error('WebSocket error:', error);
-    });
-
-    // Handle specific message types
-    socketRef.current.on('agent_update', (data) => {
-      setLastMessage({
-        type: 'agent_update',
-        payload: data,
-        timestamp: new Date(),
-      });
-    });
-
-    socketRef.current.on('farm_update', (data) => {
-      setLastMessage({
-        type: 'farm_update',
-        payload: data,
-        timestamp: new Date(),
-      });
-    });
-
-    socketRef.current.on('notification', (data) => {
-      setLastMessage({
-        type: 'notification',
-        payload: data,
-        timestamp: new Date(),
-      });
-    });
-
-    socketRef.current.on('metrics_update', (data) => {
-      setLastMessage({
-        type: 'metrics_update',
-        payload: data,
-        timestamp: new Date(),
-      });
-    });
+    // Event handlers are set up in the singleton manager
+    // Individual components can still add their own specific handlers
   }, [url, reconnect, reconnectAttempts, reconnectDelay]);
 
   const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
+    // Only release if we haven't already
+    if (!hasReleasedRef.current) {
+      wsManager.release();
+      hasReleasedRef.current = true;
     }
+    socketRef.current = null;
   }, []);
 
   const sendMessage = useCallback((message: WebSocketMessage) => {
@@ -106,18 +60,47 @@ export function useWebSocket({
     }
   }, []);
 
+  const subscribe = useCallback((event: string, handler: (data: any) => void) => {
+    if (socketRef.current) {
+      socketRef.current.on(event, handler);
+    }
+    // Return cleanup function
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.off(event, handler);
+      }
+    };
+  }, []);
+
+  const unsubscribe = useCallback((event: string, handler: (data: any) => void) => {
+    if (socketRef.current) {
+      socketRef.current.off(event, handler);
+    }
+  }, []);
+
   useEffect(() => {
     connect();
     return () => {
-      disconnect();
+      // Release reference on unmount (only if not already released)
+      if (!hasReleasedRef.current) {
+        wsManager.release();
+        hasReleasedRef.current = true;
+      }
+      socketRef.current = null;
     };
-  }, [connect, disconnect]);
+  }, [url, connect]);
 
   return {
     connected,
+    isConnected: connected, // Alias for connected
     lastMessage,
     sendMessage,
     disconnect,
-    reconnect: connect,
+    reconnect: () => {
+      wsManager.reconnect();
+    },
+    subscribe,
+    unsubscribe,
+    socket: socketRef.current,
   };
 }

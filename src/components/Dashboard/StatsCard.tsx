@@ -10,6 +10,7 @@ interface StatsCardProps {
   trend?: string;
   color?: 'primary' | 'green' | 'blue' | 'purple' | 'red' | 'yellow';
   className?: string;
+  loading?: boolean;
 }
 
 export const StatsCard: React.FC<StatsCardProps> = ({
@@ -18,7 +19,8 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   icon: Icon,
   trend,
   color = 'primary',
-  className
+  className,
+  loading = false
 }) => {
   const colorClasses = {
     primary: 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400',
@@ -66,9 +68,13 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
           {title}
         </p>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-          {value}
-        </p>
+        {loading ? (
+          <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+        ) : (
+          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            {value}
+          </p>
+        )}
       </div>
     </motion.div>
   );

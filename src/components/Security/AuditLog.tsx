@@ -28,7 +28,7 @@ export const AuditLog: React.FC = () => {
   });
 
   useEffect(() => {
-    if (canViewAuditLogs) {
+    if (canViewAuditLogs()) {
       loadLogs();
     }
   }, [canViewAuditLogs, filters, pagination.page]);

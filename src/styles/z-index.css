@@ -1,0 +1,42 @@
+/* Z-index hierarchy for MaiFarm application */
+/* This file documents the z-index stacking order to prevent layering conflicts */
+
+:root {
+  /* Base layers */
+  --z-base: 0;                    /* Default layer */
+  --z-dropdown: 10;               /* Dropdowns and floating elements */
+  --z-sticky: 20;                 /* Sticky elements */
+  
+  /* Navigation layers */
+  --z-sidebar-desktop: 20;        /* Desktop sidebar */
+  --z-header-dashboard: 30;       /* Dashboard header bar */
+  --z-sidebar-mobile-backdrop: 40;/* Mobile sidebar backdrop */
+  --z-sidebar-mobile: 50;         /* Mobile sidebar panel */
+  
+  /* Main app header (highest priority for main navigation) */
+  --z-header-main: 100;           /* Main Header component */
+  --z-header-dropdown: 110;       /* Header dropdown menus */
+  
+  /* Modal layers (always on top) */
+  --z-modal-backdrop: 200;        /* Modal backdrops */
+  --z-modal-content: 210;         /* Modal content */
+  --z-toast: 300;                 /* Toast notifications */
+  --z-tooltip: 400;               /* Tooltips (highest) */
+}
+
+/* 
+  Z-index Stack Order (from bottom to top):
+  
+  0    - Base content
+  10   - Dropdowns
+  20   - Desktop sidebar, sticky elements
+  30   - Dashboard header
+  40   - Mobile sidebar backdrop
+  50   - Mobile sidebar
+  100  - Main app header
+  110  - Header dropdowns
+  200  - Modal backdrops
+  210  - Modal content
+  300  - Toast notifications
+  400  - Tooltips
+*/

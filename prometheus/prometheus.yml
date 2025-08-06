@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []  # No alertmanager in dev setup
+
+# Load rules
+rule_files:
+  - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # MaiFarm application metrics
+  - job_name: 'maifarm-app'
+    static_configs:
+      - targets: ['maifarm:8080']
+    metrics_path: '/api/metrics'
+    scrape_interval: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Claude Code Agent metrics (file-based discovery)
+  - job_name: 'maifarm-agents'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/agents/*.json'
+        refresh_interval: 30s
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [agent_id]
+        target_label: agent
+      - source_labels: [farm_id]
+        target_label: farm

@@ -129,7 +129,7 @@ const YamlEditor: React.FC<YamlEditorProps> = ({ value, onChange, onValidate }) 
       </div>
 
       {/* Syntax Highlighting Overlay (simplified) */}
-      <style jsx>{`
+      <style>{`
         textarea {
           font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
           line-height: 1.5;

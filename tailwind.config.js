@@ -8,6 +8,48 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Dynamic theme colors from CSS variables
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        surface: "var(--color-surface)",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+          dark: "var(--color-primary-dark)",
+          light: "var(--color-primary-light)",
+        },
+        accent: {
+          DEFAULT: "var(--color-accent)",
+          dark: "var(--color-accent-dark)",
+          light: "var(--color-accent-light)",
+        },
+        text: {
+          DEFAULT: "var(--color-text)",
+          secondary: "var(--color-text-secondary)",
+        },
+        error: "var(--color-error)",
+        warning: "var(--color-warning)",
+        success: "var(--color-success)",
+        info: "var(--color-info)",
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
         // Apple-inspired color palette
         'apple-gray': {
           50: '#fafafa',
@@ -108,6 +150,9 @@ export default {
         'glow-sm': '0 0 10px rgba(0, 102, 204, 0.2)',
       },
       borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
         'apple': '0.5rem',
         'apple-lg': '1rem',
       },

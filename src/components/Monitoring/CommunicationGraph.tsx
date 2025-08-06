@@ -28,7 +28,7 @@ export const CommunicationGraph: React.FC<CommunicationGraphProps> = ({
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const simulationRef = useRef<d3.Simulation<CommunicationNode, CommunicationEdge> | null>(null);
+  const simulationRef = useRef<d3.Simulation<CommunicationNode, undefined> | null>(null);
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current) return;
@@ -55,14 +55,14 @@ export const CommunicationGraph: React.FC<CommunicationGraphProps> = ({
     svg.call(zoom);
 
     // Create force simulation
-    const simulation = d3.forceSimulation(graph.nodes)
+    const simulation = d3.forceSimulation<CommunicationNode>(graph.nodes)
       .force('link', d3.forceLink<CommunicationNode, CommunicationEdge>(graph.edges)
-        .id((d: any) => d.id)
+        .id((d) => d.id)
         .distance(100)
         .strength(0.5))
-      .force('charge', d3.forceManyBody().strength(-300))
-      .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(30));
+      .force('charge', d3.forceManyBody<CommunicationNode>().strength(-300))
+      .force('center', d3.forceCenter<CommunicationNode>(width / 2, height / 2))
+      .force('collision', d3.forceCollide<CommunicationNode>().radius(30));
 
     simulationRef.current = simulation;
 

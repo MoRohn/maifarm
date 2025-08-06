@@ -1,7 +1,7 @@
 import { VitePWAOptions } from 'vite-plugin-pwa';
 
 export const pwaConfig: VitePWAOptions = {
-  registerType: 'prompt',
+  registerType: 'autoUpdate',
   includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
   manifest: false, // We're using our own manifest.json
   workbox: {
@@ -38,7 +38,7 @@ export const pwaConfig: VitePWAOptions = {
     ],
   },
   devOptions: {
-    enabled: true,
+    enabled: false,
     type: 'module',
   },
   selfDestroying: false,

@@ -179,7 +179,7 @@ export class CreativityAnalyzer {
       experiment: 40,
       research: 30
     };
-    risk += categoryRisk[proposal.category] || 20;
+    risk += categoryRisk[proposal.category as keyof typeof object] || 20;
 
     // Boundary violations increase risk
     if (boundaries.constraints.respectArchitecture && proposal.category === 'refactor') {

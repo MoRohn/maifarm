@@ -1,0 +1,84 @@
+services:
+  maifarm-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: maifarm:dev
+    container_name: maifarm-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "4567:4567"
+    environment:
+      - NODE_ENV=development
+      - BYPASS_AUTH=true
+      - PORT=4567
+      - VITE_API_URL=http://localhost:4567
+      - VITE_WS_URL=ws://localhost:4567
+      - JWT_SECRET=dev-secret-key
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=maifarm_dev
+      - DB_USER=maifarm
+      - DB_PASSWORD=maifarm_dev
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - .:/app:delegated
+      - /app/node_modules
+      - /tmp/claude_coordination:/tmp/claude_coordination
+    networks:
+      - maifarm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4567/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # Optional: PostgreSQL for development (can be disabled if using in-memory)
+  postgres:
+    image: postgres:16-alpine
+    container_name: maifarm-postgres-dev
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=maifarm
+      - POSTGRES_PASSWORD=maifarm_dev
+      - POSTGRES_DB=maifarm_dev
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - maifarm-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maifarm -d maifarm_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Redis for development (can be disabled if not using caching)
+  redis:
+    image: redis:7-alpine
+    container_name: maifarm-redis-dev
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_dev_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - maifarm-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  maifarm-network:
+    driver: bridge

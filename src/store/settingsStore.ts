@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { 
+  Settings,
   ThemeConfig, 
   NotificationPreferences, 
   IntegrationConfig, 
@@ -8,7 +9,37 @@ import {
   AINotificationSuggestion 
 } from '../types/settings';
 
+// Use Settings interface from types/settings.ts
+
+interface AgentConfiguration {
+  maxConcurrentAgents?: number;
+  maxAgents: number;
+  staggerTime: number;
+  defaultTimeout: number;
+  retryAttempts?: number;
+  logLevel: 'debug' | 'info' | 'warn' | 'error';
+  autoRestart: boolean;
+  healthCheckInterval?: number;
+  resourceLimits?: {
+    cpuThreshold: number;
+    memoryThreshold: number;
+    diskThreshold: number;
+  };
+  communicationProtocol?: 'websocket' | 'http' | 'grpc';
+  parallelExecution: boolean;
+  memoryLimit: number;
+  cpuLimit: number;
+  enableLogging: boolean;
+  coordinationMode: 'centralized' | 'distributed' | 'hybrid';
+  taskAllocation: 'round-robin' | 'load-balanced' | 'priority-based';
+  failoverStrategy: 'restart' | 'reassign' | 'skip';
+}
+
 interface SettingsStore {
+  // Legacy settings object for compatibility
+  settings: Settings;
+  updateSettings: (updates: Partial<Settings>) => void;
+  
   // Theme
   theme: ThemeConfig;
   customThemes: ThemeConfig[];
@@ -42,7 +73,35 @@ interface SettingsStore {
     learningEnabled: boolean;
   };
   setAIAssistance: (settings: Partial<SettingsStore['aiAssistance']>) => void;
+  
+  // Agent Configuration
+  agentConfig: AgentConfiguration;
+  updateAgentConfig: (config: Partial<AgentConfiguration>) => void;
 }
+
+const defaultAgentConfig: AgentConfiguration = {
+  maxConcurrentAgents: 10,
+  maxAgents: 10,
+  staggerTime: 1000,
+  defaultTimeout: 30000,
+  retryAttempts: 3,
+  logLevel: 'info',
+  autoRestart: true,
+  healthCheckInterval: 60000,
+  resourceLimits: {
+    cpuThreshold: 80,
+    memoryThreshold: 85,
+    diskThreshold: 90,
+  },
+  communicationProtocol: 'websocket',
+  parallelExecution: true,
+  memoryLimit: 1024,
+  cpuLimit: 80,
+  enableLogging: true,
+  coordinationMode: 'centralized',
+  taskAllocation: 'load-balanced',
+  failoverStrategy: 'restart',
+};
 
 const defaultTheme: ThemeConfig = {
   id: 'light',
@@ -68,13 +127,115 @@ const defaultNotifications: NotificationPreferences = {
   },
 };
 
+const defaultSettings: Settings = {
+  aiProvider: 'claude', // Default AI provider
+  user: {
+    theme: {
+      mode: 'system',
+      primaryColor: '#3B82F6',
+      accentColor: '#10B981',
+      fontFamily: 'Inter',
+      fontSize: 'medium',
+      reducedMotion: false,
+      highContrast: false,
+    },
+    notifications: {
+      enabled: true,
+      sound: true,
+      desktop: true,
+      email: {
+        enabled: false,
+        address: '',
+        frequency: 'immediate',
+      },
+      triggers: {
+        farmComplete: true,
+        farmError: true,
+        agentError: true,
+        lowCredits: true,
+        systemUpdate: true,
+        aiSuggestions: true,
+        aiDiscovery: true,
+      },
+    },
+    language: {
+      current: 'en',
+      autoDetect: true,
+      dateFormat: 'MM/dd/yyyy',
+      timeFormat: '12h',
+      timezone: 'UTC',
+    },
+    dashboard: {
+      layout: 'grid',
+      defaultView: 'active',
+      showMetrics: true,
+      autoRefresh: true,
+      refreshInterval: 30000,
+    },
+    aiAssistant: {
+      enabled: true,
+      suggestions: true,
+      autoOptimize: false,
+      creativityLevel: 50,
+      learningEnabled: true,
+    },
+  },
+  system: {
+    performance: {
+      maxConcurrentAgents: 10,
+      animationsEnabled: true,
+      hardwareAcceleration: true,
+      lowPowerMode: false,
+    },
+    storage: {
+      cacheEnabled: true,
+      maxCacheSize: 500,
+      offlineMode: false,
+      autoCleanup: true,
+      retentionDays: 30,
+    },
+    network: {
+      proxyEnabled: false,
+      timeout: 30000,
+      retryAttempts: 3,
+      offlineQueueEnabled: true,
+    },
+    behavior: {
+      autoPauseOnClose: true, // Default ON
+      runInBackground: false,
+      showBackgroundIndicator: true,
+    },
+  },
+  integrations: {
+    apiKeys: [],
+    webhooks: [],
+    externalServices: [],
+  },
+  templates: [],
+};
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
+      // Legacy settings object
+      settings: defaultSettings,
+      
+      updateSettings: (updates) => set((state) => ({
+        settings: { ...state.settings, ...updates },
+        // Also update individual properties for backward compatibility
+        theme: (updates as any).theme || state.theme,
+        notifications: (updates as any).notifications || state.notifications,
+        language: (updates as any).language || state.language,
+        aiAssistance: (updates as any).aiAssistance || state.aiAssistance,
+      })),
+      
       // Theme
       theme: defaultTheme,
       customThemes: [],
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => set({ 
+        theme,
+        settings: { ...get().settings, theme: theme as any }
+      }),
       saveCustomTheme: (theme) => set((state) => ({
         customThemes: [...state.customThemes, theme],
       })),
@@ -119,6 +280,12 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       setAIAssistance: (settings) => set((state) => ({
         aiAssistance: { ...state.aiAssistance, ...settings },
+      })),
+      
+      // Agent Configuration
+      agentConfig: defaultAgentConfig,
+      updateAgentConfig: (updates) => set((state) => ({
+        agentConfig: { ...state.agentConfig, ...updates },
       })),
     }),
     {

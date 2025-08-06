@@ -1,10 +1,9 @@
 import { AuditLog, SecurityEvent, SecurityEventType } from '../types/security';
-import { authService } from './auth';
 import { offlineService } from './offline';
 
 class AuditService {
   private auditQueue: AuditLog[] = [];
-  private flushInterval: NodeJS.Timeout | null = null;
+  private flushInterval: ReturnType<typeof setInterval> | null = null;
   private maxBatchSize = 50;
   private flushDelay = 5000; // 5 seconds
 
@@ -46,6 +45,7 @@ class AuditService {
     success: boolean = true,
     metadata?: Record<string, any>
   ): Promise<void> {
+    const { authService } = await import('./auth');
     const user = await authService.getCurrentUser().catch(() => null);
     
     await this.log({
@@ -121,6 +121,7 @@ class AuditService {
     offset?: number;
   }): Promise<{ logs: AuditLog[]; total: number }> {
     try {
+      const { authService } = await import('./auth');
       const token = authService.getAccessToken();
       const params = new URLSearchParams();
       
@@ -219,7 +220,7 @@ class AuditService {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authService.getAccessToken()}`,
+              'Authorization': `Bearer ${(await import('./auth')).authService.getAccessToken()}`,
             },
             body: [log],
           });
@@ -233,6 +234,7 @@ class AuditService {
   }
 
   private async sendAuditLog(log: AuditLog): Promise<void> {
+    const { authService } = await import('./auth');
     const token = authService.getAccessToken();
     
     await fetch('/api/audit', {
@@ -246,6 +248,7 @@ class AuditService {
   }
 
   private async sendAuditLogs(logs: AuditLog[]): Promise<void> {
+    const { authService } = await import('./auth');
     const token = authService.getAccessToken();
     
     await fetch('/api/audit/batch', {

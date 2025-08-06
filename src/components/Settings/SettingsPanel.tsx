@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { X, Palette, Bell, Globe, Key, Shield, Brain, Archive } from 'lucide-react';
+import { X, Palette, Bell, Globe, Key, Shield, Brain, Archive, Cpu } from 'lucide-react';
 import { ThemeCustomizer } from './ThemeCustomizer';
-import { NotificationSettings } from './NotificationSettings';
-import { ApiKeyManager } from './ApiKeyManager';
-import { FarmTemplates } from './FarmTemplates';
-import { LanguageSelector } from './LanguageSelector';
+import NotificationSettings from './NotificationSettings';
+import ApiKeyManager from './ApiKeyManager';
+import FarmTemplates from './FarmTemplates';
+import LanguageSelector from './LanguageSelector';
+import AIProviderSettings from './AIProviderSettings';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAISettings } from '../../hooks/useAISettings';
@@ -14,7 +15,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-type SettingsTab = 'theme' | 'notifications' | 'language' | 'api' | 'templates' | 'security' | 'ai';
+type SettingsTab = 'theme' | 'notifications' | 'language' | 'api' | 'templates' | 'security' | 'ai' | 'provider';
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('theme');
@@ -25,6 +26,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     { id: 'theme' as const, label: 'Theme', icon: Palette },
     { id: 'notifications' as const, label: 'Notifications', icon: Bell },
     { id: 'language' as const, label: 'Language', icon: Globe },
+    { id: 'provider' as const, label: 'AI Engine', icon: Cpu },
     { id: 'api' as const, label: 'API Keys', icon: Key },
     { id: 'templates' as const, label: 'Templates', icon: Archive },
     { id: 'security' as const, label: 'Security', icon: Shield },
@@ -39,6 +41,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
         return <NotificationSettings />;
       case 'language':
         return <LanguageSelector />;
+      case 'provider':
+        return <AIProviderSettings />;
       case 'api':
         return <ApiKeyManager />;
       case 'templates':
@@ -180,9 +184,14 @@ const SecuritySettings: React.FC = () => {
             <input
               type="checkbox"
               className="sr-only peer"
-              checked={settings.security?.mfaEnabled || false}
+              checked={(settings.security as any)?.mfaEnabled || false}
               onChange={(e) => updateSettings({
-                security: { ...settings.security, mfaEnabled: e.target.checked }
+                security: { 
+                  sessionTimeout: (settings.security as any)?.sessionTimeout || 30,
+                  requireMFA: (settings.security as any)?.requireMFA || false,
+                  ...(settings.security as any), 
+                  mfaEnabled: e.target.checked 
+                }
               })}
             />
             <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
@@ -204,9 +213,13 @@ const SecuritySettings: React.FC = () => {
               type="number"
               min="5"
               max="1440"
-              value={settings.security?.sessionTimeout || 30}
+              value={(settings.security as any)?.sessionTimeout || 30}
               onChange={(e) => updateSettings({
-                security: { ...settings.security, sessionTimeout: parseInt(e.target.value) }
+                security: { 
+                  requireMFA: (settings.security as any)?.requireMFA || false,
+                  ...(settings.security as any), 
+                  sessionTimeout: parseInt(e.target.value) 
+                }
               })}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
@@ -229,9 +242,14 @@ const SecuritySettings: React.FC = () => {
             <input
               type="checkbox"
               className="sr-only peer"
-              checked={settings.security?.auditLogging || true}
+              checked={(settings.security as any)?.auditLogging || true}
               onChange={(e) => updateSettings({
-                security: { ...settings.security, auditLogging: e.target.checked }
+                security: { 
+                  sessionTimeout: (settings.security as any)?.sessionTimeout || 30,
+                  requireMFA: (settings.security as any)?.requireMFA || false,
+                  ...(settings.security as any), 
+                  auditLogging: e.target.checked 
+                }
               })}
             />
             <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
@@ -245,7 +263,7 @@ const SecuritySettings: React.FC = () => {
 // AI Assistant Settings Component
 const AIAssistantSettings: React.FC = () => {
   const { settings, updateSettings } = useSettingsStore();
-  const aiSettings = settings.user?.aiAssistant;
+  const aiSettings = (settings as any).aiAssistance;
 
   return (
     <div className="space-y-6">
@@ -274,13 +292,10 @@ const AIAssistantSettings: React.FC = () => {
               <input
                 type="checkbox"
                 className="sr-only peer"
-                checked={aiSettings?.suggestions || true}
+                checked={aiSettings?.enabled || true}
                 onChange={(e) => updateSettings({
-                  user: {
-                    ...settings.user,
-                    aiAssistant: { ...aiSettings, suggestions: e.target.checked }
-                  }
-                })}
+                  aiAssistance: { ...aiSettings, enabled: e.target.checked }
+                } as any)}
               />
               <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
             </label>
@@ -301,17 +316,18 @@ const AIAssistantSettings: React.FC = () => {
               type="range"
               min="0"
               max="100"
-              value={aiSettings?.creativityLevel || 50}
-              onChange={(e) => updateSettings({
-                user: {
-                  ...settings.user,
-                  aiAssistant: { ...aiSettings, creativityLevel: parseInt(e.target.value) }
-                }
-              })}
+              value={aiSettings?.suggestionLevel === 'aggressive' ? 100 : aiSettings?.suggestionLevel === 'minimal' ? 0 : 50}
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                const level = value < 33 ? 'minimal' : value < 66 ? 'moderate' : 'aggressive';
+                updateSettings({
+                  aiAssistance: { ...aiSettings, suggestionLevel: level }
+                } as any);
+              }}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
             />
             <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-              {aiSettings?.creativityLevel || 50}%
+              {aiSettings?.suggestionLevel === 'aggressive' ? 'Creative (100%)' : aiSettings?.suggestionLevel === 'minimal' ? 'Conservative (0%)' : 'Moderate (50%)'}
             </div>
           </div>
         </div>

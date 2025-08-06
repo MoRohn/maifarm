@@ -62,6 +62,18 @@ export interface Session {
   isActive: boolean;
 }
 
+export interface SessionData {
+  id: string;
+  userId: string;
+  token: string;
+  createdAt: Date;
+  expiresAt: Date;
+  lastActivity: Date;
+  ipAddress: string;
+  userAgent: string;
+  isActive: boolean;
+}
+
 export interface AuditLog {
   id: string;
   userId: string;
@@ -86,22 +98,47 @@ export interface EncryptionConfig {
 
 export interface EncryptedData {
   data: string; // Base64 encoded
+  ciphertext?: string; // Alias for data
   iv: string; // Base64 encoded
   salt: string; // Base64 encoded
+  tag?: string; // Authentication tag for GCM mode
   algorithm: string;
   timestamp: Date;
 }
 
-export interface SecurityPolicy {
-  passwordPolicy: {
-    minLength: number;
-    requireUppercase: boolean;
-    requireLowercase: boolean;
-    requireNumbers: boolean;
-    requireSpecialChars: boolean;
-    maxAge: number; // days
-    preventReuse: number; // number of previous passwords
+export interface PasswordPolicy {
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireNumbers: boolean;
+  requireSpecialChars: boolean;
+  maxAge: number; // days
+  preventReuse: number; // number of previous passwords
+}
+
+export interface SecurityConfig {
+  passwordPolicy: PasswordPolicy;
+  sessionPolicy: {
+    maxDuration: number; // minutes
+    idleTimeout: number; // minutes
+    maxConcurrentSessions: number;
+    requireMFA: boolean;
   };
+  apiPolicy: {
+    rateLimit: number; // requests per minute
+    maxRequestSize: number; // bytes
+    allowedOrigins: string[];
+    requireApiKey: boolean;
+  };
+  encryptionEnabled: boolean;
+  auditLoggingEnabled: boolean;
+  twoFactorRequired: boolean;
+  allowedIPs?: string[];
+  blockedIPs?: string[];
+}
+
+export interface SecurityPolicy {
+  passwordPolicy: PasswordPolicy;
   sessionPolicy: {
     maxDuration: number; // minutes
     idleTimeout: number; // minutes
@@ -175,4 +212,28 @@ export interface OfflineCapability {
   allowedOfflineActions: string[];
   syncInterval: number; // minutes
   conflictResolution: 'local_wins' | 'remote_wins' | 'manual';
+}
+
+export enum SecurityEventType {
+  LOGIN_SUCCESS = 'LOGIN_SUCCESS',
+  LOGIN_FAILURE = 'LOGIN_FAILURE',
+  LOGOUT = 'LOGOUT',
+  PASSWORD_CHANGE = 'PASSWORD_CHANGE',
+  PERMISSION_DENIED = 'PERMISSION_DENIED',
+  SUSPICIOUS_ACTIVITY = 'SUSPICIOUS_ACTIVITY',
+  TOKEN_REFRESH = 'TOKEN_REFRESH',
+  MFA_ENABLED = 'MFA_ENABLED',
+  MFA_DISABLED = 'MFA_DISABLED',
+  ACCOUNT_LOCKED = 'ACCOUNT_LOCKED',
+  ACCOUNT_UNLOCKED = 'ACCOUNT_UNLOCKED',
+}
+
+export interface SecurityEvent {
+  type: SecurityEventType;
+  userId?: string;
+  details?: Record<string, any>;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  timestamp: string;
+  ipAddress?: string;
+  userAgent?: string;
 }

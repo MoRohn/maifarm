@@ -59,16 +59,36 @@ export interface GoWildSession {
   id: string;
   farmId: string;
   config: GoWildConfig;
-  status: 'idle' | 'exploring' | 'paused' | 'completed';
-  startTime?: Date;
+  status: 'idle' | 'exploring' | 'paused' | 'completed' | 'failed';
+  startTime: Date;
   endTime?: Date;
-  explorationPath: ExplorationPath;
+  pausedAt?: Date;
+  harvestId?: string;
+  explorationPath: {
+    nodes: ExplorationNode[];
+    edges: ExplorationEdge[];
+    discoveries: Discovery[];
+    currentNodeId: string | null;
+  };
   stats: {
     nodesExplored: number;
     discoveriesMade: number;
     backtrackCount: number;
     averageCreativity: number;
   };
+  summary?: {
+    sessionId: string;
+    farmId: string;
+    duration: number;
+    stats: any;
+    discoveries: number;
+    savedDiscoveries: number;
+    totalNodes: number;
+    completedAt: string;
+  };
+  discoveries?: Discovery[];
+  totalTasks?: number;
+  completedTasks?: number;
 }
 
 export interface GoWildUpdate {
@@ -76,4 +96,25 @@ export interface GoWildUpdate {
   sessionId: string;
   data: any;
   timestamp: Date;
+}
+
+export interface ExplorationSummary {
+  sessionId: string;
+  farmId: string;
+  duration: number;
+  stats: {
+    nodesExplored: number;
+    discoveriesMade: number;
+    backtrackCount: number;
+    averageCreativity: number;
+  };
+  discoveries: number;
+  savedDiscoveries: number;
+}
+
+export interface EmergencyStopResult {
+  sessionId: string;
+  status: 'stopped' | 'error';
+  summary?: ExplorationSummary;
+  error?: string;
 }

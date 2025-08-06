@@ -1,0 +1,11 @@
+[
+  {
+    "targets": ["agent1:9100"],
+    "labels": {
+      "agent_id": "agent_001",
+      "farm_id": "farm_main",
+      "agent_name": "Claude Agent 1",
+      "agent_type": "code_assistant"
+    }
+  }
+]

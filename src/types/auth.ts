@@ -6,16 +6,32 @@ export interface User {
   roles: Role[];
   permissions: Permission[];
   createdAt: Date;
+  updatedAt?: Date;
   lastLogin?: Date;
   mfaEnabled?: boolean;
+  isActive?: boolean;
   sessionToken?: string;
+  notifications?: Notification[];
+}
+
+// Alias for backwards compatibility
+export type AuthUser = User;
+
+export interface Notification {
+  id: string;
+  type: 'info' | 'warning' | 'error' | 'success';
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: Date;
 }
 
 export interface Role {
   id: string;
   name: string;
   description: string;
-  permissions: Permission[];
+  permissions: Permission[] | string[];
+  isSystem?: boolean;
 }
 
 export interface Permission {
@@ -32,9 +48,40 @@ export interface AuthTokens {
 }
 
 export interface LoginCredentials {
-  email: string;
+  email?: string;
+  username?: string;
   password: string;
   rememberMe?: boolean;
+}
+
+export interface LoginInput {
+  email?: string;
+  username?: string;
+  password: string;
+}
+
+export interface RegisterInput {
+  email: string;
+  name: string;
+  password: string;
+  confirmPassword?: string;
+}
+
+export interface AuthToken {
+  userId: string;
+  email?: string;
+  roles: string[];
+  permissions: string[];
+  exp?: number;
+  iat?: number;
+}
+
+export interface AuthResponse {
+  user: User;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn?: number;
+  requiresMFA?: boolean;
 }
 
 export interface AuthState {

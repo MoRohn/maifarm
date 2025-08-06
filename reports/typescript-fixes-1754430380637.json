@@ -1,0 +1,129 @@
+{
+  "timestamp": "2025-08-05T21:46:20.637Z",
+  "summary": {
+    "totalErrors": 219,
+    "fixesApplied": 14,
+    "filesModified": 5
+  },
+  "fixes": [
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Property Access",
+      "fix": "Fixed property access: disabled",
+      "line": 327,
+      "before": "setting.disabled && 'opacity-50'",
+      "after": "setting.disabled? && 'opacity-50'"
+    },
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Property Access",
+      "fix": "Fixed property access: disabled",
+      "line": 346,
+      "before": "disabled={setting.disabled}",
+      "after": "disabled={setting.disabled?}"
+    },
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Property Access",
+      "fix": "Fixed property access: min",
+      "line": 366,
+      "before": "min={setting.min}",
+      "after": "min={setting.min?}"
+    },
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Property Access",
+      "fix": "Fixed property access: max",
+      "line": 367,
+      "before": "max={setting.max}",
+      "after": "max={setting.max?}"
+    },
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Property Access",
+      "fix": "Fixed property access: step",
+      "line": 368,
+      "before": "step={setting.step}",
+      "after": "step={setting.step?}"
+    },
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Property Access",
+      "fix": "Fixed property access: disabled",
+      "line": 369,
+      "before": "disabled={setting.disabled}",
+      "after": "disabled={setting.disabled?}"
+    },
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Property Access",
+      "fix": "Fixed property access: disabled",
+      "line": 383,
+      "before": "disabled={setting.disabled}",
+      "after": "disabled={setting.disabled?}"
+    },
+    {
+      "file": "src/services/agentService.ts",
+      "type": "Type Assignment",
+      "fix": "Fixed type assignment mismatch",
+      "line": 56,
+      "before": "memory: { allocated: 2048, used: 921.6, limit: 4096 },",
+      "after": "memory: { allocated: 2048.toString(), used: 921.toString().6.toString(), limit: 4096.toString() },"
+    },
+    {
+      "file": "src/services/agentService.ts",
+      "type": "Type Assignment",
+      "fix": "Fixed type assignment mismatch",
+      "line": 89,
+      "before": "memory: { allocated: 2048, used: 655.36, limit: 4096 },",
+      "after": "memory: { allocated: 2048.toString(), used: 655.toString().36.toString(), limit: 4096.toString() },"
+    },
+    {
+      "file": "src/services/orchestration/farmOrchestrator.ts",
+      "type": "Type Assignment",
+      "fix": "Fixed type assignment mismatch",
+      "line": 364,
+      "before": "description: request.description,",
+      "after": "description!: request.description,"
+    },
+    {
+      "file": "src/components/Settings/AgentSettings.tsx",
+      "type": "Implicit Any",
+      "fix": "Added type annotation",
+      "line": 391,
+      "before": "{setting.options?.map((option) => (",
+      "after": "{setting.options?.map((option: any) => ("
+    },
+    {
+      "file": "src/services/creativityAnalyzer.ts",
+      "type": "Implicit Any",
+      "fix": "Added type annotation",
+      "line": 182,
+      "before": "risk += categoryRisk[proposal.category] || 20;",
+      "after": "risk += categoryRisk[proposal.category as keyof typeof object] || 20;"
+    },
+    {
+      "file": "src/services/themeEngine.ts",
+      "type": "Implicit Any",
+      "fix": "Added type annotation",
+      "line": 87,
+      "before": "const scale = scales[fontSize] || 1;",
+      "after": "const scale = scales[fontSize as keyof typeof object] || 1;"
+    },
+    {
+      "file": "src/services/themeEngine.ts",
+      "type": "Implicit Any",
+      "fix": "Added type annotation",
+      "line": 97,
+      "before": "this.root.style.fontSize = baseSizes[fontSize] || '16px';",
+      "after": "this.root.style.fontSize = baseSizes[fontSize as keyof typeof object] || '16px';"
+    }
+  ],
+  "modifiedFiles": [
+    "src/components/Settings/AgentSettings.tsx",
+    "src/services/agentService.ts",
+    "src/services/orchestration/farmOrchestrator.ts",
+    "src/services/creativityAnalyzer.ts",
+    "src/services/themeEngine.ts"
+  ]
+}

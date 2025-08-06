@@ -1,9 +1,9 @@
-# MaiFarm V2 - Multi-Agent Claude Code Orchestrator Dashboard
+# MaiFarm - Multi-Agent Claude Code Orchestrator Dashboard
 
 <div align="center">
-  <img src="src/assets/logos/maifarm-v2-logo.svg" alt="MaiFarm V2 Logo" width="200" />
+  <img src="src/assets/logos/maifarm-logo.svg" alt="MaiFarm Logo" width="200" />
   
-  [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/yourusername/maifarm-v2)
+  [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/yourusername/maifarm)
   [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
   [![TypeScript](https://img.shields.io/badge/TypeScript-5.3.3-blue.svg)](https://www.typescriptlang.org/)
   [![React](https://img.shields.io/badge/React-18.2.0-blue.svg)](https://reactjs.org/)
@@ -11,7 +11,7 @@
 
 ## Overview
 
-MaiFarm V2 is a sophisticated web-based dashboard for orchestrating and managing multiple Claude Code AI agents. It provides a comprehensive interface for creating, monitoring, and controlling AI agent farms that work collaboratively on complex software development tasks.
+MaiFarm is a sophisticated web-based dashboard for orchestrating and managing multiple Claude Code AI agents. It provides a comprehensive interface for creating, monitoring, and controlling AI agent farms that work collaboratively on complex software development tasks.
 
 ## Features
 
@@ -55,8 +55,8 @@ MaiFarm V2 is a sophisticated web-based dashboard for orchestrating and managing
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/maifarm-v2.git
-cd maifarm-v2
+git clone https://github.com/yourusername/maifarm.git
+cd maifarm
 ```
 
 2. Install dependencies:
@@ -68,7 +68,7 @@ npm install
 ```env
 VITE_API_URL=http://localhost:3001
 VITE_WS_URL=ws://localhost:3001
-VITE_APP_NAME=MaiFarm V2
+VITE_APP_NAME=MaiFarm
 ```
 
 ## Development
@@ -102,7 +102,7 @@ The build artifacts will be stored in the `dist/` directory.
 ## Project Structure
 
 ```
-maifarm-v2/
+maifarm/
 ├── public/              # Static assets
 │   ├── manifest.json    # PWA manifest
 │   └── service-worker.js # Service worker
@@ -198,11 +198,11 @@ Optimize for your use case:
 
 ## API Integration
 
-MaiFarm V2 can be integrated with external systems:
+MaiFarm can be integrated with external systems:
 
 ```typescript
 // Example API usage
-import { FarmAPI } from 'maifarm-v2-sdk';
+import { FarmAPI } from 'maifarm-sdk';
 
 const api = new FarmAPI({
   baseURL: 'https://your-maifarm-instance.com',

@@ -21,7 +21,7 @@ interface ApiKey {
   lastUsed?: Date;
 }
 
-const ApiKeyManager: React.FC = () => {
+export const ApiKeyManager: React.FC = () => {
   const { preferences, updatePreferences } = useUserStore();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>(preferences?.apiKeys || []);
   const [showNewKeyModal, setShowNewKeyModal] = useState(false);

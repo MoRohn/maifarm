@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Code, CheckCircle, AlertCircle, Download, Save, RefreshCw } from 'lucide-react';
-import PromptInput from './PromptInput';
+import PromptInput from './PromptInputEnhanced';
 import YamlPreview from './YamlPreview';
 import YamlEditor from './YamlEditor';
+import AIProviderSelector, { type AIProvider } from '../common/AIProviderSelector';
 import { useYamlGenerator } from '../../hooks/useYamlGenerator';
 import { GeneratorMode } from '../../types/yamlGenerator';
 
@@ -26,10 +27,11 @@ const YamlGenerator: React.FC = () => {
 
   const [showEditor, setShowEditor] = useState(false);
   const [editedYaml, setEditedYaml] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>('claude');
 
   const handleGenerate = useCallback(async () => {
-    await generateYaml(currentPrompt);
-  }, [currentPrompt, generateYaml]);
+    await generateYaml(currentPrompt, { provider: selectedProvider });
+  }, [currentPrompt, selectedProvider, generateYaml]);
 
   const handleValidate = useCallback(async () => {
     const yamlToValidate = showEditor ? editedYaml : rawYaml;
@@ -104,6 +106,15 @@ const YamlGenerator: React.FC = () => {
             mode={mode}
           />
 
+          {/* AI Provider Selection */}
+          <AIProviderSelector
+            value={selectedProvider}
+            onChange={setSelectedProvider}
+            showDetails={false}
+            disabled={isGenerating}
+            className="mb-4"
+          />
+
           {/* Quick Examples */}
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -117,7 +128,7 @@ const YamlGenerator: React.FC = () => {
                 'Create an analysis farm for performance optimization'
               ].map((example, index) => (
                 <button
-                  key={index}
+                  key={`example-${example.substring(0, 20).replace(/\s/g, '-')}`}
                   onClick={() => setCurrentPrompt(example)}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline text-left"
                 >
@@ -157,7 +168,7 @@ const YamlGenerator: React.FC = () => {
                     {validationResult.errors.length > 0 && (
                       <ul className="mt-2 space-y-1">
                         {validationResult.errors.map((error, index) => (
-                          <li key={index} className="text-sm text-red-600 dark:text-red-400">
+                          <li key={`error-${error.field}-${index}`} className="text-sm text-red-600 dark:text-red-400">
                             • {error.field}: {error.message}
                           </li>
                         ))}
@@ -170,7 +181,7 @@ const YamlGenerator: React.FC = () => {
                         </p>
                         <ul className="mt-1 space-y-1">
                           {validationResult.suggestions.map((suggestion, index) => (
-                            <li key={index} className="text-sm text-gray-600 dark:text-gray-400">
+                            <li key={`suggestion-${suggestion.substring(0, 20).replace(/\s/g, '-')}-${index}`} className="text-sm text-gray-600 dark:text-gray-400">
                               • {suggestion}
                             </li>
                           ))}
@@ -275,7 +286,7 @@ const YamlGenerator: React.FC = () => {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {history.slice(0, 6).map((item, index) => (
               <motion.div
-                key={index}
+                key={`history-${item.timestamp}-${index}`}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: index * 0.05 }}

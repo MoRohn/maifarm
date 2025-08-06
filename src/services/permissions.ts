@@ -1,4 +1,5 @@
-import { Permission, Role, AuthUser, AccessControl } from '../types/security';
+import { Permission, Role, AccessControl, AuthUser } from '../types/security';
+import { User } from '../types/auth';
 
 export class PermissionsService {
   private static instance: PermissionsService;
@@ -16,7 +17,7 @@ export class PermissionsService {
 
   // Check if user has specific permission
   hasPermission(
-    user: AuthUser | null,
+    user: User | null,
     resource: string,
     action: string
   ): boolean {
@@ -41,7 +42,7 @@ export class PermissionsService {
 
   // Check multiple permissions (all must be true)
   hasAllPermissions(
-    user: AuthUser | null,
+    user: User | null,
     permissions: Array<{ resource: string; action: string }>
   ): boolean {
     return permissions.every(p => this.hasPermission(user, p.resource, p.action));
@@ -49,14 +50,14 @@ export class PermissionsService {
 
   // Check multiple permissions (any can be true)
   hasAnyPermission(
-    user: AuthUser | null,
+    user: User | null,
     permissions: Array<{ resource: string; action: string }>
   ): boolean {
     return permissions.some(p => this.hasPermission(user, p.resource, p.action));
   }
 
   // Check if user has specific role
-  hasRole(user: AuthUser | null, roleName: string): boolean {
+  hasRole(user: User | null, roleName: string): boolean {
     if (!user) return false;
     return user.roles.some(role => role.name === roleName);
   }
@@ -64,7 +65,7 @@ export class PermissionsService {
   // Check if user has any of the specified roles
   hasAnyRole(user: AuthUser | null, roleNames: string[]): boolean {
     if (!user) return false;
-    return user.roles.some(role => roleNames.includes(role.name));
+    return user.roles.some((role: any) => roleNames.includes(role.name));
   }
 
   // Get all permissions for a user (including role-based)

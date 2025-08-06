@@ -1,0 +1,57 @@
+name: code-review-farm
+description: MaiFarm Code Review with Barnyard Friends
+agents:
+  - name: 🦉 Owlbert the Barn Owl
+    role: Lead code reviewer and architecture analyst
+    capabilities:
+      - Static Analysis
+      - Code Quality
+      - Best Practices
+    personality: Wise code reviewer
+    
+  - name: 🐔 Clucky the Chicken
+    role: Detail-oriented frontend reviewer
+    capabilities:
+      - React
+      - TypeScript
+      - Accessibility
+    personality: Detail-oriented and precise
+    
+  - name: 🦃 Tom the Turkey
+    role: Security and vulnerability auditor
+    capabilities:
+      - Security Analysis
+      - OWASP
+      - Vulnerability Detection
+    personality: Comprehensive reviewer
+
+initial_prompt: |
+  Welcome to MaiFarm! You are joining The Barnyard Brigade as an expert code reviewer.
+  You will perform a comprehensive review of the codebase with your fellow farm animals,
+  each focusing on different aspects.
+  
+  Your farm colleagues are ready to help. Respond with "Ready to begin" when you are
+  prepared to start.
+
+steps:
+  - Initialize code review environment and clone repository
+  - Analyze codebase structure and identify review areas
+  - Perform static code analysis and linting
+  - Review code quality, patterns, and best practices
+  - Check for security vulnerabilities and performance issues
+  - Generate comprehensive review report with recommendations
+
+config:
+  autoScale: false
+  maxAgents: 6
+  timeout: 3600
+  coordination: collaborative
+  stagger: 5
+
+metadata:
+  created_at: 2025-08-04T13:45:00.000Z
+  ai_generated: true
+  purpose: review
+  num_agents: 3
+  complexity: moderate
+  farm_theme: true

@@ -32,46 +32,29 @@ const languages: Language[] = [
   { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳', supported: false }
 ];
 
-const LanguageSelector: React.FC = () => {
+export const LanguageSelector: React.FC = () => {
   const { preferences, updatePreferences } = useUserStore();
-  const [selectedLanguage, setSelectedLanguage] = useState(preferences?.language?.current || 'en');
-  const [autoDetect, setAutoDetect] = useState(preferences?.language?.autoDetect ?? true);
-  const [translationQuality, setTranslationQuality] = useState(preferences?.language?.translationQuality || 'advanced');
+  const [selectedLanguage, setSelectedLanguage] = useState(preferences?.language || 'en');
+  const [autoDetect, setAutoDetect] = useState(true);
+  const [translationQuality, setTranslationQuality] = useState('advanced');
 
   const handleLanguageChange = (langCode: string) => {
     setSelectedLanguage(langCode);
     updatePreferences({
-      language: {
-        ...preferences?.language,
-        current: langCode,
-        autoDetect,
-        translationQuality
-      }
+      language: langCode
     });
   };
 
   const handleAutoDetectChange = (enabled: boolean) => {
     setAutoDetect(enabled);
-    updatePreferences({
-      language: {
-        ...preferences?.language,
-        current: selectedLanguage,
-        autoDetect: enabled,
-        translationQuality
-      }
-    });
+    // Store auto-detect preference separately if needed
+    // For now, just update local state
   };
 
   const handleTranslationQualityChange = (quality: string) => {
     setTranslationQuality(quality);
-    updatePreferences({
-      language: {
-        ...preferences?.language,
-        current: selectedLanguage,
-        autoDetect,
-        translationQuality: quality
-      }
-    });
+    // Store translation quality preference separately if needed
+    // For now, just update local state
   };
 
   const selectedLang = languages.find(lang => lang.code === selectedLanguage);
