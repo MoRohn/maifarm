@@ -8,6 +8,7 @@ import {
 } from '../api/analytics';
 import * as os from 'os';
 import * as fs from 'fs';
+import { pathConfig } from '../config/paths';
 import { db } from '../database/connection';
 
 interface AnalyticsUpdateEvent {
@@ -145,7 +146,7 @@ export class AnalyticsWebSocketHandler {
   private async getClaudeCodeCosts(): Promise<ClaudeCodeCosts> {
     try {
       // Read from Claude coordination file
-      const coordinationFile = '/tmp/claude_coordination/active_agents.json';
+      const coordinationFile = pathConfig.getPath('ACTIVE_AGENTS_FILE');
       let activeAgentsData: any = {};
       
       if (fs.existsSync(coordinationFile)) {

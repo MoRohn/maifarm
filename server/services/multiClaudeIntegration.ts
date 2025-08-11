@@ -1,6 +1,6 @@
 /**
  * Multi-Claude Integration Service
- * Bridges the file-based coordination system from multi_claude.py with the WebSocket server
+ * Bridges the file-based coordination system from orchestrator.py with the WebSocket server
  */
 
 import { EventEmitter } from 'events';

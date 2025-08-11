@@ -6,20 +6,39 @@ import {
   Harvest, 
   HarvestResult, 
   HarvestInsight, 
-  HarvestArtifact,
+  HarvestYield,
   HarvestFilter,
   HarvestExport,
   HarvestSummary 
 } from '../../src/types/harvest';
+import { harvestFileCollector, HarvestFileCollection } from './harvestFileCollector';
 
 export class HarvestService {
   private harvests: Map<string, Harvest> = new Map();
   private activeHarvests: Map<string, ReturnType<typeof setInterval>> = new Map();
   private userHarvests: Map<string, Set<string>> = new Map();
   private harvestAgents: Map<string, Map<string, any>> = new Map(); // harvestId -> Map of agents
+  private harvestFileCollections: Map<string, HarvestFileCollection> = new Map(); // harvestId -> file collection
 
   async startHarvest(farmId: string, farmName: string, userId: string = 'default-user'): Promise<Harvest> {
     try {
+      // Get farmer template information from the farm record
+      let farmerTemplateId: string | undefined;
+      let farmerTemplateName: string | undefined;
+      
+      try {
+        const farmResult = await db.query(
+          'SELECT farmer_template_id, farmer_template_name FROM farms WHERE id = $1',
+          [farmId]
+        );
+        if (farmResult.rows.length > 0) {
+          farmerTemplateId = farmResult.rows[0].farmer_template_id;
+          farmerTemplateName = farmResult.rows[0].farmer_template_name;
+        }
+      } catch (dbError) {
+        console.warn('Failed to fetch farmer template info for harvest:', dbError);
+      }
+
       const harvest: Harvest = {
         id: randomUUID(),
         farmId,
@@ -28,15 +47,26 @@ export class HarvestService {
         createdAt: new Date(),
         summary: {
           description: `Harvesting outputs from farm ${farmName}`,
-          totalTasks: 0,
-          completedTasks: 0,
-          failedTasks: 0,
+          totalFiles: 0,           // New primary metric
+          filesGenerated: 0,       // New primary metric
+          filesFailed: 0,          // New primary metric
+          totalTasks: 0,           // Legacy compatibility
+          completedTasks: 0,       // Legacy compatibility
+          failedTasks: 0,          // Legacy compatibility
           duration: 0,
-          efficiency: 0
+          efficiency: 0,
+          fileCategories: {        // New: Track file types
+            text: 0,
+            code: 0,
+            image: 0,
+            data: 0,
+            config: 0,
+            other: 0
+          }
         },
         results: [],
         insights: [],
-        artifacts: [],
+        yield: [],
         quality: {
           completeness: 0,
           accuracy: 0,
@@ -44,10 +74,15 @@ export class HarvestService {
           overallScore: 0
         },
         tags: [],
+        farmerTemplateId,
+        farmerTemplateName,
         exportFormats: ['json', 'markdown', 'pdf']
       };
 
       this.harvests.set(harvest.id, harvest);
+      
+      // Immediately persist to database
+      await this.persistHarvest(harvest);
       
       // Track user ownership
       if (!this.userHarvests.has(userId)) {
@@ -74,7 +109,7 @@ export class HarvestService {
   }
 
   private monitorHarvest(harvestId: string) {
-    // Simulate harvest progress
+    // Monitor real harvest progress from agents
     const timer = setInterval(async () => {
       const harvest = this.harvests.get(harvestId);
       if (!harvest || harvest.status !== 'processing') {
@@ -83,39 +118,155 @@ export class HarvestService {
         return;
       }
 
-      // Update harvest progress
-      harvest.summary.completedTasks++;
+      // Update harvest duration
       harvest.summary.duration = Math.floor((Date.now() - harvest.createdAt.getTime()) / 1000);
       
-      // Add sample results
-      if (harvest.results.length < 5) {
-        harvest.results.push(this.generateSampleResult(harvest));
+      // Collect real output from tmux sessions if it's a quick task
+      if (harvest.farmId.startsWith('quick-task-')) {
+        await this.collectQuickTaskOutput(harvest);
       }
 
-      // Add insights periodically
-      if (harvest.results.length % 2 === 0) {
-        harvest.insights.push(this.generateSampleInsight(harvest));
-      }
-
-      // Calculate quality metrics
+      // Calculate quality metrics based on real data
       harvest.quality = this.calculateQuality(harvest);
 
-      // Check if harvest is complete
-      if (harvest.results.length >= 5) {
-        await this.completeHarvest(harvestId);
-      } else {
-        // Emit progress update
-        websocketManager.broadcast('harvest:progress', {
-          harvestId,
-          progress: (harvest.results.length / 5) * 100,
-          summary: harvest.summary
-        });
-      }
-    }, 2000); // Update every 2 seconds
+      // Emit progress update
+      websocketManager.broadcast('harvest:progress', {
+        harvestId,
+        progress: harvest.status === 'ready' ? 100 : Math.min((harvest.summary.completedTasks / Math.max(1, harvest.summary.totalTasks)) * 100, 90),
+        summary: harvest.summary
+      });
+    }, 5000); // Check every 5 seconds
 
     this.activeHarvests.set(harvestId, timer);
   }
 
+  private async collectQuickTaskOutput(harvest: Harvest): Promise<void> {
+    try {
+      // Get the task ID from farmId
+      const taskId = harvest.farmId.replace('quick-task-', '');
+      const sessionName = `quick_${taskId.substring(0, 8)}`;
+      
+      // Import spawn for tmux capture
+      const { spawn } = await import('child_process');
+      
+      // Capture tmux output
+      const output = await new Promise<string>((resolve) => {
+        const captureProcess = spawn('tmux', [
+          'capture-pane',
+          '-t', `${sessionName}:0`,
+          '-p',
+          '-S', '-500' // Last 500 lines
+        ]);
+        
+        let captured = '';
+        captureProcess.stdout?.on('data', (data) => {
+          captured += data.toString();
+        });
+        
+        captureProcess.on('exit', () => {
+          resolve(captured);
+        });
+        
+        // Timeout fallback
+        setTimeout(() => resolve(captured || ''), 2000);
+      });
+      
+      // Only add new result if we have output and haven't captured it yet
+      if (output && output.length > 100 && !harvest.metadata?.lastOutputLength || 
+          (harvest.metadata?.lastOutputLength && output.length > harvest.metadata.lastOutputLength)) {
+        
+        // Create a real result from the captured output
+        const result: HarvestResult = {
+          id: randomUUID(),
+          agentId: harvest.metadata?.agentId || randomUUID(),
+          agentName: 'Quick Task Agent',
+          agentType: 'executor',
+          taskType: 'quick-task',
+          content: output.substring(Math.max(0, output.length - 2000)), // Last 2000 chars
+          metadata: {
+            sessionName,
+            capturedAt: new Date(),
+            outputLength: output.length
+          },
+          timestamp: new Date(),
+          processingTime: harvest.summary.duration,
+          success: !output.includes('error') && !output.includes('failed')
+        };
+        
+        harvest.results.push(result);
+        harvest.summary.completedTasks++;
+        harvest.metadata = { ...harvest.metadata, lastOutputLength: output.length };
+        
+        // Create yield from output files if any were created
+        const outputLines = output.split('\n');
+        for (const line of outputLines) {
+          // Look for file creation patterns
+          if (line.includes('Created file:') || line.includes('Writing to:') || line.includes('Saved to:')) {
+            const fileMatch = line.match(/['"]([^'"]+\.[a-z]+)['"]/);
+            if (fileMatch) {
+              const fileName = fileMatch[1];
+              const yieldItem: HarvestYield = {
+                id: randomUUID(),
+                type: 'file',
+                name: fileName,
+                description: `File created by Quick Task agent`,
+                mimeType: this.getMimeType(fileName),
+                size: 0,
+                location: `/harvests/${harvest.id}/${fileName}`,
+                checksum: '',
+                createdBy: {
+                  agentId: harvest.metadata?.agentId || 'quick-task-agent',
+                  agentName: 'Quick Task Agent'
+                },
+                createdAt: new Date(),
+                metadata: { fromQuickTask: true }
+              };
+              
+              // Add to yield if not already present
+              if (!harvest.yield.find(y => y.name === fileName)) {
+                harvest.yield.push(yieldItem);
+              }
+            }
+          }
+        }
+        
+        // Add insight if task completed
+        if (output.includes('Task completed') || output.includes('Done') || output.includes('Finished')) {
+          harvest.insights.push({
+            id: randomUUID(),
+            type: 'completion',
+            title: 'Task Completed',
+            description: 'Quick Task agent has completed the requested work',
+            importance: 'high',
+            source: { agentId: harvest.metadata?.agentId || 'quick-task-agent', agentName: 'Quick Task Agent' },
+            relatedResults: [result.id],
+            timestamp: new Date()
+          });
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to collect Quick Task output for harvest ${harvest.id}:`, error);
+    }
+  }
+  
+  private getMimeType(fileName: string): string {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      'py': 'text/x-python',
+      'js': 'application/javascript',
+      'ts': 'application/typescript',
+      'json': 'application/json',
+      'md': 'text/markdown',
+      'txt': 'text/plain',
+      'yaml': 'text/yaml',
+      'yml': 'text/yaml',
+      'html': 'text/html',
+      'css': 'text/css'
+    };
+    return mimeTypes[ext || ''] || 'application/octet-stream';
+  }
+
+  // Remove the mock data generator - no longer needed
   private generateSampleResult(harvest: Harvest): HarvestResult {
     const taskTypes = ['analysis', 'generation', 'validation', 'optimization'];
     const agentTypes = ['analyzer', 'generator', 'validator', 'optimizer'];
@@ -195,8 +346,8 @@ export class HarvestService {
       timestamp: new Date()
     });
 
-    // Generate sample artifacts
-    harvest.artifacts = [
+    // Generate sample yield
+    harvest.yield = [
       {
         id: randomUUID(),
         type: 'report',
@@ -222,6 +373,32 @@ export class HarvestService {
     if (timer) {
       clearInterval(timer);
       this.activeHarvests.delete(harvestId);
+    }
+
+    // Collect and organize harvest files
+    try {
+      const agents = this.harvestAgents.get(harvestId);
+      const agentIds = agents ? Array.from(agents.keys()) : [];
+      
+      const fileCollection = await harvestFileCollector.collectHarvestFiles(
+        harvestId,
+        harvest.farmId,
+        harvest.farmName,
+        agentIds
+      );
+      
+      this.harvestFileCollections.set(harvestId, fileCollection);
+      
+      // Update yield with actual file paths from collection
+      if (fileCollection.fileTree.children) {
+        const yieldFromFiles = this.extractYieldFromFileTree(fileCollection.fileTree, harvestId);
+        harvest.yield = [...harvest.yield, ...yieldFromFiles];
+      }
+      
+      logger.info(`[HarvestService] Collected ${fileCollection.totalFiles} files for harvest ${harvestId}`);
+    } catch (collectionError) {
+      logger.error('Failed to collect harvest files:', collectionError);
+      // Don't fail the harvest if file collection fails
     }
 
     // Persist to database if available
@@ -295,18 +472,38 @@ export class HarvestService {
   }
 
   private async persistHarvest(harvest: Harvest): Promise<void> {
-    await db.query(
-      `INSERT INTO harvests (id, farm_id, farm_name, status, created_at, completed_at,
-       summary, results, insights, artifacts, quality, tags, export_formats)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [
-        harvest.id, harvest.farmId, harvest.farmName, harvest.status,
-        harvest.createdAt, harvest.completedAt,
-        JSON.stringify(harvest.summary), JSON.stringify(harvest.results),
-        JSON.stringify(harvest.insights), JSON.stringify(harvest.artifacts),
-        JSON.stringify(harvest.quality), harvest.tags, harvest.exportFormats
-      ]
-    );
+    try {
+      // Use UPSERT to ensure harvest is always saved
+      await db.query(
+        `INSERT INTO harvests (id, farm_id, farm_name, name, description, type, status, 
+         created_at, yield, config, metadata, tags, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           yield = EXCLUDED.yield,
+           metadata = EXCLUDED.metadata,
+           updated_at = CURRENT_TIMESTAMP`,
+        [
+          harvest.id, 
+          harvest.farmId, 
+          harvest.farmName,
+          harvest.farmName + ' Harvest', // name
+          harvest.summary.description, // description
+          'workflow', // type (from allowed values)
+          harvest.status,
+          harvest.createdAt,
+          JSON.stringify(harvest.yield), // yield data
+          JSON.stringify({ summary: harvest.summary, quality: harvest.quality }), // config
+          JSON.stringify({ insights: harvest.insights, results: harvest.results }), // metadata
+          harvest.tags,
+          'system' // created_by (will be updated later with actual user)
+        ]
+      );
+      console.log(`[HarvestService] Harvest ${harvest.id} persisted to database with status ${harvest.status}`);
+    } catch (error) {
+      console.error(`[HarvestService] Failed to persist harvest ${harvest.id}:`, error);
+      // Don't throw - we want harvests to continue even if persistence fails
+    }
   }
 
   async findById(id: string): Promise<Harvest | null> {
@@ -317,10 +514,87 @@ export class HarvestService {
     const harvests = Array.from(this.harvests.values())
       .filter(h => h.farmId === farmId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    console.log(`[HarvestService] Finding harvests for farm ${farmId}`);
+    console.log(`[HarvestService] Total harvests in memory: ${this.harvests.size}`);
+    console.log(`[HarvestService] Found ${harvests.length} harvests for farm ${farmId}`);
+    
+    if (harvests.length > 0) {
+      console.log(`[HarvestService] Latest harvest status: ${harvests[0].status}, ID: ${harvests[0].id}`);
+    }
+    
     return harvests;
   }
 
+  async loadPersistedHarvests(): Promise<void> {
+    try {
+      console.log('[HarvestService] Loading persisted harvests from database...');
+      const result = await db.query(
+        'SELECT * FROM harvests WHERE status != $1 ORDER BY created_at DESC',
+        ['deleted']
+      );
+      
+      for (const row of result.rows) {
+        try {
+          const harvest: Harvest = {
+            id: row.id,
+            farmId: row.farm_id,
+            farmName: row.farm_name || row.name,
+            status: row.status || 'completed',
+            createdAt: row.created_at,
+            completedAt: row.updated_at,
+            summary: row.config?.summary || {
+              description: row.description || '',
+              totalFiles: 0,
+              filesGenerated: 0,
+              filesFailed: 0,
+              totalTasks: 0,
+              completedTasks: 0,
+              failedTasks: 0,
+              duration: 0,
+              efficiency: 0,
+              fileCategories: {
+                text: 0,
+                code: 0,
+                image: 0,
+                data: 0,
+                config: 0,
+                other: 0
+              }
+            },
+            results: row.metadata?.results || [],
+            insights: row.metadata?.insights || [],
+            yield: Array.isArray(row.yield) ? row.yield : [],
+            quality: row.config?.quality || {
+              completeness: 100,
+              accuracy: 100,
+              relevance: 100,
+              overallScore: 100
+            },
+            tags: row.tags || [],
+            exportFormats: ['json', 'markdown', 'pdf']
+          };
+          
+          // Store in memory for fast access
+          this.harvests.set(harvest.id, harvest);
+          console.log(`[HarvestService] Loaded harvest ${harvest.id} (${harvest.farmName})`);
+        } catch (parseError) {
+          console.error(`[HarvestService] Failed to parse harvest ${row.id}:`, parseError);
+        }
+      }
+      
+      console.log(`[HarvestService] Loaded ${this.harvests.size} harvests from database`);
+    } catch (error) {
+      console.error('[HarvestService] Error loading persisted harvests:', error);
+    }
+  }
+
   async findAll(filter?: HarvestFilter): Promise<Harvest[]> {
+    // Load from database if not already loaded
+    if (this.harvests.size === 0) {
+      await this.loadPersistedHarvests();
+    }
+    
     let harvests = Array.from(this.harvests.values());
 
     if (filter) {
@@ -400,8 +674,8 @@ export class HarvestService {
     if (config.includeInsights) {
       data.insights = harvest.insights;
     }
-    if (config.includeArtifacts) {
-      data.artifacts = harvest.artifacts;
+    if (config.includeYield) {
+      data.yield = harvest.yield;
     }
 
     return JSON.stringify(data, null, 2);
@@ -464,11 +738,13 @@ export class HarvestService {
       id: h.id,
       farmName: h.farmName,
       completedAt: h.completedAt!,
+      totalFiles: h.summary.totalFiles || h.summary.totalTasks || 0,
+      filesGenerated: h.summary.filesGenerated || h.summary.completedTasks || 0,
       totalTasks: h.summary.totalTasks,
       successRate: h.quality.accuracy,
       overallQuality: h.quality.overallScore,
       topInsights: h.insights.filter(i => i.importance === 'high').slice(0, 3),
-      artifactCount: h.artifacts.length,
+      yieldCount: h.yield.length,
       tags: h.tags
     }));
   }
@@ -495,14 +771,40 @@ export class HarvestService {
   }
 
   async getHarvest(id: string, userId: string): Promise<Harvest | null> {
+    console.log(`[HarvestService] Looking for harvest ${id} for user ${userId}`);
+    console.log(`[HarvestService] Total harvests in memory: ${this.harvests.size}`);
+    console.log(`[HarvestService] User ${userId} has ${(this.userHarvests.get(userId) || new Set()).size} harvests`);
+    
     const harvest = this.harvests.get(id);
-    if (!harvest) return null;
+    if (!harvest) {
+      console.log(`[HarvestService] Harvest ${id} not found in memory`);
+      return null;
+    }
 
     // Check user ownership
     const userHarvestIds = this.userHarvests.get(userId) || new Set();
-    if (!userHarvestIds.has(id)) return null;
+    if (!userHarvestIds.has(id)) {
+      console.log(`[HarvestService] Harvest ${id} not owned by user ${userId}`);
+      console.log(`[HarvestService] User's harvest IDs: ${Array.from(userHarvestIds).join(', ')}`);
+      return null;
+    }
 
+    console.log(`[HarvestService] Found harvest ${id} for user ${userId}: status=${harvest.status}`);
     return harvest;
+  }
+
+  getAllHarvests(userId: string): Harvest[] {
+    const userHarvestIds = this.userHarvests.get(userId) || new Set();
+    const harvests: Harvest[] = [];
+    
+    for (const harvestId of userHarvestIds) {
+      const harvest = this.harvests.get(harvestId);
+      if (harvest) {
+        harvests.push(harvest);
+      }
+    }
+    
+    return harvests;
   }
 
   async createHarvest(input: { farmId: string; farmName: string; userId: string; description?: string; tags?: string[] }): Promise<Harvest> {
@@ -569,8 +871,8 @@ export class HarvestService {
       timestamp: new Date()
     });
 
-    // Generate sample artifacts including images
-    harvest.artifacts = [
+    // Generate sample yield including images
+    harvest.yield = [
       {
         id: randomUUID(),
         type: 'report',
@@ -589,10 +891,10 @@ export class HarvestService {
       }
     ];
     
-    // Add image artifacts if this was an image generation farm
+    // Add image yield if this was an image generation farm
     if (harvest.farmName.toLowerCase().includes('image') || 
         harvest.summary.description.toLowerCase().includes('image')) {
-      harvest.artifacts.push({
+      harvest.yield.push({
         id: randomUUID(),
         type: 'image' as any,
         name: 'hero-image-v1.png',
@@ -616,7 +918,7 @@ export class HarvestService {
         }
       });
       
-      harvest.artifacts.push({
+      harvest.yield.push({
         id: randomUUID(),
         type: 'image' as any,
         name: 'hero-image-v2.png',
@@ -782,6 +1084,8 @@ export class HarvestService {
     stats: any;
     duration: number;
     completedAt: Date;
+    results?: any[];
+    userId?: string;
   }): Promise<Harvest> {
     try {
       const harvest: Harvest = {
@@ -793,28 +1097,52 @@ export class HarvestService {
         completedAt: goWildData.completedAt,
         summary: {
           description: `Go Wild exploration completed with ${goWildData.discoveries.length} discoveries across ${goWildData.nodes.length} exploration nodes`,
-          totalTasks: goWildData.nodes.length,
+          totalFiles: goWildData.discoveries.length,  // Discoveries count as files
+          filesGenerated: goWildData.discoveries.length,
+          filesFailed: 0,
+          totalTasks: goWildData.nodes.length,  // Legacy compatibility
           completedTasks: goWildData.nodes.length,
           failedTasks: 0,
           duration: Math.floor(goWildData.duration / 1000),
-          efficiency: 100
+          efficiency: 100,
+          fileCategories: {
+            text: 0,
+            code: 0,
+            image: 0,
+            data: goWildData.discoveries.length,  // Discoveries are data files
+            config: 0,
+            other: 0
+          }
         },
-        results: goWildData.nodes.map(node => ({
-          id: node.id,
-          agentId: node.agentId || 'goWild',
-          agentName: node.agentName || 'Go Wild Explorer',
-          agentType: 'explorer',
-          taskType: node.type || 'exploration',
-          content: node.content || node.label,
-          metadata: {
-            creativity: node.creativity,
-            confidence: node.confidence,
-            position: node.position
-          },
-          timestamp: node.timestamp,
-          processingTime: 0,
-          success: true
-        })),
+        results: goWildData.results && goWildData.results.length > 0 
+          ? goWildData.results.map(result => ({
+              id: result.id,
+              agentId: result.agentId,
+              agentName: result.agentName,
+              agentType: result.agentType || 'explorer',
+              taskType: 'exploration',
+              content: result.content,
+              metadata: result.metadata || {},
+              timestamp: result.timestamp,
+              processingTime: 0,
+              success: true
+            }))
+          : goWildData.nodes.map(node => ({
+              id: node.id,
+              agentId: node.agentId || 'goWild',
+              agentName: node.agentName || 'Go Wild Explorer',
+              agentType: 'explorer',
+              taskType: node.type || 'exploration',
+              content: node.content || node.label,
+              metadata: {
+                creativity: node.creativity,
+                confidence: node.confidence,
+                position: node.position
+              },
+              timestamp: node.timestamp,
+              processingTime: 0,
+              success: true
+            })),
         insights: goWildData.discoveries.map(discovery => ({
           id: discovery.id,
           type: 'discovery' as const,
@@ -828,7 +1156,7 @@ export class HarvestService {
           relatedResults: [discovery.nodeId],
           timestamp: discovery.timestamp
         })),
-        artifacts: [],
+        yield: [],
         quality: {
           completeness: 100,
           accuracy: 95,
@@ -853,6 +1181,13 @@ export class HarvestService {
 
       this.harvests.set(harvest.id, harvest);
 
+      // Track user ownership if userId provided
+      const userId = goWildData.userId || 'dev-user';
+      if (!this.userHarvests.has(userId)) {
+        this.userHarvests.set(userId, new Set());
+      }
+      this.userHarvests.get(userId)!.add(harvest.id);
+
       // Emit WebSocket event
       websocketManager.broadcast('harvest:created', {
         harvestId: harvest.id,
@@ -876,31 +1211,116 @@ export class HarvestService {
     }
   }
 
-  async addArtifact(harvestId: string, artifact: any): Promise<void> {
+  async addYield(harvestId: string, yieldItem: any): Promise<void> {
     const harvest = this.harvests.get(harvestId);
     if (!harvest) {
       throw new Error('Harvest not found');
     }
 
-    harvest.artifacts.push({
-      id: artifact.id || randomUUID(),
-      type: artifact.type || 'discovery',
-      name: artifact.name,
-      description: artifact.description || '',
+    harvest.yield.push({
+      id: yieldItem.id || randomUUID(),
+      type: yieldItem.type || 'discovery',
+      name: yieldItem.name,
+      description: yieldItem.description || '',
       mimeType: 'application/json',
-      size: artifact.size || 0,
-      location: artifact.path || `/harvests/${harvestId}/artifacts/${artifact.id}`,
-      checksum: artifact.checksum || 'auto',
+      size: yieldItem.size || 0,
+      location: yieldItem.path || `/harvests/${harvestId}/yield/${yieldItem.id}`,
+      checksum: yieldItem.checksum || 'auto',
       createdBy: {
         agentId: 'goWild',
         agentName: 'Go Wild Explorer'
       },
-      createdAt: artifact.createdAt || new Date(),
-      metadata: artifact.content || {}
+      createdAt: yieldItem.createdAt || new Date(),
+      metadata: yieldItem.content || {}
     });
 
-    logger.info(`Added artifact ${artifact.id} to harvest ${harvestId}`);
+    logger.info(`Added yield item ${yieldItem.id} to harvest ${harvestId}`);
+  }
+
+  /**
+   * Extract yield items from file tree
+   */
+  private extractYieldFromFileTree(fileTree: any, harvestId: string): HarvestYield[] {
+    const yieldItems: HarvestYield[] = [];
+    
+    const traverse = (node: any, parentPath: string = '') => {
+      if (node.type === 'file' && !node.name.includes('.log') && !node.name.includes('summary')) {
+        // Determine yield type based on file location or extension
+        let yieldType: HarvestYield['type'] = 'file';
+        if (node.path.includes('/code/')) yieldType = 'code';
+        else if (node.path.includes('/docs/')) yieldType = 'documentation';
+        else if (node.path.includes('/data/')) yieldType = 'data';
+        else if (node.path.includes('/reports/')) yieldType = 'report';
+        
+        yieldItems.push({
+          id: node.id,
+          type: yieldType,
+          name: node.name,
+          description: `File collected from harvest`,
+          mimeType: node.mimeType || 'application/octet-stream',
+          size: node.size || 0,
+          location: node.path,
+          checksum: 'auto',
+          createdBy: {
+            agentId: 'file-collector',
+            agentName: 'File Collector'
+          },
+          createdAt: node.createdAt || new Date(),
+          metadata: {
+            fromFileTree: true
+          }
+        });
+      }
+      
+      if (node.children) {
+        node.children.forEach((child: any) => traverse(child, node.path));
+      }
+    };
+    
+    traverse(fileTree);
+    return yieldItems;
+  }
+
+  /**
+   * Get file collection for a harvest
+   */
+  async getHarvestFileCollection(harvestId: string): Promise<HarvestFileCollection | null> {
+    return this.harvestFileCollections.get(harvestId) || null;
+  }
+
+  /**
+   * Get file tree for a harvest
+   */
+  async getHarvestFileTree(harvestId: string): Promise<any | null> {
+    const collection = this.harvestFileCollections.get(harvestId);
+    return collection ? collection.fileTree : null;
+  }
+
+  /**
+   * Get file content from harvest
+   */
+  async getHarvestFileContent(harvestId: string, filePath: string): Promise<Buffer | null> {
+    try {
+      const collection = this.harvestFileCollections.get(harvestId);
+      if (!collection) {
+        // Try to get from file system if not in memory
+        return await harvestFileCollector.getFileContent(filePath);
+      }
+      return await harvestFileCollector.getFileContent(filePath);
+    } catch (error) {
+      logger.error(`Failed to get file content for ${filePath}:`, error);
+      return null;
+    }
   }
 }
 
 export const harvestService = new HarvestService();
+
+// Load persisted harvests on startup
+if (typeof process !== 'undefined' && process.nextTick) {
+  process.nextTick(() => {
+    harvestService.loadPersistedHarvests().catch(error => {
+      console.error('[HarvestService] Failed to load persisted harvests on startup:', error);
+    });
+  });
+}

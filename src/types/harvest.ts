@@ -15,12 +15,23 @@ export interface Harvest {
   // Summary of the farm's work
   summary: {
     description: string;
-    totalTasks: number;
-    completedTasks: number;
-    failedTasks: number;
+    totalFiles: number;           // New: Total files to generate
+    filesGenerated: number;       // New: Files successfully generated
+    filesFailed: number;          // New: Files that failed to generate
+    totalTasks: number;           // Legacy: Keep for compatibility
+    completedTasks: number;       // Legacy: Maps to filesGenerated
+    failedTasks: number;          // Legacy: Maps to filesFailed
     duration: number; // in seconds
     efficiency: number; // percentage
     agents?: any[]; // Agent data for the harvest
+    fileCategories?: {            // New: Breakdown by file type
+      text: number;
+      code: number;
+      image: number;
+      data: number;
+      config: number;
+      other: number;
+    };
   };
   
   // Farm configuration used for this harvest
@@ -32,8 +43,8 @@ export interface Harvest {
   // Key insights and findings
   insights: HarvestInsight[];
   
-  // Artifacts produced (files, reports, etc.)
-  artifacts: HarvestArtifact[];
+  // Yield produced (files, reports, etc.)
+  yield: HarvestYield[];
   
   // Quality metrics
   quality: {
@@ -45,6 +56,10 @@ export interface Harvest {
   
   // Tags for categorization
   tags: string[];
+  
+  // Farmer template information (if created from a template)
+  farmerTemplateId?: string;
+  farmerTemplateName?: string;
   
   // Export options
   exportFormats: ('json' | 'pdf' | 'markdown' | 'csv')[];
@@ -79,21 +94,22 @@ export interface HarvestInsight {
   timestamp: Date;
 }
 
-export interface HarvestArtifact {
+export interface HarvestYield {
   id: string;
-  type: 'file' | 'report' | 'code' | 'documentation' | 'data' | 'model';
+  type: 'file' | 'report' | 'code' | 'documentation' | 'data' | 'model' | 'farm-output';
   name: string;
   description: string;
-  mimeType: string;
-  size: number; // in bytes
-  location: string; // file path or URL
-  checksum: string;
-  createdBy: {
+  mimeType?: string;
+  size?: number; // in bytes
+  location?: string; // file path or URL
+  checksum?: string;
+  data?: any; // Actual content data (for virtual files)
+  createdBy?: {
     agentId: string;
     agentName: string;
   };
-  createdAt: Date;
-  metadata: Record<string, any>;
+  createdAt?: Date;
+  metadata?: Record<string, any>;
 }
 
 export interface HarvestFilter {
@@ -113,7 +129,7 @@ export interface HarvestExport {
   format: 'json' | 'pdf' | 'markdown' | 'csv';
   includeResults?: boolean;
   includeInsights?: boolean;
-  includeArtifacts?: boolean;
+  includeYield?: boolean;
   customTemplate?: string;
 }
 
@@ -121,10 +137,14 @@ export interface HarvestSummary {
   id: string;
   farmName: string;
   completedAt: Date;
-  totalTasks: number;
-  successRate: number;
+  totalFiles: number;          // New: Primary metric
+  filesGenerated: number;      // New: Files successfully created
+  totalTasks: number;          // Legacy: Keep for compatibility
+  successRate: number;         // Now based on farm success, not task completion
   overallQuality: number;
   topInsights: HarvestInsight[];
-  artifactCount: number;
+  yieldCount: number;
   tags: string[];
+  farmerTemplateId?: string;
+  farmerTemplateName?: string;
 }

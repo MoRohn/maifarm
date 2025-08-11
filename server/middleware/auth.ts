@@ -53,7 +53,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
   }
 };
 
-export const requireRole = (roles: string[]) => {
+export const requireRole = (role: string) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     // In development mode, allow bypassing authentication
     if (process.env.BYPASS_AUTH === 'true') {
@@ -79,7 +79,7 @@ export const requireRole = (roles: string[]) => {
       return res.status(401).json(response);
     }
 
-    const hasRole = roles.some(role => req.user!.roles.includes(role));
+    const hasRole = req.user!.roles.includes(role);
     if (!hasRole) {
       const response: ApiResponse = {
         success: false,

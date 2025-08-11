@@ -256,27 +256,27 @@ ${seedConfig.tags.length > 0 ? seedConfig.tags.map(tag => `  - ${tag}`).join('\n
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                   <Package className="w-5 h-5" />
-                  Include Artifacts ({selectedArtifacts.size}/{harvest.artifacts.length})
+                  Include Yield ({selectedArtifacts.size}/{harvest.yield?.length || 0})
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto p-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-                  {harvest.artifacts.map(artifact => (
+                  {(harvest.yield || []).map(yieldItem => (
                     <label
-                      key={artifact.id}
+                      key={yieldItem.id}
                       className="flex items-center gap-3 p-3 bg-white dark:bg-gray-900 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
                     >
                       <input
                         type="checkbox"
-                        checked={selectedArtifacts.has(artifact.id)}
-                        onChange={() => toggleArtifact(artifact.id)}
+                        checked={selectedArtifacts.has(yieldItem.id)}
+                        onChange={() => toggleArtifact(yieldItem.id)}
                         className="w-4 h-4 text-green-600 rounded focus:ring-green-500"
                       />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900 dark:text-white">
-                          {artifact.name}
+                          {yieldItem.name}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-500">
-                          {artifact.type} • {(artifact.size / 1024).toFixed(1)} KB
+                          {yieldItem.type} • {(yieldItem.size / 1024).toFixed(1)} KB
                         </p>
                       </div>
                     </label>

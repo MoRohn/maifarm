@@ -1,576 +1,631 @@
-import { EventEmitter } from 'events';
-import {
-  SwarmOptimizationConfig,
-  NeuralParticle,
-  FitnessEvaluation,
-  Vector3D
-} from '../types/superintelligence';
-import { collectiveIntelligence } from './collectiveIntelligence';
-import { websocketManager } from '../websocket/websocketManager';
-
 /**
  * Neural Swarm Optimizer
- * Implements Particle Swarm Optimization with neural network particles
- * for distributed problem solving and optimization
+ * Implements swarm intelligence with neural network-inspired coordination
  */
+
+import { EventEmitter } from 'events';
+import { 
+  NeuralSwarmConfig, 
+  SwarmPattern, 
+  ConvergenceCriteria,
+  CommunicationProtocol,
+  MessageType 
+} from '../types/superintelligence';
+import { Agent, AgentStatus } from '../types/farm';
+import { logger } from '../utils/logger';
+import { redisClient } from '../database/redis';
+
+interface SwarmParticle {
+  agentId: string;
+  position: number[]; // Current solution position in n-dimensional space
+  velocity: number[]; // Movement vector
+  personalBest: number[]; // Best position found by this particle
+  personalBestFitness: number;
+  fitness: number;
+  neighbors: Set<string>; // Connected agents based on topology
+}
+
+interface SwarmMessage {
+  type: string;
+  from: string;
+  to: string | string[];
+  data: any;
+  priority: number;
+  timestamp: Date;
+  ttl: number;
+}
+
 export class NeuralSwarmOptimizer extends EventEmitter {
-  private config: SwarmOptimizationConfig;
-  private particles: Map<string, NeuralParticle>;
-  private globalBest: { position: number[]; fitness: number };
-  private iteration: number;
-  private convergenceHistory: number[];
-  private problemSpace: ProblemSpace;
-  private neuralNetwork: SimpleNeuralNetwork;
-
-  constructor(config?: Partial<SwarmOptimizationConfig>) {
+  private config: NeuralSwarmConfig;
+  private particles: Map<string, SwarmParticle> = new Map();
+  private globalBest: number[] = [];
+  private globalBestFitness: number = -Infinity;
+  private iteration: number = 0;
+  private converged: boolean = false;
+  private messageQueue: SwarmMessage[] = [];
+  private updateInterval: NodeJS.Timer | null = null;
+  private communicationInterval: NodeJS.Timer | null = null;
+  
+  constructor(config: NeuralSwarmConfig) {
     super();
+    this.config = config;
+    this.initialize();
+  }
+  
+  private initialize() {
+    logger.info('[NeuralSwarmOptimizer] Initializing with config:', this.config);
     
-    this.config = {
-      particles: config?.particles || 30,
-      dimensions: config?.dimensions || 10,
-      inertiaWeight: config?.inertiaWeight || 0.729,
-      cognitiveCoefficient: config?.cognitiveCoefficient || 1.49445,
-      socialCoefficient: config?.socialCoefficient || 1.49445,
-      maxIterations: config?.maxIterations || 1000,
-      convergenceThreshold: config?.convergenceThreshold || 0.0001,
-      topology: config?.topology || 'global'
+    // Start update loop
+    this.updateInterval = setInterval(() => this.update(), 100);
+    
+    // Start communication protocol
+    if (this.config.communicationProtocol.broadcastInterval > 0) {
+      this.communicationInterval = setInterval(
+        () => this.processCommunication(),
+        this.config.communicationProtocol.broadcastInterval
+      );
+    }
+  }
+  
+  /**
+   * Add an agent to the swarm
+   */
+  async addAgent(agent: Agent, initialPosition?: number[]) {
+    const dimensions = initialPosition?.length || 10; // Default 10D problem space
+    
+    const particle: SwarmParticle = {
+      agentId: agent.id,
+      position: initialPosition || this.randomPosition(dimensions),
+      velocity: this.randomVelocity(dimensions),
+      personalBest: initialPosition || this.randomPosition(dimensions),
+      personalBestFitness: -Infinity,
+      fitness: -Infinity,
+      neighbors: new Set()
     };
     
-    this.particles = new Map();
-    this.globalBest = { position: [], fitness: -Infinity };
-    this.iteration = 0;
-    this.convergenceHistory = [];
-    this.problemSpace = new ProblemSpace(this.config.dimensions);
-    this.neuralNetwork = new SimpleNeuralNetwork(this.config.dimensions);
+    // Set up topology connections
+    this.setupTopology(particle);
     
-    this.initializeSwarm();
+    this.particles.set(agent.id, particle);
+    
+    // Store in Redis for persistence
+    await this.persistParticle(particle);
+    
+    this.emit('particle:added', { agentId: agent.id, particle });
+    
+    logger.info(`[NeuralSwarmOptimizer] Added agent ${agent.id} to swarm`);
   }
-
+  
   /**
-   * Initialize particle swarm
+   * Remove an agent from the swarm
    */
-  private initializeSwarm(): void {
-    for (let i = 0; i < this.config.particles; i++) {
-      const particle = this.createParticle(i);
-      this.particles.set(particle.id, particle);
-      
-      // Update global best if needed
-      if (particle.currentFitness > this.globalBest.fitness) {
-        this.globalBest = {
-          position: [...particle.position],
-          fitness: particle.currentFitness
-        };
-      }
-    }
+  async removeAgent(agentId: string) {
+    const particle = this.particles.get(agentId);
+    if (!particle) return;
     
-    this.emit('swarm:initialized', {
-      particles: this.config.particles,
-      dimensions: this.config.dimensions,
-      globalBest: this.globalBest
-    });
-  }
-
-  /**
-   * Create a neural particle
-   */
-  private createParticle(index: number): NeuralParticle {
-    const position = this.problemSpace.randomPosition();
-    const velocity = this.problemSpace.randomVelocity();
-    const neuralWeights = this.neuralNetwork.randomWeights();
-    const fitness = this.evaluateFitness(position, neuralWeights);
-    
-    return {
-      id: `particle-${index}`,
-      position,
-      velocity,
-      personalBest: [...position],
-      personalBestFitness: fitness,
-      currentFitness: fitness,
-      neuralWeights,
-      activationFunction: this.selectActivationFunction()
-    };
-  }
-
-  /**
-   * Select activation function for particle
-   */
-  private selectActivationFunction(): 'relu' | 'sigmoid' | 'tanh' | 'swish' {
-    const functions: ('relu' | 'sigmoid' | 'tanh' | 'swish')[] = ['relu', 'sigmoid', 'tanh', 'swish'];
-    return functions[Math.floor(Math.random() * functions.length)];
-  }
-
-  /**
-   * Optimize the swarm
-   */
-  async optimize(targetFitness?: number): Promise<{ position: number[]; fitness: number }> {
-    const startTime = Date.now();
-    
-    while (this.iteration < this.config.maxIterations) {
-      await this.optimizationStep();
-      
-      // Check convergence
-      if (this.hasConverged() || (targetFitness && this.globalBest.fitness >= targetFitness)) {
-        break;
-      }
-      
-      // Adaptive parameters
-      if (this.iteration % 100 === 0) {
-        this.adaptParameters();
-      }
-      
-      this.iteration++;
-    }
-    
-    const duration = Date.now() - startTime;
-    
-    this.emit('optimization:complete', {
-      globalBest: this.globalBest,
-      iterations: this.iteration,
-      duration,
-      convergenceHistory: this.convergenceHistory
+    // Remove from neighbors' connections
+    this.particles.forEach(p => {
+      p.neighbors.delete(agentId);
     });
     
-    // Share results with collective intelligence
-    await this.shareWithCollective();
+    this.particles.delete(agentId);
     
-    return this.globalBest;
+    // Remove from Redis
+    await redisClient.del(`swarm:particle:${agentId}`);
+    
+    this.emit('particle:removed', { agentId });
+    
+    logger.info(`[NeuralSwarmOptimizer] Removed agent ${agentId} from swarm`);
   }
-
+  
   /**
-   * Single optimization step
+   * Update particle fitness based on agent performance
    */
-  private async optimizationStep(): Promise<void> {
-    const updates: FitnessEvaluation[] = [];
+  async updateFitness(agentId: string, fitness: number) {
+    const particle = this.particles.get(agentId);
+    if (!particle) return;
     
-    for (const [id, particle] of this.particles) {
-      // Update velocity and position
-      this.updateParticle(particle);
+    particle.fitness = fitness;
+    
+    // Update personal best
+    if (fitness > particle.personalBestFitness) {
+      particle.personalBest = [...particle.position];
+      particle.personalBestFitness = fitness;
       
-      // Evaluate new fitness
-      particle.currentFitness = this.evaluateFitness(particle.position, particle.neuralWeights);
-      
-      // Update personal best
-      if (particle.currentFitness > particle.personalBestFitness) {
-        particle.personalBest = [...particle.position];
-        particle.personalBestFitness = particle.currentFitness;
-        
-        // Update neural weights based on success
-        this.evolveNeuralWeights(particle);
-      }
-      
-      // Update global best
-      if (particle.currentFitness > this.globalBest.fitness) {
-        this.globalBest = {
-          position: [...particle.position],
-          fitness: particle.currentFitness
-        };
-        
-        this.emit('swarm:newGlobalBest', this.globalBest);
-      }
-      
-      updates.push({
-        particleId: particle.id,
-        fitness: particle.currentFitness,
-        components: this.decomposeupdate the velocity based on position and  fitness fitness(particle.currentFitness),
-        timestamp: new Date()
+      this.emit('particle:personalBest', { 
+        agentId, 
+        fitness, 
+        position: particle.position 
       });
     }
     
-    this.convergenceHistory.push(this.globalBest.fitness);
+    // Update global best
+    if (fitness > this.globalBestFitness) {
+      this.globalBest = [...particle.position];
+      this.globalBestFitness = fitness;
+      
+      this.emit('swarm:globalBest', { 
+        fitness, 
+        position: this.globalBest,
+        foundBy: agentId 
+      });
+      
+      // Broadcast to all particles
+      this.broadcastGlobalBest();
+    }
     
-    // Broadcast progress
+    await this.persistParticle(particle);
+  }
+  
+  /**
+   * Main update loop for swarm optimization
+   */
+  private async update() {
+    if (this.converged || this.particles.size === 0) return;
+    
+    this.iteration++;
+    
+    // Update each particle
+    for (const [agentId, particle] of this.particles) {
+      await this.updateParticle(particle);
+    }
+    
+    // Check convergence
+    if (this.checkConvergence()) {
+      this.converged = true;
+      this.emit('swarm:converged', { 
+        solution: this.globalBest,
+        fitness: this.globalBestFitness,
+        iterations: this.iteration 
+      });
+      
+      logger.info('[NeuralSwarmOptimizer] Swarm converged!', {
+        solution: this.globalBest,
+        fitness: this.globalBestFitness,
+        iterations: this.iteration
+      });
+      
+      this.cleanup();
+    }
+    
+    // Emit progress
     if (this.iteration % 10 === 0) {
-      websocketManager.broadcast('swarm:progress', {
+      this.emit('swarm:progress', {
         iteration: this.iteration,
-        globalBest: this.globalBest,
-        averageFitness: this.calculateAverageFitness(),
-        convergenceRate: this.calculateConvergenceRate()
+        globalBestFitness: this.globalBestFitness,
+        averageFitness: this.calculateAverageFitness()
       });
     }
   }
-
+  
   /**
-   * Update particle velocity and position
+   * Update a single particle's position and velocity
    */
-  private updateParticle(particle: NeuralParticle): void {
-    const r1 = Math.random();
-    const r2 = Math.random();
+  private async updateParticle(particle: SwarmParticle) {
+    const config = this.config;
+    const dimensions = particle.position.length;
     
-    for (let d = 0; d < this.config.dimensions; d++) {
-      // Velocity update equation
-      const cognitive = this.config.cognitiveCoefficient * r1 * (particle.personalBest[d] - particle.position[d]);
-      const social = this.config.socialCoefficient * r2 * (this.globalBest.position[d] - particle.position[d]);
+    // Get neighborhood best
+    const neighborhoodBest = this.getNeighborhoodBest(particle);
+    
+    for (let d = 0; d < dimensions; d++) {
+      // Cognitive component (personal best)
+      const cognitive = Math.random() * 2 * config.learningRate * 
+                       (particle.personalBest[d] - particle.position[d]);
       
-      particle.velocity[d] = this.config.inertiaWeight * particle.velocity[d] + cognitive + social;
+      // Social component (neighborhood/global best)
+      const social = Math.random() * 2 * config.learningRate * 
+                    (neighborhoodBest[d] - particle.position[d]);
       
-      // Apply velocity clamping
+      // Exploration component
+      const exploration = (Math.random() - 0.5) * config.explorationRate;
+      
+      // Update velocity with momentum
+      particle.velocity[d] = config.momentumFactor * particle.velocity[d] + 
+                            cognitive + social + exploration;
+      
+      // Limit velocity
       particle.velocity[d] = Math.max(-1, Math.min(1, particle.velocity[d]));
       
-      // Position update
+      // Update position
       particle.position[d] += particle.velocity[d];
       
-      // Apply position bounds
-      particle.position[d] = this.problemSpace.clamp(particle.position[d], d);
+      // Boundary handling (reflection)
+      if (particle.position[d] < 0) {
+        particle.position[d] = Math.abs(particle.position[d]);
+        particle.velocity[d] *= -0.5;
+      } else if (particle.position[d] > 1) {
+        particle.position[d] = 2 - particle.position[d];
+        particle.velocity[d] *= -0.5;
+      }
     }
     
-    // Update neural weights based on new position
-    this.updateNeuralWeights(particle);
+    // Request fitness evaluation from agent
+    this.emit('particle:evaluate', {
+      agentId: particle.agentId,
+      position: particle.position
+    });
   }
-
+  
   /**
-   * Update neural weights based on particle position
+   * Get best position from particle's neighborhood
    */
-  private updateNeuralWeights(particle: NeuralParticle): void {
-    // Map position to neural weights
-    const flatWeights = particle.position.map(p => this.activation(p, particle.activationFunction));
-    particle.neuralWeights = this.neuralNetwork.unflattenWeights(flatWeights);
-  }
-
-  /**
-   * Evolve neural weights for successful particles
-   */
-  private evolveNeuralWeights(particle: NeuralParticle): void {
-    // Apply small mutations to successful weights
-    const mutationRate = 0.01;
+  private getNeighborhoodBest(particle: SwarmParticle): number[] {
+    let bestPosition = particle.personalBest;
+    let bestFitness = particle.personalBestFitness;
     
-    particle.neuralWeights = particle.neuralWeights.map(layer =>
-      layer.map(weight => 
-        Math.random() < mutationRate 
-          ? weight + (Math.random() - 0.5) * 0.1 
-          : weight
-      )
-    );
-  }
-
-  /**
-   * Activation function
-   */
-  private activation(x: number, func: 'relu' | 'sigmoid' | 'tanh' | 'swish'): number {
-    switch (func) {
-      case 'relu':
-        return Math.max(0, x);
-      case 'sigmoid':
-        return 1 / (1 + Math.exp(-x));
-      case 'tanh':
-        return Math.tanh(x);
-      case 'swish':
-        return x / (1 + Math.exp(-x));
-      default:
-        return x;
-    }
-  }
-
-  /**
-   * Evaluate fitness of a position
-   */
-  private evaluateFitness(position: number[], weights: number[][]): number {
-    // Complex fitness function combining multiple objectives
-    
-    // 1. Neural network prediction accuracy
-    const neuralOutput = this.neuralNetwork.forward(position, weights);
-    const predictionAccuracy = this.evaluatePrediction(neuralOutput);
-    
-    // 2. Solution quality (problem-specific)
-    const solutionQuality = this.problemSpace.evaluate(position);
-    
-    // 3. Diversity bonus (encourage exploration)
-    const diversityBonus = this.calculateDiversityBonus(position);
-    
-    // 4. Efficiency (prefer simpler solutions)
-    const efficiency = 1 / (1 + this.calculateComplexity(position));
-    
-    // Weighted combination
-    return (
-      predictionAccuracy * 0.3 +
-      solutionQuality * 0.4 +
-      diversityBonus * 0.2 +
-      efficiency * 0.1
-    );
-  }
-
-  /**
-   * Evaluate neural network prediction
-   */
-  private evaluatePrediction(output: number[]): number {
-    // Placeholder - would evaluate against actual targets
-    return output.reduce((sum, val) => sum + Math.abs(val), 0) / output.length;
-  }
-
-  /**
-   * Calculate diversity bonus
-   */
-  private calculateDiversityBonus(position: number[]): number {
-    let minDistance = Infinity;
-    
-    for (const particle of this.particles.values()) {
-      const distance = this.euclideanDistance(position, particle.position);
-      minDistance = Math.min(minDistance, distance);
+    // Check neighbors based on topology
+    for (const neighborId of particle.neighbors) {
+      const neighbor = this.particles.get(neighborId);
+      if (neighbor && neighbor.personalBestFitness > bestFitness) {
+        bestPosition = neighbor.personalBest;
+        bestFitness = neighbor.personalBestFitness;
+      }
     }
     
-    return Math.min(1, minDistance / Math.sqrt(this.config.dimensions));
+    // In some topologies, also consider global best
+    if (this.config.topology.topology === 'star' || 
+        this.config.topology.topology === 'mesh') {
+      if (this.globalBestFitness > bestFitness) {
+        bestPosition = this.globalBest;
+      }
+    }
+    
+    return bestPosition;
   }
-
+  
   /**
-   * Calculate solution complexity
+   * Setup topology connections for a particle
    */
-  private calculateComplexity(position: number[]): number {
-    // Measure complexity as variance in position values
-    const mean = position.reduce((sum, val) => sum + val, 0) / position.length;
-    const variance = position.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / position.length;
-    return Math.sqrt(variance);
+  private setupTopology(particle: SwarmParticle) {
+    const topology = this.config.topology.topology;
+    const allParticles = Array.from(this.particles.keys());
+    
+    switch (topology) {
+      case 'mesh':
+        // Fully connected - all particles are neighbors
+        particle.neighbors = new Set(allParticles);
+        break;
+        
+      case 'star':
+        // Connected to a central hub (first particle)
+        if (allParticles.length > 0) {
+          particle.neighbors.add(allParticles[0]);
+          const hub = this.particles.get(allParticles[0]);
+          if (hub) hub.neighbors.add(particle.agentId);
+        }
+        break;
+        
+      case 'ring':
+        // Connected to adjacent particles in a ring
+        const index = allParticles.length;
+        if (index > 0) {
+          const prevIndex = (index - 1) % allParticles.length;
+          const nextIndex = (index + 1) % allParticles.length;
+          particle.neighbors.add(allParticles[prevIndex]);
+          if (allParticles[nextIndex]) {
+            particle.neighbors.add(allParticles[nextIndex]);
+          }
+        }
+        break;
+        
+      case 'hierarchical':
+        // Tree-like structure
+        const parentIndex = Math.floor((allParticles.length - 1) / 2);
+        if (parentIndex >= 0 && allParticles[parentIndex]) {
+          particle.neighbors.add(allParticles[parentIndex]);
+          const parent = this.particles.get(allParticles[parentIndex]);
+          if (parent) parent.neighbors.add(particle.agentId);
+        }
+        break;
+        
+      case 'dynamic':
+        // Dynamically adjust based on performance
+        this.updateDynamicTopology(particle);
+        break;
+    }
   }
-
+  
   /**
-   * Euclidean distance between positions
+   * Update dynamic topology based on performance
    */
-  private euclideanDistance(p1: number[], p2: number[]): number {
-    return Math.sqrt(
-      p1.reduce((sum, val, i) => sum + Math.pow(val - p2[i], 2), 0)
+  private updateDynamicTopology(particle: SwarmParticle) {
+    const connectionStrength = this.config.topology.connectionStrength;
+    const maxConnections = Math.floor(this.particles.size * connectionStrength);
+    
+    // Sort particles by fitness
+    const sortedParticles = Array.from(this.particles.entries())
+      .sort((a, b) => b[1].fitness - a[1].fitness)
+      .slice(0, maxConnections)
+      .map(([id]) => id);
+    
+    particle.neighbors = new Set(sortedParticles);
+  }
+  
+  /**
+   * Process inter-particle communication
+   */
+  private async processCommunication() {
+    // Process message queue
+    while (this.messageQueue.length > 0) {
+      const message = this.messageQueue.shift();
+      if (!message) continue;
+      
+      // Check TTL
+      if (Date.now() - message.timestamp.getTime() > message.ttl) {
+        continue; // Message expired
+      }
+      
+      // Route message
+      if (Array.isArray(message.to)) {
+        // Broadcast
+        for (const target of message.to) {
+          await this.deliverMessage(target, message);
+        }
+      } else {
+        // Unicast
+        await this.deliverMessage(message.to, message);
+      }
+    }
+  }
+  
+  /**
+   * Deliver message to target particle
+   */
+  private async deliverMessage(targetId: string, message: SwarmMessage) {
+    const particle = this.particles.get(targetId);
+    if (!particle) return;
+    
+    // Emit message event for agent to process
+    this.emit('particle:message', {
+      agentId: targetId,
+      message: message.data,
+      from: message.from,
+      type: message.type
+    });
+    
+    // Store in Redis for persistence
+    await redisClient.lpush(
+      `swarm:messages:${targetId}`,
+      JSON.stringify(message)
     );
+    
+    // Trim to keep only recent messages
+    await redisClient.ltrim(`swarm:messages:${targetId}`, 0, 99);
   }
-
+  
   /**
-   * Decompose fitness into components
+   * Send message between particles
    */
-  private decomposeFitness(fitness: number): { accuracy: number; speed: number; novelty: number; robustness: number } {
-    // Simplified decomposition
-    return {
-      accuracy: fitness * 0.4,
-      speed: fitness * 0.3,
-      novelty: fitness * 0.2,
-      robustness: fitness * 0.1
+  async sendMessage(from: string, to: string | string[], type: string, data: any) {
+    const messageType = this.config.communicationProtocol.messageTypes
+      .find(mt => mt.name === type);
+    
+    if (!messageType) {
+      logger.warn(`[NeuralSwarmOptimizer] Unknown message type: ${type}`);
+      return;
+    }
+    
+    const message: SwarmMessage = {
+      type,
+      from,
+      to,
+      data,
+      priority: messageType.priority,
+      timestamp: new Date(),
+      ttl: messageType.ttl
     };
+    
+    // Add to queue sorted by priority
+    this.messageQueue.push(message);
+    this.messageQueue.sort((a, b) => b.priority - a.priority);
   }
-
+  
+  /**
+   * Broadcast global best to all particles
+   */
+  private broadcastGlobalBest() {
+    const allAgents = Array.from(this.particles.keys());
+    this.sendMessage(
+      'system',
+      allAgents,
+      'globalBest',
+      {
+        position: this.globalBest,
+        fitness: this.globalBestFitness
+      }
+    );
+  }
+  
   /**
    * Check if swarm has converged
    */
-  private hasConverged(): boolean {
-    if (this.convergenceHistory.length < 10) return false;
+  private checkConvergence(): boolean {
+    const criteria = this.config.convergenceCriteria;
     
-    const recent = this.convergenceHistory.slice(-10);
-    const variance = this.calculateVariance(recent);
-    
-    return variance < this.config.convergenceThreshold;
-  }
-
-  /**
-   * Calculate variance of values
-   */
-  private calculateVariance(values: number[]): number {
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    return values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-  }
-
-  /**
-   * Adapt parameters during optimization
-   */
-  private adaptParameters(): void {
-    // Reduce inertia weight over time (exploration -> exploitation)
-    this.config.inertiaWeight *= 0.99;
-    this.config.inertiaWeight = Math.max(0.4, this.config.inertiaWeight);
-    
-    // Adapt coefficients based on convergence rate
-    const convergenceRate = this.calculateConvergenceRate();
-    
-    if (convergenceRate < 0.01) {
-      // Increase exploration
-      this.config.socialCoefficient *= 1.05;
-      this.config.cognitiveCoefficient *= 0.95;
-    } else if (convergenceRate > 0.1) {
-      // Increase exploitation
-      this.config.socialCoefficient *= 0.95;
-      this.config.cognitiveCoefficient *= 1.05;
+    // Max iterations reached
+    if (this.iteration >= criteria.maxIterations) {
+      return true;
     }
     
-    this.emit('parameters:adapted', {
-      inertiaWeight: this.config.inertiaWeight,
-      cognitive: this.config.cognitiveCoefficient,
-      social: this.config.socialCoefficient
-    });
+    // Target fitness achieved
+    if (this.globalBestFitness >= criteria.targetFitness) {
+      return true;
+    }
+    
+    // Check stagnation
+    // (Implementation would track fitness history)
+    
+    // Check consensus
+    if (criteria.consensusRequired > 0) {
+      const consensus = this.calculateConsensus();
+      if (consensus >= criteria.consensusRequired) {
+        return true;
+      }
+    }
+    
+    return false;
   }
-
+  
   /**
-   * Calculate convergence rate
+   * Calculate consensus level among particles
    */
-  private calculateConvergenceRate(): number {
-    if (this.convergenceHistory.length < 2) return 0;
+  private calculateConsensus(): number {
+    if (this.particles.size === 0) return 0;
     
-    const recent = this.convergenceHistory.slice(-10);
-    const older = this.convergenceHistory.slice(-20, -10);
+    const positions = Array.from(this.particles.values())
+      .map(p => p.position);
     
-    if (older.length === 0) return 0;
+    if (positions.length === 0) return 0;
     
-    const recentAvg = recent.reduce((sum, val) => sum + val, 0) / recent.length;
-    const olderAvg = older.reduce((sum, val) => sum + val, 0) / older.length;
+    const dimensions = positions[0].length;
+    let totalVariance = 0;
     
-    return Math.abs(recentAvg - olderAvg) / Math.max(Math.abs(olderAvg), 1);
+    for (let d = 0; d < dimensions; d++) {
+      const values = positions.map(p => p[d]);
+      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+      totalVariance += variance;
+    }
+    
+    // Convert variance to consensus (0 variance = 1 consensus)
+    const avgVariance = totalVariance / dimensions;
+    return Math.exp(-avgVariance * 10); // Exponential decay
   }
-
+  
   /**
-   * Calculate average fitness
+   * Calculate average fitness of swarm
    */
   private calculateAverageFitness(): number {
-    let sum = 0;
-    let count = 0;
+    if (this.particles.size === 0) return 0;
     
-    for (const particle of this.particles.values()) {
-      sum += particle.currentFitness;
-      count++;
-    }
+    const totalFitness = Array.from(this.particles.values())
+      .reduce((sum, p) => sum + p.fitness, 0);
     
-    return count > 0 ? sum / count : 0;
+    return totalFitness / this.particles.size;
   }
-
+  
   /**
-   * Share optimization results with collective intelligence
+   * Generate random position in n-dimensional space
    */
-  private async shareWithCollective(): Promise<void> {
-    await collectiveIntelligence.addKnowledge({
-      id: `swarm-optimization-${Date.now()}`,
-      content: `Swarm optimization found solution with fitness ${this.globalBest.fitness.toFixed(4)}`,
-      type: 'strategy',
-      source: Array.from(this.particles.keys()),
-      confidence: Math.min(1, this.globalBest.fitness),
-      created: new Date(),
-      lastAccessed: new Date(),
-      accessCount: 1,
-      metadata: {
-        iterations: this.iteration,
-        convergenceRate: this.calculateConvergenceRate(),
-        position: this.globalBest.position
-      }
-    });
+  private randomPosition(dimensions: number): number[] {
+    return Array.from({ length: dimensions }, () => Math.random());
   }
-
+  
   /**
-   * Get swarm state
+   * Generate random velocity in n-dimensional space
    */
-  getSwarmState() {
+  private randomVelocity(dimensions: number): number[] {
+    return Array.from({ length: dimensions }, () => (Math.random() - 0.5) * 0.2);
+  }
+  
+  /**
+   * Persist particle state to Redis
+   */
+  private async persistParticle(particle: SwarmParticle) {
+    await redisClient.set(
+      `swarm:particle:${particle.agentId}`,
+      JSON.stringify({
+        ...particle,
+        neighbors: Array.from(particle.neighbors)
+      }),
+      'EX',
+      3600 // 1 hour TTL
+    );
+  }
+  
+  /**
+   * Load particle state from Redis
+   */
+  async loadParticle(agentId: string): Promise<SwarmParticle | null> {
+    const data = await redisClient.get(`swarm:particle:${agentId}`);
+    if (!data) return null;
+    
+    const parsed = JSON.parse(data);
     return {
-      particles: Array.from(this.particles.values()),
-      globalBest: this.globalBest,
-      iteration: this.iteration,
-      config: this.config,
-      averageFitness: this.calculateAverageFitness(),
-      convergenceRate: this.calculateConvergenceRate()
+      ...parsed,
+      neighbors: new Set(parsed.neighbors)
     };
   }
-
+  
   /**
-   * Reset swarm for new optimization
+   * Get current swarm state
    */
-  reset(config?: Partial<SwarmOptimizationConfig>): void {
-    if (config) {
-      this.config = { ...this.config, ...config };
-    }
-    
+  getState() {
+    return {
+      iteration: this.iteration,
+      converged: this.converged,
+      particleCount: this.particles.size,
+      globalBest: this.globalBest,
+      globalBestFitness: this.globalBestFitness,
+      averageFitness: this.calculateAverageFitness(),
+      consensus: this.calculateConsensus()
+    };
+  }
+  
+  /**
+   * Reset the swarm
+   */
+  reset() {
     this.particles.clear();
-    this.globalBest = { position: [], fitness: -Infinity };
+    this.globalBest = [];
+    this.globalBestFitness = -Infinity;
     this.iteration = 0;
-    this.convergenceHistory = [];
+    this.converged = false;
+    this.messageQueue = [];
     
-    this.initializeSwarm();
+    logger.info('[NeuralSwarmOptimizer] Swarm reset');
+  }
+  
+  /**
+   * Cleanup resources
+   */
+  cleanup() {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+    
+    if (this.communicationInterval) {
+      clearInterval(this.communicationInterval);
+      this.communicationInterval = null;
+    }
+    
+    logger.info('[NeuralSwarmOptimizer] Cleanup completed');
   }
 }
 
-/**
- * Problem space definition
- */
-class ProblemSpace {
-  constructor(private dimensions: number) {}
-  
-  randomPosition(): number[] {
-    return Array(this.dimensions).fill(0).map(() => Math.random() * 2 - 1);
+// Export singleton instance
+export const neuralSwarmOptimizer = new NeuralSwarmOptimizer({
+  swarmSize: 10,
+  topology: {
+    id: 'default',
+    name: 'Dynamic Mesh',
+    topology: 'dynamic',
+    connectionStrength: 0.5,
+    propagationSpeed: 0.8,
+    consensusThreshold: 0.7,
+    adaptiveWeights: new Map()
+  },
+  learningRate: 0.5,
+  momentumFactor: 0.9,
+  explorationRate: 0.1,
+  convergenceCriteria: {
+    maxIterations: 1000,
+    targetFitness: 0.95,
+    stagnationThreshold: 50,
+    consensusRequired: 0.8
+  },
+  communicationProtocol: {
+    broadcastInterval: 1000,
+    messageTypes: [
+      { name: 'globalBest', priority: 10, ttl: 5000, broadcast: true },
+      { name: 'localBest', priority: 5, ttl: 3000, broadcast: false },
+      { name: 'exploration', priority: 3, ttl: 2000, broadcast: false },
+      { name: 'coordination', priority: 7, ttl: 4000, broadcast: true }
+    ],
+    priorityLevels: 10,
+    encryptionEnabled: false,
+    compressionEnabled: true
   }
-  
-  randomVelocity(): number[] {
-    return Array(this.dimensions).fill(0).map(() => (Math.random() - 0.5) * 0.2);
-  }
-  
-  clamp(value: number, dimension: number): number {
-    return Math.max(-1, Math.min(1, value));
-  }
-  
-  evaluate(position: number[]): number {
-    // Rastrigin function (multimodal test function)
-    const A = 10;
-    const n = position.length;
-    
-    let sum = A * n;
-    for (let i = 0; i < n; i++) {
-      sum += position[i] * position[i] - A * Math.cos(2 * Math.PI * position[i]);
-    }
-    
-    // Normalize to [0, 1]
-    return 1 / (1 + sum);
-  }
-}
-
-/**
- * Simple neural network for particle intelligence
- */
-class SimpleNeuralNetwork {
-  private layers: number[];
-  
-  constructor(inputDim: number) {
-    this.layers = [inputDim, Math.ceil(inputDim * 1.5), Math.ceil(inputDim * 0.5), 1];
-  }
-  
-  randomWeights(): number[][] {
-    const weights: number[][] = [];
-    
-    for (let i = 0; i < this.layers.length - 1; i++) {
-      const layerWeights: number[] = [];
-      const numWeights = this.layers[i] * this.layers[i + 1];
-      
-      for (let j = 0; j < numWeights; j++) {
-        layerWeights.push((Math.random() - 0.5) * 2);
-      }
-      
-      weights.push(layerWeights);
-    }
-    
-    return weights;
-  }
-  
-  unflattenWeights(flat: number[]): number[][] {
-    const weights: number[][] = [];
-    let offset = 0;
-    
-    for (let i = 0; i < this.layers.length - 1; i++) {
-      const numWeights = this.layers[i] * this.layers[i + 1];
-      weights.push(flat.slice(offset, offset + numWeights));
-      offset += numWeights;
-    }
-    
-    return weights;
-  }
-  
-  forward(input: number[], weights: number[][]): number[] {
-    let activation = [...input];
-    
-    for (let layer = 0; layer < weights.length; layer++) {
-      const layerWeights = weights[layer];
-      const inputSize = this.layers[layer];
-      const outputSize = this.layers[layer + 1];
-      const newActivation: number[] = [];
-      
-      for (let o = 0; o < outputSize; o++) {
-        let sum = 0;
-        for (let i = 0; i < inputSize; i++) {
-          const weightIndex = i * outputSize + o;
-          sum += activation[i] * (layerWeights[weightIndex] || 0);
-        }
-        newActivation.push(Math.tanh(sum)); // Use tanh activation
-      }
-      
-      activation = newActivation;
-    }
-    
-    return activation;
-  }
-}
-
-// Export for use in other modules
-export const neuralSwarmOptimizer = new NeuralSwarmOptimizer();
+});

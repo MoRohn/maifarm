@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { spawn } from 'child_process';
+import path from 'path';
+import { MaiBarn } from '../services/maibarn';
 import { harvestService } from '../services/harvestService';
+import { harvestFileCollector } from '../services/harvestFileCollector';
 import { logger } from '../utils/logger';
 import { HarvestFilter, HarvestExport } from '../../src/types/harvest';
 import { coordinationService } from '../services/coordinationService';
+import { terminalOutputWatcher } from '../services/terminalOutputWatcher';
 
 const router = Router();
 
@@ -45,6 +49,34 @@ router.get('/summaries', async (req, res) => {
   }
 });
 
+// Manual trigger to create harvest from farm
+router.post('/trigger/:farmId', async (req, res) => {
+  try {
+    const { farmId } = req.params;
+    const userId = req.body.userId || 'system';
+    
+    logger.info(`Manual harvest trigger requested for farm ${farmId}`);
+    
+    // Import the integration service
+    const { farmHarvestIntegration } = await import('../services/farmHarvestIntegration');
+    
+    // Manually trigger harvest creation
+    const result = await farmHarvestIntegration.manualCreateHarvest(farmId, userId);
+    
+    res.json({
+      success: true,
+      message: `Harvest triggered for farm ${farmId}`,
+      ...result
+    });
+  } catch (error) {
+    logger.error('Failed to trigger harvest:', error);
+    res.status(500).json({ 
+      error: 'Failed to trigger harvest',
+      message: error.message 
+    });
+  }
+});
+
 // Get harvests by farm ID
 router.get('/farms/:farmId', async (req, res) => {
   try {
@@ -62,12 +94,21 @@ router.get('/:id', async (req, res) => {
   try {
     const harvest = await harvestService.findById(req.params.id);
     if (!harvest) {
-      return res.status(404).json({ error: 'Harvest not found' });
+      return res.status(404).json({ 
+        success: false,
+        error: { message: 'Harvest not found', code: 'NOT_FOUND' }
+      });
     }
-    res.json(harvest);
+    res.json({ 
+      success: true, 
+      data: harvest 
+    });
   } catch (error) {
     logger.error('Failed to get harvest:', error);
-    res.status(500).json({ error: 'Failed to retrieve harvest' });
+    res.status(500).json({ 
+      success: false,
+      error: { message: 'Failed to retrieve harvest', code: 'INTERNAL_ERROR' }
+    });
   }
 });
 
@@ -97,7 +138,7 @@ router.post('/:id/export', async (req, res) => {
       format: req.body.format || 'json',
       includeResults: req.body.includeResults !== false,
       includeInsights: req.body.includeInsights !== false,
-      includeArtifacts: req.body.includeArtifacts !== false,
+      includeYield: req.body.includeYield !== false,
       customTemplate: req.body.customTemplate
     };
 
@@ -143,6 +184,23 @@ router.post('/:id/export', async (req, res) => {
 router.post('/:id/complete', async (req, res) => {
   try {
     const harvest = await harvestService.completeHarvest(req.params.id);
+    
+    // Automatically store completed harvest in barn
+    try {
+      const { barnService } = await import('../services/barnService');
+      const barnItem = await barnService.storeHarvest(harvest.id, {
+        name: `${harvest.farmName} - ${new Date().toLocaleDateString()}`,
+        description: harvest.summary.description || 'Completed harvest',
+        type: 'harvest',
+        category: 'completed',
+        tags: [...(harvest.tags || []), 'auto-stored']
+      });
+      logger.info(`Harvest ${harvest.id} automatically stored in barn as ${barnItem.id}`);
+    } catch (barnError) {
+      logger.error('Failed to store harvest in barn:', barnError);
+      // Don't fail the request if barn storage fails
+    }
+    
     res.json(harvest);
   } catch (error) {
     logger.error('Failed to complete harvest:', error);
@@ -157,8 +215,11 @@ router.post('/:id/complete', async (req, res) => {
 // Get terminal output for a harvest's Claude agents
 router.get('/terminal/sessions', async (req, res) => {
   try {
-    const { farmId } = req.query;
+    const { farmId, showAll } = req.query;
     console.log('[Harvest API] Getting terminal sessions for farmId:', farmId);
+    
+    // First, clean up stale sessions using MaiBarn
+    await MaiBarn.cleanupStaleSessions(showAll === 'true');
     
     // List all tmux sessions with more details
     const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}:#{session_created}']);
@@ -189,88 +250,57 @@ router.get('/terminal/sessions', async (req, res) => {
       });
     }
     
-    const allSessions = output.trim().split('\n').filter(Boolean);
-    console.log('[Harvest API] All tmux sessions:', allSessions);
+    // Parse all sessions
+    const sessionLines = output.trim().split('\n').filter(Boolean);
+    console.log('[Harvest API] All tmux sessions:', sessionLines);
     
-    // Parse sessions with timestamps
-    const parsedSessions = allSessions.map(line => {
-      const [sessionName, created] = line.split(':');
-      return { sessionName, created: parseInt(created) || 0 };
+    const sessions = sessionLines.map(line => {
+      const [name, created] = line.split(':');
+      return {
+        name,
+        sessionName: name,
+        createdTime: parseInt(created) * 1000 || Date.now(),
+        age: Date.now() - (parseInt(created) * 1000 || Date.now()),
+        ageMinutes: (Date.now() - (parseInt(created) * 1000 || Date.now())) / (1000 * 60)
+      };
     });
     
-    // Filter sessions based on farmId if provided
-    let relevantSessions = parsedSessions;
-    if (farmId) {
-      const shortFarmId = (farmId as string).substring(0, 8);
-      relevantSessions = parsedSessions.filter(({ sessionName }) => {
-        // Check if session matches farm pattern
-        return sessionName.includes(shortFarmId) || 
-               sessionName === `farm_${shortFarmId}` ||
-               sessionName.startsWith(`farm_${shortFarmId}`);
-      });
-      console.log(`[Harvest API] Filtered sessions for farm ${shortFarmId}:`, relevantSessions.map(s => s.sessionName));
-    } else {
-      // Include all farm and quick task sessions
-      relevantSessions = parsedSessions.filter(({ sessionName }) => {
-        return sessionName.startsWith('quick-') || 
-               sessionName.startsWith('farm_') || 
-               sessionName.includes('claude_agents');
-      });
-    }
+    // Filter sessions using MaiBarn
+    const relevantSessions = MaiBarn.filterRelevantSessions(sessions, showAll === 'true');
+    
+    // Get detailed session information
+    let sessionDetails = await MaiBarn.getSessionDetails(relevantSessions);
     
     // Sort by creation time, most recent first
-    relevantSessions.sort((a, b) => b.created - a.created);
+    sessionDetails.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      return timeB - timeA;
+    });
     
-    // Get details for each session
-    const sessionDetails = await Promise.all(relevantSessions.map(async ({ sessionName, created }) => {
-      const paneCount = await new Promise<number>((resolve) => {
-        const countPanes = spawn('tmux', ['list-panes', '-t', `${sessionName}:0`, '-F', '#{pane_index}']);
-        let paneOutput = '';
-        countPanes.stdout?.on('data', (data: Buffer) => { paneOutput += data.toString(); });
-        countPanes.on('exit', (code) => {
-          if (code === 0) {
-            const count = paneOutput.trim().split('\n').filter(Boolean).length;
-            resolve(count);
-          } else {
-            resolve(0);
-          }
+    // Filter by farmId if provided
+    if (farmId && typeof farmId === 'string') {
+      const filtered = MaiBarn.filterSessionsByFarmId(sessionDetails, farmId as string);
+      if (filtered.length > 0) {
+        sessionDetails = filtered;
+        console.log(`[Harvest API] Filtered to ${filtered.length} sessions for farmId ${farmId}`);
+      } else {
+        console.log(`[Harvest API] No sessions matched farmId ${farmId}, returning all ${sessionDetails.length} sessions`);
+      }
+    }
+    
+    // Start watching sessions for live updates
+    for (const session of sessionDetails) {
+      if (!terminalOutputWatcher.isWatching(session.sessionName)) {
+        terminalOutputWatcher.startWatching(
+          session.sessionName, 
+          session.farmId,
+          session.paneCount
+        ).catch(err => {
+          logger.error(`Failed to start watching session ${session.sessionName}:`, err);
         });
-      });
-      
-      // Determine session type and metadata
-      const isQuickTask = sessionName.startsWith('quick-');
-      const isFarm = sessionName.startsWith('farm_');
-      
-      // Extract farmId from session name if it's a farm session
-      let extractedFarmId = undefined;
-      if (isFarm) {
-        const match = sessionName.match(/farm_([a-f0-9]{8})/);
-        if (match) {
-          extractedFarmId = match[1];
-        }
       }
-      
-      const metadata: any = {
-        type: isQuickTask ? 'quicktask' : 'farm',
-        isQuickTask,
-        isFarm,
-        created
-      };
-      
-      // Extract task ID from quick task session name
-      if (isQuickTask) {
-        metadata.taskId = sessionName.replace('quick-', '');
-      }
-      
-      return {
-        sessionName,
-        paneCount,
-        windowName: isQuickTask ? 'quicktask' : 'agents',
-        active: true,
-        farmId: extractedFarmId,
-        metadata
-      };
-    }));
+    }
     
     res.json({
       success: true,
@@ -293,41 +323,49 @@ router.get('/terminal/:sessionName/:agentId', async (req, res) => {
     
     console.log(`[Harvest API] Getting terminal output for ${sessionName} agent ${agentId}`);
     
-    // Capture terminal output from tmux pane with full history
-    const captureProcess = spawn('tmux', [
-      'capture-pane',
-      '-t', `${sessionName}:0.${agentId}`,
-      '-p',
-      '-S', `-${lines}`, // Get last N lines
-      '-E', '-1' // Capture to the end
-    ]);
-    
-    let output = '';
-    let errorOutput = '';
-    
-    captureProcess.stdout?.on('data', (data: Buffer) => {
-      output += data.toString();
-    });
-    
-    captureProcess.stderr?.on('data', (data: Buffer) => {
-      errorOutput += data.toString();
-    });
-    
-    const exitCode = await new Promise<number>(resolve => {
-      captureProcess.on('exit', (code) => resolve(code || 0));
-    });
-    
-    if (exitCode !== 0) {
-      console.log(`[Harvest API] Failed to capture pane for ${sessionName}:0.${agentId}`, errorOutput);
-      return res.status(404).json({
-        success: false,
-        error: 'Terminal session not found',
-        details: errorOutput
+    // Start watching this session if not already watching
+    if (!terminalOutputWatcher.isWatching(sessionName)) {
+      // Try to determine pane count
+      const countProcess = spawn('tmux', ['list-panes', '-t', sessionName, '-F', '#{pane_index}']);
+      let paneOutput = '';
+      countProcess.stdout?.on('data', (data) => { paneOutput += data.toString(); });
+      
+      await new Promise(resolve => {
+        countProcess.on('exit', () => {
+          const paneCount = paneOutput.trim().split('\n').filter(Boolean).length || 5;
+          terminalOutputWatcher.startWatching(
+            sessionName,
+            undefined, // farmId not available here
+            paneCount
+          ).catch(err => {
+            logger.error(`Failed to start watching session ${sessionName}:`, err);
+          });
+          resolve(null);
+        });
+        
+        // Timeout fallback
+        setTimeout(() => resolve(null), 1000);
       });
     }
     
-    // Parse terminal output to identify Claude agent and extract info
-    const lines_array = output.split('\n');
+    // Get terminal output using MaiBarn
+    let lines_array: string[];
+    
+    try {
+      const outputData = await MaiBarn.getAgentOutput(
+        sessionName, 
+        parseInt(agentId), 
+        Number(lines) || 500
+      );
+      lines_array = outputData.lines;
+    } catch (error) {
+      console.log(`[Harvest API] Failed to capture pane for ${sessionName}:0.${agentId}`, error.message);
+      return res.status(404).json({
+        success: false,
+        error: 'Terminal session not found',
+        details: error.message
+      });
+    }
     
     // Look for Claude welcome message or agent role
     let agentRole = null;
@@ -379,19 +417,14 @@ router.post('/terminal/:sessionName/:agentId/command', async (req, res) => {
       });
     }
     
-    // Send command to tmux pane
-    const sendProcess = spawn('tmux', [
-      'send-keys',
-      '-t', `${sessionName}:0.${agentId}`,
-      command,
-      'C-m' // Enter key
-    ]);
+    // Send command using MaiBarn
+    const success = await MaiBarn.sendCommand(
+      sessionName, 
+      parseInt(agentId), 
+      command
+    );
     
-    const exitCode = await new Promise<number>(resolve => {
-      sendProcess.on('exit', (code) => resolve(code || 0));
-    });
-    
-    if (exitCode !== 0) {
+    if (!success) {
       return res.status(404).json({
         success: false,
         error: 'Failed to send command to terminal'
@@ -557,6 +590,243 @@ router.put('/coordination/agents/:agentId/status', async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: 'Failed to update agent status' 
+    });
+  }
+});
+
+// Get file tree for a harvest
+router.get('/:id/files', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const fileTree = await harvestService.getHarvestFileTree(id);
+    
+    if (!fileTree) {
+      return res.status(404).json({ error: 'File tree not found for this harvest' });
+    }
+    
+    res.json(fileTree);
+  } catch (error) {
+    logger.error('Failed to get harvest file tree:', error);
+    res.status(500).json({ error: 'Failed to retrieve file tree' });
+  }
+});
+
+// Download a specific file from harvest
+router.get('/:id/files/download', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { path: filePath } = req.query;
+    
+    if (!filePath) {
+      return res.status(400).json({ error: 'File path is required' });
+    }
+    
+    const fileContent = await harvestService.getHarvestFileContent(id, filePath as string);
+    
+    if (!fileContent) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    // Get filename from path
+    const filename = path.basename(filePath as string);
+    
+    // Set appropriate headers for download
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.send(fileContent);
+  } catch (error) {
+    logger.error('Failed to download harvest file:', error);
+    res.status(500).json({ error: 'Failed to download file' });
+  }
+});
+
+// Get specific file content (for preview)
+router.get('/:id/files/content', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { path: filePath } = req.query;
+    
+    if (!filePath) {
+      return res.status(400).json({ error: 'File path is required' });
+    }
+    
+    const fileContent = await harvestService.getHarvestFileContent(id, filePath as string);
+    
+    if (!fileContent) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    // Determine content type based on file extension
+    const ext = path.extname(filePath as string).toLowerCase();
+    let contentType = 'text/plain';
+    
+    if (['.json'].includes(ext)) contentType = 'application/json';
+    else if (['.js', '.jsx'].includes(ext)) contentType = 'application/javascript';
+    else if (['.ts', '.tsx'].includes(ext)) contentType = 'application/typescript';
+    else if (['.html'].includes(ext)) contentType = 'text/html';
+    else if (['.css'].includes(ext)) contentType = 'text/css';
+    else if (['.md'].includes(ext)) contentType = 'text/markdown';
+    else if (['.yaml', '.yml'].includes(ext)) contentType = 'text/yaml';
+    else if (['.png'].includes(ext)) contentType = 'image/png';
+    else if (['.jpg', '.jpeg'].includes(ext)) contentType = 'image/jpeg';
+    else if (['.gif'].includes(ext)) contentType = 'image/gif';
+    else if (['.svg'].includes(ext)) contentType = 'image/svg+xml';
+    
+    res.setHeader('Content-Type', contentType);
+    res.send(fileContent);
+  } catch (error) {
+    logger.error('Failed to get harvest file content:', error);
+    res.status(500).json({ error: 'Failed to retrieve file content' });
+  }
+});
+
+// Get logs for specific agent
+router.get('/:id/logs/:agentId', async (req, res) => {
+  try {
+    const { id, agentId } = req.params;
+    const logPath = path.join(process.cwd(), 'harvests', id, 'logs', `${agentId}.log`);
+    
+    const fileContent = await harvestFileCollector.getFileContent(logPath);
+    
+    if (!fileContent) {
+      return res.status(404).json({ error: 'Log file not found' });
+    }
+    
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(fileContent);
+  } catch (error) {
+    logger.error('Failed to get agent log:', error);
+    res.status(500).json({ error: 'Failed to retrieve agent log' });
+  }
+});
+
+// Download entire harvest as archive (placeholder for now)
+router.get('/:id/archive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // TODO: Implement archive creation (zip file)
+    // For now, return a message
+    res.status(501).json({ 
+      error: 'Archive download not yet implemented',
+      message: 'This feature will be available soon'
+    });
+  } catch (error) {
+    logger.error('Failed to create harvest archive:', error);
+    res.status(500).json({ error: 'Failed to create archive' });
+  }
+});
+
+// Cleanup stale terminal sessions manually
+router.post('/terminal/cleanup', async (req, res) => {
+  try {
+    const { includeAll } = req.body;
+    console.log('[Harvest API] Manual cleanup requested');
+    await MaiBarn.cleanupStaleSessions(includeAll);
+    
+    res.json({
+      success: true,
+      message: 'Terminal session cleanup completed'
+    });
+  } catch (error) {
+    logger.error('Failed to cleanup terminal sessions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to cleanup terminal sessions'
+    });
+  }
+});
+
+// Get yield item preview
+router.get('/:harvestId/yield/:yieldId/preview', async (req, res) => {
+  try {
+    const { harvestId, yieldId } = req.params;
+    
+    const harvest = await harvestService.findById(harvestId);
+    if (!harvest) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found' 
+      });
+    }
+    
+    const yieldItem = harvest.yield.find(y => y.id === yieldId);
+    if (!yieldItem) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Yield item not found' 
+      });
+    }
+    
+    // For now, return the yield item data directly
+    // TODO: Read actual file content from workspace if available
+    let content = '';
+    if (yieldItem.data) {
+      if (typeof yieldItem.data === 'string') {
+        content = yieldItem.data;
+      } else {
+        content = JSON.stringify(yieldItem.data, null, 2);
+      }
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        content,
+        mimeType: yieldItem.mimeType || 'text/plain',
+        name: yieldItem.name,
+        size: yieldItem.size
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get yield preview:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to get yield preview' 
+    });
+  }
+});
+
+// Download yield item
+router.get('/:harvestId/yield/:yieldId/download', async (req, res) => {
+  try {
+    const { harvestId, yieldId } = req.params;
+    
+    const harvest = await harvestService.findById(harvestId);
+    if (!harvest) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found' 
+      });
+    }
+    
+    const yieldItem = harvest.yield.find(y => y.id === yieldId);
+    if (!yieldItem) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Yield item not found' 
+      });
+    }
+    
+    // For now, serve the data directly
+    // TODO: Read actual file content from workspace if available
+    let content = '';
+    if (yieldItem.data) {
+      if (typeof yieldItem.data === 'string') {
+        content = yieldItem.data;
+      } else {
+        content = JSON.stringify(yieldItem.data, null, 2);
+      }
+    }
+    
+    res.setHeader('Content-Type', yieldItem.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${yieldItem.name}"`);
+    res.send(content);
+  } catch (error) {
+    logger.error('Failed to download yield item:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to download yield item' 
     });
   }
 });

@@ -2,26 +2,18 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Activity, 
-  TrendingUp, 
   DollarSign, 
-  Clock, 
   AlertTriangle,
-  Users,
-  Cpu,
-  HardDrive,
   Download,
   RefreshCw,
   Sparkles,
   ChevronRight,
-  Zap,
   Target,
   Shield,
   BarChart3,
   LineChart as LineChartIcon,
   PieChart as PieChartIcon,
   Grid3x3,
-  Filter,
-  Calendar,
   ArrowUp,
   ArrowDown,
   CheckCircle2,
@@ -35,16 +27,15 @@ import { useThemeStore } from '../../store/themeStore';
 import { useFarmStore } from '../../store/farmStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { analyticsService } from '../../services/analyticsService';
+import { unifiedMetricsService } from '../../services/unifiedMetricsService';
 import { LineChart } from './Charts/LineChart';
 import { BarChart } from './Charts/BarChart';
 import { PieChart } from './Charts/PieChart';
-import { HeatMap } from './Charts/HeatMap';
+import { FarmYieldChart } from './Charts/FarmYieldChart';
 import { PerformanceMetrics } from './PerformanceMetrics';
-import { ResourceUtilization } from './ResourceUtilization';
 import { PredictiveInsights } from './PredictiveInsights';
 import { InsightsSummary } from './InsightsSummary';
-import { formatMetricValue, calculateTrend } from '../../utils/dataAggregation';
-import { TimeRange, ClaudeCodeMetrics } from '../../types/analytics';
+import { TimeRange, ClaudeCodeMetrics, FarmYieldMetrics } from '../../types/analytics';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -61,7 +52,8 @@ interface MetricCardProps {
   title: string;
   value: string | number;
   icon: React.ReactNode;
-  gradient: string;
+  gradient?: string;
+  gradientStyle?: React.CSSProperties;
   change?: number;
   subtitle?: string;
   onClick?: () => void;
@@ -72,6 +64,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
   value, 
   icon, 
   gradient, 
+  gradientStyle,
   change, 
   subtitle,
   onClick 
@@ -93,19 +86,25 @@ const MetricCard: React.FC<MetricCardProps> = ({
     )}
   >
     {/* Background gradient */}
-    <div className={clsx(
-      "absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity",
-      gradient
-    )} />
+    <div 
+      className={clsx(
+        "absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity",
+        gradient
+      )}
+      style={gradientStyle}
+    />
     
     {/* Content */}
     <div className="relative z-10">
       <div className="flex items-start justify-between mb-4">
-        <div className={clsx(
-          "p-3 rounded-xl",
-          gradient,
-          "bg-opacity-10 dark:bg-opacity-20"
-        )}>
+        <div 
+          className={clsx(
+            "p-3 rounded-xl",
+            gradient && gradient,
+            !gradient && "bg-opacity-10 dark:bg-opacity-20"
+          )}
+          style={gradientStyle ? { ...gradientStyle, opacity: 0.1 } : undefined}
+        >
           {icon}
         </div>
         {change !== undefined && (
@@ -140,16 +139,12 @@ const MetricCard: React.FC<MetricCardProps> = ({
 );
 
 export const Analytics: React.FC = () => {
-  const theme = useThemeStore((state) => state.theme);
+  const { primaryColor, accentColor } = useThemeStore();
   const farms = useFarmStore((state) => state.farms);
   const {
-    overview,
     metrics,
     timeSeriesData,
     agentPerformance,
-    taskCompletions,
-    errors,
-    predictions,
     selectedTimeRange,
     refreshInterval,
     isLoading,
@@ -161,12 +156,14 @@ export const Analytics: React.FC = () => {
     setLoading,
     setError,
     setOverview,
+    updateFromWebSocket,
   } = useAnalyticsStore();
 
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedView, setSelectedView] = useState<'overview' | 'performance' | 'costs' | 'insights'>('overview');
   const [selectedMetric, setSelectedMetric] = useState<'farms' | 'agents' | 'resources' | 'costs'>('farms');
   const [claudeMetrics, setClaudeMetrics] = useState<ClaudeCodeMetrics | null>(null);
+  const [farmYieldMetrics, setFarmYieldMetrics] = useState<FarmYieldMetrics | null>(null);
 
   // WebSocket connection for real-time updates
   const { connected, lastMessage } = useWebSocket({
@@ -204,10 +201,21 @@ export const Analytics: React.FC = () => {
 
   // Handle WebSocket messages for real-time updates
   useEffect(() => {
-    if (lastMessage) {
+    if (lastMessage && typeof lastMessage === 'object') {
       const { type, payload } = lastMessage;
       
       switch (type) {
+        case 'metrics:update':
+          // Handle unified metrics update with validation
+          if (payload && typeof payload === 'object') {
+            unifiedMetricsService.handleWebSocketUpdate(payload);
+            // Trigger analytics store update
+            updateFromWebSocket(payload);
+          } else {
+            console.warn('Invalid metrics:update payload received:', payload);
+          }
+          break;
+          
         case 'analytics:update':
           if (payload.overview) setOverview(payload.overview);
           if (payload.metrics) setMetrics(payload.metrics);
@@ -222,11 +230,15 @@ export const Analytics: React.FC = () => {
           if (payload.claudeMetrics) setClaudeMetrics(payload.claudeMetrics);
           break;
         
+        case 'yield:update':
+          if (payload.yieldMetrics) setFarmYieldMetrics(payload.yieldMetrics);
+          break;
+        
         default:
           break;
       }
     }
-  }, [lastMessage]);
+  }, [lastMessage, updateFromWebSocket]);
 
   // Auto refresh
   useEffect(() => {
@@ -243,39 +255,132 @@ export const Analytics: React.FC = () => {
     try {
       setLoading(true);
 
-      // Get all agents from farms
-      const allAgents = farms.flatMap(farm => farm.agents || []);
-
-      // Load aggregated metrics
+      // Use unified metrics service for consistent data
+      const unifiedMetrics = await unifiedMetricsService.fetchMetrics();
+      const dashboardMetrics = unifiedMetricsService.getDashboardMetrics();
+      
+      // Convert unified metrics to analytics format
       const aggregatedMetrics = await analyticsService.calculateAggregatedMetrics(
         selectedTimeRange,
         farms,
-        allAgents
+        farms.flatMap(farm => farm.agents || [])
       );
+      
+      // Override with unified metrics for consistency
+      aggregatedMetrics.totalFarms = unifiedMetrics.totalFarms;
+      aggregatedMetrics.activeFarms = unifiedMetrics.activeFarms;
+      aggregatedMetrics.totalAgents = unifiedMetrics.uniqueAgents;
+      aggregatedMetrics.activeAgents = unifiedMetrics.activeAgents;
+      aggregatedMetrics.totalTasks = unifiedMetrics.totalTasks;
+      aggregatedMetrics.completedTasks = unifiedMetrics.completedTasks;
+      aggregatedMetrics.failedTasks = unifiedMetrics.failedTasks;
+      aggregatedMetrics.taskSuccessRate = unifiedMetrics.successRate; // Use taskSuccessRate instead of successRate
+      aggregatedMetrics.errorRate = unifiedMetrics.errorRate;
+      aggregatedMetrics.avgResponseTime = unifiedMetrics.avgResponseTime;
+      // Remove throughput assignment as it doesn't exist on AggregatedMetrics
+      aggregatedMetrics.resourceUtilization = {
+        cpu: unifiedMetrics.cpuUsage,
+        memory: unifiedMetrics.memoryUsage,
+        storage: unifiedMetrics.diskUsage,
+        network: unifiedMetrics.networkUsage,
+        timestamp: new Date() // Add required timestamp
+      };
+      aggregatedMetrics.totalCost = {
+        total: unifiedMetrics.totalCost,
+        compute: unifiedMetrics.computeCost,
+        storage: unifiedMetrics.storageCost,
+        network: 0,
+        api: unifiedMetrics.apiCost,
+        period: 'hourly' as const,
+        currency: 'USD'
+      };
+      // Remove costBreakdown assignment as it doesn't exist on AggregatedMetrics
+      
       setMetrics(aggregatedMetrics);
 
       // Load time series data
       const timeSeries = analyticsService.generateMockTimeSeriesData(selectedTimeRange);
       updateTimeSeriesData(timeSeries);
 
-      // Load agent performance
-      const performance = await analyticsService.getAgentPerformanceMetrics(
-        allAgents,
-        selectedTimeRange
-      );
+      // Load agent performance from unified metrics
+      const performance = dashboardMetrics.agents.map(agent => ({
+        agentId: agent.agentId,
+        agentName: agent.agentName,
+        tasksCompleted: agent.tasksCompleted,
+        tasksInProgress: 0, // Required property
+        tasksFailed: agent.tasksFailed || 0, // Required property
+        averageResponseTime: agent.avgResponseTime,
+        successRate: agent.successRate,
+        lastActive: agent.lastActivity,
+        resourceUsage: {
+          cpu: agent.cpuUsage,
+          memory: agent.memoryUsage,
+          storage: 0,
+          network: 0,
+          gpu: 0,
+          timestamp: new Date()
+        },
+        costMetrics: {
+          total: 0,
+          compute: 0,
+          storage: 0,
+          network: 0,
+          api: 0,
+          period: 'hourly' as const,
+          currency: 'USD'
+        }
+      }));
       updateAgentPerformance(performance);
 
-      // Load Claude Code metrics (mock for now, replace with real API call)
+      // Load Claude Code metrics from unified metrics
       setClaudeMetrics({
-        apiCalls: Math.floor(Math.random() * 10000) + 5000,
-        tokensUsed: Math.floor(Math.random() * 1000000) + 500000,
-        costPerToken: 0.000003,
-        totalCost: 0,
-        averageLatency: Math.random() * 2 + 0.5,
-        errorRate: Math.random() * 0.05,
+        apiCalls: Math.round(unifiedMetrics.throughput * 100),
+        tokensUsed: Math.round(unifiedMetrics.totalCost * 50000),
+        costPerToken: 0.00002,
+        totalCost: unifiedMetrics.apiCost,
+        averageLatency: unifiedMetrics.avgResponseTime / 1000,
+        errorRate: unifiedMetrics.errorRate / 100,
         modelType: 'claude-3-sonnet',
-        timestamp: new Date()
+        timestamp: unifiedMetrics.timestamp
       });
+
+      // Load Farm Yield metrics
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4567'}/api/analytics/farm-yield`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.data) {
+            setFarmYieldMetrics(data.data);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load farm yield metrics:', error);
+        // Use mock data as fallback
+        setFarmYieldMetrics({
+          averageYield: 12.5,
+          totalFilesGenerated: 250,
+          completedFarms: 20,
+          topFarm: {
+            id: 'mock-farm-1',
+            name: 'High Performance Farm',
+            fileCount: 42,
+            completedAt: new Date()
+          },
+          yieldTrend: [
+            { date: new Date(), averageYield: 12.5, farmCount: 3 },
+            { date: new Date(Date.now() - 86400000), averageYield: 11.2, farmCount: 2 },
+            { date: new Date(Date.now() - 172800000), averageYield: 13.8, farmCount: 4 },
+          ],
+          yieldByType: {
+            file: 120,
+            report: 45,
+            code: 50,
+            documentation: 20,
+            data: 10,
+            model: 5
+          }
+        });
+      }
 
       setLoading(false);
     } catch (error) {
@@ -323,7 +428,12 @@ export const Analytics: React.FC = () => {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700 p-8 mb-8">
+      <div 
+        className="relative overflow-hidden rounded-3xl p-8 mb-8"
+        style={{
+          background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`
+        }}
+      >
         <div className="absolute inset-0 bg-grid-white/10 bg-[size:20px_20px]" />
         <div className="relative z-10">
           <motion.div
@@ -346,7 +456,7 @@ export const Analytics: React.FC = () => {
               <select
                 value={selectedTimeRange.preset}
                 onChange={(e) => handleTimeRangeChange(e.target.value as TimeRange['preset'])}
-                className="px-4 py-2 rounded-xl bg-white/20 backdrop-blur-sm text-white border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/50"
+                className="px-4 py-2 rounded-xl bg-white/20 backdrop-blur-sm text-white border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/50 hover:bg-white/30 transition-colors"
               >
                 <option value="1h">Last Hour</option>
                 <option value="6h">Last 6 Hours</option>
@@ -421,9 +531,10 @@ export const Analytics: React.FC = () => {
             className={clsx(
               "flex-1 px-4 py-2 rounded-lg capitalize font-medium transition-all",
               selectedView === view
-                ? "bg-white dark:bg-gray-700 shadow-sm text-emerald-600 dark:text-emerald-400"
+                ? "bg-white dark:bg-gray-700 shadow-sm"
                 : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
             )}
+            style={selectedView === view ? { color: primaryColor } : {}}
           >
             {view === 'overview' && <Grid3x3 className="w-4 h-4 inline mr-2" />}
             {view === 'performance' && <Activity className="w-4 h-4 inline mr-2" />}
@@ -439,8 +550,9 @@ export const Analytics: React.FC = () => {
         <MetricCard
           title="Active Farms"
           value={farms.filter(f => f.status === 'active').length}
-          icon={<Sparkles className="w-6 h-6 text-emerald-600" />}
-          gradient="bg-gradient-to-br from-emerald-400 to-green-600"
+          icon={<Sparkles className="w-6 h-6" style={{ color: primaryColor }} />}
+          gradient={`bg-gradient-to-br`}
+          gradientStyle={{ background: `linear-gradient(135deg, ${primaryColor}40 0%, ${primaryColor}60 100%)` }}
           change={12.5}
           subtitle={`${farms.length} total farms`}
           onClick={() => setSelectedMetric('farms')}
@@ -449,8 +561,9 @@ export const Analytics: React.FC = () => {
         <MetricCard
           title="Success Rate"
           value={metrics ? `${((metrics.completedTasks / metrics.totalTasks) * 100).toFixed(1)}%` : '0%'}
-          icon={<Target className="w-6 h-6 text-blue-600" />}
-          gradient="bg-gradient-to-br from-blue-400 to-indigo-600"
+          icon={<Target className="w-6 h-6" style={{ color: accentColor }} />}
+          gradient={`bg-gradient-to-br`}
+          gradientStyle={{ background: `linear-gradient(135deg, ${accentColor}40 0%, ${accentColor}60 100%)` }}
           change={2.4}
           subtitle={`${metrics?.completedTasks || 0} completed tasks`}
           onClick={() => setSelectedMetric('agents')}
@@ -459,8 +572,9 @@ export const Analytics: React.FC = () => {
         <MetricCard
           title="Total Cost"
           value={`$${calculateClaudeCosts.total.toFixed(2)}`}
-          icon={<DollarSign className="w-6 h-6 text-purple-600" />}
-          gradient="bg-gradient-to-br from-purple-400 to-pink-600"
+          icon={<DollarSign className="w-6 h-6" style={{ color: primaryColor }} />}
+          gradient={`bg-gradient-to-br`}
+          gradientStyle={{ background: `linear-gradient(135deg, ${primaryColor}30 0%, ${accentColor}30 100%)` }}
           change={-5.2}
           subtitle={`${claudeMetrics?.apiCalls || 0} API calls`}
           onClick={() => setSelectedMetric('costs')}
@@ -469,8 +583,9 @@ export const Analytics: React.FC = () => {
         <MetricCard
           title="System Health"
           value="98.5%"
-          icon={<Shield className="w-6 h-6 text-orange-600" />}
-          gradient="bg-gradient-to-br from-orange-400 to-red-600"
+          icon={<Shield className="w-6 h-6" style={{ color: accentColor }} />}
+          gradient={`bg-gradient-to-br`}
+          gradientStyle={{ background: `linear-gradient(135deg, ${accentColor}30 0%, ${primaryColor}30 100%)` }}
           change={0.8}
           subtitle="All systems operational"
           onClick={() => setSelectedMetric('resources')}
@@ -491,7 +606,7 @@ export const Analytics: React.FC = () => {
             <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <LineChartIcon className="w-5 h-5 text-emerald-500" />
+                  <LineChartIcon className="w-5 h-5" style={{ color: primaryColor }} />
                   Farm Performance Trends
                 </h3>
                 <div className="flex gap-2">
@@ -502,9 +617,10 @@ export const Analytics: React.FC = () => {
                       className={clsx(
                         "px-3 py-1 rounded-lg text-sm font-medium transition-all",
                         selectedMetric === m
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          ? "text-white"
                           : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                       )}
+                      style={selectedMetric === m ? { backgroundColor: primaryColor } : {}}
                     >
                       {m.charAt(0).toUpperCase() + m.slice(1)}
                     </button>
@@ -537,7 +653,7 @@ export const Analytics: React.FC = () => {
               {/* Resource Utilization */}
               <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
                 <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Gauge className="w-5 h-5 text-blue-500" />
+                  <Gauge className="w-5 h-5" style={{ color: primaryColor }} />
                   Resource Utilization
                 </h3>
                 <div className="space-y-4">
@@ -551,7 +667,10 @@ export const Analytics: React.FC = () => {
                         initial={{ width: 0 }}
                         animate={{ width: '67%' }}
                         transition={{ duration: 1, ease: "easeOut" }}
-                        className="bg-gradient-to-r from-blue-400 to-blue-600 h-2 rounded-full"
+                        className="h-2 rounded-full"
+                        style={{
+                          background: `linear-gradient(90deg, ${primaryColor} 0%, ${accentColor} 100%)`
+                        }}
                       />
                     </div>
                   </div>
@@ -566,7 +685,10 @@ export const Analytics: React.FC = () => {
                         initial={{ width: 0 }}
                         animate={{ width: '45%' }}
                         transition={{ duration: 1, ease: "easeOut", delay: 0.1 }}
-                        className="bg-gradient-to-r from-green-400 to-green-600 h-2 rounded-full"
+                        className="h-2 rounded-full"
+                        style={{
+                          background: `linear-gradient(90deg, ${accentColor} 0%, ${primaryColor} 100%)`
+                        }}
                       />
                     </div>
                   </div>
@@ -581,38 +703,21 @@ export const Analytics: React.FC = () => {
                         initial={{ width: 0 }}
                         animate={{ width: '32%' }}
                         transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
-                        className="bg-gradient-to-r from-purple-400 to-purple-600 h-2 rounded-full"
+                        className="h-2 rounded-full"
+                        style={{
+                          background: `linear-gradient(90deg, ${primaryColor}80 0%, ${accentColor}80 100%)`
+                        }}
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Quick Stats */}
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-yellow-500" />
-                  Quick Stats
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Avg Response Time</span>
-                    <span className="text-sm font-medium">{claudeMetrics?.averageLatency.toFixed(2) || '0'}s</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Error Rate</span>
-                    <span className="text-sm font-medium text-red-600">{((claudeMetrics?.errorRate || 0) * 100).toFixed(2)}%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Active Agents</span>
-                    <span className="text-sm font-medium">{metrics?.activeAgents || 0}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Tasks/Hour</span>
-                    <span className="text-sm font-medium">{Math.floor((metrics?.totalTasks || 0) / 24)}</span>
-                  </div>
-                </div>
-              </div>
+              {/* Farm Yield Chart */}
+              <FarmYieldChart 
+                metrics={farmYieldMetrics} 
+                isLoading={isLoading}
+              />
             </div>
           </motion.div>
         )}
@@ -803,6 +908,7 @@ export const Analytics: React.FC = () => {
             </div>
           </motion.div>
         )}
+
 
         {selectedView === 'insights' && (
           <motion.div

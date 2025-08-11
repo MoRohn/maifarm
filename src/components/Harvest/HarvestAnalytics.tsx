@@ -23,20 +23,22 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({ harvest }) =
     ? (harvest.summary.completedTasks / (harvest.summary.duration / 60)).toFixed(1)
     : harvest.summary.completedTasks;
 
-  const agentPerformance = harvest.results.reduce((acc, result) => {
-    if (!acc[result.agentName]) {
-      acc[result.agentName] = {
-        tasks: 0,
-        successes: 0,
-        totalTime: 0,
-        avgTime: 0
-      };
-    }
-    acc[result.agentName].tasks++;
-    if (result.success) acc[result.agentName].successes++;
-    acc[result.agentName].totalTime += result.processingTime;
-    return acc;
-  }, {} as Record<string, any>);
+  const agentPerformance = (harvest.results && harvest.results.length > 0) 
+    ? harvest.results.reduce((acc, result) => {
+        if (!acc[result.agentName]) {
+          acc[result.agentName] = {
+            tasks: 0,
+            successes: 0,
+            totalTime: 0,
+            avgTime: 0
+          };
+        }
+        acc[result.agentName].tasks++;
+        if (result.success) acc[result.agentName].successes++;
+        acc[result.agentName].totalTime += result.processingTime;
+        return acc;
+      }, {} as Record<string, any>)
+    : {};
 
   // Calculate averages
   Object.keys(agentPerformance).forEach(agent => {
@@ -78,7 +80,9 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({ harvest }) =
     {
       icon: Users,
       label: 'Active Agents',
-      value: new Set(harvest.results.map(r => r.agentId)).size,
+      value: harvest.results && harvest.results.length > 0 
+        ? new Set(harvest.results.map(r => r.agentId)).size 
+        : 0,
       trend: 'Participated',
       color: 'text-amber-600 dark:text-amber-400',
       bgColor: 'bg-amber-100 dark:bg-amber-900/30'
@@ -116,27 +120,28 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({ harvest }) =
       </div>
 
       {/* Task Distribution Chart */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="bg-white dark:bg-gray-900 rounded-apple-lg p-6 border border-gray-200 dark:border-gray-800"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            <BarChart3 className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" />
-            Task Distribution by Type
-          </h3>
-        </div>
-        
-        <div className="space-y-3">
-          {Object.entries(
-            harvest.results.reduce((acc, result) => {
-              acc[result.taskType] = (acc[result.taskType] || 0) + 1;
-              return acc;
-            }, {} as Record<string, number>)
-          ).map(([type, count]) => {
-            const percentage = (count / harvest.results.length) * 100;
+      {harvest.results && harvest.results.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="bg-white dark:bg-gray-900 rounded-apple-lg p-6 border border-gray-200 dark:border-gray-800"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+              <BarChart3 className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" />
+              Task Distribution by Type
+            </h3>
+          </div>
+          
+          <div className="space-y-3">
+            {Object.entries(
+              harvest.results.reduce((acc, result) => {
+                acc[result.taskType] = (acc[result.taskType] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>)
+            ).map(([type, count]) => {
+              const percentage = (count / harvest.results.length) * 100;
             return (
               <div key={type}>
                 <div className="flex items-center justify-between mb-1">
@@ -160,23 +165,25 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({ harvest }) =
           })}
         </div>
       </motion.div>
+      )}
 
       {/* Top Performing Agents */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-        className="bg-white dark:bg-gray-900 rounded-apple-lg p-6 border border-gray-200 dark:border-gray-800"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            <Award className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" />
-            Top Performing Agents
-          </h3>
-        </div>
-        
-        <div className="space-y-4">
-          {topAgents.map(([agentName, stats]: [string, any], index) => (
+      {topAgents.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="bg-white dark:bg-gray-900 rounded-apple-lg p-6 border border-gray-200 dark:border-gray-800"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+              <Award className="w-5 h-5 mr-2 text-gray-600 dark:text-gray-400" />
+              Top Performing Agents
+            </h3>
+          </div>
+          
+          <div className="space-y-4">
+            {topAgents.map(([agentName, stats]: [string, any], index) => (
             <motion.div
               key={agentName}
               initial={{ opacity: 0, x: -20 }}
@@ -214,6 +221,7 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({ harvest }) =
           ))}
         </div>
       </motion.div>
+      )}
 
       {/* Time Analysis */}
       <motion.div

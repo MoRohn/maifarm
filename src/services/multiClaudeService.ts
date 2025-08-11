@@ -30,7 +30,7 @@ class MultiClaudeService {
   }
 
   async startSession(sessionName: string, numAgents: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/session`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -46,7 +46,7 @@ class MultiClaudeService {
   }
 
   async stopSession(): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/session`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/session`, {
       method: 'DELETE'
     });
 
@@ -56,7 +56,7 @@ class MultiClaudeService {
   }
 
   async addAgent(agentNumber: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/agents`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/agents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -71,7 +71,7 @@ class MultiClaudeService {
   }
 
   async removeAgent(agentNumber: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/agents/${agentNumber}`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/agents/${agentNumber}`, {
       method: 'DELETE'
     });
 
@@ -81,7 +81,7 @@ class MultiClaudeService {
   }
 
   async sendCommand(agentNumber: number, command: MultiClaudeCommand): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/agents/${agentNumber}/command`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/agents/${agentNumber}/command`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(command)
@@ -93,7 +93,7 @@ class MultiClaudeService {
   }
 
   async sendPrompt(agentNumber: number, prompt: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/agents/${agentNumber}/prompt`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/agents/${agentNumber}/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
@@ -105,7 +105,7 @@ class MultiClaudeService {
   }
 
   async getCoordinationData(): Promise<CoordinationData> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/coordination`);
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/coordination`);
     
     if (!response.ok) {
       throw new Error(`Failed to get coordination data: ${response.statusText}`);
@@ -115,7 +115,7 @@ class MultiClaudeService {
   }
 
   async getPaneInfo(sessionName: string): Promise<TmuxPaneInfo[]> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/panes?session=${sessionName}`);
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/panes?session=${sessionName}`);
     
     if (!response.ok) {
       throw new Error(`Failed to get pane info: ${response.statusText}`);
@@ -125,7 +125,7 @@ class MultiClaudeService {
   }
 
   async getPaneOutput(paneId: string, lines?: number): Promise<string[]> {
-    const url = new URL(`${this.baseUrl}/api/multiclaude/panes/${paneId}/output`);
+    const url = new URL(`${this.baseUrl}/api/multi-claude/panes/${paneId}/output`);
     if (lines) {
       url.searchParams.append('lines', lines.toString());
     }
@@ -141,7 +141,7 @@ class MultiClaudeService {
   }
 
   async sendToPan(paneId: string, command: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/panes/${paneId}/send`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/panes/${paneId}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command })
@@ -154,7 +154,7 @@ class MultiClaudeService {
 
   // Utility function to execute Python script
   async executePythonScript(scriptPath: string, args: string[]): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/api/multiclaude/execute`, {
+    const response = await fetch(`${this.baseUrl}/api/multi-claude/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

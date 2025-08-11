@@ -133,7 +133,7 @@ describe('Qwen3-Coder Integration Tests', () => {
           await multiClaudeService.stopFarm(processId);
         }
       } catch (error) {
-        // If multi_claude.py is not available, this is expected
+        // If orchestrator.py is not available, this is expected
         console.log('Farm launch test skipped:', error);
         expect(error).toBeDefined();
       }

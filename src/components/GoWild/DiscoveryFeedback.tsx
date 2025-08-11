@@ -204,7 +204,7 @@ export const DiscoveryFeedback: React.FC<DiscoveryFeedbackProps> = ({
       <div className="space-y-3 max-h-[600px] overflow-y-auto">
         <AnimatePresence>
           {filteredDiscoveries.map((discovery) => {
-            const typeInfo = typeConfig[discovery.type];
+            const typeInfo = typeConfig[discovery.type] || typeConfig.insight;
             const Icon = typeInfo.icon;
             const isExpanded = expandedDiscoveries.has(discovery.id);
 

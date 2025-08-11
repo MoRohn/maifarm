@@ -11,6 +11,7 @@ export class WebSocketRetryManager {
   private retryCount = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private isRetrying = false;
+  private cancelled = false;
 
   constructor(private config: WebSocketRetryConfig) {}
 
@@ -21,15 +22,24 @@ export class WebSocketRetryManager {
     }
 
     this.isRetrying = true;
+    this.retryCount = 0;
+    this.cancelled = false;
 
-    while (this.retryCount < this.config.maxRetries) {
-      const delay = this.calculateDelay();
-      
-      if (this.config.onRetry) {
-        this.config.onRetry(this.retryCount + 1, delay);
+    while (this.retryCount < this.config.maxRetries && !this.cancelled) {
+      // Don't delay on first attempt
+      if (this.retryCount > 0) {
+        const delay = this.calculateDelay();
+        
+        if (this.config.onRetry) {
+          this.config.onRetry(this.retryCount, delay);
+        }
+
+        await this.delay(delay);
+        
+        if (this.cancelled) {
+          break;
+        }
       }
-
-      await this.delay(delay);
 
       try {
         const success = await connectFn();
@@ -39,7 +49,7 @@ export class WebSocketRetryManager {
         }
       } catch (error) {
         // Only log if not backend unavailable warning
-        if (!window.__backendWarningShown) {
+        if (typeof window !== 'undefined' && !(window as any).__backendWarningShown) {
           console.error(`Connection attempt ${this.retryCount + 1} failed:`, error);
         }
       }
@@ -48,17 +58,18 @@ export class WebSocketRetryManager {
     }
 
     // Max retries reached
-    if (this.config.onMaxRetriesReached) {
+    if (!this.cancelled && this.config.onMaxRetriesReached) {
       this.config.onMaxRetriesReached();
     }
 
     this.isRetrying = false;
+    this.retryCount = 0;
     return false;
   }
 
   private calculateDelay(): number {
     const delay = Math.min(
-      this.config.initialDelay * Math.pow(this.config.backoffMultiplier, this.retryCount),
+      this.config.initialDelay * Math.pow(this.config.backoffMultiplier, this.retryCount - 1),
       this.config.maxDelay
     );
     
@@ -68,6 +79,11 @@ export class WebSocketRetryManager {
   }
 
   private delay(ms: number): Promise<void> {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    
     return new Promise(resolve => {
       this.retryTimer = setTimeout(resolve, ms);
     });
@@ -76,6 +92,7 @@ export class WebSocketRetryManager {
   reset() {
     this.retryCount = 0;
     this.isRetrying = false;
+    this.cancelled = false;
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -91,6 +108,7 @@ export class WebSocketRetryManager {
   }
 
   cancel() {
+    this.cancelled = true;
     this.reset();
   }
 }

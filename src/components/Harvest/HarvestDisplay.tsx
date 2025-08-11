@@ -16,10 +16,12 @@ import {
   ChevronRight,
   Eye,
   Clock,
-  Activity
+  Activity,
+  FolderTree
 } from 'lucide-react';
-import { Harvest, HarvestArtifact, HarvestInsight } from '../../types/harvest';
+import { Harvest, HarvestYield, HarvestInsight } from '../../types/harvest';
 import { formatDistanceToNow } from 'date-fns';
+import { HarvestFileTree, FileTreeNode } from './HarvestFileTree';
 
 interface HarvestDisplayProps {
   harvest: Harvest;
@@ -32,8 +34,32 @@ export const HarvestDisplay: React.FC<HarvestDisplayProps> = ({
   onSaveAsSeed,
   onExport 
 }) => {
-  const [selectedTab, setSelectedTab] = useState<'overview' | 'artifacts' | 'insights'>('overview');
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'yield' | 'insights' | 'files'>('overview');
   const [showDetailedView, setShowDetailedView] = useState(false);
+  const [fileTree, setFileTree] = useState<FileTreeNode | null>(null);
+  const [fileTreeLoading, setFileTreeLoading] = useState(false);
+  
+  const fetchFileTree = async () => {
+    if (!harvest.id) return;
+    setFileTreeLoading(true);
+    try {
+      const response = await fetch(`/api/harvests/${harvest.id}/files`);
+      if (response.ok) {
+        const data = await response.json();
+        setFileTree(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch file tree:', error);
+    } finally {
+      setFileTreeLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    if (harvest.status === 'ready' && selectedTab === 'files') {
+      fetchFileTree();
+    }
+  }, [harvest.status, selectedTab]);
 
   // Calculate headline metrics
   const successRate = harvest.summary.totalTasks > 0 
@@ -164,7 +190,7 @@ export const HarvestDisplay: React.FC<HarvestDisplayProps> = ({
                 <Package className="w-4 h-4" />
                 <span className="text-sm">Artifacts</span>
               </div>
-              <div className="text-3xl font-bold text-white">{harvest.artifacts.length}</div>
+              <div className="text-3xl font-bold text-white">{harvest.yield.length}</div>
             </motion.div>
 
             <motion.div
@@ -188,7 +214,7 @@ export const HarvestDisplay: React.FC<HarvestDisplayProps> = ({
       {/* Tab Navigation */}
       <div className="border-b border-gray-200 dark:border-gray-800">
         <div className="flex">
-          {(['overview', 'artifacts', 'insights'] as const).map((tab) => (
+          {(['overview', 'yield', 'insights', 'files'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setSelectedTab(tab)}
@@ -313,24 +339,24 @@ export const HarvestDisplay: React.FC<HarvestDisplayProps> = ({
             </motion.div>
           )}
 
-          {selectedTab === 'artifacts' && (
+          {selectedTab === 'yield' && (
             <motion.div
-              key="artifacts"
+              key="yield"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
               className="space-y-4"
             >
-              {harvest.artifacts.length === 0 ? (
+              {harvest.yield.length === 0 ? (
                 <div className="text-center py-12">
                   <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 dark:text-gray-400">No artifacts generated yet</p>
+                  <p className="text-gray-600 dark:text-gray-400">No yield generated yet</p>
                 </div>
               ) : (
-                harvest.artifacts.map((artifact, index) => (
+                harvest.yield.map((yieldItem, index) => (
                   <motion.div
-                    key={artifact.id}
+                    key={yieldItem.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
@@ -343,17 +369,17 @@ export const HarvestDisplay: React.FC<HarvestDisplayProps> = ({
                         </div>
                         <div>
                           <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                            {artifact.name}
+                            {yieldItem.name}
                           </h4>
                           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                            {artifact.description}
+                            {yieldItem.description}
                           </p>
                           <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-500">
-                            <span>{artifact.type}</span>
+                            <span>{yieldItem.type}</span>
                             <span>•</span>
-                            <span>{(artifact.size / 1024).toFixed(1)} KB</span>
+                            <span>{(yieldItem.size / 1024).toFixed(1)} KB</span>
                             <span>•</span>
-                            <span>By {artifact.createdBy.agentName}</span>
+                            <span>By {yieldItem.createdBy.agentName}</span>
                           </div>
                         </div>
                       </div>
@@ -420,6 +446,51 @@ export const HarvestDisplay: React.FC<HarvestDisplayProps> = ({
                     </div>
                   </motion.div>
                 ))
+              )}
+            </motion.div>
+          )}
+
+          {selectedTab === 'files' && (
+            <motion.div
+              key="files"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              {fileTreeLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600" />
+                </div>
+              ) : fileTree ? (
+                <HarvestFileTree
+                  fileTree={fileTree}
+                  onFileSelect={(file) => {
+                    // Handle file selection (preview)
+                    window.open(`/api/harvests/${harvest.id}/files/content?path=${encodeURIComponent(file.path)}`, '_blank');
+                  }}
+                  onFileDownload={(file) => {
+                    // Handle file download
+                    window.location.href = `/api/harvests/${harvest.id}/files/download?path=${encodeURIComponent(file.path)}`;
+                  }}
+                  onFilePreview={(file) => {
+                    // Handle file preview in modal (future enhancement)
+                    window.open(`/api/harvests/${harvest.id}/files/content?path=${encodeURIComponent(file.path)}`, '_blank');
+                  }}
+                />
+              ) : (
+                <div className="text-center py-12">
+                  <FolderTree className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600 dark:text-gray-400">
+                    No files collected for this harvest yet
+                  </p>
+                  <button
+                    onClick={fetchFileTree}
+                    className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    Refresh Files
+                  </button>
+                </div>
               )}
             </motion.div>
           )}

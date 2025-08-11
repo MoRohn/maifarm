@@ -58,14 +58,15 @@ export class WebSocketServer {
         credentials: true,
         allowedHeaders: ["Content-Type", "Authorization"]
       },
-      // Enhanced reliability settings
-      pingTimeout: 30000,  // Reduced from 60s for faster detection
-      pingInterval: 10000,  // More frequent pings
-      connectTimeout: 20000, // Connection timeout
+      // Enhanced reliability settings for desktop/laptop clients
+      pingTimeout: 90000,  // 90s for desktop clients with stable connections
+      pingInterval: 30000,  // 30s ping interval for desktop
+      connectTimeout: 60000, // 60s connection timeout for desktop
       transports: ['websocket', 'polling'], // Support fallback to polling
       allowEIO3: true,
-      perMessageDeflate: true, // Enable compression
+      perMessageDeflate: true, // Enable compression for desktop
       httpCompression: true,
+      maxHttpBufferSize: 1e8, // 100MB buffer for desktop clients
       // Enhanced connection state recovery
       connectionStateRecovery: {
         maxDisconnectionDuration: 5 * 60 * 1000, // 5 minutes
@@ -96,6 +97,8 @@ export class WebSocketServer {
     // Initialize terminal handlers
     this.terminalHandlers = createTerminalWebSocketHandlers(this.io);
     
+    
+    
   }
 
   private setupMiddleware() {
@@ -104,7 +107,23 @@ export class WebSocketServer {
       // Accept any connection in local mode
       socket.userId = socket.handshake.auth.userId || 'local-user';
       socket.roles = ['admin', 'user'];
-      socket.permissions = ['admin:all'];
+      // Add comprehensive permissions for development mode
+      socket.permissions = [
+        'admin:all',
+        'farms:read',
+        'farms:write',
+        'agents:read',
+        'agents:write',
+        'agents:control',
+        'tasks:create',
+        'tasks:read',
+        'tasks:write',
+        'metrics:read',
+        'costs:read',
+        'health:read',
+        'terminals:read',
+        'terminals:write'
+      ];
       
       next();
     });
@@ -124,19 +143,22 @@ export class WebSocketServer {
       const lastPong = socket.data.lastPong || now;
       const timeSinceLastPong = now - lastPong;
       
-      // Track missed pings
-      if (timeSinceLastPong > 15000) { // 15 seconds
+      // Track missed pings with more tolerance
+      if (timeSinceLastPong > 30000) { // 30 seconds (more tolerant)
         socket.data.missedPings = (socket.data.missedPings || 0) + 1;
         
-        // Warn after 2 missed pings
-        if (socket.data.missedPings === 2) {
+        // Warn after 3 missed pings (more tolerant)
+        if (socket.data.missedPings === 3) {
           console.warn(`[WebSocket] Client ${socket.id} is unresponsive (${timeSinceLastPong}ms since last pong)`);
           socket.emit('connection:warning', { reason: 'unresponsive', missedPings: socket.data.missedPings });
         }
+      } else {
+        // Reset missed pings if we're getting responses
+        socket.data.missedPings = 0;
       }
       
-      // Disconnect after 45 seconds of no response (more aggressive than before)
-      if (timeSinceLastPong > 45000) {
+      // Disconnect after 90 seconds of no response (much more tolerant)
+      if (timeSinceLastPong > 90000) {
         console.log(`[WebSocket] Client ${socket.id} timed out (${timeSinceLastPong}ms since last pong)`);
         socket.disconnect(true);
         return;
@@ -144,7 +166,7 @@ export class WebSocketServer {
       
       // Send ping with timestamp
       socket.emit('ping', { timestamp: now });
-    }, 10000); // Send ping every 10 seconds (more frequent)
+    }, 25000); // Send ping every 25 seconds (less frequent for stability)
     
     // Store interval for cleanup
     this.heartbeatIntervals.set(socket.id, interval);
@@ -163,6 +185,7 @@ export class WebSocketServer {
       
       // Initialize terminal connection
       this.terminalHandlers.handleTerminalConnect(socket);
+      
 
       // Send initial connection success
       socket.emit('connected', {
@@ -346,7 +369,7 @@ export class WebSocketServer {
       });
 
       // Handle health monitoring subscription
-      socket.on('health:subscribe', () => {
+      socket.on('health:subscribe', async () => {
         if (!this.hasPermission(socket, 'health:read')) {
           socket.emit('error', { message: 'Insufficient permissions' });
           return;
@@ -363,24 +386,28 @@ export class WebSocketServer {
           source: 'health-monitor'
         });
 
-        // Send current agent health statuses
-        const allAgentHealth = coordinationService.getAllAgentHealth();
-        allAgentHealth.forEach(agentHealth => {
-          socket.emit('health:status', {
-            event: 'health:status',
-            data: {
-              agentId: agentHealth.agentId,
-              status: agentHealth.status,
-              contextPercentage: agentHealth.contextPercentage,
-              cycleTime: agentHealth.cycleTime,
-              lastHeartbeat: agentHealth.lastHeartbeat,
-              errorCount: agentHealth.errorCount,
-              timestamp: new Date().toISOString()
-            },
-            timestamp: new Date(),
-            source: 'health-monitor'
+        try {
+          // Send current agent health statuses
+          const allAgentHealth = await coordinationService.getAllAgentHealth();
+          allAgentHealth.forEach(agentHealth => {
+            socket.emit('health:status', {
+              event: 'health:status',
+              data: {
+                agentId: agentHealth.agentId,
+                status: agentHealth.status,
+                contextPercentage: agentHealth.contextPercentage,
+                cycleTime: agentHealth.cycleTime,
+                lastHeartbeat: agentHealth.lastHeartbeat,
+                errorCount: agentHealth.errorCount,
+                timestamp: new Date().toISOString()
+              },
+              timestamp: new Date(),
+              source: 'health-monitor'
+            });
           });
-        });
+        } catch (error) {
+          console.error('[SocketServer] Error getting agent health:', error);
+        }
       });
 
       socket.on('health:unsubscribe', () => {
@@ -545,6 +572,11 @@ export class WebSocketServer {
   }
 
   private hasPermission(socket: AuthenticatedSocket, permission: string): boolean {
+    // Check if user has admin:all permission (bypass all checks)
+    if (socket.permissions?.includes('admin:all')) {
+      return true;
+    }
+    // Check for specific permission
     return socket.permissions?.includes(permission) || false;
   }
 
@@ -652,16 +684,19 @@ export class WebSocketServer {
     this.io.to('multiclaude:updates').emit('multiclaude:coordination:update', data);
   }
 
-  // Setup coordination service listeners
+
+
   private setupCoordinationListeners() {
     // Listen for agent updates from coordination service
     coordinationService.on('agents:updated', (agents) => {
       const event: WebSocketEvent = {
-        event: 'coordination:agents',
+        event: 'agents:updated',
         data: agents,
         timestamp: new Date(),
         source: 'coordination'
       };
+      // Emit both events for backward compatibility
+      this.io.emit('agents:updated', agents);
       this.io.emit('coordination:agents', event);
       
       // Also broadcast to multi-claude subscribers

@@ -4,14 +4,41 @@ import { authenticateToken, requirePermission } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
 import { v4 as uuidv4 } from 'uuid';
+import { spawn } from 'child_process';
 import { claudeCodeManager } from '../services/claudeCodeManager';
 import { farmManager } from '../services/farmManager';
 import { websocketManager } from '../websocket/websocketManager';
-import { multiClaudeService } from '../services/multiClaudeService';
+import { orchestratorService, launchFarmWithBarnIntegration } from '../services/OrchestratorService';
 import { aiOrchestrator } from '../services/aiOrchestrator';
 import { harvestService } from '../services/harvestService';
+import { agentCleanupService } from '../services/agentCleanupService';
+import { barnCatalogService } from '../services/barnCatalogService';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs/promises';
 
 const router = Router();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'uploads', 'farm-context');
+    await fs.mkdir(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit per file
+    files: 10 // Max 10 files
+  }
+});
 
 // Apply authentication to all farm routes
 router.use(authenticateToken);
@@ -55,6 +82,44 @@ router.get('/', apiRateLimits.read, async (req, res) => {
     // Get total count
     const countResult = await db.query('SELECT COUNT(*) FROM farms WHERE 1=1');
     const total = parseInt(countResult.rows[0].count);
+    
+    // Fetch agents for all farms
+    const farmIds = result.rows.map(row => row.id);
+    let agentsByFarm: { [key: string]: any[] } = {};
+    
+    if (farmIds.length > 0) {
+      const agentsResult = await db.query(
+        'SELECT farm_id, id, name, type, status, capabilities, resources, metrics, config, last_heartbeat, created_at, updated_at FROM agents WHERE farm_id = ANY($1)',
+        [farmIds]
+      );
+      
+      // Group agents by farm_id
+      agentsResult.rows.forEach(agent => {
+        if (!agentsByFarm[agent.farm_id]) {
+          agentsByFarm[agent.farm_id] = [];
+        }
+        const resources = agent.resources || {};
+        const metrics = agent.metrics || {};
+        agentsByFarm[agent.farm_id].push({
+          id: agent.id,
+          name: agent.name || `Agent ${agent.id.slice(0, 8)}`,
+          type: agent.type || 'custom',
+          status: agent.status || 'idle',
+          progress: 0, // Not stored in DB yet
+          currentTask: undefined, // Not stored in DB yet
+          memory: resources.memory || 0,
+          cpu: resources.cpu || 0,
+          lastActive: agent.last_heartbeat || agent.created_at,
+          capabilities: agent.capabilities || [],
+          performance: {
+            cpuUsage: resources.cpu || 0,
+            memoryUsage: resources.memory || 0,
+            responseTime: metrics.avgResponseTime || 0,
+            throughput: metrics.throughput || 0
+          }
+        });
+      });
+    }
 
     const response: ApiResponse<Farm[]> = {
       success: true,
@@ -63,7 +128,7 @@ router.get('/', apiRateLimits.read, async (req, res) => {
         name: row.name,
         description: row.description,
         status: row.status,
-        agents: row.agents || [],
+        agents: agentsByFarm[row.id] || [],
         config: row.config,
         metrics: row.metrics,
         tags: row.tags || [],
@@ -115,15 +180,36 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
     const farmRow = farmResult.rows[0];
     
     // Get agents in this farm
-    const agentsResult = await db.query('SELECT id, name, type, status FROM agents WHERE farm_id = $1', [id]);
-    const agentIds = agentsResult.rows.map(a => a.id);
+    const agentsResult = await db.query('SELECT id, name, type, status, capabilities, resources, metrics, config, last_heartbeat, created_at, updated_at FROM agents WHERE farm_id = $1', [id]);
+    const agents = agentsResult.rows.map(agent => {
+      const resources = agent.resources || {};
+      const metrics = agent.metrics || {};
+      return {
+        id: agent.id,
+        name: agent.name || `Agent ${agent.id.slice(0, 8)}`,
+        type: agent.type || 'custom',
+        status: agent.status || 'idle',
+        progress: 0, // Not stored in DB yet
+        currentTask: undefined, // Not stored in DB yet
+        memory: resources.memory || 0,
+        cpu: resources.cpu || 0,
+        lastActive: agent.last_heartbeat || agent.created_at,
+        capabilities: agent.capabilities || [],
+        performance: {
+          cpuUsage: resources.cpu || 0,
+          memoryUsage: resources.memory || 0,
+          responseTime: metrics.avgResponseTime || 0,
+          throughput: metrics.throughput || 0
+        }
+      };
+    });
 
     const farm: Farm = {
       id: farmRow.id,
       name: farmRow.name,
       description: farmRow.description,
       status: farmRow.status,
-      agents: agentIds,
+      agents: agents,
       config: farmRow.config,
       metrics: farmRow.metrics,
       tags: farmRow.tags || [],
@@ -132,12 +218,9 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
       updatedAt: farmRow.updated_at
     };
 
-    const response: ApiResponse<{ farm: Farm; agents: any[] }> = {
+    const response: ApiResponse<Farm> = {
       success: true,
-      data: {
-        farm,
-        agents: agentsResult.rows
-      }
+      data: farm
     };
 
     res.json(response);
@@ -155,12 +238,69 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
 });
 
 // POST /api/farms - Create new farm
-router.post('/', requirePermission(['farms:create']), apiRateLimits.write, async (req, res) => {
+router.post('/', 
+  upload.array('files'), // Add multer middleware to handle files if present
+  requirePermission(['farms:create']), 
+  apiRateLimits.write, 
+  async (req, res) => {
   const client = await db.connect();
   
   try {
-    const { name, description, config, tags = [], type = 'sequential', provider = 'claude' } = req.body;
+    console.log('[DEBUG] Farm creation request received');
+    console.log('[DEBUG] Request body:', req.body);
+    console.log('[DEBUG] Request files:', req.files ? `${(req.files as any[]).length} files` : 'none');
+    console.log('[DEBUG] Content-Type:', req.headers['content-type']);
+    
+    // Handle both JSON and multipart/form-data
+    let farmData: any;
+    let contextFiles: any[] = [];
+    
+    // Check if this is a multipart request with files
+    if (req.files && Array.isArray(req.files)) {
+      // Parse farm data from the multipart request
+      if (!req.body.farmData) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Farm data is required when uploading files'
+          }
+        });
+      }
+      
+      try {
+        farmData = JSON.parse(req.body.farmData);
+      } catch (e) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_JSON',
+            message: 'Invalid JSON in farmData field'
+          }
+        });
+      }
+      
+      const files = req.files as Express.Multer.File[];
+      
+      // Process uploaded files
+      contextFiles = files.map(file => ({
+        originalName: file.originalname,
+        filename: file.filename,
+        path: file.path,
+        size: file.size,
+        mimetype: file.mimetype
+      }));
+      
+      console.log(`[Farms] Processing ${contextFiles.length} uploaded files`);
+    } else {
+      // Regular JSON request
+      farmData = req.body;
+    }
+    
+    const { name, description, config, tags = [], type = 'sequential', provider = 'claude' } = farmData;
     const userId = (req as any).user?.userId || 'dev-user';
+    
+    // contextFiles is already declared above, no need to redeclare
 
     // Comprehensive validation
     const validationErrors: string[] = [];
@@ -192,8 +332,8 @@ router.post('/', requirePermission(['farms:create']), apiRateLimits.write, async
     }
     
     if (config) {
-      if (config.maxAgents && (typeof config.maxAgents !== 'number' || config.maxAgents < 1 || config.maxAgents > 20)) {
-        validationErrors.push('maxAgents must be a number between 1 and 20');
+      if (config.maxAgents && (typeof config.maxAgents !== 'number' || config.maxAgents < 1 || config.maxAgents > 32)) {
+        validationErrors.push('maxAgents must be a number between 1 and 32');
       }
       
       if (config.timeout && (typeof config.timeout !== 'number' || config.timeout < 60 || config.timeout > 86400)) {
@@ -241,9 +381,9 @@ router.post('/', requirePermission(['farms:create']), apiRateLimits.write, async
       type: type as 'sequential' | 'collaborative' | 'autonomous',
       provider: provider as 'claude' | 'qwen',
       config: {
-        maxAgents: config?.maxAgents || 5,
+        maxAgents: config?.maxAgents || 8,
         autoScale: config?.autoScale || false,
-        timeout: config?.timeout || 3600,
+        timeout: config?.timeout || 600, // 10 minutes default
         yaml: config?.yaml || ''
       },
       userId,
@@ -253,7 +393,7 @@ router.post('/', requirePermission(['farms:create']), apiRateLimits.write, async
     // Store in database with transaction
     const id = farm.id;
     const defaultConfig = {
-      maxAgents: config?.maxAgents || 5,
+      maxAgents: config?.maxAgents || 8,
       resourceLimits: {
         totalCpu: 8,
         totalMemory: 16384
@@ -273,6 +413,7 @@ router.post('/', requirePermission(['farms:create']), apiRateLimits.write, async
         boundaries: []
       },
       provider: provider as 'claude' | 'qwen',  // Store the AI provider
+      attachedFiles: contextFiles,  // Add uploaded files to config
       ...config
     };
 
@@ -305,7 +446,7 @@ router.post('/', requirePermission(['farms:create']), apiRateLimits.write, async
          description = EXCLUDED.description,
          config = EXCLUDED.config,
          updated_at = CURRENT_TIMESTAMP`,
-      [id, name.trim(), description?.trim() || '', 'active', defaultConfig, defaultMetrics, tags, userId]
+      [id, name.trim(), description?.trim() || '', 'launching', defaultConfig, defaultMetrics, tags, userId]
     );
     
     // Commit transaction
@@ -488,18 +629,32 @@ router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, 
   try {
     const { id } = req.params;
 
-    // First, check if farm has a multi-claude process and stop it
-    const farmResult = await client.query('SELECT config, name FROM farms WHERE id = $1', [id]);
+    // First, check if farm has a multi-claude process and stop it gracefully
+    const farmResult = await client.query('SELECT config, name, status FROM farms WHERE id = $1', [id]);
     if (farmResult.rows.length > 0) {
-      const processId = farmResult.rows[0].config?.processId;
-      if (processId) {
+      const { config, status } = farmResult.rows[0];
+      
+      // Only attempt graceful shutdown if farm is running
+      if (status === 'running' || status === 'launching') {
         try {
-          // Stop the multi-claude process
-          await multiClaudeService.stopFarm(processId);
-          console.log(`Stopped multi-claude process ${processId} for farm ${id}`);
-        } catch (stopError) {
-          console.error('Error stopping multi-claude process:', stopError);
-          // Continue with deletion even if stopping fails
+          console.log(`[Farm DELETE] Attempting graceful shutdown before deletion for farm ${id}`);
+          const userId = (req as any).user?.userId || 'dev-user';
+          await farmManager.gracefulShutdownFarm(id, userId, 'user_request');
+          console.log(`[Farm DELETE] Graceful shutdown completed for farm ${id}`);
+        } catch (gracefulError) {
+          console.warn(`[Farm DELETE] Graceful shutdown failed for farm ${id}, using regular stop:`, gracefulError);
+          
+          // Fallback to regular multi-claude stop
+          const processId = config?.processId;
+          if (processId) {
+            try {
+              await orchestratorService.stopFarm(processId);
+              console.log(`[Farm DELETE] Stopped multi-claude process ${processId} for farm ${id}`);
+            } catch (stopError) {
+              console.error('Error stopping multi-claude process:', stopError);
+              // Continue with deletion even if stopping fails
+            }
+          }
         }
       }
     }
@@ -513,20 +668,12 @@ router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, 
       await client.query('BEGIN');
 
       // Force cleanup using the cleanup service
-      // TODO: Re-enable when agentCleanupService is available
-      // const { agentCleanupService } = await import('../services/agentCleanupService');
-      // await agentCleanupService.forceCleanupFarm(id);
-      
-      // For now, clean up tmux sessions manually
       try {
-        const { spawn } = await import('child_process');
-        // Kill tmux session for this farm if it exists
-        const killSession = spawn('tmux', ['kill-session', '-t', `farm_${id}`]);
-        await new Promise(resolve => killSession.on('exit', resolve));
-        console.log(`Cleaned up tmux session for farm ${id}`);
-      } catch (tmuxError) {
-        console.error('Error cleaning up tmux session:', tmuxError);
-        // Continue with deletion even if tmux cleanup fails
+        await agentCleanupService.cleanupFarm(id, 'user_deleted');
+        console.log(`Cleaned up agents and sessions for farm ${id}`);
+      } catch (cleanupError) {
+        console.error('Error cleaning up farm agents:', cleanupError);
+        // Continue with deletion even if cleanup fails
       }
 
       // Delete all agents in the farm first
@@ -715,6 +862,21 @@ router.post('/:id/start', requirePermission(['farms:control']), apiRateLimits.st
     const { id } = req.params;
     const userId = (req as any).user?.userId || 'dev-user';
 
+    // Get farm details
+    const farmResult = await db.query('SELECT * FROM farms WHERE id = $1', [id]);
+    if (farmResult.rows.length === 0) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Farm not found'
+        }
+      };
+      return res.status(404).json(response);
+    }
+
+    const farmData = farmResult.rows[0];
+    
     // Start farm using farmManager
     const farm = await farmManager.startFarm(id, userId);
     
@@ -729,11 +891,59 @@ router.post('/:id/start', requirePermission(['farms:control']), apiRateLimits.st
       return res.status(400).json(response);
     }
 
-    // Update database
+    // Update status to launching
     await db.query(
       'UPDATE farms SET status = $1, updated_at = $2 WHERE id = $3',
-      ['running', new Date(), id]
+      ['launching', new Date(), id]
     );
+
+    // Launch actual agents via orchestratorService
+    try {
+      // Prepare launch options
+      const agentCount = farmData.agents?.length || 1;
+      const prompt = farmData.config?.prompt || farmData.description || `Complete tasks for ${farmData.name}`;
+      
+      const launchOptions = {
+        farmId: id,
+        numberOfAgents: agentCount,
+        prompt: prompt,
+        description: farmData.description,
+        collaborative: farmData.config?.collaborative || false,
+        timeout: farmData.config?.timeout, // Pass timeout if configured
+        provider: farmData.config?.provider || 'claude'
+      };
+
+      // Add attachment paths if they exist in the farm config
+      if (farmData.config?.attachmentPaths && Array.isArray(farmData.config.attachmentPaths)) {
+        launchOptions.contextFiles = farmData.config.attachmentPaths;
+        console.log(`[Farm Start] Including ${farmData.config.attachmentPaths.length} attachments`);
+      }
+      
+      console.log(`[Farm Start] Launching ${agentCount} agents for farm ${id}`);
+      const processId = await orchestratorService.launchFarm(launchOptions);
+      
+      // Store processId in farm config
+      const updatedConfig = { ...farmData.config, processId };
+      await db.query(
+        'UPDATE farms SET config = $1, status = $2, updated_at = $3 WHERE id = $4',
+        [updatedConfig, 'running', new Date(), id]
+      );
+
+      console.log(`[Farm Start] Farm ${id} started with process ${processId}`);
+
+      // Create a harvest for this farm
+      const harvest = await harvestService.startHarvest(id, farmData.name, userId);
+      console.log(`[Farm Start] Created harvest ${harvest.id} for farm ${id}`);
+
+    } catch (launchError) {
+      console.error(`[Farm Start] Failed to launch agents for farm ${id}:`, launchError);
+      // Update status back to stopped on failure
+      await db.query(
+        'UPDATE farms SET status = $1, updated_at = $2 WHERE id = $3',
+        ['stopped', new Date(), id]
+      );
+      throw launchError;
+    }
 
     // Emit WebSocket event
     websocketManager.broadcast('farm:started', {
@@ -1141,11 +1351,18 @@ router.post('/:id/complete', requirePermission(['farms:control']), apiRateLimits
   }
 });
 
-// POST /api/farms/:id/launch - Launch farm using multi_claude.py
+// POST /api/farms/:id/launch - Launch farm using orchestrator.py
 router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.write, async (req, res) => {
   try {
     const { id } = req.params;
-    const { numberOfAgents = 3, collaborative = false, bundleSteps } = req.body;
+    const { 
+      numberOfAgents = 3, 
+      collaborative = false, 
+      bundleSteps,
+      includeBarnCatalog = false,
+      barnReferences = [],
+      autoBarnDiscovery = false
+    } = req.body;
 
     // Get farm details
     const farmResult = await db.query('SELECT * FROM farms WHERE id = $1', [id]);
@@ -1162,7 +1379,7 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
 
     const farm = farmResult.rows[0];
 
-    // Launch farm using multiClaudeService
+    // Launch farm using orchestratorService
     // Use prompt from request body, config, description, or default
     const farmPrompt = req.body.prompt || 
                       farm.config?.prompt || 
@@ -1183,7 +1400,7 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       console.error('Failed to create harvest for farm:', harvestError);
     }
     
-    const processId = await multiClaudeService.launchFarm({
+    const launchParams = {
       farmId: id,
       name: farm.name,
       description: farm.description,
@@ -1194,8 +1411,14 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       collaborative,
       bundleSteps,
       provider: provider as 'claude' | 'qwen',
-      harvestId  // Pass harvest ID to the service
-    } as any);
+      contextFiles: farm.config?.attachmentPaths || [],  // Include attachment paths
+      harvestId,  // Pass harvest ID to the service
+      includeBarnCatalog,
+      barnReferences,
+      autoBarnDiscovery
+    };
+    
+    const processId = await orchestratorService.launchFarm(launchParams);
 
     // Update farm with process ID
     await db.query(
@@ -1234,6 +1457,28 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       timestamp: new Date()
     });
 
+    // Check for tmux session after a short delay and update status
+    setTimeout(async () => {
+      const sessionName = `farm_${id.substring(0, 8)}`;
+      const checkSession = spawn('tmux', ['has-session', '-t', sessionName]);
+      
+      checkSession.on('exit', async (code) => {
+        if (code === 0) {
+          // Session exists, update status to running
+          await farmManager.updateFarmStatus(id, 'running');
+          
+          // Broadcast status update
+          websocketManager.broadcast('farm:status', {
+            farmId: id,
+            status: 'running',
+            timestamp: new Date()
+          });
+          
+          console.log(`[Farm API] Farm ${id} tmux session detected, status updated to running`);
+        }
+      });
+    }, 3000); // Wait 3 seconds for tmux session to be created
+
     const response: ApiResponse = {
       success: true,
       data: {
@@ -1259,44 +1504,200 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
   }
 });
 
-// POST /api/farms/:id/stop - Stop farm operations
-router.post('/:id/stop', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
+// POST /api/farms/:id/launch-with-barn - Launch farm with enhanced barn integration
+router.post('/:id/launch-with-barn', requirePermission(['farms:control']), apiRateLimits.write, async (req, res) => {
   try {
     const { id } = req.params;
+    const { 
+      numberOfAgents = 3, 
+      collaborative = false, 
+      bundleSteps,
+      autoBarnDiscovery = true,
+      barnSearchQuery,
+      includeBarnCatalog = true,
+      barnReferences = [],
+      maxBarnItems = 5
+    } = req.body;
 
-    // Get farm with process ID
-    const farmResult = await db.query('SELECT config FROM farms WHERE id = $1', [id]);
+    // Get farm details
+    const farmResult = await db.query('SELECT * FROM farms WHERE id = $1', [id]);
     if (farmResult.rows.length === 0) {
-      const response: ApiResponse = {
+      return res.status(404).json({
         success: false,
         error: {
           code: 'NOT_FOUND',
           message: 'Farm not found'
         }
-      };
-      return res.status(404).json(response);
+      });
     }
 
-    const processId = farmResult.rows[0].config?.processId;
-    if (!processId) {
+    const farm = farmResult.rows[0];
+    const farmPrompt = req.body.prompt || 
+                      farm.config?.prompt || 
+                      farm.description || 
+                      farm.config?.yaml || 
+                      `Help me with tasks for ${farm.name}`;
+    
+    const provider = req.body.provider || farm.config?.provider || process.env.AI_PROVIDER || 'claude';
+    
+    // Create harvest
+    let harvestId: string | undefined;
+    try {
+      const harvest = await harvestService.startHarvest(id, farm.name, req.userId || 'system');
+      harvestId = harvest.id;
+    } catch (harvestError) {
+      console.error('Failed to create harvest for farm:', harvestError);
+    }
+    
+    // Use enhanced launch with barn integration
+    const launchParams = {
+      farmId: id,
+      name: farm.name,
+      description: farm.description,
+      numberOfAgents,
+      prompt: farmPrompt,
+      yamlContent: farm.config.yaml,
+      steps: farm.config.steps || req.body.steps,
+      collaborative,
+      bundleSteps,
+      provider: provider as 'claude' | 'qwen',
+      contextFiles: farm.config?.attachmentPaths || [],  // Include attachment paths
+      harvestId,
+      autoBarnDiscovery,
+      barnSearchQuery,
+      includeBarnCatalog,
+      barnReferences
+    };
+    
+    const processId = await launchFarmWithBarnIntegration(launchParams);
+
+    // Update farm with process ID
+    await db.query(
+      'UPDATE farms SET status = $1, config = $2, updated_at = $3 WHERE id = $4',
+      ['launching', { ...farm.config, processId, harvestId, barnIntegrated: true }, new Date(), id]
+    );
+    
+    await farmManager.updateFarmStatus(id, 'launching');
+    
+    // Broadcast events
+    if (harvestId) {
+      websocketManager.broadcast('harvest:started', {
+        harvestId,
+        farmId: id,
+        farmName: farm.name,
+        barnIntegrated: true,
+        timestamp: new Date()
+      });
+    }
+    
+    websocketManager.broadcast('farm:launched', {
+      farmId: id,
+      farmName: farm.name,
+      processId,
+      harvestId,
+      status: 'launching',
+      numberOfAgents,
+      barnIntegrated: true,
+      sessionName: `farm-${id.substring(0, 8)}`,
+      timestamp: new Date()
+    });
+
+    res.json({
+      success: true,
+      data: {
+        farmId: id,
+        processId,
+        harvestId,
+        status: 'launching',
+        barnIntegration: {
+          enabled: true,
+          autoBarnDiscovery,
+          includeBarnCatalog,
+          referencesCount: barnReferences.length
+        }
+      },
+      meta: {
+        timestamp: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error launching farm with barn integration:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to launch farm with barn integration'
+      }
+    });
+  }
+});
+
+// POST /api/farms/:id/stop - Stop farm operations
+router.post('/:id/stop', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.userId || 'dev-user';
+
+    // Check if graceful shutdown was requested (default to true)
+    const { graceful = true } = req.body;
+    
+    let farm;
+    if (graceful) {
+      // Use graceful shutdown by default to collect yields
+      console.log(`[Farm API] Using graceful shutdown for farm ${id}`);
+      farm = await farmManager.gracefulShutdownFarm(id, userId, 'user_request');
+    } else {
+      // Use regular stop if explicitly requested
+      console.log(`[Farm API] Using regular stop for farm ${id}`);
+      farm = await farmManager.stopFarm(id, userId);
+    }
+    
+    if (!farm) {
       const response: ApiResponse = {
         success: false,
         error: {
-          code: 'INVALID_STATE',
-          message: 'Farm is not running'
+          code: 'NOT_FOUND',
+          message: 'Farm not found or not in a stoppable state'
         }
       };
-      return res.status(400).json(response);
+      return res.status(404).json(response);
     }
-
-    // Stop the farm
-    await multiClaudeService.stopFarm(processId);
 
     // Update database
     await db.query(
       'UPDATE farms SET status = $1, updated_at = $2 WHERE id = $3',
       ['stopped', new Date(), id]
     );
+
+    // Check if farm has a processId and stop via orchestratorService
+    const farmResult = await db.query('SELECT config FROM farms WHERE id = $1', [id]);
+    if (farmResult.rows.length > 0 && farmResult.rows[0].config?.processId) {
+      try {
+        await orchestratorService.stopFarm(farmResult.rows[0].config.processId);
+      } catch (error) {
+        console.log(`[Farm Stop] Could not stop process ${farmResult.rows[0].config.processId}:`, error);
+        // Continue even if process stop fails - farm is already marked as stopped
+      }
+    }
+
+    // Also try to stop tmux session directly
+    const tmuxSession = `farm_${id.substring(0, 8)}`;
+    try {
+      const { spawn } = await import('child_process');
+      spawn('tmux', ['kill-session', '-t', tmuxSession]);
+    } catch (error) {
+      console.log(`[Farm Stop] Could not kill tmux session ${tmuxSession}:`, error);
+    }
+
+    // Emit WebSocket event
+    websocketManager.broadcast('farm:stopped', {
+      farm: {
+        id: farm.id,
+        name: farm.name,
+        status: 'stopped'
+      }
+    });
 
     const response: ApiResponse = {
       success: true,
@@ -1314,6 +1715,182 @@ router.post('/:id/stop', requirePermission(['farms:control']), apiRateLimits.sta
       error: {
         code: 'INTERNAL_ERROR',
         message: 'Failed to stop farm'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
+// POST /api/farms/:id/graceful-shutdown - Gracefully shutdown farm with yield collection
+router.post('/:id/graceful-shutdown', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = 'user_request' } = req.body;
+    const userId = (req as any).user?.userId || 'dev-user';
+
+    // Validate reason
+    if (!['user_request', 'timeout', 'completion'].includes(reason)) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'INVALID_INPUT',
+          message: 'Invalid shutdown reason. Must be one of: user_request, timeout, completion'
+        }
+      };
+      return res.status(400).json(response);
+    }
+
+    console.log(`[Farm API] Initiating graceful shutdown for farm ${id} (reason: ${reason})`);
+
+    // Use graceful shutdown instead of regular stop
+    const farm = await farmManager.gracefulShutdownFarm(id, userId, reason as 'timeout' | 'user_request' | 'completion');
+    
+    if (!farm) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Farm not found or not in a stoppable state'
+        }
+      };
+      return res.status(404).json(response);
+    }
+
+    // Emit WebSocket event for graceful shutdown
+    websocketManager.broadcast('farm:graceful_shutdown_initiated', {
+      farm: {
+        id: farm.id,
+        name: farm.name,
+        status: farm.status
+      },
+      reason,
+      message: 'Collecting yields and preparing for harvest...'
+    });
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        farmId: id,
+        status: farm.status,
+        reason,
+        message: 'Graceful shutdown initiated. Yields will be collected before termination.'
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error during graceful farm shutdown:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to initiate graceful shutdown'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
+// GET /api/farms/:id/task-metrics - Get standardized task metrics for farm
+router.get('/:id/task-metrics', apiRateLimits.read, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get standardized task metrics using tmux pane counting
+    const metrics = await orchestratorService.getStandardizedTaskMetrics(id);
+    
+    if (!metrics) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Farm not found or not running'
+        }
+      };
+      return res.status(404).json(response);
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        ...metrics,
+        standard: {
+          definition: '1 Agent = 1 tmux pane = 1 concurrent task execution context',
+          architecture: 'Farm -> N Agents (tmux panes) -> M Tasks (sequential per agent)',
+          calculation: 'Agent count determined by "tmux list-panes" command'
+        }
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error getting task metrics:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to get task metrics'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
+// GET /api/farms/:id/health - Get farm health status
+router.get('/:id/health', apiRateLimits.read, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify farm exists
+    const farmResult = await db.query('SELECT id FROM farms WHERE id = $1', [id]);
+    if (farmResult.rows.length === 0) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Farm not found'
+        }
+      };
+      return res.status(404).json(response);
+    }
+
+    // Get health status from orchestratorService
+    const healthStatus = await orchestratorService.getFarmHealth(id);
+    
+    if (!healthStatus) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'NO_HEALTH_DATA',
+          message: 'No health monitoring data available for this farm'
+        }
+      };
+      return res.status(404).json(response);
+    }
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        sessionName: healthStatus.sessionName,
+        exists: healthStatus.exists,
+        status: healthStatus.status,
+        paneCount: healthStatus.paneCount,
+        responsivePanes: healthStatus.responsivePanes,
+        zombiePanes: healthStatus.zombiePanes,
+        uptime: healthStatus.uptime,
+        lastHealthCheck: healthStatus.lastHealthCheck,
+        issues: healthStatus.issues
+      }
+    };
+    res.json(response);
+
+  } catch (error) {
+    console.error('Error getting farm health:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to get farm health status'
       }
     };
     res.status(500).json(response);
@@ -1351,7 +1928,7 @@ router.get('/:id/terminal/:agentId', apiRateLimits.read, async (req, res) => {
     }
 
     // Get terminal output using farmId
-    const terminalResult = await multiClaudeService.getAgentTerminal(id, parseInt(agentId));
+    const terminalResult = await orchestratorService.getAgentTerminal(id, parseInt(agentId));
     
     // Return the result directly if it failed
     if (!terminalResult.success) {
@@ -1417,7 +1994,7 @@ router.post('/:id/terminal/:agentId/command', requirePermission(['farms:control'
     }
 
     // Send command to agent
-    await multiClaudeService.sendCommandToAgent(processId, parseInt(agentId), command);
+    await orchestratorService.sendCommandToAgent(processId, parseInt(agentId), command);
 
     const response: ApiResponse = {
       success: true,
@@ -1486,7 +2063,7 @@ router.put('/:id/provider', requirePermission(['farms:update']), apiRateLimits.w
   }
 });
 
-// GET /api/farms/:id/multi-claude/status - Get multi_claude process status
+// GET /api/farms/:id/multi-claude/status - Get orchestrator process status
 router.get('/:id/multi-claude/status', apiRateLimits.read, async (req, res) => {
   try {
     const { id } = req.params;
@@ -1528,14 +2105,14 @@ router.get('/:id/multi-claude/status', apiRateLimits.read, async (req, res) => {
         success: false,
         error: {
           code: 'NOT_FOUND',
-          message: 'No multi_claude process associated'
+          message: 'No orchestrator process associated'
         }
       };
       return res.status(404).json(response);
     }
 
     // Get process status
-    const status = multiClaudeService.getFarmStatus(processId);
+    const status = orchestratorService.getFarmStatus(processId);
 
     const response: ApiResponse = {
       success: true,
@@ -1551,12 +2128,70 @@ router.get('/:id/multi-claude/status', apiRateLimits.read, async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    console.error('Error getting multi_claude status:', error);
+    console.error('Error getting orchestrator status:', error);
     const response: ApiResponse = {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Failed to get multi_claude status'
+        message: 'Failed to get orchestrator status'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
+// GET /api/farms/system/health - Get overall system health
+router.get('/system/health', apiRateLimits.read, async (req, res) => {
+  try {
+    // Import tmuxHealthManager - need to import here to avoid circular dependency
+    const { tmuxHealthManager } = await import('../services/tmuxHealthManager');
+    
+    // Get comprehensive health summary
+    const healthSummary = tmuxHealthManager.getHealthSummary();
+    
+    // Get list of all monitored sessions with detailed health
+    const monitoredSessions = tmuxHealthManager.getMonitoredSessions();
+    const sessionDetails = [];
+    
+    for (const sessionName of monitoredSessions) {
+      const sessionHealth = tmuxHealthManager.getSessionHealth(sessionName);
+      const agentHealth = tmuxHealthManager.getAgentHealth(sessionName);
+      
+      if (sessionHealth) {
+        sessionDetails.push({
+          sessionName,
+          health: sessionHealth,
+          agents: agentHealth ? Array.from(agentHealth.entries()).map(([id, health]) => ({
+            agentId: id,
+            paneId: health.paneId,
+            status: health.status,
+            isResponsive: health.isResponsive,
+            lastResponseTime: health.lastResponseTime,
+            consecutiveFailures: health.consecutiveFailures,
+            lastHeartbeat: health.lastHeartbeat
+          })) : []
+        });
+      }
+    }
+    
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        summary: healthSummary,
+        sessions: sessionDetails,
+        timestamp: new Date()
+      }
+    };
+    
+    res.json(response);
+
+  } catch (error) {
+    console.error('Error getting system health:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to get system health status'
       }
     };
     res.status(500).json(response);

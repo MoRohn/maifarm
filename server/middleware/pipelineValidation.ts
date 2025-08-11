@@ -193,7 +193,7 @@ export class PipelineValidator {
 
     // Validate coordination path
     if (!data.coordinationPath || !data.coordinationPath.includes('trump_infog')) {
-      warnings.push('Trump Infog pipeline should use /tmp/claude_coordination/trump_infog coordination path');
+      warnings.push('Trump Infog pipeline should use isolated coordination path within maibarn');
     }
 
     // Validate phase order and dependencies

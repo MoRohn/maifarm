@@ -1,8 +1,66 @@
 /**
  * Type definitions for AI Super Intelligence features
  * Enabling emergent behaviors, collective intelligence, and meta-learning
+ * Version 2.0 - Stable implementation with safety controls
  */
 
+export interface SuperIntelligenceConfig {
+  enabled: boolean;
+  mode: 'passive' | 'active' | 'autonomous';
+  resourceLimits: ResourceLimits;
+  safetyControls: SafetyControls;
+  integrationMode: 'isolated' | 'integrated' | 'hybrid';
+}
+
+export interface ResourceLimits {
+  maxCpuUsage: number; // Percentage (0-100)
+  maxMemoryMB: number;
+  maxConcurrentOperations: number;
+  maxExecutionTimeMs: number;
+  throttleDelayMs: number;
+}
+
+export interface SafetyControls {
+  requireHumanApproval: boolean;
+  maxAutonomousActions: number;
+  allowedOperations: string[];
+  forbiddenOperations: string[];
+  emergencyStopEnabled: boolean;
+  auditLogging: boolean;
+}
+
+// Core Superintelligence State
+export interface SuperIntelligenceState {
+  id: string;
+  status: 'initializing' | 'idle' | 'processing' | 'learning' | 'paused' | 'error';
+  modules: {
+    collective: boolean;
+    swarm: boolean;
+    emergent: boolean;
+    metaLearning: boolean;
+  };
+  metrics: SuperIntelligenceMetrics;
+  lastUpdate: Date;
+}
+
+export interface SuperIntelligenceMetrics {
+  intelligenceLevel: number; // 0-100
+  collectiveInsights: number;
+  emergentBehaviors: number;
+  learningRate: number;
+  resourceUsage: {
+    cpu: number;
+    memory: number;
+    operations: number;
+  };
+  performance: {
+    decisionsPerSecond: number;
+    averageConfidence: number;
+    successRate: number;
+  };
+}
+
+// Collective Intelligence Types
 export interface CollectiveIntelligenceState {
   id: string;
   activeAgents: number;
@@ -16,11 +74,13 @@ export interface CollectiveIntelligenceState {
 export interface EmergentBehavior {
   id: string;
   pattern: string;
+  description: string;
   frequency: number;
   agentContributors: string[];
   confidence: number;
   impact: 'low' | 'medium' | 'high' | 'breakthrough';
   discovered: Date;
+  validated: boolean;
   metadata?: Record<string, any>;
 }
 
@@ -30,40 +90,50 @@ export interface CollectiveMemory {
   insights: CollectiveInsight[];
   totalNodes: number;
   memoryUtilization: number;
+  lastConsolidation: Date;
 }
 
 export interface KnowledgeNode {
   id: string;
   content: string;
-  type: 'fact' | 'pattern' | 'strategy' | 'insight';
+  type: 'fact' | 'pattern' | 'strategy' | 'insight' | 'experience';
   source: string[];
   confidence: number;
   created: Date;
   lastAccessed: Date;
   accessCount: number;
+  relevance: number;
+  tags: string[];
 }
 
 export interface KnowledgeEdge {
   from: string;
   to: string;
   weight: number;
-  type: 'causal' | 'correlation' | 'similarity' | 'temporal';
+  type: 'causal' | 'correlation' | 'similarity' | 'temporal' | 'hierarchical';
+  confidence: number;
+  evidence: string[];
 }
 
 export interface CollectiveInsight {
   id: string;
   insight: string;
   derivedFrom: string[];
-  novelty: number;
-  utility: number;
+  novelty: number; // 0-1
+  utility: number; // 0-1
+  confidence: number; // 0-1
   validated: boolean;
+  applications: string[];
+  timestamp: Date;
 }
 
+// Swarm Intelligence Types
 export interface SwarmTopology {
-  type: 'fully-connected' | 'ring' | 'star' | 'small-world' | 'scale-free';
+  type: 'fully-connected' | 'ring' | 'star' | 'small-world' | 'scale-free' | 'adaptive';
   nodes: SwarmNode[];
   edges: SwarmEdge[];
   centralityMetrics: CentralityMetrics;
+  efficiency: number;
 }
 
 export interface SwarmNode {
@@ -72,7 +142,10 @@ export interface SwarmNode {
   velocity: Vector3D;
   fitness: number;
   personalBest: number;
+  globalBest: number;
   neighbors: string[];
+  role: 'explorer' | 'exploiter' | 'coordinator' | 'specialist';
+  state: 'active' | 'idle' | 'learning' | 'communicating';
 }
 
 export interface SwarmEdge {
@@ -80,6 +153,8 @@ export interface SwarmEdge {
   to: string;
   bandwidth: number;
   latency: number;
+  reliability: number;
+  messageCount: number;
 }
 
 export interface CentralityMetrics {
@@ -87,6 +162,8 @@ export interface CentralityMetrics {
   closeness: Map<string, number>;
   eigenvector: Map<string, number>;
   pageRank: Map<string, number>;
+  hubScore: Map<string, number>;
+  authorityScore: Map<string, number>;
 }
 
 export interface Vector3D {
@@ -95,196 +172,264 @@ export interface Vector3D {
   z: number;
 }
 
+// Neural Swarm Optimizer Types
 export interface SwarmOptimizationConfig {
   particles: number;
   dimensions: number;
   inertiaWeight: number;
-  cognitiveCoefficient: number;
-  socialCoefficient: number;
+  cognitiveWeight: number;
+  socialWeight: number;
+  maxVelocity: number;
   maxIterations: number;
   convergenceThreshold: number;
-  topology: 'global' | 'local' | 'dynamic';
+  diversityThreshold: number;
 }
 
-export interface NeuralParticle {
+export interface OptimizationObjective {
+  id: string;
+  name: string;
+  type: 'minimize' | 'maximize';
+  evaluate: (position: number[]) => number;
+  constraints?: Constraint[];
+  targetValue?: number;
+}
+
+export interface Constraint {
+  type: 'equality' | 'inequality';
+  evaluate: (position: number[]) => number;
+  threshold: number;
+}
+
+export interface OptimizationResult {
+  bestPosition: number[];
+  bestFitness: number;
+  iterations: number;
+  converged: boolean;
+  particleHistory: ParticleState[];
+  performanceMetrics: {
+    avgFitness: number;
+    diversity: number;
+    convergenceRate: number;
+  };
+}
+
+export interface ParticleState {
   id: string;
   position: number[];
   velocity: number[];
+  fitness: number;
   personalBest: number[];
   personalBestFitness: number;
-  currentFitness: number;
-  neuralWeights: number[][];
-  activationFunction: 'relu' | 'sigmoid' | 'tanh' | 'swish';
+  activation: number[];
 }
 
-export interface FitnessEvaluation {
-  particleId: string;
-  fitness: number;
-  components: {
-    accuracy: number;
-    speed: number;
-    novelty: number;
-    robustness: number;
-  };
-  timestamp: Date;
-}
-
+// Emergent Strategy Engine Types
 export interface EmergentStrategy {
   id: string;
-  name: string;
-  description: string;
-  genotype: number[];
+  genome: StrategyGenome;
   phenotype: StrategyPhenotype;
-  fitness: number;
+  fitness: StrategyFitness;
   generation: number;
-  parents?: string[];
-  mutations: number;
-  discovered: Date;
+  parents: string[];
+  mutations: string[];
+  created: Date;
+}
+
+export interface StrategyGenome {
+  genes: Gene[];
+  length: number;
+  mutationRate: number;
+  crossoverPoints: number[];
+}
+
+export interface Gene {
+  id: string;
+  type: 'action' | 'condition' | 'parameter' | 'connector';
+  value: any;
+  mutable: boolean;
+  dominance: number;
 }
 
 export interface StrategyPhenotype {
   actions: StrategyAction[];
   conditions: StrategyCondition[];
-  objectives: string[];
-  constraints: string[];
-  expectedOutcome: string;
+  parameters: Map<string, any>;
+  structure: 'linear' | 'branching' | 'cyclic' | 'network';
+  complexity: number;
 }
 
 export interface StrategyAction {
   type: string;
+  target: string;
   parameters: Record<string, any>;
   priority: number;
-  dependencies?: string[];
+  dependencies: string[];
 }
 
 export interface StrategyCondition {
-  type: 'prerequisite' | 'trigger' | 'termination';
+  type: 'if' | 'while' | 'until' | 'when';
   expression: string;
-  evaluation: () => boolean;
+  trueBranch: string[];
+  falseBranch?: string[];
 }
 
+export interface StrategyFitness {
+  overall: number;
+  effectiveness: number;
+  efficiency: number;
+  novelty: number;
+  robustness: number;
+  adaptability: number;
+}
+
+// Meta-Learning Types
 export interface MetaLearningState {
-  learningRate: number;
-  adaptationSpeed: number;
-  transferEfficiency: number;
-  hyperparameters: HyperparameterSet;
-  learningCurves: LearningCurve[];
-  domainKnowledge: DomainKnowledge[];
-}
-
-export interface HyperparameterSet {
-  exploration: number;
-  exploitation: number;
-  memoryRetention: number;
-  generalizationFactor: number;
-  noiseLevel: number;
-  batchSize: number;
-  updateFrequency: number;
-}
-
-export interface LearningCurve {
-  taskId: string;
-  dataPoints: { iteration: number; performance: number; timestamp: Date }[];
-  convergenceRate: number;
-  plateauDetected: boolean;
-  optimalPoint?: { iteration: number; performance: number };
-}
-
-export interface DomainKnowledge {
-  domain: string;
-  concepts: string[];
-  relationships: string[][];
-  transferability: number;
-  applications: string[];
-}
-
-export interface QuantumInspiredState {
-  qubits: number;
-  superposition: SuperpositionState[];
-  entanglements: EntanglementPair[];
-  measurementBasis: 'computational' | 'hadamard' | 'custom';
-  decoherenceRate: number;
-}
-
-export interface SuperpositionState {
   id: string;
-  amplitudes: Complex[];
-  probabilities: number[];
-  coherence: number;
-  entangled: boolean;
+  learningHistory: LearningEpisode[];
+  transferKnowledge: TransferKnowledge[];
+  hyperparameters: Map<string, HyperParameter>;
+  performanceModel: PerformanceModel;
+  optimizationStrategy: 'bayesian' | 'genetic' | 'gradient' | 'random';
 }
 
-export interface Complex {
-  real: number;
-  imaginary: number;
+export interface LearningEpisode {
+  id: string;
+  domain: string;
+  task: string;
+  startTime: Date;
+  endTime: Date;
+  initialPerformance: number;
+  finalPerformance: number;
+  learningCurve: number[];
+  hyperparameters: Record<string, any>;
+  insights: string[];
 }
 
-export interface EntanglementPair {
-  qubit1: string;
-  qubit2: string;
-  correlationType: 'bell' | 'ghz' | 'w';
-  strength: number;
+export interface TransferKnowledge {
+  sourceDomain: string;
+  targetDomain: string;
+  knowledge: string;
+  applicability: number;
+  successRate: number;
+  adaptations: string[];
 }
 
+export interface HyperParameter {
+  name: string;
+  value: any;
+  type: 'continuous' | 'discrete' | 'categorical';
+  range?: [number, number];
+  options?: any[];
+  importance: number;
+  lastOptimized: Date;
+}
+
+export interface PerformanceModel {
+  type: 'regression' | 'classification' | 'clustering';
+  accuracy: number;
+  features: string[];
+  predictions: Map<string, number>;
+  confidence: Map<string, number>;
+}
+
+// Integration Types
+export interface SuperIntelligenceIntegration {
+  farmId?: string;
+  harvestId?: string;
+  taskId?: string;
+  agentIds: string[];
+  mode: 'advisory' | 'collaborative' | 'autonomous';
+  permissions: IntegrationPermissions;
+}
+
+export interface IntegrationPermissions {
+  canReadData: boolean;
+  canSuggestActions: boolean;
+  canExecuteActions: boolean;
+  canModifyAgents: boolean;
+  canOptimizeResources: boolean;
+  requiresApproval: boolean;
+}
+
+// Decision Making Types
 export interface CollectiveDecision {
   id: string;
   question: string;
   options: DecisionOption[];
   votes: AgentVote[];
-  consensusMethod: 'majority' | 'weighted' | 'ranked' | 'borda';
-  result?: DecisionOption;
-  confidence: number;
+  consensusMethod: 'majority' | 'weighted' | 'ranked' | 'byzantine';
+  result?: DecisionResult;
   timestamp: Date;
 }
 
 export interface DecisionOption {
   id: string;
   description: string;
+  proposedBy: string;
   supportingEvidence: string[];
-  riskAssessment: number;
-  expectedValue: number;
+  riskAssessment: {
+    probability: number;
+    impact: number;
+    mitigation: string[];
+  };
 }
 
 export interface AgentVote {
   agentId: string;
   optionId: string;
-  weight: number;
-  reasoning?: string;
   confidence: number;
-}
-
-export interface EmergentPattern {
-  id: string;
-  pattern: string;
-  type: 'behavioral' | 'structural' | 'temporal' | 'causal';
-  occurrences: PatternOccurrence[];
-  significance: number;
-  predictivePower: number;
-  validated: boolean;
-}
-
-export interface PatternOccurrence {
+  reasoning: string;
   timestamp: Date;
-  context: string;
-  agents: string[];
-  strength: number;
 }
 
+export interface DecisionResult {
+  selectedOption: string;
+  confidence: number;
+  consensus: number;
+  dissent: string[];
+  implementation: string;
+}
+
+// Communication Types
 export interface SwarmMessage {
+  id: string;
   from: string;
   to: string | 'broadcast';
-  type: 'info' | 'query' | 'response' | 'command';
+  type: 'info' | 'query' | 'command' | 'response' | 'alert';
+  priority: 'low' | 'normal' | 'high' | 'critical';
   content: any;
   timestamp: Date;
   ttl?: number;
+  acknowledgements: string[];
 }
 
-export interface CollectiveMetrics {
-  diversity: number;
-  coherence: number;
-  efficiency: number;
-  adaptability: number;
-  emergenceIndex: number;
-  swarmIntelligence: number;
-  collectiveIQ: number;
+// Event Types
+export interface SuperIntelligenceEvent {
+  type: SuperIntelligenceEventType;
+  payload: any;
+  timestamp: Date;
+  source: string;
+  severity: 'info' | 'warning' | 'error' | 'critical';
+}
+
+export type SuperIntelligenceEventType =
+  | 'insight:discovered'
+  | 'behavior:emerged'
+  | 'strategy:evolved'
+  | 'learning:completed'
+  | 'consensus:reached'
+  | 'optimization:complete'
+  | 'resource:limit'
+  | 'safety:triggered'
+  | 'error:occurred';
+
+// API Response Types
+export interface SuperIntelligenceResponse {
+  success: boolean;
+  data?: any;
+  insights?: CollectiveInsight[];
+  recommendations?: string[];
+  confidence: number;
+  reasoning?: string;
+  error?: string;
 }

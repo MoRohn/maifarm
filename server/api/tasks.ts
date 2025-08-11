@@ -395,7 +395,7 @@ router.post('/:id/retry', requirePermission(['tasks:retry']), apiRateLimits.writ
 // POST /api/tasks/quick - Create a quick task
 router.post('/quick', requirePermission(['tasks:create']), apiRateLimits.write, async (req, res) => {
   try {
-    const { title, description, priority, timeout, metadata, mode } = req.body;
+    const { title, description, priority, timeout, metadata, mode, provider } = req.body;
 
     // Support both title/description and just description with mode
     const taskTitle = title || (description ? `Quick Task: ${description.substring(0, 50)}` : null);
@@ -412,13 +412,21 @@ router.post('/quick', requirePermission(['tasks:create']), apiRateLimits.write, 
       return res.status(400).json(response);
     }
 
+    // Default to Claude if no provider specified, or fall back to environment variable
+    const selectedProvider = provider || process.env.AI_PROVIDER || 'claude';
+
+    const userId = (req as any).user?.userId || 'default-user';
     const result = await quickTaskService.createQuickTask({
       title: taskTitle,
       description: taskDescription,
       priority: priority || (mode === 'fast' ? 'high' : 'medium'),
       timeout,
-      metadata: { ...metadata, mode }
-    });
+      metadata: { 
+        ...metadata, 
+        mode,
+        provider: selectedProvider
+      }
+    }, userId);
 
     const response: ApiResponse = {
       success: true,

@@ -65,7 +65,7 @@ class SettingsPersistence {
 
   getDefaultAgentSettings(): AgentConfiguration {
     return {
-      maxAgents: 5,
+      maxAgents: 8,
       staggerTime: 1000,
       defaultTimeout: 300,
       autoRestart: true,
@@ -76,7 +76,9 @@ class SettingsPersistence {
       logLevel: 'info',
       coordinationMode: 'hybrid',
       taskAllocation: 'load-balanced',
-      failoverStrategy: 'reassign'
+      failoverStrategy: 'reassign',
+      agentMode: 'default',
+      defaultInterval: 10
     };
   }
 

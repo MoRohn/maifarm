@@ -44,6 +44,31 @@ export interface CostBreakdown {
   currency: string;
 }
 
+export interface FarmYieldMetrics {
+  averageYield: number;
+  totalFilesGenerated: number;
+  completedFarms: number;
+  topFarm: {
+    id: string;
+    name: string;
+    fileCount: number;
+    completedAt: Date;
+  } | null;
+  yieldTrend: Array<{
+    date: Date;
+    averageYield: number;
+    farmCount: number;
+  }>;
+  yieldByType: {
+    file: number;
+    report: number;
+    code: number;
+    documentation: number;
+    data: number;
+    model: number;
+  };
+}
+
 export interface TaskCompletion {
   taskId: string;
   taskName: string;
@@ -267,6 +292,7 @@ export interface AnalyticsState {
   timeSeriesData: TimeSeriesData[];
   agentPerformance: AgentPerformanceMetric[];
   taskCompletions: TaskCompletion[];
+  farmYieldMetrics: FarmYieldMetrics | null;
   errors: ErrorMetric[];
   predictions: Prediction[];
   anomalies: Anomaly[];

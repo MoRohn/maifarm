@@ -1,8 +1,3 @@
-/**
- * WebSocket Message Queue
- * Handles message queuing for offline clients and guaranteed delivery
- */
-
 import { EventEmitter } from 'events';
 import { Redis } from 'ioredis';
 
@@ -15,42 +10,34 @@ export interface QueuedMessage {
   attempts: number;
   maxAttempts: number;
   priority: 'high' | 'normal' | 'low';
-  ttl?: number; // Time to live in seconds
-  requiresAck?: boolean;
-  metadata?: Record<string, any>;
+  ttl: number;
+  requiresAck: boolean;
+  acknowledged: boolean;
 }
 
-export interface QueueStats {
+interface QueueStats {
   totalMessages: number;
   pendingMessages: number;
-  deliveredMessages: number;
-  failedMessages: number;
-  averageDeliveryTime: number;
-  queueSizeByPriority: {
-    high: number;
-    normal: number;
-    low: number;
-  };
+  acknowledgedMessages: number;
+  expiredMessages: number;
+  clientQueues: number;
 }
 
 export class WebSocketMessageQueue extends EventEmitter {
-  private messageQueues: Map<string, QueuedMessage[]> = new Map();
-  private pendingAcks: Map<string, QueuedMessage> = new Map();
-  private deliveryStats: Map<string, number> = new Map();
-  private redis: Redis | null = null;
-  private processInterval: NodeJS.Timeout | null = null;
-  
-  // Configuration
-  private readonly MAX_QUEUE_SIZE = 1000;
-  private readonly MAX_MESSAGE_AGE = 3600000; // 1 hour
-  private readonly DEFAULT_MAX_ATTEMPTS = 3;
-  private readonly PROCESS_INTERVAL = 1000; // 1 second
-  private readonly ACK_TIMEOUT = 30000; // 30 seconds
+  private redis: Redis | null;
+  private inMemoryQueue: Map<string, QueuedMessage[]> = new Map();
+  private messageIndex: Map<string, QueuedMessage> = new Map();
+  private pruneInterval: NodeJS.Timeout | null = null;
+  private persistInterval: NodeJS.Timeout | null = null;
 
-  constructor(redisClient?: Redis) {
+  constructor(redis: Redis | null = null) {
     super();
-    this.redis = redisClient || null;
-    this.startProcessing();
+    this.redis = redis;
+    this.startPruning();
+    
+    if (redis) {
+      this.startPersistence();
+    }
   }
 
   /**
@@ -62,7 +49,7 @@ export class WebSocketMessageQueue extends EventEmitter {
     data: any,
     options: Partial<QueuedMessage> = {}
   ): string {
-    const messageId = this.generateMessageId();
+    const messageId = options.id || this.generateMessageId();
     
     const message: QueuedMessage = {
       id: messageId,
@@ -70,117 +57,103 @@ export class WebSocketMessageQueue extends EventEmitter {
       event,
       data,
       timestamp: new Date(),
-      attempts: 0,
-      maxAttempts: options.maxAttempts || this.DEFAULT_MAX_ATTEMPTS,
+      attempts: options.attempts || 0,
+      maxAttempts: options.maxAttempts || 3,
       priority: options.priority || 'normal',
-      ttl: options.ttl,
+      ttl: options.ttl || 3600000, // 1 hour default
       requiresAck: options.requiresAck || false,
-      metadata: options.metadata
+      acknowledged: false,
+      ...options
     };
 
     // Get or create client queue
-    if (!this.messageQueues.has(clientId)) {
-      this.messageQueues.set(clientId, []);
+    if (!this.inMemoryQueue.has(clientId)) {
+      this.inMemoryQueue.set(clientId, []);
     }
 
-    const queue = this.messageQueues.get(clientId)!;
+    const queue = this.inMemoryQueue.get(clientId)!;
     
-    // Check queue size limit
-    if (queue.length >= this.MAX_QUEUE_SIZE) {
-      // Remove oldest low-priority messages
-      const removed = this.pruneQueue(queue);
-      if (removed > 0) {
-        this.emit('queue:pruned', { clientId, removed });
-      }
+    // Add message based on priority
+    if (message.priority === 'high') {
+      queue.unshift(message);
+    } else if (message.priority === 'low') {
+      queue.push(message);
+    } else {
+      // Normal priority - add after high priority messages
+      const highPriorityCount = queue.filter(m => m.priority === 'high').length;
+      queue.splice(highPriorityCount, 0, message);
     }
 
-    // Insert message based on priority
-    this.insertByPriority(queue, message);
-    
+    // Index message for quick lookup
+    this.messageIndex.set(messageId, message);
+
     // Persist to Redis if available
     if (this.redis) {
-      this.persistMessage(message);
+      this.persistMessage(message).catch(err => {
+        console.error('[MessageQueue] Failed to persist message:', err);
+      });
     }
 
-    this.emit('message:queued', { messageId, clientId, event });
-    
+    this.emit('message:queued', {
+      messageId,
+      clientId,
+      event,
+      priority: message.priority
+    });
+
     return messageId;
   }
 
   /**
    * Get queued messages for a client
    */
-  public getQueuedMessages(clientId: string, limit?: number): QueuedMessage[] {
-    const queue = this.messageQueues.get(clientId) || [];
-    const messages = limit ? queue.slice(0, limit) : [...queue];
-    
-    // Mark messages as being delivered
-    messages.forEach(msg => {
-      msg.attempts++;
-      if (msg.requiresAck) {
-        this.pendingAcks.set(msg.id, msg);
-        this.scheduleAckTimeout(msg);
-      }
-    });
-
-    return messages;
+  public getQueuedMessages(clientId: string, limit = 100): QueuedMessage[] {
+    const queue = this.inMemoryQueue.get(clientId) || [];
+    return queue
+      .filter(m => !m.acknowledged && !this.isExpired(m))
+      .slice(0, limit);
   }
 
   /**
-   * Acknowledge message delivery
+   * Acknowledge a message
    */
   public acknowledgeMessage(messageId: string): boolean {
-    const message = this.pendingAcks.get(messageId);
-    if (!message) {
-      return false;
-    }
-
-    this.pendingAcks.delete(messageId);
-    
-    // Remove from client queue
-    const queue = this.messageQueues.get(message.clientId);
-    if (queue) {
-      const index = queue.findIndex(m => m.id === messageId);
-      if (index !== -1) {
-        queue.splice(index, 1);
+    const message = this.messageIndex.get(messageId);
+    if (message) {
+      message.acknowledged = true;
+      
+      // Update in Redis if available
+      if (this.redis) {
+        this.updateMessageInRedis(message).catch(err => {
+          console.error('[MessageQueue] Failed to update message in Redis:', err);
+        });
       }
+      
+      return true;
     }
-
-    // Update delivery stats
-    const deliveryTime = Date.now() - message.timestamp.getTime();
-    this.updateDeliveryStats(message.clientId, deliveryTime);
-    
-    // Remove from Redis if persisted
-    if (this.redis) {
-      this.removePersistedMessage(messageId);
-    }
-
-    this.emit('message:acknowledged', { messageId, clientId: message.clientId });
-    
-    return true;
+    return false;
   }
 
   /**
-   * Clear messages for a client
+   * Clear all messages for a client
    */
   public clearClientQueue(clientId: string): number {
-    const queue = this.messageQueues.get(clientId);
-    const count = queue ? queue.length : 0;
+    const queue = this.inMemoryQueue.get(clientId);
+    if (!queue) return 0;
+
+    const count = queue.length;
     
-    if (queue) {
-      // Remove from pending acks
-      queue.forEach(msg => {
-        if (msg.requiresAck) {
-          this.pendingAcks.delete(msg.id);
-        }
+    // Remove from index
+    queue.forEach(m => this.messageIndex.delete(m.id));
+    
+    // Clear queue
+    this.inMemoryQueue.delete(clientId);
+
+    // Clear from Redis if available
+    if (this.redis) {
+      this.clearClientQueueInRedis(clientId).catch(err => {
+        console.error('[MessageQueue] Failed to clear client queue in Redis:', err);
       });
-      
-      this.messageQueues.delete(clientId);
-      
-      // Clear from Redis
-      if (this.redis) {
-        this.clearPersistedQueue(clientId);
-      }
     }
 
     return count;
@@ -192,264 +165,216 @@ export class WebSocketMessageQueue extends EventEmitter {
   public getStats(): QueueStats {
     let totalMessages = 0;
     let pendingMessages = 0;
-    const queueSizeByPriority = { high: 0, normal: 0, low: 0 };
-    
-    this.messageQueues.forEach(queue => {
-      totalMessages += queue.length;
-      pendingMessages += queue.length;
-      
-      queue.forEach(msg => {
-        queueSizeByPriority[msg.priority]++;
-      });
-    });
+    let acknowledgedMessages = 0;
+    let expiredMessages = 0;
 
-    const deliveredMessages = Array.from(this.deliveryStats.values()).length;
-    const failedMessages = 0; // Would need to track this separately
-    
-    const deliveryTimes = Array.from(this.deliveryStats.values());
-    const averageDeliveryTime = deliveryTimes.length > 0
-      ? deliveryTimes.reduce((a, b) => a + b, 0) / deliveryTimes.length
-      : 0;
+    for (const queue of this.inMemoryQueue.values()) {
+      totalMessages += queue.length;
+      
+      for (const message of queue) {
+        if (message.acknowledged) {
+          acknowledgedMessages++;
+        } else if (this.isExpired(message)) {
+          expiredMessages++;
+        } else {
+          pendingMessages++;
+        }
+      }
+    }
 
     return {
       totalMessages,
       pendingMessages,
-      deliveredMessages,
-      failedMessages,
-      averageDeliveryTime,
-      queueSizeByPriority
+      acknowledgedMessages,
+      expiredMessages,
+      clientQueues: this.inMemoryQueue.size
     };
-  }
-
-  /**
-   * Process message queues
-   */
-  private startProcessing() {
-    this.processInterval = setInterval(() => {
-      this.processQueues();
-      this.cleanupExpiredMessages();
-    }, this.PROCESS_INTERVAL);
-  }
-
-  private processQueues() {
-    this.messageQueues.forEach((queue, clientId) => {
-      // Check for messages that need retry
-      queue.forEach(msg => {
-        if (this.shouldRetry(msg)) {
-          this.emit('message:retry', { 
-            messageId: msg.id, 
-            clientId, 
-            attempts: msg.attempts 
-          });
-        }
-      });
-    });
-  }
-
-  private cleanupExpiredMessages() {
-    const now = Date.now();
-    
-    this.messageQueues.forEach((queue, clientId) => {
-      const initialLength = queue.length;
-      
-      // Remove expired messages
-      const activeMessages = queue.filter(msg => {
-        const age = now - msg.timestamp.getTime();
-        
-        // Check TTL
-        if (msg.ttl && age > msg.ttl * 1000) {
-          this.emit('message:expired', { messageId: msg.id, clientId });
-          return false;
-        }
-        
-        // Check max age
-        if (age > this.MAX_MESSAGE_AGE) {
-          this.emit('message:expired', { messageId: msg.id, clientId });
-          return false;
-        }
-        
-        // Check max attempts
-        if (msg.attempts >= msg.maxAttempts) {
-          this.emit('message:failed', { messageId: msg.id, clientId, attempts: msg.attempts });
-          return false;
-        }
-        
-        return true;
-      });
-      
-      if (activeMessages.length !== initialLength) {
-        this.messageQueues.set(clientId, activeMessages);
-      }
-      
-      // Remove empty queues
-      if (activeMessages.length === 0) {
-        this.messageQueues.delete(clientId);
-      }
-    });
-  }
-
-  private insertByPriority(queue: QueuedMessage[], message: QueuedMessage) {
-    const priorityOrder = { high: 0, normal: 1, low: 2 };
-    
-    let insertIndex = queue.length;
-    for (let i = 0; i < queue.length; i++) {
-      if (priorityOrder[message.priority] < priorityOrder[queue[i].priority]) {
-        insertIndex = i;
-        break;
-      }
-    }
-    
-    queue.splice(insertIndex, 0, message);
-  }
-
-  private pruneQueue(queue: QueuedMessage[]): number {
-    const initialLength = queue.length;
-    
-    // Remove oldest low-priority messages first
-    queue.sort((a, b) => {
-      const priorityOrder = { high: 0, normal: 1, low: 2 };
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[b.priority] - priorityOrder[a.priority];
-      }
-      return a.timestamp.getTime() - b.timestamp.getTime();
-    });
-    
-    // Keep only the most recent high-priority messages
-    const maxToKeep = Math.floor(this.MAX_QUEUE_SIZE * 0.8);
-    queue.splice(maxToKeep);
-    
-    return initialLength - queue.length;
-  }
-
-  private shouldRetry(message: QueuedMessage): boolean {
-    if (message.attempts >= message.maxAttempts) {
-      return false;
-    }
-    
-    // Exponential backoff for retries
-    const backoffTime = Math.min(1000 * Math.pow(2, message.attempts), 30000);
-    const timeSinceLastAttempt = Date.now() - message.timestamp.getTime();
-    
-    return timeSinceLastAttempt >= backoffTime;
-  }
-
-  private scheduleAckTimeout(message: QueuedMessage) {
-    setTimeout(() => {
-      if (this.pendingAcks.has(message.id)) {
-        this.pendingAcks.delete(message.id);
-        
-        // Re-queue the message if not at max attempts
-        if (message.attempts < message.maxAttempts) {
-          const queue = this.messageQueues.get(message.clientId);
-          if (queue && !queue.find(m => m.id === message.id)) {
-            this.insertByPriority(queue, message);
-          }
-        } else {
-          this.emit('message:failed', { 
-            messageId: message.id, 
-            clientId: message.clientId,
-            reason: 'ack_timeout'
-          });
-        }
-      }
-    }, this.ACK_TIMEOUT);
-  }
-
-  private updateDeliveryStats(clientId: string, deliveryTime: number) {
-    const current = this.deliveryStats.get(clientId) || 0;
-    const newAverage = (current + deliveryTime) / 2;
-    this.deliveryStats.set(clientId, newAverage);
-  }
-
-  private generateMessageId(): string {
-    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  // Redis persistence methods
-  private async persistMessage(message: QueuedMessage) {
-    if (!this.redis) return;
-    
-    try {
-      const key = `wsqueue:${message.clientId}:${message.id}`;
-      await this.redis.setex(
-        key,
-        message.ttl || 3600,
-        JSON.stringify(message)
-      );
-    } catch (error) {
-      console.error('[MessageQueue] Failed to persist message:', error);
-    }
-  }
-
-  private async removePersistedMessage(messageId: string) {
-    if (!this.redis) return;
-    
-    try {
-      // Find and remove the message key
-      const keys = await this.redis.keys(`wsqueue:*:${messageId}`);
-      if (keys.length > 0) {
-        await this.redis.del(...keys);
-      }
-    } catch (error) {
-      console.error('[MessageQueue] Failed to remove persisted message:', error);
-    }
-  }
-
-  private async clearPersistedQueue(clientId: string) {
-    if (!this.redis) return;
-    
-    try {
-      const keys = await this.redis.keys(`wsqueue:${clientId}:*`);
-      if (keys.length > 0) {
-        await this.redis.del(...keys);
-      }
-    } catch (error) {
-      console.error('[MessageQueue] Failed to clear persisted queue:', error);
-    }
   }
 
   /**
    * Load persisted messages from Redis
    */
-  public async loadPersistedMessages() {
+  public async loadPersistedMessages(): Promise<void> {
     if (!this.redis) return;
-    
+
     try {
-      const keys = await this.redis.keys('wsqueue:*');
+      const keys = await this.redis.keys('websocket:queue:*');
       
       for (const key of keys) {
-        const value = await this.redis.get(key);
-        if (value) {
-          const message = JSON.parse(value) as QueuedMessage;
-          message.timestamp = new Date(message.timestamp);
-          
-          if (!this.messageQueues.has(message.clientId)) {
-            this.messageQueues.set(message.clientId, []);
-          }
-          
-          const queue = this.messageQueues.get(message.clientId)!;
-          if (!queue.find(m => m.id === message.id)) {
-            this.insertByPriority(queue, message);
-          }
+        const clientId = key.replace('websocket:queue:', '');
+        const messages = await this.redis.lrange(key, 0, -1);
+        
+        const parsedMessages = messages
+          .map(m => {
+            try {
+              return JSON.parse(m) as QueuedMessage;
+            } catch {
+              return null;
+            }
+          })
+          .filter(m => m !== null && !this.isExpired(m as QueuedMessage)) as QueuedMessage[];
+
+        if (parsedMessages.length > 0) {
+          this.inMemoryQueue.set(clientId, parsedMessages);
+          parsedMessages.forEach(m => this.messageIndex.set(m.id, m));
         }
       }
-      
-      console.log(`[MessageQueue] Loaded ${keys.length} persisted messages`);
+
+      console.log(`[MessageQueue] Loaded ${this.messageIndex.size} persisted messages`);
     } catch (error) {
       console.error('[MessageQueue] Failed to load persisted messages:', error);
     }
   }
 
   /**
-   * Stop processing and clean up
+   * Check if a message is expired
+   */
+  private isExpired(message: QueuedMessage): boolean {
+    const now = new Date().getTime();
+    const messageTime = new Date(message.timestamp).getTime();
+    return (now - messageTime) > message.ttl;
+  }
+
+  /**
+   * Start periodic pruning of expired messages
+   */
+  private startPruning() {
+    this.pruneInterval = setInterval(() => {
+      for (const [clientId, queue] of this.inMemoryQueue) {
+        const before = queue.length;
+        const pruned = queue.filter(m => {
+          if (this.isExpired(m)) {
+            this.messageIndex.delete(m.id);
+            this.emit('message:expired', {
+              messageId: m.id,
+              clientId,
+              event: m.event
+            });
+            return false;
+          }
+          return true;
+        });
+
+        if (pruned.length < before) {
+          this.inMemoryQueue.set(clientId, pruned);
+          this.emit('queue:pruned', {
+            clientId,
+            removed: before - pruned.length
+          });
+        }
+
+        // Remove empty queues
+        if (pruned.length === 0) {
+          this.inMemoryQueue.delete(clientId);
+        }
+      }
+    }, 60000); // Prune every minute
+  }
+
+  /**
+   * Start periodic persistence to Redis
+   */
+  private startPersistence() {
+    if (!this.redis) return;
+
+    this.persistInterval = setInterval(async () => {
+      try {
+        for (const [clientId, queue] of this.inMemoryQueue) {
+          const key = `websocket:queue:${clientId}`;
+          
+          // Filter out acknowledged and expired messages
+          const validMessages = queue.filter(m => !m.acknowledged && !this.isExpired(m));
+          
+          if (validMessages.length > 0) {
+            // Store as JSON array
+            await this.redis.del(key);
+            const pipeline = this.redis.pipeline();
+            
+            for (const message of validMessages) {
+              pipeline.rpush(key, JSON.stringify(message));
+            }
+            
+            pipeline.expire(key, 3600); // Expire after 1 hour
+            await pipeline.exec();
+          } else {
+            // Remove empty queue
+            await this.redis.del(key);
+          }
+        }
+      } catch (error) {
+        console.error('[MessageQueue] Failed to persist queues:', error);
+      }
+    }, 30000); // Persist every 30 seconds
+  }
+
+  /**
+   * Persist a single message to Redis
+   */
+  private async persistMessage(message: QueuedMessage): Promise<void> {
+    if (!this.redis) return;
+
+    const key = `websocket:queue:${message.clientId}`;
+    await this.redis.rpush(key, JSON.stringify(message));
+    await this.redis.expire(key, 3600);
+  }
+
+  /**
+   * Update message in Redis
+   */
+  private async updateMessageInRedis(message: QueuedMessage): Promise<void> {
+    if (!this.redis) return;
+
+    const key = `websocket:queue:${message.clientId}`;
+    const messages = await this.redis.lrange(key, 0, -1);
+    
+    const updated = messages.map(m => {
+      const parsed = JSON.parse(m);
+      if (parsed.id === message.id) {
+        return JSON.stringify(message);
+      }
+      return m;
+    });
+
+    await this.redis.del(key);
+    if (updated.length > 0) {
+      await this.redis.rpush(key, ...updated);
+      await this.redis.expire(key, 3600);
+    }
+  }
+
+  /**
+   * Clear client queue in Redis
+   */
+  private async clearClientQueueInRedis(clientId: string): Promise<void> {
+    if (!this.redis) return;
+    
+    const key = `websocket:queue:${clientId}`;
+    await this.redis.del(key);
+  }
+
+  /**
+   * Generate unique message ID
+   */
+  private generateMessageId(): string {
+    return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Stop the message queue
    */
   public stop() {
-    if (this.processInterval) {
-      clearInterval(this.processInterval);
-      this.processInterval = null;
+    if (this.pruneInterval) {
+      clearInterval(this.pruneInterval);
+      this.pruneInterval = null;
     }
-    
+
+    if (this.persistInterval) {
+      clearInterval(this.persistInterval);
+      this.persistInterval = null;
+    }
+
+    this.inMemoryQueue.clear();
+    this.messageIndex.clear();
     this.removeAllListeners();
-    console.log('[MessageQueue] Message queue stopped');
   }
 }

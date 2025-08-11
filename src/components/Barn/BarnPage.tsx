@@ -24,16 +24,19 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Harvest, BarnFolder, BarnStats } from '../../types/barn';
-import { api } from '../../services/apiClient';
-import apiClient from '../../services/apiClient';
+import apiClient, { api } from '../../services/apiClient';
 import { HarvestCard } from './HarvestCard';
 import { FolderView } from './FolderView';
 import { HarvestDetails } from './HarvestDetails';
+import { SeedQuickAction } from '../Seeds/SeedQuickAction';
+import { Harvest as HarvestType } from '../../types/harvest';
 
 export const BarnPage: React.FC = () => {
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [selectedFolder, setSelectedFolder] = useState<BarnFolder | null>(null);
   const [selectedHarvest, setSelectedHarvest] = useState<Harvest | null>(null);
+  const [showSeedCreation, setShowSeedCreation] = useState(false);
+  const [seedCreationHarvest, setSeedCreationHarvest] = useState<Harvest | null>(null);
   const [harvests, setHarvests] = useState<Harvest[]>([]);
   const [folders, setFolders] = useState<BarnFolder[]>([]);
   const [stats, setStats] = useState<BarnStats | null>(null);
@@ -49,16 +52,23 @@ export const BarnPage: React.FC = () => {
   const loadBarnData = async () => {
     setLoading(true);
     try {
-      const [harvestsRes, statsRes] = await Promise.all([
-        api.harvests.list(),
-        api.barn.stats()
+      const [itemsRes, statsRes, foldersRes] = await Promise.all([
+        apiClient.get('/api/barn/items'),
+        api.barn.stats(),
+        api.barn.folders.list()
       ]);
 
-      if (harvestsRes.data.success) {
-        setHarvests(harvestsRes.data.data);
+      // Set barn items as harvests (they're aliased as Harvest type)
+      if (itemsRes.data) {
+        setHarvests(itemsRes.data);
       }
-      if (statsRes.data.success) {
+      
+      if (statsRes.data?.success) {
         setStats(statsRes.data.data);
+      }
+      
+      if (foldersRes.data) {
+        setFolders(foldersRes.data);
       }
     } catch (error) {
       console.error('Failed to load barn data:', error);
@@ -68,6 +78,29 @@ export const BarnPage: React.FC = () => {
   };
 
   const filteredHarvests = harvests.filter(harvest => {
+    // Exclude graceful-shutdown items and timeout items with no content
+    if (harvest.tags?.some(tag => 
+        tag.includes('graceful-shutdown') || 
+        tag.includes('reason-timeout') ||
+        tag.includes('reason-user_request') ||
+        tag.includes('reason-completion')
+    )) {
+      return false;
+    }
+    
+    // Also exclude by name patterns
+    if (harvest.name?.toLowerCase().includes('graceful') ||
+        harvest.name?.toLowerCase().includes('shutdown') ||
+        harvest.description?.toLowerCase().includes('gracefully shut down') ||
+        harvest.description?.toLowerCase().includes('timeout')) {
+      return false;
+    }
+    
+    // Exclude items with graceful shutdown metadata
+    if ((harvest as any).metadata?.gracefulShutdown === true) {
+      return false;
+    }
+    
     const matchesSearch = harvest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          harvest.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = filterType === 'all' || harvest.type === filterType;
@@ -93,11 +126,94 @@ export const BarnPage: React.FC = () => {
 
   const handleDeleteHarvest = async (id: string) => {
     try {
-      await api.harvests.delete(id);
+      await apiClient.delete(`/api/barn/items/${id}`);
       setHarvests(harvests.filter(h => h.id !== id));
     } catch (error) {
-      console.error('Failed to delete harvest:', error);
+      console.error('Failed to delete barn item:', error);
     }
+  };
+
+  const handleCreateSeed = (harvest: Harvest) => {
+    setSeedCreationHarvest(harvest);
+    setShowSeedCreation(true);
+  };
+
+  // Convert BarnItem (aliased as Harvest) to proper HarvestType for SeedQuickAction
+  const convertBarnItemToHarvest = (barnItem: Harvest): HarvestType => {
+    return {
+      id: barnItem.id,
+      farmId: barnItem.farmId,
+      farmName: barnItem.farmName,
+      name: barnItem.name,
+      description: barnItem.description,
+      type: barnItem.type,
+      status: 'ready' as const,
+      createdAt: barnItem.createdAt,
+      completedAt: barnItem.updatedAt,
+      useCount: barnItem.useCount,
+      summary: {
+        description: barnItem.description,
+        totalFiles: barnItem.metadata?.fileCount || barnItem.metadata?.taskCount || 1,
+        filesGenerated: barnItem.metadata?.filesGenerated || barnItem.metadata?.taskCount || 1,
+        filesFailed: 0,
+        totalTasks: barnItem.metadata?.taskCount || 1,  // Legacy compatibility
+        completedTasks: barnItem.metadata?.taskCount || 1,  // Legacy compatibility
+        failedTasks: 0,  // Legacy compatibility
+        duration: barnItem.metadata?.duration || 0,
+        efficiency: barnItem.metadata?.successRate || 100,
+        agents: [],
+        fileCategories: {
+          text: 0,
+          code: 0,
+          image: 0,
+          data: 0,
+          config: 0,
+          other: barnItem.metadata?.fileCount || 1
+        }
+      },
+      farmConfig: {
+        yaml: barnItem.config?.yaml,
+        ...barnItem.config
+      },
+      results: [],
+      insights: [],
+      yield: (barnItem.yield || []).map(yieldItem => ({
+        id: yieldItem.id || `yield-${Date.now()}-${Math.random()}`,
+        name: yieldItem.name || 'Unnamed',
+        description: yieldItem.description || yieldItem.name || 'No description available',
+        mimeType: yieldItem.mimeType || 'application/octet-stream',
+        type: yieldItem.type === 'output' ? 'data' : 
+              yieldItem.type === 'log' ? 'report' : 
+              yieldItem.type as 'file' | 'report' | 'code' | 'documentation' | 'data' | 'model',
+        size: yieldItem.size || 0,
+        location: yieldItem.location || '',
+        checksum: yieldItem.checksum || '',
+        createdBy: {
+          agentId: barnItem.createdBy,
+          agentName: `Agent ${barnItem.createdBy.slice(0, 8)}`
+        },
+        createdAt: yieldItem.createdAt || barnItem.createdAt,
+        metadata: yieldItem.metadata || {}
+      })),
+      quality: {
+        completeness: 100,
+        accuracy: barnItem.metadata?.successRate || 100,
+        relevance: 100,
+        overallScore: barnItem.metadata?.successRate || 100
+      },
+      tags: barnItem.tags,
+      farmerTemplateId: barnItem.farmerTemplateId,
+      farmerTemplateName: barnItem.farmerTemplateName,
+      exportFormats: ['json', 'csv', 'markdown', 'pdf']
+    };
+  };
+
+  const handleSeedSuccess = (seed: any) => {
+    console.log('Seed created from barn harvest:', seed);
+    // Show success notification
+    setShowSeedCreation(false);
+    setSeedCreationHarvest(null);
+    // You could show a toast notification here
   };
 
   const typeIcons = {
@@ -296,17 +412,9 @@ export const BarnPage: React.FC = () => {
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent" />
           </div>
         ) : (
-          <AnimatePresence mode="wait">
-            {selectedHarvest ? (
-              <HarvestDetails
-                harvest={selectedHarvest}
-                onClose={() => setSelectedHarvest(null)}
-                onUse={() => {
-                  // Navigate to farm creator with harvest
-                  window.location.href = `/home?useHarvest=${selectedHarvest.id}`;
-                }}
-              />
-            ) : view === 'grid' ? (
+          <>
+            <AnimatePresence mode="wait">
+              {view === 'grid' ? (
               <motion.div
                 key="grid"
                 initial={{ opacity: 0 }}
@@ -336,6 +444,7 @@ export const BarnPage: React.FC = () => {
                     harvest={harvest}
                     onClick={() => setSelectedHarvest(harvest)}
                     onDelete={() => handleDeleteHarvest(harvest.id)}
+                    onCreateSeed={() => handleCreateSeed(harvest)}
                   />
                 ))}
 
@@ -376,8 +485,55 @@ export const BarnPage: React.FC = () => {
               </motion.div>
             )}
           </AnimatePresence>
+          </>
         )}
       </div>
+
+      {/* Harvest Details Modal Overlay */}
+      <AnimatePresence>
+        {selectedHarvest && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            onClick={() => setSelectedHarvest(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <HarvestDetails
+                harvest={selectedHarvest}
+                onClose={() => setSelectedHarvest(null)}
+                onUse={() => {
+                  // Navigate to farm creator with harvest
+                  window.location.href = `/home?useHarvest=${selectedHarvest.id}`;
+                }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Seed Creation from Barn Harvest */}
+      <AnimatePresence>
+        {showSeedCreation && seedCreationHarvest && (
+          <SeedQuickAction
+            harvest={convertBarnItemToHarvest(seedCreationHarvest)}
+            isOpen={showSeedCreation}
+            onClose={() => {
+              setShowSeedCreation(false);
+              setSeedCreationHarvest(null);
+            }}
+            onSuccess={handleSeedSuccess}
+            context="barn"
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -420,7 +576,7 @@ const HarvestListItem: React.FC<{
               <span>•</span>
               <span>Used {harvest.useCount} times</span>
               <span>•</span>
-              <span>{harvest.artifacts.length} artifacts</span>
+              <span>{harvest.yield?.length || 0} yield items</span>
             </div>
           </div>
         </div>

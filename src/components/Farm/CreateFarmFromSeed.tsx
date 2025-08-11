@@ -75,7 +75,7 @@ export const CreateFarmFromSeed: React.FC = () => {
           if (status.status === 'completed') {
             toast.success('Workflow completed successfully!');
             setTimeout(() => {
-              navigate(`/farms/${result.farm.id}/growing`);
+              navigate(`/harvests/${result.farm.id}`);
             }, 2000);
           } else if (status.status === 'failed') {
             toast.error(`Workflow failed: ${status.error}`);

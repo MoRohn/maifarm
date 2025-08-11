@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS harvests (
     type VARCHAR(50) NOT NULL,
     category VARCHAR(100),
     tags TEXT[] DEFAULT '{}',
-    artifacts JSONB DEFAULT '[]',
+    yield JSONB DEFAULT '[]',
     config JSONB DEFAULT '{}',
     metadata JSONB DEFAULT '{}',
     parent_harvest_id UUID REFERENCES harvests(id),

@@ -166,7 +166,11 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
             </div>
             <div className="text-sm text-gray-600">
               Created: <span className="font-medium">
-                {new Date(farm.createdAt).toLocaleString()}
+                {(() => {
+                  if (!farm.createdAt) return 'Unknown';
+                  const date = new Date(farm.createdAt);
+                  return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
+                })()}
               </span>
             </div>
           </div>

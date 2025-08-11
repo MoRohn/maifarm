@@ -31,8 +31,11 @@ interface AgentConfiguration {
   cpuLimit: number;
   enableLogging: boolean;
   coordinationMode: 'centralized' | 'distributed' | 'hybrid';
-  taskAllocation: 'round-robin' | 'load-balanced' | 'priority-based';
+  taskAllocation: 'round-robin' | 'load-balanced';
   failoverStrategy: 'restart' | 'reassign' | 'skip';
+  // New agent modes
+  agentMode: 'default' | 'supercharge' | 'ultrafarmer';
+  defaultInterval: number; // in minutes
 }
 
 interface SettingsStore {
@@ -80,8 +83,8 @@ interface SettingsStore {
 }
 
 const defaultAgentConfig: AgentConfiguration = {
-  maxConcurrentAgents: 10,
-  maxAgents: 10,
+  maxConcurrentAgents: 8,
+  maxAgents: 8,
   staggerTime: 1000,
   defaultTimeout: 30000,
   retryAttempts: 3,
@@ -101,6 +104,29 @@ const defaultAgentConfig: AgentConfiguration = {
   coordinationMode: 'centralized',
   taskAllocation: 'load-balanced',
   failoverStrategy: 'restart',
+  agentMode: 'default',
+  defaultInterval: 10, // 10 minutes default
+};
+
+// Helper function to get GPU count (mock implementation)
+const getGPUCount = (): number => {
+  // In a real implementation, this would detect GPU hardware
+  // For now, return a reasonable default based on typical systems
+  return 4; // Mock GPU count
+};
+
+// Helper function to calculate max agents based on mode
+export const calculateMaxAgents = (mode: 'default' | 'supercharge' | 'ultrafarmer'): number => {
+  switch (mode) {
+    case 'default':
+      return 8;
+    case 'supercharge':
+      return 10;
+    case 'ultrafarmer':
+      return Math.min(getGPUCount() * 2, 16); // 2 agents per GPU, max 16
+    default:
+      return 8;
+  }
 };
 
 const defaultTheme: ThemeConfig = {

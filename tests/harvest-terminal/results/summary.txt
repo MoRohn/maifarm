@@ -1,0 +1,26 @@
+Test Results Summary:
+
+## integration-tests
+Passed: 0
+0
+Failed: 1
+
+Errors:
+
+## unit-tests
+Passed: 0
+0
+Failed: 49
+
+Errors:
+    Error fetching sessions: TypeError: Cannot read properties of undefined (reading 'ok')
+        at /Users/rohnspringfield/maifarm/src/components/Harvest/HarvestTerminalPro.tsx:367:20
+        at processTicksAndRejections (node:internal/process/task_queues:105:5)
+--
+    Error fetching sessions: TypeError: Cannot read properties of undefined (reading 'ok')
+        at /Users/rohnspringfield/maifarm/src/components/Harvest/HarvestTerminalPro.tsx:367:20
+
+--
+    Error fetching sessions: TypeError: Cannot read properties of undefined (reading 'ok')
+        at /Users/rohnspringfield/maifarm/src/components/Harvest/HarvestTerminalPro.tsx:367:20
+

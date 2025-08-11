@@ -352,6 +352,178 @@ export class TmuxHelper {
       setTimeout(() => resolve('unknown'), 1000);
     });
   }
+
+  /**
+   * Create a Go Wild exploration session with multiple agent panes
+   */
+  static async createGoWildSession(
+    sessionId: string,
+    agentCount: number = 5
+  ): Promise<boolean> {
+    try {
+      const sessionName = `goWild-${sessionId.slice(0, 8)}`;
+      
+      // Create main session
+      const created = await this.createSession(sessionName, 'coordinator');
+      if (!created) return false;
+
+      // Send initial coordinator message
+      await this.sendCommand(sessionName, `echo "Go Wild Exploration Session: ${sessionId}"`);
+      await this.sendCommand(sessionName, `echo "Initializing ${agentCount} exploration agents..."`);
+
+      // Create panes for each agent
+      for (let i = 0; i < agentCount; i++) {
+        if (i > 0) {
+          // Split panes for additional agents
+          const splitSuccess = i % 2 === 0 
+            ? await this.splitPaneHorizontal(sessionName, 0)
+            : await this.splitPaneVertical(sessionName, Math.floor(i / 2));
+          
+          if (!splitSuccess) {
+            logger.warn(`Failed to create pane for agent ${i}`);
+            continue;
+          }
+        }
+
+        // Set pane title
+        await this.setPaneTitle(sessionName, `Agent-${i}`, i);
+        
+        // Initialize agent in pane
+        await this.sendCommand(
+          sessionName, 
+          `echo "Explorer Agent ${i} - Ready for exploration"`,
+          i
+        );
+      }
+
+      logger.info(`Created Go Wild tmux session: ${sessionName} with ${agentCount} agents`);
+      return true;
+    } catch (error) {
+      logger.error('Failed to create Go Wild tmux session:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send exploration task to a specific agent pane
+   */
+  static async sendExplorationTask(
+    sessionId: string,
+    agentIndex: number,
+    task: {
+      type: string;
+      label: string;
+      category: string;
+    }
+  ): Promise<boolean> {
+    const sessionName = `goWild-${sessionId.slice(0, 8)}`;
+    
+    const command = `echo "[Agent ${agentIndex}] Exploring: ${task.label} (${task.category})"`;
+    const success = await this.sendCommand(sessionName, command, agentIndex);
+    
+    if (success) {
+      // Simulate some exploration work
+      await this.sendCommand(
+        sessionName,
+        `echo "  → Analyzing ${task.type}..."`,
+        agentIndex
+      );
+      await this.sendCommand(
+        sessionName,
+        `echo "  → Generating insights..."`,
+        agentIndex
+      );
+    }
+    
+    return success;
+  }
+
+  /**
+   * Capture exploration results from agent pane
+   */
+  static async captureExplorationResults(
+    sessionId: string,
+    agentIndex: number
+  ): Promise<string> {
+    const sessionName = `goWild-${sessionId.slice(0, 8)}`;
+    return await this.capturePane(sessionName, 50, agentIndex);
+  }
+
+  /**
+   * Monitor all Go Wild agent panes
+   */
+  static async monitorGoWildAgents(sessionId: string): Promise<Map<number, string>> {
+    const sessionName = `goWild-${sessionId.slice(0, 8)}`;
+    const panes = await this.listPanes(sessionName);
+    const results = new Map<number, string>();
+
+    for (const pane of panes) {
+      const output = await this.capturePane(sessionName, 20, pane.paneIndex);
+      results.set(pane.paneIndex, output);
+    }
+
+    return results;
+  }
+
+  /**
+   * Clean up Go Wild session
+   */
+  static async cleanupGoWildSession(sessionId: string): Promise<boolean> {
+    const sessionName = `goWild-${sessionId.slice(0, 8)}`;
+    
+    // Send completion message to all panes
+    const panes = await this.listPanes(sessionName);
+    for (const pane of panes) {
+      await this.sendCommand(
+        sessionName,
+        `echo "Exploration complete. Cleaning up..."`,
+        pane.paneIndex
+      );
+    }
+
+    // Kill the session after a short delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    return await this.killSession(sessionName);
+  }
+
+  /**
+   * Create a visual layout for Go Wild monitoring
+   */
+  static async createGoWildLayout(sessionId: string): Promise<boolean> {
+    const sessionName = `goWild-${sessionId.slice(0, 8)}`;
+    
+    try {
+      // Create session with specific layout
+      const created = await this.createSession(sessionName, 'monitor');
+      if (!created) return false;
+
+      // Create monitoring dashboard layout
+      // Top pane: Overall status
+      await this.sendCommand(sessionName, 'echo "═══ Go Wild Exploration Monitor ═══"');
+      await this.sendCommand(sessionName, `echo "Session: ${sessionId}"`);
+      
+      // Split for agent status
+      await this.splitPaneHorizontal(sessionName, 0);
+      await this.setPaneTitle(sessionName, 'Agents', 1);
+      await this.sendCommand(sessionName, 'echo "Agent Status:"', 1);
+      
+      // Split for discoveries
+      await this.splitPaneVertical(sessionName, 0);
+      await this.setPaneTitle(sessionName, 'Discoveries', 2);
+      await this.sendCommand(sessionName, 'echo "Discoveries:"', 2);
+      
+      // Split for metrics
+      await this.splitPaneVertical(sessionName, 1);
+      await this.setPaneTitle(sessionName, 'Metrics', 3);
+      await this.sendCommand(sessionName, 'echo "Exploration Metrics:"', 3);
+
+      logger.info(`Created Go Wild monitoring layout: ${sessionName}`);
+      return true;
+    } catch (error) {
+      logger.error('Failed to create Go Wild layout:', error);
+      return false;
+    }
+  }
 }
 
 export default TmuxHelper;

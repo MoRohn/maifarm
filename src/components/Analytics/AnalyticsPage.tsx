@@ -25,6 +25,7 @@ import { useFarmStore } from '../../store/farmStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useUserStore } from '../../store/userStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { useRobustMetrics } from '../../hooks/useRobustMetrics';
 import { analyticsService } from '../../services/analyticsService';
 import { ThemedLayout } from '../common/ThemedLayout';
 import { StatsCard } from '../Dashboard/StatsCard';
@@ -54,7 +55,6 @@ export const AnalyticsPage: React.FC = () => {
   const mountedRef = useRef(true);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const systemIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const realtimeListenerRef = useRef<string | null>(null);
   
   const { user } = useUserStore();
   const theme = useThemeStore((state) => state.theme);
@@ -62,9 +62,7 @@ export const AnalyticsPage: React.FC = () => {
   const accentColor = useThemeStore((state) => state.accentColor);
   const farms = useFarmStore((state) => state.farms);
   const activeFarms = useFarmStore((state) => state.activeFarms);
-  const { connected, lastMessage } = useWebSocket({
-    url: import.meta.env.VITE_API_URL || 'http://localhost:4567'
-  });
+  const { connected, lastMessage } = useWebSocket();
 
   const {
     metrics,
@@ -76,9 +74,13 @@ export const AnalyticsPage: React.FC = () => {
     setLoading: setStoreLoading
   } = useAnalyticsStore();
 
-  // Calculate real-time metrics
+  // Use robust metrics system
+  const { metrics: robustMetrics, loading: metricsLoading, error: metricsError } = useRobustMetrics();
+
+  // Calculate real-time metrics with robust fallback
   const realtimeMetrics = useMemo(() => {
-    const totalAgents = farms.reduce((acc, farm) => acc + (farm.agents?.length || 0), 0);
+    // Use robust metrics as primary source, with local calculation as fallback
+    const totalAgents = robustMetrics.totalAgents || farms.reduce((acc, farm) => acc + (farm.agents?.length || 0), 0);
     const activeAgents = farms.reduce((acc, farm) => 
       acc + (farm.agents?.filter(a => a.status === 'running')?.length || 0), 0
     );
@@ -95,14 +97,14 @@ export const AnalyticsPage: React.FC = () => {
 
     return {
       totalAgents,
-      activeAgents,
-      completedTasks,
+      activeAgents: robustMetrics.activeAgents || activeAgents,
+      completedTasks: robustMetrics.completedTasks || completedTasks,
       successRate,
       estimatedCosts,
-      farmCount: farms.length,
-      activeFarmCount: activeFarms.length
+      farmCount: robustMetrics.totalFarms || farms.length,
+      activeFarmCount: robustMetrics.activeFarms || activeFarms.length
     };
-  }, [farms, activeFarms, taskCompletions]);
+  }, [farms, activeFarms, taskCompletions, robustMetrics]);
 
   // Load analytics data with cleanup checks
   useEffect(() => {
@@ -223,10 +225,8 @@ export const AnalyticsPage: React.FC = () => {
   useEffect(() => {
     if (!mountedRef.current) return;
     
-    analyticsService.subscribeToRealtimeUpdates();
-
-    // Add listener for real-time updates
-    realtimeListenerRef.current = analyticsService.addRealtimeListener('all', (data) => {
+    // Subscribe to real-time updates
+    const handleRealtimeUpdate = (data: any) => {
       if (!mountedRef.current) return;
       
       setLastUpdate(new Date());
@@ -243,13 +243,12 @@ export const AnalyticsPage: React.FC = () => {
         // Update task completion data
         useAnalyticsStore.getState().setTaskCompletions(data.tasks);
       }
-    });
+    };
+    
+    analyticsService.subscribeToRealtimeUpdates('analytics-page', handleRealtimeUpdate);
 
     return () => {
-      if (realtimeListenerRef.current) {
-        analyticsService.removeRealtimeListener(realtimeListenerRef.current);
-        realtimeListenerRef.current = null;
-      }
+      analyticsService.unsubscribeFromRealtimeUpdates('analytics-page');
     };
   }, [setMetrics]);
 
@@ -297,9 +296,7 @@ export const AnalyticsPage: React.FC = () => {
       if (systemIntervalRef.current) {
         clearInterval(systemIntervalRef.current);
       }
-      if (realtimeListenerRef.current) {
-        analyticsService.removeRealtimeListener(realtimeListenerRef.current);
-      }
+      analyticsService.unsubscribeFromRealtimeUpdates('analytics-page');
     };
   }, []);
 

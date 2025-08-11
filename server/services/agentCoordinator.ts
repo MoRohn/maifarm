@@ -176,7 +176,7 @@ export class AgentCoordinator extends EventEmitter {
       
       // Build command arguments
       const args = [
-        'multi_claude.py',
+        'orchestrator.py',
         '-n', config.agents.toString(),
         '-p', config.prompt
       ];
@@ -228,7 +228,7 @@ export class AgentCoordinator extends EventEmitter {
       
       return { success: true };
     } catch (error) {
-      console.error('[AgentCoordinator] Error launching multi_claude:', error);
+      console.error('[AgentCoordinator] Error launching orchestrator:', error);
       return { success: false, error: (error as Error).message };
     }
   }
@@ -292,7 +292,7 @@ export class AgentCoordinator extends EventEmitter {
       this.watchInterval = null;
     }
     
-    // Kill multi_claude process if running
+    // Kill orchestrator process if running
     if (this.multiClaudeProcess) {
       this.multiClaudeProcess.kill();
       this.multiClaudeProcess = null;

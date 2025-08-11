@@ -6,6 +6,7 @@ import { db } from '../database/connection';
 import { claudeCodeCoordinator } from '../services/claudeCodeCoordinator';
 import { metricsCollector } from '../services/metricsCollector';
 import { analyticsService } from '../services/analyticsService.js';
+import { taskCountService } from '../services/taskCountService';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -240,22 +241,36 @@ router.get('/metrics', apiRateLimits.read, async (req, res) => {
       GROUP BY a.id, a.name
     `).catch(() => ({ rows: [] }));
     
-    const agentEfficiency: AgentEfficiencyMetrics[] = agentResult.rows.map((row: any) => ({
-      agentId: row.agent_id,
-      agentName: row.agent_name,
-      tasksCompleted: parseInt(row.tasks_completed || 0),
-      tasksTotal: parseInt(row.tasks_total || 0),
-      successRate: row.tasks_total > 0 ? (row.tasks_completed / row.tasks_total) * 100 : 0,
-      averageResponseTime: parseFloat(row.avg_response_time || 0),
-      errorRate: row.tasks_total > 0 ? (row.errors / row.tasks_total) * 100 : 0,
-      costPerTask: claudeCosts.costByAgent[row.agent_id] 
-        ? claudeCosts.costByAgent[row.agent_id] / (row.tasks_completed || 1)
-        : 0,
-      efficiency: row.tasks_total > 0 && row.avg_response_time > 0
-        ? (row.tasks_completed / row.avg_response_time) * (row.tasks_completed / row.tasks_total)
-        : 0,
-      lastActive: new Date(row.last_active || Date.now())
-    }));
+    const agentEfficiency: AgentEfficiencyMetrics[] = await Promise.all(
+      agentResult.rows.map(async (row: any) => {
+        // Get task count based on files created by this agent
+        const farmId = row.farm_id;
+        const agentIndex = row.config?.agentIndex || 0;
+        const tasksCompleted = farmId 
+          ? await taskCountService.countTasksForAgent(farmId, agentIndex)
+          : parseInt(row.tasks_completed || 0);
+        
+        const tasksTotal = parseInt(row.tasks_total || tasksCompleted);
+        const successRate = tasksTotal > 0 ? (tasksCompleted / tasksTotal) * 100 : 0;
+        
+        return {
+          agentId: row.agent_id,
+          agentName: row.agent_name,
+          tasksCompleted,
+          tasksTotal,
+          successRate,
+          averageResponseTime: parseFloat(row.avg_response_time || 0),
+          errorRate: row.tasks_total > 0 ? (row.errors / row.tasks_total) * 100 : 0,
+          costPerTask: claudeCosts.costByAgent[row.agent_id] 
+            ? claudeCosts.costByAgent[row.agent_id] / (tasksCompleted || 1)
+            : 0,
+          efficiency: row.tasks_total > 0 && row.avg_response_time > 0
+            ? (tasksCompleted / row.avg_response_time) * (tasksCompleted / tasksTotal)
+            : 0,
+          lastActive: new Date(row.last_active || Date.now())
+        };
+      })
+    );
     
     // Get task completion metrics
     const taskResult = await db.query(`
@@ -348,6 +363,34 @@ router.get('/metrics', apiRateLimits.read, async (req, res) => {
     };
     
     res.json(response);
+  }
+});
+
+// GET /api/analytics/farm-yield - Get farm yield metrics
+router.get('/farm-yield', apiRateLimits.read, async (req, res) => {
+  try {
+    const { start, end } = req.query;
+    const timeRange = start && end 
+      ? { start: new Date(start as string), end: new Date(end as string) }
+      : undefined;
+    
+    const yieldMetrics = await analyticsService.getFarmYieldMetrics(timeRange);
+    
+    const response: ApiResponse = {
+      success: true,
+      data: yieldMetrics
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error fetching farm yield metrics:', error);
+    
+    const response: ApiResponse = {
+      success: false,
+      error: 'Failed to fetch farm yield metrics'
+    };
+    
+    res.status(500).json(response);
   }
 });
 
@@ -641,6 +684,29 @@ router.post('/track', apiRateLimits.write, async (req, res) => {
     const response: ApiResponse = {
       success: false,
       error: 'Failed to track event'
+    };
+    
+    res.status(500).json(response);
+  }
+});
+
+// GET /api/analytics/standardized-tasks - Get standardized task metrics
+router.get('/standardized-tasks', apiRateLimits.read, async (req, res) => {
+  try {
+    const metrics = await analyticsService.getStandardizedTaskMetrics();
+    
+    const response: ApiResponse = {
+      success: true,
+      data: metrics
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error getting standardized task metrics:', error);
+    
+    const response: ApiResponse = {
+      success: false,
+      error: 'Failed to get standardized task metrics'
     };
     
     res.status(500).json(response);

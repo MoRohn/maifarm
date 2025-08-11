@@ -1,24 +1,5 @@
-/**
- * WebSocket Health Monitor
- * Monitors WebSocket connection health, tracks metrics, and manages connection recovery
- */
-
+import { Socket, Server as SocketIOServer } from 'socket.io';
 import { EventEmitter } from 'events';
-import { Socket } from 'socket.io';
-import { SocketIOServer } from 'socket.io';
-
-export interface ConnectionMetrics {
-  totalConnections: number;
-  activeConnections: number;
-  reconnections: number;
-  disconnections: number;
-  messagesSent: number;
-  messagesReceived: number;
-  errors: number;
-  averageLatency: number;
-  connectionUptime: number;
-  lastHeartbeat: Date | null;
-}
 
 export interface ClientHealth {
   socketId: string;
@@ -27,332 +8,222 @@ export interface ClientHealth {
   lastPing: Date;
   lastPong: Date;
   latency: number;
+  missedPings: number;
   reconnectCount: number;
-  errorCount: number;
-  messageQueueSize: number;
+  messagesSent: number;
+  messagesReceived: number;
+  errors: number;
+  connectionTime: Date;
+}
+
+export interface HealthMetrics {
+  activeClients: number;
+  healthyClients: number;
+  degradedClients: number;
+  disconnectedClients: number;
+  averageLatency: number;
+  connectionUptime: number;
+  messageDeliveryRate: number;
+  errorRate: number;
 }
 
 export class WebSocketHealthMonitor extends EventEmitter {
   private io: SocketIOServer;
-  private metrics: ConnectionMetrics;
-  private clientHealthMap: Map<string, ClientHealth> = new Map();
-  private monitoringInterval: NodeJS.Timeout | null = null;
+  private clients: Map<string, ClientHealth> = new Map();
+  private checkInterval: NodeJS.Timeout | null = null;
   private metricsInterval: NodeJS.Timeout | null = null;
-  private startTime: Date;
   
-  // Health check thresholds
-  private readonly HEARTBEAT_INTERVAL = 15000; // 15 seconds
-  private readonly HEARTBEAT_TIMEOUT = 45000; // 45 seconds
-  private readonly MAX_LATENCY = 5000; // 5 seconds
-  private readonly MAX_ERROR_RATE = 0.1; // 10% error rate
-  private readonly MIN_CONNECTION_STABILITY = 0.9; // 90% uptime
-
   constructor(io: SocketIOServer) {
     super();
     this.io = io;
-    this.startTime = new Date();
-    
-    this.metrics = {
-      totalConnections: 0,
-      activeConnections: 0,
-      reconnections: 0,
-      disconnections: 0,
-      messagesSent: 0,
-      messagesReceived: 0,
-      errors: 0,
-      averageLatency: 0,
-      connectionUptime: 100,
-      lastHeartbeat: null
-    };
-
-    this.startMonitoring();
-  }
-
-  private startMonitoring() {
-    // Monitor connection health every 5 seconds
-    this.monitoringInterval = setInterval(() => {
-      this.checkConnectionHealth();
-    }, 5000);
-
-    // Update metrics every second
-    this.metricsInterval = setInterval(() => {
-      this.updateMetrics();
-    }, 1000);
-
-    console.log('[WebSocketHealthMonitor] Health monitoring started');
+    this.startHealthChecks();
+    this.startMetricsReporting();
   }
 
   public trackConnection(socket: Socket, userId?: string) {
-    const clientHealth: ClientHealth = {
+    const health: ClientHealth = {
       socketId: socket.id,
       userId,
       connected: true,
       lastPing: new Date(),
       lastPong: new Date(),
       latency: 0,
+      missedPings: 0,
       reconnectCount: 0,
-      errorCount: 0,
-      messageQueueSize: 0
+      messagesSent: 0,
+      messagesReceived: 0,
+      errors: 0,
+      connectionTime: new Date()
     };
 
-    this.clientHealthMap.set(socket.id, clientHealth);
-    this.metrics.totalConnections++;
-    this.metrics.activeConnections++;
-
-    // Setup heartbeat for this client
-    this.setupClientHeartbeat(socket);
-
-    this.emit('client:connected', { socketId: socket.id, userId });
+    this.clients.set(socket.id, health);
+    
+    // Set up ping/pong handlers
+    socket.on('pong', (data?: { timestamp?: number }) => {
+      const client = this.clients.get(socket.id);
+      if (client) {
+        client.lastPong = new Date();
+        client.missedPings = 0;
+        
+        if (data?.timestamp) {
+          client.latency = Date.now() - data.timestamp;
+        }
+      }
+    });
   }
 
-  public trackDisconnection(socketId: string, reason?: string) {
-    const client = this.clientHealthMap.get(socketId);
+  public trackDisconnection(socketId: string) {
+    const client = this.clients.get(socketId);
     if (client) {
       client.connected = false;
-      this.metrics.disconnections++;
-      this.metrics.activeConnections = Math.max(0, this.metrics.activeConnections - 1);
       
-      this.emit('client:disconnected', { 
-        socketId, 
-        userId: client.userId, 
-        reason,
-        sessionDuration: Date.now() - client.lastPing.getTime()
-      });
-
-      // Keep client info for potential reconnection tracking
+      // Keep the client in memory for a while in case of reconnection
       setTimeout(() => {
-        // Clean up after 5 minutes if not reconnected
-        if (!this.clientHealthMap.get(socketId)?.connected) {
-          this.clientHealthMap.delete(socketId);
+        if (!this.clients.get(socketId)?.connected) {
+          this.clients.delete(socketId);
         }
-      }, 300000);
+      }, 300000); // 5 minutes
     }
   }
 
-  public trackReconnection(socketId: string, oldSocketId?: string) {
-    const client = this.clientHealthMap.get(oldSocketId || socketId);
+  public trackReconnection(socketId: string) {
+    const client = this.clients.get(socketId);
     if (client) {
       client.connected = true;
       client.reconnectCount++;
-      client.socketId = socketId;
-      this.metrics.reconnections++;
-      
-      // Move to new socket ID if changed
-      if (oldSocketId && oldSocketId !== socketId) {
-        this.clientHealthMap.delete(oldSocketId);
-        this.clientHealthMap.set(socketId, client);
-      }
-
-      this.emit('client:reconnected', { 
-        socketId, 
-        userId: client.userId,
-        reconnectCount: client.reconnectCount 
-      });
+      client.lastPing = new Date();
+      client.lastPong = new Date();
+      client.missedPings = 0;
     }
   }
 
   public trackMessage(socketId: string, direction: 'sent' | 'received') {
-    const client = this.clientHealthMap.get(socketId);
+    const client = this.clients.get(socketId);
     if (client) {
       if (direction === 'sent') {
-        this.metrics.messagesSent++;
+        client.messagesSent++;
       } else {
-        this.metrics.messagesReceived++;
+        client.messagesReceived++;
       }
     }
   }
 
-  public trackError(socketId: string, error: Error) {
-    const client = this.clientHealthMap.get(socketId);
+  public trackError(socketId: string) {
+    const client = this.clients.get(socketId);
     if (client) {
-      client.errorCount++;
-      this.metrics.errors++;
-      
-      // Check if error rate is too high
-      const errorRate = this.metrics.errors / (this.metrics.messagesSent + this.metrics.messagesReceived || 1);
-      if (errorRate > this.MAX_ERROR_RATE) {
-        this.emit('health:warning', {
-          type: 'high_error_rate',
-          rate: errorRate,
-          threshold: this.MAX_ERROR_RATE
-        });
-      }
+      client.errors++;
     }
-  }
-
-  private setupClientHeartbeat(socket: Socket) {
-    const heartbeatInterval = setInterval(() => {
-      const client = this.clientHealthMap.get(socket.id);
-      if (!client || !client.connected) {
-        clearInterval(heartbeatInterval);
-        return;
-      }
-
-      // Send ping and track time
-      client.lastPing = new Date();
-      socket.emit('ping', { timestamp: Date.now() });
-      
-      // Check for timeout
-      const timeSinceLastPong = Date.now() - client.lastPong.getTime();
-      if (timeSinceLastPong > this.HEARTBEAT_TIMEOUT) {
-        this.emit('client:timeout', {
-          socketId: socket.id,
-          userId: client.userId,
-          lastSeen: client.lastPong
-        });
-        
-        // Force disconnect if severely timed out
-        if (timeSinceLastPong > this.HEARTBEAT_TIMEOUT * 2) {
-          socket.disconnect(true);
-        }
-      }
-    }, this.HEARTBEAT_INTERVAL);
-
-    // Handle pong response
-    socket.on('pong', (data: { timestamp: number }) => {
-      const client = this.clientHealthMap.get(socket.id);
-      if (client) {
-        client.lastPong = new Date();
-        client.latency = Date.now() - data.timestamp;
-        
-        // Update average latency
-        this.updateAverageLatency();
-        
-        // Check for high latency
-        if (client.latency > this.MAX_LATENCY) {
-          this.emit('health:warning', {
-            type: 'high_latency',
-            socketId: socket.id,
-            latency: client.latency,
-            threshold: this.MAX_LATENCY
-          });
-        }
-      }
-    });
-
-    // Clean up on disconnect
-    socket.on('disconnect', () => {
-      clearInterval(heartbeatInterval);
-    });
-  }
-
-  private checkConnectionHealth() {
-    const now = Date.now();
-    let healthyConnections = 0;
-    let unhealthyConnections: string[] = [];
-
-    this.clientHealthMap.forEach((client, socketId) => {
-      if (!client.connected) return;
-
-      const timeSinceLastPong = now - client.lastPong.getTime();
-      
-      if (timeSinceLastPong < this.HEARTBEAT_TIMEOUT) {
-        healthyConnections++;
-      } else {
-        unhealthyConnections.push(socketId);
-      }
-    });
-
-    // Calculate connection stability
-    const totalActive = healthyConnections + unhealthyConnections.length;
-    const stability = totalActive > 0 ? healthyConnections / totalActive : 1;
-    
-    if (stability < this.MIN_CONNECTION_STABILITY) {
-      this.emit('health:critical', {
-        type: 'low_stability',
-        stability,
-        unhealthyConnections,
-        threshold: this.MIN_CONNECTION_STABILITY
-      });
-    }
-
-    // Update metrics
-    this.metrics.connectionUptime = stability * 100;
-    this.metrics.lastHeartbeat = new Date();
-  }
-
-  private updateAverageLatency() {
-    const latencies: number[] = [];
-    this.clientHealthMap.forEach(client => {
-      if (client.connected && client.latency > 0) {
-        latencies.push(client.latency);
-      }
-    });
-
-    if (latencies.length > 0) {
-      this.metrics.averageLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
-    }
-  }
-
-  private updateMetrics() {
-    // Emit current metrics
-    this.emit('metrics:update', this.getMetrics());
-  }
-
-  public getMetrics(): ConnectionMetrics {
-    return { ...this.metrics };
   }
 
   public getClientHealth(socketId: string): ClientHealth | undefined {
-    return this.clientHealthMap.get(socketId);
+    return this.clients.get(socketId);
   }
 
-  public getAllClientHealth(): ClientHealth[] {
-    return Array.from(this.clientHealthMap.values());
-  }
-
-  public getHealthSummary() {
-    const uptime = Date.now() - this.startTime.getTime();
-    const errorRate = this.metrics.errors / (this.metrics.messagesSent + this.metrics.messagesReceived || 1);
+  public getHealthSummary(): {
+    clients: ClientHealth[];
+    metrics: HealthMetrics;
+    activeClients: number;
+    healthyClients: number;
+    errorRate: number;
+  } {
+    const clients = Array.from(this.clients.values());
+    const activeClients = clients.filter(c => c.connected);
+    const healthyClients = activeClients.filter(c => c.latency < 200 && c.missedPings < 2);
     
+    const totalMessages = clients.reduce((sum, c) => sum + c.messagesSent + c.messagesReceived, 0);
+    const totalErrors = clients.reduce((sum, c) => sum + c.errors, 0);
+    
+    const metrics: HealthMetrics = {
+      activeClients: activeClients.length,
+      healthyClients: healthyClients.length,
+      degradedClients: activeClients.filter(c => c.latency >= 200 || c.missedPings >= 2).length,
+      disconnectedClients: clients.filter(c => !c.connected).length,
+      averageLatency: activeClients.length > 0
+        ? activeClients.reduce((sum, c) => sum + c.latency, 0) / activeClients.length
+        : 0,
+      connectionUptime: activeClients.length > 0
+        ? (activeClients.filter(c => c.missedPings === 0).length / activeClients.length) * 100
+        : 100,
+      messageDeliveryRate: totalMessages > 0 ? ((totalMessages - totalErrors) / totalMessages) * 100 : 100,
+      errorRate: totalMessages > 0 ? (totalErrors / totalMessages) * 100 : 0
+    };
+
     return {
-      status: this.determineHealthStatus(),
-      uptime,
-      metrics: this.metrics,
-      errorRate,
-      activeClients: this.metrics.activeConnections,
-      healthyClients: Array.from(this.clientHealthMap.values()).filter(c => 
-        c.connected && (Date.now() - c.lastPong.getTime()) < this.HEARTBEAT_TIMEOUT
-      ).length,
-      warnings: this.getActiveWarnings()
+      clients,
+      metrics,
+      activeClients: activeClients.length,
+      healthyClients: healthyClients.length,
+      errorRate: metrics.errorRate
     };
   }
 
-  private determineHealthStatus(): 'healthy' | 'degraded' | 'critical' {
-    const errorRate = this.metrics.errors / (this.metrics.messagesSent + this.metrics.messagesReceived || 1);
-    const stability = this.metrics.connectionUptime / 100;
-    
-    if (errorRate > this.MAX_ERROR_RATE * 2 || stability < 0.5) {
-      return 'critical';
-    } else if (errorRate > this.MAX_ERROR_RATE || stability < this.MIN_CONNECTION_STABILITY) {
-      return 'degraded';
-    }
-    return 'healthy';
+  private startHealthChecks() {
+    this.checkInterval = setInterval(() => {
+      const now = new Date();
+      
+      for (const [socketId, client] of this.clients) {
+        if (!client.connected) continue;
+        
+        const timeSinceLastPong = now.getTime() - client.lastPong.getTime();
+        
+        // Check for timeout (60 seconds)
+        if (timeSinceLastPong > 60000) {
+          this.emit('client:timeout', {
+            socketId,
+            userId: client.userId,
+            lastSeen: client.lastPong
+          });
+          
+          // Mark as disconnected
+          client.connected = false;
+        }
+        // Check for degraded connection (30 seconds)
+        else if (timeSinceLastPong > 30000) {
+          client.missedPings++;
+          
+          if (client.missedPings === 3) {
+            this.emit('health:warning', {
+              type: 'connection_degraded',
+              socketId,
+              userId: client.userId,
+              missedPings: client.missedPings,
+              latency: client.latency
+            });
+          }
+        }
+      }
+      
+      // Check overall health
+      const summary = this.getHealthSummary();
+      if (summary.metrics.errorRate > 10) {
+        this.emit('health:critical', {
+          type: 'high_error_rate',
+          errorRate: summary.metrics.errorRate,
+          affectedClients: summary.clients.filter(c => c.errors > 0).length
+        });
+      }
+      
+      if (summary.metrics.averageLatency > 500) {
+        this.emit('health:warning', {
+          type: 'high_latency',
+          averageLatency: summary.metrics.averageLatency,
+          affectedClients: summary.clients.filter(c => c.latency > 500).length
+        });
+      }
+    }, 10000); // Check every 10 seconds
   }
 
-  private getActiveWarnings(): string[] {
-    const warnings: string[] = [];
-    const errorRate = this.metrics.errors / (this.metrics.messagesSent + this.metrics.messagesReceived || 1);
-    
-    if (errorRate > this.MAX_ERROR_RATE) {
-      warnings.push(`High error rate: ${(errorRate * 100).toFixed(2)}%`);
-    }
-    
-    if (this.metrics.averageLatency > this.MAX_LATENCY * 0.5) {
-      warnings.push(`High average latency: ${this.metrics.averageLatency}ms`);
-    }
-    
-    if (this.metrics.connectionUptime < this.MIN_CONNECTION_STABILITY * 100) {
-      warnings.push(`Low connection stability: ${this.metrics.connectionUptime.toFixed(2)}%`);
-    }
-    
-    return warnings;
+  private startMetricsReporting() {
+    this.metricsInterval = setInterval(() => {
+      const summary = this.getHealthSummary();
+      this.emit('metrics:update', summary.metrics);
+    }, 30000); // Report every 30 seconds
   }
 
   public stop() {
-    if (this.monitoringInterval) {
-      clearInterval(this.monitoringInterval);
-      this.monitoringInterval = null;
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval);
+      this.checkInterval = null;
     }
     
     if (this.metricsInterval) {
@@ -360,7 +231,7 @@ export class WebSocketHealthMonitor extends EventEmitter {
       this.metricsInterval = null;
     }
     
+    this.clients.clear();
     this.removeAllListeners();
-    console.log('[WebSocketHealthMonitor] Health monitoring stopped');
   }
 }

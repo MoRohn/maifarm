@@ -84,12 +84,14 @@ export class WebSocketConnectionManager {
       this.socket = io(this.options.url, {
         transports,
         reconnection: false, // We'll handle reconnection manually
-        timeout: 10000,
+        timeout: 20000, // Increased timeout for stability
         path: '/socket.io/',
         autoConnect: true,
         forceNew: false, // Reuse existing connections
         multiplex: true, // Allow multiplexing
         perMessageDeflate: true, // Enable compression
+        closeOnBeforeunload: false, // Don't close on page navigation
+        withCredentials: true,
         query: {
           clientVersion: '2.0.0',
           enableMetrics: 'true'

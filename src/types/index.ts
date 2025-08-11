@@ -100,6 +100,7 @@ export interface Agent {
   }>;
   metrics?: {
     tasksCompleted: number;
+    filesCreated?: number;  // New: Count of files created by agent
     successRate: number;
     averageTaskDuration: number;
     uptime: number;
@@ -214,11 +215,13 @@ export interface FarmConfig {
     backupRegions?: string[];
   };
   autoPauseOnClose?: boolean; // Per-farm setting for auto-pause behavior
+  persistInBackground?: boolean; // Persist farm data in database after completion
 }
 
 export interface FarmMetrics {
   totalTasks: number;
   completedTasks: number;
+  filesCreated?: number;  // New: Total files created by all agents in farm
   failedTasks: number;
   avgCompletionTime: number;
   resourceUsage: {

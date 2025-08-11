@@ -1,0 +1,590 @@
+name: Harvest Terminal Ultra - Next-Gen CLI Interface & Mobile Tunnel System
+description: |
+  Transform the MaiFarm Harvest Terminal into a cutting-edge CLI experience using patterns from claude-code-templates.
+  Create a stunning terminal interface with mobile monitoring capabilities via Cloudflare tunnel, real-time WebSocket 
+  enhancements, and beautiful visual effects. This comprehensive upgrade will revolutionize how users interact with 
+  multi-agent systems through an immersive terminal experience.
+
+initial_prompt: |
+  You are part of a specialized team upgrading the MaiFarm Harvest Terminal to create the most impressive CLI interface
+  ever built for multi-agent orchestration. Your mission is to integrate modern terminal UI patterns from the 
+  claude-code-templates repository (https://github.com/davila7/claude-code-templates), implement Cloudflare tunnel for 
+  mobile monitoring, and create an awe-inspiring terminal experience that rivals professional terminal emulators.
+  
+  The upgraded Harvest Terminal must provide:
+  - Beautiful, themed terminal windows with animations and effects
+  - Mobile-optimized interface accessible via Cloudflare tunnel
+  - Real-time agent communication visualization
+  - Advanced command palette and keyboard shortcuts
+  - Rich terminal output with syntax highlighting and inline previews
+  - Performance metrics and live monitoring dashboards
+  - Session recording and replay capabilities
+  - Multi-tab support for concurrent sessions
+  
+  Technical Requirements:
+  - React + TypeScript for component architecture
+  - Tailwind CSS for styling with custom terminal themes
+  - Framer Motion for smooth animations
+  - XTerm.js or similar for professional terminal emulation
+  - Socket.io for real-time bidirectional communication
+  - Chart.js for performance visualizations
+  - Cloudflare Tunnel for secure remote access
+  - Mobile-first responsive design
+  
+  Key Integration Points:
+  - Enhance existing HarvestTerminal.tsx component
+  - Integrate with tmux session management
+  - Connect to WebSocket event system
+  - Maintain compatibility with multi_claude.py orchestration
+  - Support Farm, Quick Task, and GoWild modes
+
+steps:
+  - content: |
+      AGENT 1: Template Analyzer & System Architect
+      
+      Your role is to deeply analyze the claude-code-templates repository and create a comprehensive
+      architecture for the Harvest Terminal upgrade. You will be the technical lead who understands
+      both systems and guides the implementation.
+    description: |
+      Phase 1 - Repository Analysis (30 minutes):
+      1. Navigate to the cloned claude-templates-analysis directory
+      2. Analyze the mobile chat interface (cli-tool/src/analytics-web/chats_mobile.html)
+      3. Study the WebSocket implementation (cli-tool/src/analytics-web/services/WebSocketService.js)
+      4. Examine the state management system (cli-tool/src/analytics-web/services/StateService.js)
+      5. Review the terminal styling and theme system in the CSS files
+      6. Document all reusable patterns, components, and utilities
+      
+      Phase 2 - Architecture Blueprint Creation (45 minutes):
+      1. Create a detailed architecture document: `docs/HARVEST_TERMINAL_ARCHITECTURE.md`
+      2. Define the component hierarchy:
+         - HarvestTerminalPro (main container)
+         - TerminalThemeProvider (theme management)
+         - AgentTerminalGrid (multi-agent display)
+         - CommandPalette (quick actions)
+         - PerformanceMonitor (metrics display)
+         - MobileTerminalView (responsive mobile UI)
+         - CloudflareTunnelManager (remote access)
+      3. Design the data flow architecture:
+         - WebSocket event handling
+         - State management with Zustand
+         - Real-time data synchronization
+         - Mobile-desktop state sync
+      4. Create interface definitions in TypeScript
+      5. Define the theme system with multiple terminal themes
+      6. Plan the mobile-first responsive layout
+      
+      Phase 3 - Integration Planning (30 minutes):
+      1. Map existing HarvestTerminal.tsx functionality to new components
+      2. Identify WebSocket events that need enhancement
+      3. Plan backward compatibility strategy
+      4. Create migration guide for existing features
+      5. Define performance optimization strategies
+      
+      Deliverables:
+      - Architecture document with diagrams
+      - Component interface definitions
+      - Integration roadmap
+      - Theme system specification
+
+  - content: |
+      AGENT 2: Terminal UI Designer & Theme Artist
+      
+      Your mission is to create the most visually stunning terminal interface ever built,
+      with beautiful themes, smooth animations, and professional terminal emulation.
+    description: |
+      Phase 1 - Theme System Implementation (45 minutes):
+      1. Create `src/components/Harvest/themes/` directory structure
+      2. Implement terminal themes:
+         ```typescript
+         // src/components/Harvest/themes/terminalThemes.ts
+         export const themes = {
+           matrix: {
+             name: 'Matrix',
+             colors: {
+               background: '#0c0c0c',
+               foreground: '#00ff00',
+               cursor: '#00ff00',
+               selection: 'rgba(0, 255, 0, 0.3)',
+               // ... complete color palette
+             },
+             effects: {
+               rainEffect: true,
+               glowText: true,
+               scanlines: true
+             }
+           },
+           cyberpunk: {
+             name: 'Cyberpunk 2077',
+             colors: {
+               background: '#0a0e1a',
+               foreground: '#00d9ff',
+               accent: '#ff0080',
+               // ... neon color scheme
+             },
+             effects: {
+               neonGlow: true,
+               glitchEffect: true,
+               particleBackground: true
+             }
+           },
+           // Add 5+ more themes
+         }
+         ```
+      3. Create theme provider component with context
+      4. Implement theme switcher with preview
+      5. Add CSS custom properties for dynamic theming
+      
+      Phase 2 - Terminal Window Components (60 minutes):
+      1. Create `TerminalWindow` component with:
+         - Custom title bar with agent name
+         - Status indicators (active, idle, working)
+         - Minimize/maximize/close buttons
+         - Resize handles
+         - Tab support for multiple sessions
+      2. Implement `TerminalOutput` component:
+         - Syntax highlighting for code blocks
+         - Clickable links and file paths
+         - Inline image previews
+         - Collapsible sections
+         - Search functionality
+      3. Create `TerminalPrompt` component:
+         - Auto-complete suggestions
+         - Command history navigation
+         - Multi-line editing support
+         - Snippet insertion
+      4. Build `AgentStatusCard`:
+         - Live activity indicator
+         - Performance metrics
+         - Task progress bar
+         - Communication graph
+      
+      Phase 3 - Animation System (45 minutes):
+      1. Implement Framer Motion animations:
+         ```typescript
+         // src/components/Harvest/animations/terminalAnimations.ts
+         export const terminalAnimations = {
+           windowEntry: {
+             initial: { scale: 0.8, opacity: 0, y: 20 },
+             animate: { scale: 1, opacity: 1, y: 0 },
+             transition: { type: "spring", stiffness: 300 }
+           },
+           typewriterEffect: {
+             // Character-by-character reveal
+           },
+           glowPulse: {
+             // Pulsing glow for active agents
+           }
+         }
+         ```
+      2. Create transition effects between views
+      3. Add particle effects for special events
+      4. Implement smooth scrolling with momentum
+      5. Create loading animations for async operations
+      
+      Phase 4 - Professional Terminal Emulation (30 minutes):
+      1. Integrate XTerm.js or similar library
+      2. Configure terminal settings:
+         - Font family and size options
+         - Cursor styles (block, bar, underline)
+         - Bell notifications
+         - Scrollback buffer size
+      3. Implement copy/paste functionality
+      4. Add search within terminal output
+      5. Create session recording capability
+      
+      Deliverables:
+      - Complete theme system with 7+ themes
+      - Terminal window components
+      - Animation library
+      - Professional terminal emulator integration
+
+  - content: |
+      AGENT 3: Mobile Interface & Cloudflare Tunnel Engineer
+      
+      You will create the mobile-optimized interface and set up Cloudflare tunnel for 
+      secure remote monitoring from any device, anywhere in the world.
+    description: |
+      Phase 1 - Mobile Terminal Interface (60 minutes):
+      1. Create `src/components/Harvest/mobile/` directory
+      2. Build `MobileTerminalView` component:
+         ```typescript
+         // src/components/Harvest/mobile/MobileTerminalView.tsx
+         import React, { useState, useEffect, useRef } from 'react';
+         import { motion, useScroll, useTransform } from 'framer-motion';
+         import { SwipeableViews } from 'react-swipeable-views';
+         
+         export const MobileTerminalView: React.FC = () => {
+           // Implement swipeable agent panels
+           // Touch gestures for navigation
+           // Pull-to-refresh for updates
+           // Floating action button for commands
+         }
+         ```
+      3. Implement responsive layouts:
+         - Portrait mode: Stacked agent cards
+         - Landscape mode: Side-by-side view
+         - Tablet mode: Grid layout
+      4. Create touch-optimized controls:
+         - Swipe between agents
+         - Pinch to zoom terminal output
+         - Long press for context menu
+         - Haptic feedback integration
+      5. Build mobile command palette:
+         - Voice input support
+         - Quick action buttons
+         - Gesture shortcuts
+      
+      Phase 2 - Cloudflare Tunnel Setup (45 minutes):
+      1. Create tunnel configuration service:
+         ```typescript
+         // server/services/cloudflareTunnel.ts
+         import { spawn } from 'child_process';
+         
+         export class CloudflareTunnelManager {
+           private tunnelProcess: any;
+           private tunnelUrl: string = '';
+           
+           async setupTunnel() {
+             // Install cloudflared if not present
+             // Generate tunnel configuration
+             // Start tunnel with authentication
+             // Return public URL for mobile access
+           }
+           
+           async generateQRCode(url: string) {
+             // Generate QR code for easy mobile access
+           }
+         }
+         ```
+      2. Implement tunnel automation:
+         - Auto-start on server launch
+         - URL detection and storage
+         - QR code generation for mobile
+         - Automatic reconnection
+      3. Create tunnel status monitor:
+         - Connection health checks
+         - Bandwidth usage tracking
+         - Active device monitoring
+      4. Add security features:
+         - Authentication layer
+         - Rate limiting
+         - IP whitelisting option
+      
+      Phase 3 - Mobile-Specific Features (45 minutes):
+      1. Implement push notifications:
+         - Agent completion alerts
+         - Error notifications
+         - Harvest ready notifications
+      2. Create mobile dashboard:
+         - Agent overview cards
+         - Quick stats widgets
+         - Battery-optimized updates
+      3. Build offline capability:
+         - Cache recent outputs
+         - Queue commands for sync
+         - Progressive Web App setup
+      4. Add mobile settings:
+         - Data saver mode
+         - Notification preferences
+         - Theme selection
+      
+      Phase 4 - Mobile Performance Optimization (30 minutes):
+      1. Implement lazy loading for terminal outputs
+      2. Use virtual scrolling for long lists
+      3. Optimize WebSocket connections for mobile
+      4. Implement adaptive quality based on connection
+      5. Add performance monitoring specific to mobile
+      
+      Deliverables:
+      - Complete mobile interface
+      - Cloudflare tunnel integration
+      - Mobile-specific features
+      - Performance optimizations
+
+  - content: |
+      AGENT 4: Real-time Features & WebSocket Specialist
+      
+      Your expertise will bring the terminal to life with real-time updates, live metrics,
+      and instantaneous agent communication visualization.
+    description: |
+      Phase 1 - Enhanced WebSocket System (45 minutes):
+      1. Create advanced WebSocket service:
+         ```typescript
+         // src/services/websocket/EnhancedWebSocketService.ts
+         export class EnhancedWebSocketService {
+           private messageQueue: Map<string, any[]> = new Map();
+           private subscriptions: Map<string, Set<Function>> = new Map();
+           
+           // Implement pub/sub pattern
+           subscribe(event: string, callback: Function) {
+             // Topic-based subscription
+           }
+           
+           // Implement message batching
+           batchMessages(messages: any[]) {
+             // Optimize for performance
+           }
+           
+           // Add reconnection strategy
+           setupReconnection() {
+             // Exponential backoff
+             // Message queue preservation
+           }
+         }
+         ```
+      2. Implement real-time event handlers:
+         - Agent state changes
+         - Terminal output streaming
+         - File system events
+         - Performance metrics
+      3. Create message prioritization:
+         - Critical alerts (high priority)
+         - Terminal output (medium)
+         - Metrics (low priority)
+      4. Add compression for large payloads
+      
+      Phase 2 - Live Communication Visualizer (60 minutes):
+      1. Build `AgentCommunicationGraph`:
+         ```typescript
+         // src/components/Harvest/visualizations/AgentCommunicationGraph.tsx
+         import { ForceGraph2D } from 'react-force-graph';
+         
+         export const AgentCommunicationGraph = () => {
+           // Real-time node updates
+           // Message flow animations
+           // Interactive tooltips
+           // Zoom and pan controls
+         }
+         ```
+      2. Create message flow animations:
+         - Data packets visualization
+         - Communication channels
+         - Bandwidth indicators
+      3. Implement agent relationship mapping:
+         - Coordination patterns
+         - Task dependencies
+         - Resource sharing
+      4. Add interaction controls:
+         - Click to focus agent
+         - Hover for details
+         - Filter by message type
+      
+      Phase 3 - Performance Monitoring Dashboard (45 minutes):
+      1. Create real-time metrics components:
+         - CPU usage gauge
+         - Memory consumption chart
+         - Network activity graph
+         - Disk I/O monitor
+      2. Build `MetricsDashboard`:
+         ```typescript
+         // src/components/Harvest/metrics/MetricsDashboard.tsx
+         export const MetricsDashboard = () => {
+           // Live chart updates
+           // Historical data view
+           // Alerting thresholds
+           // Export capabilities
+         }
+         ```
+      3. Implement performance alerts:
+         - Resource threshold warnings
+         - Anomaly detection
+         - Predictive alerts
+      4. Add metrics persistence:
+         - Local storage for history
+         - Export to CSV/JSON
+         - Comparison views
+      
+      Phase 4 - Smart Features (30 minutes):
+      1. Implement intelligent auto-scroll:
+         - Pause on user interaction
+         - Resume on inactivity
+         - Jump to important events
+      2. Create smart notifications:
+         - Pattern recognition
+         - Important event detection
+         - Batched notifications
+      3. Add predictive features:
+         - Command suggestions
+         - Completion time estimates
+         - Resource predictions
+      
+      Deliverables:
+      - Enhanced WebSocket service
+      - Live visualization components
+      - Performance monitoring dashboard
+      - Smart real-time features
+
+  - content: |
+      AGENT 5: Integration Master & Quality Assurance
+      
+      You will integrate all components, ensure backward compatibility, and deliver
+      a production-ready Harvest Terminal that exceeds all expectations.
+    description: |
+      Phase 1 - Component Integration (60 minutes):
+      1. Update main HarvestTerminal component:
+         ```typescript
+         // src/components/Harvest/HarvestTerminal.tsx
+         import { HarvestTerminalPro } from './HarvestTerminalPro';
+         
+         // Maintain backward compatibility
+         export const HarvestTerminal: React.FC<HarvestTerminalProps> = (props) => {
+           const { legacyMode = false } = props;
+           
+           if (legacyMode) {
+             return <LegacyHarvestTerminal {...props} />;
+           }
+           
+           return <HarvestTerminalPro {...props} />;
+         }
+         ```
+      2. Create feature flags system:
+         - Progressive rollout
+         - A/B testing support
+         - User preferences
+      3. Integrate all new components:
+         - Theme system
+         - Mobile views
+         - WebSocket enhancements
+         - Visualization tools
+      4. Wire up event handlers:
+         - Cross-component communication
+         - State synchronization
+         - Error boundaries
+      
+      Phase 2 - Testing Suite (45 minutes):
+      1. Write comprehensive tests:
+         ```typescript
+         // src/components/Harvest/__tests__/HarvestTerminalPro.test.tsx
+         describe('HarvestTerminalPro', () => {
+           it('should render all agents in grid view', async () => {
+             // Test grid layout
+           });
+           
+           it('should handle theme switching', () => {
+             // Test theme changes
+           });
+           
+           it('should manage WebSocket reconnection', () => {
+             // Test connection resilience
+           });
+         });
+         ```
+      2. Create integration tests:
+         - Multi-agent coordination
+         - Mobile-desktop sync
+         - Cloudflare tunnel connectivity
+      3. Add performance tests:
+         - Render performance
+         - Memory usage
+         - WebSocket throughput
+      4. Implement E2E tests:
+         - Complete user workflows
+         - Mobile experience
+         - Error recovery
+      
+      Phase 3 - Documentation & Examples (45 minutes):
+      1. Create comprehensive documentation:
+         ```markdown
+         # Harvest Terminal Pro - User Guide
+         
+         ## Features
+         - Professional terminal emulation
+         - 7+ beautiful themes
+         - Mobile monitoring via Cloudflare
+         - Real-time visualizations
+         
+         ## Quick Start
+         1. Launch Farm/Quick Task
+         2. Access terminal view
+         3. Choose theme
+         4. Enable mobile access (optional)
+         
+         ## Keyboard Shortcuts
+         - Cmd/Ctrl + K: Command palette
+         - Cmd/Ctrl + T: New tab
+         - Cmd/Ctrl + 1-9: Switch tabs
+         ```
+      2. Create video tutorials:
+         - Setup walkthrough
+         - Feature demonstrations
+         - Mobile configuration
+      3. Build example configurations:
+         - Theme customization
+         - WebSocket settings
+         - Performance tuning
+      
+      Phase 4 - Production Optimization (30 minutes):
+      1. Implement code splitting:
+         - Lazy load heavy components
+         - Dynamic imports
+         - Route-based splitting
+      2. Optimize bundle size:
+         - Tree shaking
+         - Minification
+         - Compression
+      3. Add monitoring:
+         - Error tracking (Sentry)
+         - Analytics
+         - Performance monitoring
+      4. Create deployment checklist:
+         - Environment variables
+         - Security review
+         - Performance benchmarks
+      
+      Phase 5 - Final Integration (30 minutes):
+      1. Merge all agent contributions
+      2. Resolve any conflicts
+      3. Run full test suite
+      4. Create demo video
+      5. Prepare release notes
+      
+      Deliverables:
+      - Fully integrated Harvest Terminal Pro
+      - Comprehensive test suite
+      - Complete documentation
+      - Production-ready deployment
+
+coordination:
+  communication_style: |
+    Agents should communicate through structured messages in coordination files:
+    - Status updates every 15 minutes
+    - Component handoffs with interface contracts
+    - Issue reporting with proposed solutions
+    - Progress tracking with completion percentages
+  
+  file_structure: |
+    Create organized file structure:
+    maibarn/coordination/harvest-terminal-upgrade/
+    ├── agent-1-architecture/
+    ├── agent-2-ui-design/
+    ├── agent-3-mobile/
+    ├── agent-4-realtime/
+    ├── agent-5-integration/
+    └── shared-interfaces/
+  
+  quality_standards: |
+    - TypeScript strict mode
+    - 90%+ test coverage for critical paths
+    - Accessibility WCAG 2.1 AA compliance
+    - Performance budget: <3s initial load
+    - Mobile score: 95+ on Lighthouse
+
+success_metrics:
+  - Beautiful, professional terminal interface with 7+ themes
+  - Mobile access working via Cloudflare tunnel
+  - Real-time updates with <100ms latency
+  - All existing features maintained
+  - Comprehensive test coverage
+  - Complete documentation
+  - Demo video showcasing all features
+
+final_notes: |
+  This is an ambitious upgrade that will transform the Harvest Terminal into a world-class
+  interface for multi-agent orchestration. Each agent has specific expertise and responsibilities.
+  Work collaboratively, communicate clearly, and create something extraordinary that will
+  amaze users and set a new standard for CLI interfaces in AI orchestration systems.
+  
+  Remember: The goal is not just functionality, but to create an experience that makes users
+  feel like they're operating a sophisticated command center from a sci-fi movie. Every detail
+  matters - from the subtle glow of active terminals to the smooth animations when switching
+  between agents. Make it memorable, make it powerful, make it beautiful.

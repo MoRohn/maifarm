@@ -287,11 +287,11 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
         console.error('[Delete] Error killing tmux session:', tmuxError);
       }
       
-      // 3. Try multiClaudeService if processId exists
+      // 3. Try orchestratorService if processId exists
       if (farm.config?.processId) {
         try {
-          const { multiClaudeService } = require('../services/multiClaudeService');
-          await multiClaudeService.stopFarm(farm.config.processId);
+          const { orchestratorService } = require('../services/OrchestratorService');
+          await orchestratorService.stopFarm(farm.config.processId);
           console.log(`[Delete] Stopped multi-claude process ${farm.config.processId}`);
         } catch (stopError) {
           console.error('[Delete] Error stopping multi-claude process:', stopError);
@@ -481,9 +481,9 @@ router.get('/:id/multi-claude/status', async (req: AuthRequest, res: Response) =
       });
     }
 
-    // Get actual status from multiClaudeService
-    const { multiClaudeService } = require('../services/multiClaudeService');
-    const status = await multiClaudeService.getStatus(id);
+    // Get actual status from orchestratorService
+    const { orchestratorService } = require('../services/OrchestratorService');
+    const status = await orchestratorService.getStatus(id);
     
     res.json({
       success: true,

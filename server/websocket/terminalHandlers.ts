@@ -1,6 +1,7 @@
 import { Server as SocketServer, Socket } from 'socket.io';
 import { spawn } from 'child_process';
 import { TerminalEvent } from '../../types/terminal';
+import { terminalOutputWatcher } from '../services/terminalOutputWatcher';
 
 interface TerminalWebSocketHandlers {
   handleTerminalConnect: (socket: Socket) => void;
@@ -134,59 +135,63 @@ export const createTerminalWebSocketHandlers = (io: SocketServer): TerminalWebSo
   const startOutputMonitoring = (sessionId: string, agentCount: number) => {
     console.log(`Starting output monitoring for session ${sessionId} with ${agentCount} agents`);
     
-    // Clear any existing monitoring for this session
-    stopOutputMonitoring(sessionId);
-    
-    const intervals: NodeJS.Timeout[] = [];
-    
-    // Monitor each agent's output
-    for (let agentId = 0; agentId < agentCount; agentId++) {
-      const interval = setInterval(async () => {
-        try {
-          const output = await captureAgentOutput(sessionId, agentId);
-          
-          if (output && output.length > 0) {
-            const event: TerminalEvent = {
-              type: 'output',
-              sessionId,
-              agentId,
-              data: {
-                lines: output,
-                timestamp: new Date()
-              },
-              timestamp: new Date()
-            };
-            
-            broadcastTerminalEvent(io, event);
-          }
-        } catch (error) {
-          console.error(`Error monitoring output for ${sessionId}:${agentId}:`, error);
-          
-          // Broadcast error event
-          const errorEvent: TerminalEvent = {
-            type: 'status',
-            sessionId,
-            agentId,
-            data: {
-              status: 'error',
-              error: error instanceof Error ? error.message : 'Unknown error'
-            },
-            timestamp: new Date()
-          };
-          
-          broadcastTerminalEvent(io, errorEvent);
-        }
-      }, 2000); // Check every 2 seconds
+    // Use the improved terminal output watcher instead of polling
+    if (!terminalOutputWatcher.isWatching(sessionId)) {
+      // Set the WebSocket server if not already set
+      terminalOutputWatcher.setWebSocketServer(io);
       
-      intervals.push(interval);
+      // Start watching with efficient change detection
+      terminalOutputWatcher.startWatching(sessionId, undefined, agentCount)
+        .then(() => {
+          console.log(`Terminal output watcher started for session ${sessionId}`);
+        })
+        .catch(error => {
+          console.error(`Failed to start terminal output watcher for ${sessionId}:`, error);
+          
+          // Fallback to polling approach if watcher fails
+          const intervals: NodeJS.Timeout[] = [];
+          
+          for (let agentId = 0; agentId < agentCount; agentId++) {
+            const interval = setInterval(async () => {
+              try {
+                const output = await captureAgentOutput(sessionId, agentId);
+                
+                if (output && output.length > 0) {
+                  const event: TerminalEvent = {
+                    type: 'output',
+                    sessionId,
+                    agentId,
+                    data: {
+                      lines: output,
+                      timestamp: new Date()
+                    },
+                    timestamp: new Date()
+                  };
+                  
+                  broadcastTerminalEvent(io, event);
+                }
+              } catch (error) {
+                console.error(`Error monitoring output for ${sessionId}:${agentId}:`, error);
+              }
+            }, 2000);
+            
+            intervals.push(interval);
+          }
+          
+          monitoringProcesses.set(sessionId, intervals);
+        });
     }
-    
-    monitoringProcesses.set(sessionId, intervals);
   };
 
   const stopOutputMonitoring = (sessionId: string) => {
     console.log(`Stopping output monitoring for session ${sessionId}`);
     
+    // Stop the terminal output watcher
+    if (terminalOutputWatcher.isWatching(sessionId)) {
+      terminalOutputWatcher.stopWatching(sessionId);
+    }
+    
+    // Also clear any fallback polling intervals
     const intervals = monitoringProcesses.get(sessionId);
     if (intervals) {
       intervals.forEach(interval => clearInterval(interval));

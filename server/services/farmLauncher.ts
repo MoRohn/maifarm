@@ -3,6 +3,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import yaml from 'js-yaml';
 import { Farm } from '../types/farm';
+import { pathConfig } from '../config/paths';
+import { fileManager } from './fileManagerService';
 
 interface LaunchOptions {
   farmId: string;
@@ -19,31 +21,41 @@ export class FarmLauncher {
 
   constructor() {
     this.scriptsDir = path.join(process.cwd(), 'scripts');
-    this.coordDir = '/tmp/claude_coordination';
+    // Use centralized path configuration for coordination directory
+    this.coordDir = pathConfig.getPath('COORDINATION_DIR');
   }
 
   async launchFarm(options: LaunchOptions): Promise<{ success: boolean; message: string }> {
     try {
-      // Ensure coordination directory exists
-      await fs.mkdir(this.coordDir, { recursive: true });
+      // Ensure coordination directory exists using fileManager
+      await fileManager.ensureDirectory(this.coordDir);
 
-      // Create a temporary YAML file for the farm configuration
-      const configFile = path.join(this.coordDir, `farm_${options.farmId}.yaml`);
+      // Create a YAML file for the farm configuration in the isolated coordination directory
+      const configFile = pathConfig.getFarmCoordinationPath(options.farmId);
       const yamlConfig = {
         name: `Farm ${options.farmId}`,
         initial_prompt: options.prompt,
         context_files: options.contextFiles || [],
       };
 
-      await fs.writeFile(configFile, yaml.dump(yamlConfig));
+      // Use fileManager to write the config file with validation
+      await fileManager.writeFile(configFile, yaml.dump(yamlConfig));
 
       // Build the command
-      const scriptPath = path.join(process.cwd(), 'multi_claude.py');
+      const scriptPath = path.join(process.cwd(), 'orchestrator.py');
+      // Use consistent session naming: farm_<first-8-chars-of-id> or quick_<task-id> for quick tasks
+      let sessionName: string;
+      if (options.farmId.startsWith('quick-task-')) {
+        const taskId = options.farmId.replace('quick-task-', '').substring(0, 8);
+        sessionName = `quick_${taskId}`;
+      } else {
+        sessionName = `farm_${options.farmId.substring(0, 8)}`;
+      }
       const args = [
         scriptPath,
         '-n', options.numberOfAgents.toString(),
         '--prompt-file', configFile,
-        '--session', `farm_${options.farmId}`
+        '--session', sessionName
       ];
 
       // Add collaboration flag if needed
@@ -68,13 +80,15 @@ export class FarmLauncher {
 
       // Log the launch
       console.log(`[FarmLauncher] Launched farm ${options.farmId} with ${options.numberOfAgents} agents`);
+      console.log(`[FarmLauncher] Using tmux session name: ${sessionName}`);
       if (options.contextFiles?.length) {
         console.log(`[FarmLauncher] Included ${options.contextFiles.length} context files`);
       }
 
       return {
         success: true,
-        message: `Farm ${options.farmId} launched successfully with ${options.numberOfAgents} agents`
+        message: `Farm ${options.farmId} launched successfully with ${options.numberOfAgents} agents`,
+        sessionName
       };
     } catch (error) {
       console.error('[FarmLauncher] Error launching farm:', error);
@@ -87,8 +101,14 @@ export class FarmLauncher {
 
   async stopFarm(farmId: string): Promise<{ success: boolean; message: string }> {
     try {
-      // Kill the tmux session
-      const sessionName = `farm_${farmId}`;
+      // Kill the tmux session - use same naming convention
+      let sessionName: string;
+      if (farmId.startsWith('quick-task-')) {
+        const taskId = farmId.replace('quick-task-', '').substring(0, 8);
+        sessionName = `quick_${taskId}`;
+      } else {
+        sessionName = `farm_${farmId.substring(0, 8)}`;
+      }
       const killCommand = spawn('tmux', ['kill-session', '-t', sessionName]);
       
       return new Promise((resolve) => {
@@ -117,7 +137,13 @@ export class FarmLauncher {
 
   async getFarmStatus(farmId: string): Promise<{ active: boolean; agents: number }> {
     try {
-      const sessionName = `farm_${farmId}`;
+      let sessionName: string;
+      if (farmId.startsWith('quick-task-')) {
+        const taskId = farmId.replace('quick-task-', '').substring(0, 8);
+        sessionName = `quick_${taskId}`;
+      } else {
+        sessionName = `farm_${farmId.substring(0, 8)}`;
+      }
       
       // Check if tmux session exists
       const checkCommand = spawn('tmux', ['has-session', '-t', sessionName]);

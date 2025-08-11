@@ -1,7 +1,8 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { logAPIError } from '@/utils/errorLogger';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4567';
+// Use relative URL so Vite proxy handles the routing
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Retry configuration
 interface RetryConfig extends AxiosRequestConfig {
@@ -304,6 +305,7 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
+export { apiClient };
 
 // Helper functions for common API calls
 export const api = {
@@ -376,11 +378,40 @@ export const api = {
     delete: (id: string) => apiClient.delete(`/api/seeds/${id}`),
     recordUsage: (id: string, success: boolean) => apiClient.post(`/api/seeds/${id}/use`, { success }),
     categories: () => apiClient.get('/api/seeds/categories'),
+    // New harvest-based seed creation methods
+    createFromHarvest: (harvestId: string, data: any) => 
+      apiClient.post(`/api/seeds/from-harvest/${harvestId}`, data),
+    createFromBarnHarvest: (harvestId: string, data: any) => 
+      apiClient.post(`/api/seeds/from-barn-harvest/${harvestId}`, data),
+    enhancePrompt: (seedId: string, additionalPrompt: string) => 
+      apiClient.put(`/api/seeds/${seedId}/enhance-prompt`, { additionalPrompt }),
+    getHarvestDerived: (userOnly = false) => 
+      apiClient.get('/api/seeds/harvest-derived', { params: { userOnly } }),
   },
   
+  // Farmers
+  farmers: {
+    list: () => apiClient.get('/api/farmers'),
+    getById: (id: string) => apiClient.get(`/api/farmers/${id}`),
+    getProfile: (id: string) => apiClient.get(`/api/farmers/${id}/profile`),
+    getStats: (id: string) => apiClient.get(`/api/farmers/${id}/stats`),
+    use: (id: string, data?: any) => apiClient.post(`/api/farmers/${id}/use`, data),
+    generateYaml: (id: string, data: any) => apiClient.post(`/api/farmers/${id}/generate-yaml`, data),
+    launch: (id: string, data?: any) => apiClient.post(`/api/farmers/${id}/launch`, data),
+    categories: () => apiClient.get('/api/farmers/meta/categories'),
+  },
+
   // Barn
   barn: {
     stats: () => apiClient.get('/api/barn/stats'),
+    sync: () => apiClient.post('/api/barn/sync'),
+    getSyncStatus: () => apiClient.get('/api/barn/sync-status'),
+    getStorageStats: () => apiClient.get('/api/barn/storage-stats'),
+    cleanup: (options: any) => apiClient.post('/api/barn/cleanup', options),
+    bulkDelete: (itemIds: string[]) => apiClient.delete('/api/barn/items/bulk', { data: { itemIds } }),
+    bulkArchive: (itemIds: string[]) => apiClient.post('/api/barn/items/bulk-archive', { itemIds }),
+    getArchived: (filter?: any) => apiClient.get('/api/barn/archived', { params: filter }),
+    restore: (itemIds: string[]) => apiClient.post('/api/barn/restore', { itemIds }),
     folders: {
       list: () => apiClient.get('/api/barn/folders'),
       create: (data: any) => apiClient.post('/api/barn/folders', data),

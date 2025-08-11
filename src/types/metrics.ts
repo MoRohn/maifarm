@@ -1,3 +1,232 @@
+/**
+ * Unified Metrics Type Definitions
+ * Single source of truth for all metric types and interfaces
+ */
+
+/**
+ * Standard metric value type - always a number
+ */
+export type MetricValue = number;
+
+/**
+ * File categories for generated files
+ */
+export enum FileCategory {
+  TEXT = 'text',      // .txt, .md, .log, .csv
+  CODE = 'code',      // .js, .ts, .py, .java, .cpp, etc.
+  IMAGE = 'image',    // .png, .jpg, .svg, .gif
+  DATA = 'data',      // .json, .xml, .sql, .db
+  CONFIG = 'config',  // .yml, .yaml, .toml, .ini, .env
+  OTHER = 'other'     // Everything else
+}
+
+/**
+ * Helper function to categorize a file by its extension
+ */
+export function categorizeFile(filename: string): FileCategory {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  
+  // Text files
+  if (['txt', 'md', 'log', 'csv', 'doc', 'docx', 'pdf'].includes(ext)) {
+    return FileCategory.TEXT;
+  }
+  
+  // Code files
+  if (['js', 'ts', 'tsx', 'jsx', 'py', 'java', 'cpp', 'c', 'h', 'cs', 'rb', 'go', 'rs', 'swift', 'php', 'html', 'css', 'scss', 'sass'].includes(ext)) {
+    return FileCategory.CODE;
+  }
+  
+  // Image files
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'bmp', 'ico', 'webp'].includes(ext)) {
+    return FileCategory.IMAGE;
+  }
+  
+  // Data files
+  if (['json', 'xml', 'sql', 'db', 'sqlite', 'parquet', 'arrow'].includes(ext)) {
+    return FileCategory.DATA;
+  }
+  
+  // Config files
+  if (['yml', 'yaml', 'toml', 'ini', 'env', 'conf', 'config', 'properties'].includes(ext)) {
+    return FileCategory.CONFIG;
+  }
+  
+  return FileCategory.OTHER;
+}
+
+/**
+ * Metric names enum for consistency
+ */
+export enum MetricName {
+  // Farm metrics
+  TOTAL_FARMS = 'total_farms',
+  ACTIVE_FARMS = 'active_farms',
+  STOPPED_FARMS = 'stopped_farms',
+  FAILED_FARMS = 'failed_farms',
+  
+  // Agent metrics  
+  TOTAL_AGENTS = 'total_agents',
+  ACTIVE_AGENTS = 'active_agents',
+  IDLE_AGENTS = 'idle_agents',
+  UNIQUE_AGENTS = 'unique_agents',
+  
+  // File generation metrics
+  TOTAL_FILES = 'total_files',
+  FILES_GENERATED = 'files_generated',
+  FILES_FAILED = 'files_failed',
+  FILES_PENDING = 'files_pending',
+  SUCCESS_RATE = 'success_rate',
+  
+  // File categories
+  FILES_TEXT = 'files_text',
+  FILES_CODE = 'files_code',
+  FILES_IMAGE = 'files_image',
+  FILES_DATA = 'files_data',
+  FILES_CONFIG = 'files_config',
+  FILES_OTHER = 'files_other',
+  
+  // Resource metrics
+  CPU_USAGE = 'cpu_usage',
+  MEMORY_USAGE = 'memory_usage',
+  GPU_USAGE = 'gpu_usage',
+  DISK_USAGE = 'disk_usage',
+  NETWORK_USAGE = 'network_usage',
+  
+  // Performance metrics
+  AVG_RESPONSE_TIME = 'avg_response_time',
+  THROUGHPUT = 'throughput',
+  ERROR_RATE = 'error_rate',
+  UPTIME = 'uptime',
+  
+  // Cost metrics
+  TOTAL_COST = 'total_cost',
+  API_COST = 'api_cost',
+  COMPUTE_COST = 'compute_cost',
+  STORAGE_COST = 'storage_cost'
+}
+
+/**
+ * Standard metric labels for UI display
+ */
+export const MetricLabels: Record<MetricName, string> = {
+  [MetricName.TOTAL_FARMS]: 'Total Farms',
+  [MetricName.ACTIVE_FARMS]: 'Active Farms',
+  [MetricName.STOPPED_FARMS]: 'Stopped Farms',
+  [MetricName.FAILED_FARMS]: 'Failed Farms',
+  
+  [MetricName.TOTAL_AGENTS]: 'Total Agents',
+  [MetricName.ACTIVE_AGENTS]: 'Active Agents',
+  [MetricName.IDLE_AGENTS]: 'Idle Agents',
+  [MetricName.UNIQUE_AGENTS]: 'Unique Agents',
+  
+  [MetricName.TOTAL_TASKS]: 'Total Tasks',
+  [MetricName.COMPLETED_TASKS]: 'Completed Tasks',
+  [MetricName.FAILED_TASKS]: 'Failed Tasks',
+  [MetricName.PENDING_TASKS]: 'Pending Tasks',
+  [MetricName.SUCCESS_RATE]: 'Success Rate',
+  
+  [MetricName.CPU_USAGE]: 'CPU Usage',
+  [MetricName.MEMORY_USAGE]: 'Memory Usage',
+  [MetricName.GPU_USAGE]: 'GPU Usage',
+  [MetricName.DISK_USAGE]: 'Disk Usage',
+  [MetricName.NETWORK_USAGE]: 'Network Usage',
+  
+  [MetricName.AVG_RESPONSE_TIME]: 'Avg Response Time',
+  [MetricName.THROUGHPUT]: 'Throughput',
+  [MetricName.ERROR_RATE]: 'Error Rate',
+  [MetricName.UPTIME]: 'Uptime',
+  
+  [MetricName.TOTAL_COST]: 'Total Cost',
+  [MetricName.API_COST]: 'API Cost',
+  [MetricName.COMPUTE_COST]: 'Compute Cost',
+  [MetricName.STORAGE_COST]: 'Storage Cost'
+};
+
+/**
+ * Metric units for display
+ */
+export enum MetricUnit {
+  COUNT = 'count',
+  PERCENTAGE = 'percentage',
+  MILLISECONDS = 'ms',
+  SECONDS = 's',
+  BYTES = 'bytes',
+  KILOBYTES = 'KB',
+  MEGABYTES = 'MB',
+  GIGABYTES = 'GB',
+  DOLLARS = 'USD',
+  REQUESTS_PER_SECOND = 'req/s'
+}
+
+/**
+ * Core metrics interface - all values are numbers
+ */
+export interface CoreMetrics {
+  // Farm metrics
+  totalFarms: MetricValue;
+  activeFarms: MetricValue;
+  stoppedFarms: MetricValue;
+  failedFarms: MetricValue;
+  
+  // Agent metrics (deduplicated)
+  totalAgents: MetricValue;
+  activeAgents: MetricValue;
+  idleAgents: MetricValue;
+  uniqueAgents: MetricValue; // Count of unique agent IDs
+  
+  // File generation metrics (new)
+  totalFiles: MetricValue;
+  filesGenerated: MetricValue;
+  filesFailed: MetricValue;
+  filesPending: MetricValue;
+  successRate: MetricValue; // Percentage of successful farms (0-100)
+  
+  // File categorization
+  filesText: MetricValue;
+  filesCode: MetricValue;
+  filesImage: MetricValue;
+  filesData: MetricValue;
+  filesConfig: MetricValue;
+  filesOther: MetricValue;
+  
+  // Legacy task metrics (for backward compatibility)
+  totalTasks: MetricValue;
+  completedTasks: MetricValue;
+  failedTasks: MetricValue;
+  pendingTasks: MetricValue;
+  
+  // Resource metrics (percentages 0-100)
+  cpuUsage: MetricValue;
+  memoryUsage: MetricValue;
+  gpuUsage: MetricValue;
+  diskUsage: MetricValue;
+  networkUsage: MetricValue;
+  
+  // Performance metrics
+  avgResponseTime: MetricValue; // in milliseconds
+  throughput: MetricValue; // requests per second
+  errorRate: MetricValue; // percentage (0-100)
+  uptime: MetricValue; // percentage (0-100)
+  
+  // Cost metrics (in dollars)
+  totalCost: MetricValue;
+  apiCost: MetricValue;
+  computeCost: MetricValue;
+  storageCost: MetricValue;
+}
+
+/**
+ * Extended metrics with metadata
+ */
+export interface ExtendedMetrics extends CoreMetrics {
+  timestamp: Date;
+  version: number; // For conflict resolution
+  source: 'api' | 'websocket' | 'cache' | 'computed';
+  isStale: boolean;
+  staleSince?: Date;
+}
+
+// Legacy interface for backward compatibility
 export interface Metric {
   name: string
   value: number
@@ -213,4 +442,140 @@ export interface GrafanaTemplate {
   query: string
   current: string
   options: string[]
+}
+
+/**
+ * Farm-specific metrics with unified types
+ */
+export interface FarmMetricsUnified {
+  farmId: string;
+  farmName: string;
+  status: string;
+  agents: MetricValue;
+  activeAgents: MetricValue;
+  completedTasks: MetricValue;
+  failedTasks: MetricValue;
+  successRate: MetricValue;
+  uptime: MetricValue;
+  cpuUsage: MetricValue;
+  memoryUsage: MetricValue;
+  lastUpdated: Date;
+}
+
+/**
+ * Agent-specific metrics with unified types
+ */
+export interface AgentMetricsUnified {
+  agentId: string;
+  agentName: string;
+  farmId: string;
+  status: string;
+  tasksCompleted: MetricValue;
+  tasksFailed: MetricValue;
+  successRate: MetricValue;
+  avgResponseTime: MetricValue;
+  cpuUsage: MetricValue;
+  memoryUsage: MetricValue;
+  lastActivity: Date;
+}
+
+/**
+ * Time series data point
+ */
+export interface MetricDataPoint {
+  timestamp: Date;
+  value: MetricValue;
+  metricName: MetricName;
+}
+
+/**
+ * Time series metrics
+ */
+export interface TimeSeriesMetrics {
+  metricName: MetricName;
+  unit: MetricUnit;
+  dataPoints: MetricDataPoint[];
+  aggregation: 'sum' | 'avg' | 'min' | 'max' | 'last';
+}
+
+/**
+ * Metric update event for WebSocket
+ */
+export interface MetricUpdateEvent {
+  type: 'full' | 'partial' | 'delta';
+  metrics: Partial<CoreMetrics>;
+  timestamp: Date;
+  version: number;
+  source: string;
+}
+
+/**
+ * Dashboard metrics interface
+ */
+export interface DashboardMetrics {
+  overview: CoreMetrics;
+  farms: FarmMetricsUnified[];
+  agents: AgentMetricsUnified[];
+  lastUpdated: Date;
+}
+
+/**
+ * Helper to format metric values with proper units
+ */
+export function formatMetricValue(value: MetricValue, unit: MetricUnit): string {
+  switch (unit) {
+    case MetricUnit.PERCENTAGE:
+      return `${value.toFixed(1)}%`;
+    case MetricUnit.MILLISECONDS:
+      return `${value.toFixed(0)}ms`;
+    case MetricUnit.SECONDS:
+      return `${value.toFixed(1)}s`;
+    case MetricUnit.BYTES:
+      return `${value} B`;
+    case MetricUnit.KILOBYTES:
+      return `${(value / 1024).toFixed(1)} KB`;
+    case MetricUnit.MEGABYTES:
+      return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    case MetricUnit.GIGABYTES:
+      return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    case MetricUnit.DOLLARS:
+      return `$${value.toFixed(2)}`;
+    case MetricUnit.REQUESTS_PER_SECOND:
+      return `${value.toFixed(1)} req/s`;
+    case MetricUnit.COUNT:
+    default:
+      return value.toFixed(0);
+  }
+}
+
+/**
+ * Helper to get metric unit
+ */
+export function getMetricUnit(metricName: MetricName): MetricUnit {
+  switch (metricName) {
+    case MetricName.SUCCESS_RATE:
+    case MetricName.ERROR_RATE:
+    case MetricName.UPTIME:
+    case MetricName.CPU_USAGE:
+    case MetricName.MEMORY_USAGE:
+    case MetricName.GPU_USAGE:
+    case MetricName.DISK_USAGE:
+    case MetricName.NETWORK_USAGE:
+      return MetricUnit.PERCENTAGE;
+    
+    case MetricName.AVG_RESPONSE_TIME:
+      return MetricUnit.MILLISECONDS;
+    
+    case MetricName.THROUGHPUT:
+      return MetricUnit.REQUESTS_PER_SECOND;
+    
+    case MetricName.TOTAL_COST:
+    case MetricName.API_COST:
+    case MetricName.COMPUTE_COST:
+    case MetricName.STORAGE_COST:
+      return MetricUnit.DOLLARS;
+    
+    default:
+      return MetricUnit.COUNT;
+  }
 }

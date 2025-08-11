@@ -40,6 +40,7 @@ export interface Discovery {
   category: string;
   timestamp: Date;
   saved: boolean;
+  metadata?: any;
 }
 
 export interface GoWildConfig {
@@ -53,6 +54,8 @@ export interface GoWildConfig {
     restrictedDomains: string[];
   };
   focusAreas: string[];
+  seedPrompt?: string;
+  thinkingLevel?: 'none' | 'basic' | 'moderate' | 'deep' | 'ultra'; // Extended thinking strategy
 }
 
 export interface GoWildSession {
@@ -64,11 +67,22 @@ export interface GoWildSession {
   endTime?: Date;
   pausedAt?: Date;
   harvestId?: string;
+  hasTmuxSession?: boolean;
+  processId?: string;
   explorationPath: {
     nodes: ExplorationNode[];
     edges: ExplorationEdge[];
     discoveries: Discovery[];
     currentNodeId: string | null;
+    results?: Array<{
+      id: string;
+      agentId: string;
+      agentName: string;
+      agentType: string;
+      content: string;
+      timestamp: Date;
+      artifacts: any[];
+    }>;
   };
   stats: {
     nodesExplored: number;

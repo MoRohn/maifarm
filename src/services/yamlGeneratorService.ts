@@ -903,7 +903,7 @@ class YamlGeneratorService {
         yaml.push(`  - content: ${step.content}`);
         yaml.push(`    description: ${step.description}`);
       } else {
-        // Simple format for multi_claude.py compatibility
+        // Simple format for orchestrator.py compatibility
         yaml.push(`  - ${step.content}`);
       }
     }
@@ -1197,6 +1197,103 @@ class YamlGeneratorService {
         }
       }
     ];
+  }
+
+  /**
+   * Generate YAML from farmer template with user customizations
+   */
+  async generateYamlFromFarmer(
+    farmerTemplate: any,
+    userInputs: {
+      farmName: string;
+      description: string;
+      customPrompt?: string;
+      maxAgents?: number;
+      timeout?: number;
+    }
+  ): Promise<GenerationResponse> {
+    try {
+      // Start with the farmer's base YAML
+      let customizedYaml = farmerTemplate.yaml_content || '';
+
+      // If we have user inputs, customize the YAML
+      if (userInputs.farmName) {
+        customizedYaml = customizedYaml.replace(/name:\s*.*$/m, `name: ${userInputs.farmName}`);
+      }
+
+      if (userInputs.description) {
+        customizedYaml = customizedYaml.replace(/description:\s*.*$/m, `description: ${userInputs.description}`);
+      }
+
+      // Handle custom prompt injection
+      if (userInputs.customPrompt) {
+        // Replace the {{USER_PROMPT}} placeholder or append to initial_prompt
+        if (customizedYaml.includes('{{USER_PROMPT}}')) {
+          customizedYaml = customizedYaml.replace(/\{\{USER_PROMPT\}\}/g, userInputs.customPrompt);
+        } else {
+          // Find the initial_prompt section and enhance it
+          customizedYaml = customizedYaml.replace(
+            /initial_prompt:\s*\|[\s\S]*?(?=\n\w|\n$)/,
+            (match) => {
+              return match.trimEnd() + '\n\n  Additional Instructions: ' + userInputs.customPrompt;
+            }
+          );
+        }
+      }
+
+      // Adjust max agents if specified
+      if (userInputs.maxAgents && userInputs.maxAgents !== farmerTemplate.config?.maxAgents) {
+        // Update the config section
+        customizedYaml = customizedYaml.replace(
+          /maxAgents:\s*\d+/,
+          `maxAgents: ${userInputs.maxAgents}`
+        );
+      }
+
+      // Update timeout if specified
+      if (userInputs.timeout && userInputs.timeout !== farmerTemplate.config?.timeout) {
+        customizedYaml = customizedYaml.replace(
+          /timeout:\s*\d+/,
+          `timeout: ${userInputs.timeout}`
+        );
+      }
+
+      // Ensure the YAML has proper farm metadata
+      if (!customizedYaml.includes('metadata:')) {
+        const metadata = `
+metadata:
+  created_from: farmer_template
+  farmer_template_id: ${farmerTemplate.id}
+  farmer_template_name: ${farmerTemplate.title}
+  customized_at: ${new Date().toISOString()}
+  user_customizations:
+    farm_name: ${userInputs.farmName}
+    description: ${userInputs.description}
+    ${userInputs.customPrompt ? `custom_prompt: ${userInputs.customPrompt}` : ''}
+`;
+        customizedYaml += metadata;
+      }
+
+      return {
+        success: true,
+        raw_yaml: customizedYaml,
+        config: this.parseYamlToConfig(customizedYaml),
+        suggestions: [],
+        warnings: [],
+        validation_passed: true
+      };
+
+    } catch (error) {
+      console.error('Farmer YAML generation error:', error);
+      
+      // Fallback to basic template substitution
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to generate YAML from farmer template',
+        raw_yaml: '',
+        validation_passed: false
+      };
+    }
   }
 
   /**

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Activity, TrendingUp, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Users, Activity, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { BarChart } from './Charts/BarChart';
 import { useWebSocket } from '../../hooks/useWebSocket';
 

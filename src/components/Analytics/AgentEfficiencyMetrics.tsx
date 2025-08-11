@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Users, TrendingUp, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Users, TrendingUp, CheckCircle, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { AgentPerformanceMetric } from '../../types/analytics';
-import { formatNumber, formatPercentage } from '../../utils/format';
+import { formatPercentage } from '../../utils/format';
 
 interface AgentEfficiencyMetricsProps {
   agents?: AgentPerformanceMetric[];
@@ -16,8 +16,6 @@ export const AgentEfficiencyMetrics: React.FC<AgentEfficiencyMetricsProps> = ({
 }) => {
   const agentData = agents.length > 0 ? agents : generateMockAgentData();
   
-  const totalTasks = agentData.reduce((sum, a) => sum + a.tasksCompleted + a.tasksInProgress + a.tasksFailed, 0);
-  const completedTasks = agentData.reduce((sum, a) => sum + a.tasksCompleted, 0);
   const avgSuccessRate = agentData.reduce((sum, a) => sum + a.successRate, 0) / agentData.length;
   const avgResponseTime = agentData.reduce((sum, a) => sum + a.averageResponseTime, 0) / agentData.length;
 
@@ -79,7 +77,7 @@ export const AgentEfficiencyMetrics: React.FC<AgentEfficiencyMetricsProps> = ({
                   {agent.agentName}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {agent.tasksCompleted} completed, {agent.tasksInProgress} in progress
+                  {agent.tasksCompleted} files created, {agent.tasksInProgress} in progress
                 </p>
               </div>
             </div>

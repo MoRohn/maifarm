@@ -38,7 +38,7 @@ export const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({
     trend?: 'up' | 'down' | 'stable';
     icon: React.ReactNode;
   }) => (
-    <div className="bg-gray-50 dark:bg-gray-750 rounded-lg p-4">
+    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-gray-500 dark:text-gray-400">{label}</span>
         {icon}

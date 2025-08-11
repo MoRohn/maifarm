@@ -3,6 +3,7 @@ import { Socket } from 'socket.io-client';
 import { WebSocketMessage } from '@/types';
 import { wsManager } from '@/services/websocket/singletonManager';
 import { useWebSocketStore } from '@/store/websocketStore';
+import { DEFAULT_WS_CONFIG } from '@/config/websocket';
 
 interface UseWebSocketOptions {
   url: string;
@@ -23,12 +24,13 @@ export interface UseWebSocketReturn {
   socket: Socket | null;
 }
 
-export function useWebSocket({
-  url,
-  reconnect = true,
-  reconnectAttempts = 10,
-  reconnectDelay = 1000,
-}: UseWebSocketOptions): UseWebSocketReturn {
+export function useWebSocket(options: Partial<UseWebSocketOptions> = {}): UseWebSocketReturn {
+  // Merge with default configuration to ensure consistency
+  const config = {
+    ...DEFAULT_WS_CONFIG,
+    ...options,
+  };
+  const { url, reconnect, reconnectAttempts, reconnectDelay } = config;
   const socketRef = useRef<Socket | null>(null);
   const hasReleasedRef = useRef(false);
   const { connected, lastMessage } = useWebSocketStore();
@@ -81,13 +83,23 @@ export function useWebSocket({
   useEffect(() => {
     connect();
     return () => {
-      // Release reference on unmount (only if not already released)
+      // Only release on actual component unmount, not on prop changes
+      // This prevents unnecessary disconnections during re-renders
       if (!hasReleasedRef.current) {
         wsManager.release();
         hasReleasedRef.current = true;
       }
       socketRef.current = null;
     };
+  }, []); // Remove dependencies to prevent reconnection on prop changes
+  
+  // Handle URL changes separately
+  useEffect(() => {
+    // If URL changes after initial mount, update the connection
+    if (socketRef.current && url) {
+      // The singleton manager will handle URL changes internally
+      connect();
+    }
   }, [url, connect]);
 
   return {

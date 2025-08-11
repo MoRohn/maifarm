@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sliders, Shield, Clock, Target, Sparkles } from 'lucide-react';
+import { Sliders, Shield, Target, Sparkles, Brain } from 'lucide-react';
 import { GoWildConfig } from '../../types/goWild';
 
 interface CreativityControlsProps {
@@ -111,49 +111,65 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
         </p>
       </div>
 
-      {/* Max Duration */}
+      {/* Thinking Depth */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Clock className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <Brain className="w-5 h-5 text-purple-600 dark:text-purple-400" />
             <label className="text-sm font-medium text-gray-900 dark:text-white">
-              Max Duration
+              Thinking Depth
             </label>
           </div>
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            {localConfig.thinkingLevel === 'none' && 'None'}
+            {localConfig.thinkingLevel === 'basic' && 'Basic (think)'}
+            {localConfig.thinkingLevel === 'moderate' && 'Moderate (think hard)'}
+            {localConfig.thinkingLevel === 'deep' && 'Deep (think harder)'}
+            {localConfig.thinkingLevel === 'ultra' && 'Ultra (ultrathink)'}
+            {!localConfig.thinkingLevel && 'Auto'}
+          </span>
         </div>
-        <div className="flex items-center space-x-2">
-          <div className="flex-1">
-            <input
-              type="number"
-              value={Math.floor(localConfig.maxDuration / 60)}
-              onChange={(e) => {
-                const hours = parseInt(e.target.value) || 0;
-                const minutes = localConfig.maxDuration % 60;
-                handleUpdate({ maxDuration: hours * 60 + minutes });
-              }}
-              min="0"
-              max="24"
-              disabled={disabled}
-              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-            <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">Hours</span>
+        <div className="relative">
+          <input
+            type="range"
+            min="0"
+            max="4"
+            value={
+              localConfig.thinkingLevel === 'none' ? 0 :
+              localConfig.thinkingLevel === 'basic' ? 1 :
+              localConfig.thinkingLevel === 'moderate' ? 2 :
+              localConfig.thinkingLevel === 'deep' ? 3 :
+              localConfig.thinkingLevel === 'ultra' ? 4 : 1
+            }
+            onChange={(e) => {
+              const levels = ['none', 'basic', 'moderate', 'deep', 'ultra'];
+              handleUpdate({ thinkingLevel: levels[parseInt(e.target.value)] });
+            }}
+            disabled={disabled}
+            className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+          />
+          <div className="flex justify-between mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <span>None</span>
+            <span>Basic</span>
+            <span>Moderate</span>
+            <span>Deep</span>
+            <span>Ultra</span>
           </div>
-          <div className="flex-1">
-            <input
-              type="number"
-              value={localConfig.maxDuration % 60}
-              onChange={(e) => {
-                const hours = Math.floor(localConfig.maxDuration / 60);
-                const minutes = parseInt(e.target.value) || 0;
-                handleUpdate({ maxDuration: hours * 60 + Math.min(minutes, 59) });
-              }}
-              min="0"
-              max="59"
-              disabled={disabled}
-              className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-            <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">Minutes</span>
-          </div>
+        </div>
+        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+          <p className="text-xs text-blue-700 dark:text-blue-400">
+            <strong>Thinking depth</strong> determines how thoroughly Claude analyzes problems:
+          </p>
+          <ul className="mt-1 text-xs text-blue-600 dark:text-blue-300 space-y-1">
+            <li>• <strong>None:</strong> Quick responses, minimal analysis</li>
+            <li>• <strong>Basic:</strong> Standard reasoning (+2s)</li>
+            <li>• <strong>Moderate:</strong> Enhanced analysis (+5s)</li>
+            <li>• <strong>Deep:</strong> Thorough exploration (+10s)</li>
+            <li>• <strong>Ultra:</strong> Maximum computation (+20s)</li>
+          </ul>
+          <p className="mt-2 text-xs text-blue-600 dark:text-blue-300 italic">
+            Higher levels produce better quality but take longer. Auto-selects based on task complexity.
+          </p>
         </div>
       </div>
 

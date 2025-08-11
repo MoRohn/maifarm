@@ -3,14 +3,15 @@ import { motion } from 'framer-motion';
 import { Activity, Clock, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
-interface ActivityItem {
+export interface ActivityItem {
   id: string;
-  type: 'farm_created' | 'farm_completed' | 'agent_error' | 'farm_paused' | 'agent_started';
+  type: 'farm_created' | 'farm_completed' | 'agent_error' | 'farm_paused' | 'agent_started' | 'farm_deleted' | 'harvest_created' | 'seed_created';
   title: string;
   description: string;
   timestamp: Date;
   farmId?: string;
   agentId?: string;
+  metadata?: Record<string, any>;
 }
 
 interface RecentActivityProps {
@@ -34,6 +35,12 @@ export const RecentActivity: React.FC<RecentActivityProps> = ({
         return <AlertCircle className="w-4 h-4 text-yellow-500" />;
       case 'agent_started':
         return <Clock className="w-4 h-4 text-purple-500" />;
+      case 'farm_deleted':
+        return <XCircle className="w-4 h-4 text-gray-500" />;
+      case 'harvest_created':
+        return <CheckCircle className="w-4 h-4 text-blue-500" />;
+      case 'seed_created':
+        return <Activity className="w-4 h-4 text-green-500" />;
     }
   };
 

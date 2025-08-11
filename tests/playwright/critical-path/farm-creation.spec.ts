@@ -44,23 +44,43 @@ agents:
     // Step 6: Submit farm creation
     await page.click('button[type="submit"], [data-testid="create-farm-submit"]');
     
-    // Step 7: Verify navigation to growing page
-    await expect(page).toHaveURL(/.*growing.*/);
-    await expect(page.locator('h1, .growing-title')).toContainText(/growing|preparing/i);
+    // Step 7: Verify direct navigation to harvest page
+    await page.waitForURL(/.*harvest.*/, { timeout: 15000 });
+    await expect(page).toHaveURL(/.*harvest.*/);
     
-    // Step 8: Wait for CLI preparation and harvest transition
-    console.log('⏳ Waiting for CLI preparation...');
+    // Step 8: Check for concept explainer modal (may appear for new farms)
+    const conceptModal = page.locator('[role="dialog"], .fixed.inset-0.z-50');
+    const modalVisible = await conceptModal.isVisible();
     
-    // Wait for growing page indicators
-    await expect(page.locator('.compactor-animation, [data-testid="compactor"]')).toBeVisible();
-    
-    // Wait for transition to harvest (recently fixed in GrowingPage.tsx)
-    await page.waitForURL(/.*harvest.*/, { timeout: 30000 });
+    if (modalVisible) {
+      console.log('📚 Concept explainer modal detected - closing it');
+      // Close the modal by clicking Continue button
+      const continueButton = page.locator('button:has-text("Continue")');
+      if (await continueButton.isVisible()) {
+        await continueButton.click();
+      } else {
+        // Fallback: click X button
+        await page.locator('button[aria-label="Close modal"], .absolute.top-4.right-4').click();
+      }
+      await page.waitForTimeout(500); // Wait for modal to close
+    }
     
     // Step 9: Verify harvest page loaded
     await expect(page.locator('h1, .harvest-title')).toContainText(/harvest/i);
     
-    // Step 10: Verify CLI terminals are visible
+    // Step 10: Verify CLI terminals are visible (may need to switch to terminal view)
+    const terminalView = page.locator('.terminal, [data-testid="agent-terminal"]');
+    const terminalVisible = await terminalView.isVisible();
+    
+    if (!terminalVisible) {
+      // Switch to terminal view if not already active
+      const terminalButton = page.locator('button:has-text("Terminal")');
+      if (await terminalButton.isVisible()) {
+        await terminalButton.click();
+        await page.waitForTimeout(1000);
+      }
+    }
+    
     await expect(page.locator('.terminal, [data-testid="agent-terminal"]')).toBeVisible();
     
     console.log('✅ Sequential farm creation workflow completed successfully');
@@ -81,8 +101,14 @@ agents:
     await page.check('input[name="enableCollaboration"], [data-testid="enable-collaboration"]');
     
     await page.click('button[type="submit"]');
-    await page.waitForURL(/.*growing.*/);
-    await page.waitForURL(/.*harvest.*/, { timeout: 30000 });
+    await page.waitForURL(/.*harvest.*/, { timeout: 15000 });
+    
+    // Handle concept modal if it appears
+    const conceptModal = page.locator('[role="dialog"], .fixed.inset-0.z-50');
+    if (await conceptModal.isVisible()) {
+      await page.locator('button:has-text("Continue"), .absolute.top-4.right-4').click();
+      await page.waitForTimeout(500);
+    }
     
     await expect(page.locator('.harvest-title')).toContainText(/harvest/i);
     console.log('✅ Collaborative farm creation workflow completed');
@@ -103,8 +129,14 @@ agents:
     await page.fill('input[name="creativityLevel"], [data-testid="creativity-level"]', '0.7');
     
     await page.click('button[type="submit"]');
-    await page.waitForURL(/.*growing.*/);
-    await page.waitForURL(/.*harvest.*/, { timeout: 30000 });
+    await page.waitForURL(/.*harvest.*/, { timeout: 15000 });
+    
+    // Handle concept modal if it appears
+    const conceptModal = page.locator('[role="dialog"], .fixed.inset-0.z-50');
+    if (await conceptModal.isVisible()) {
+      await page.locator('button:has-text("Continue"), .absolute.top-4.right-4').click();
+      await page.waitForTimeout(500);
+    }
     
     await expect(page.locator('.harvest-title')).toContainText(/harvest/i);
     console.log('✅ Autonomous farm creation workflow completed');
@@ -146,7 +178,14 @@ agents:
     await page.fill('input[name="maxAgents"]', '2');
     
     await page.click('button[type="submit"]');
-    await page.waitForURL(/.*growing.*/);
+    await page.waitForURL(/.*harvest.*/, { timeout: 15000 });
+    
+    // Handle concept modal if it appears
+    const conceptModal = page.locator('[role="dialog"], .fixed.inset-0.z-50');
+    if (await conceptModal.isVisible()) {
+      await page.locator('button:has-text("Continue"), .absolute.top-4.right-4').click();
+      await page.waitForTimeout(500);
+    }
     
     // Wait a moment for WebSocket messages
     await page.waitForTimeout(2000);

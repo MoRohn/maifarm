@@ -59,21 +59,28 @@ export const useFarmStore = create<FarmState>()(
         const normalizedFarm = { ...farm, agents: farm.agents || [] };
         return {
           farms: [...state.farms, normalizedFarm],
-          activeFarms: (normalizedFarm.status === 'active' || normalizedFarm.status === 'launching')
+          activeFarms: (normalizedFarm.status === 'active' || normalizedFarm.status === 'running')
             ? [...state.activeFarms, normalizedFarm]
             : state.activeFarms,
           recentFarms: [normalizedFarm, ...state.recentFarms].slice(0, 5),
         };
       }),
       
-      updateFarm: (id, updates) => set((state) => ({
-        farms: state.farms.map((f) => 
+      updateFarm: (id, updates) => set((state) => {
+        const updatedFarms = state.farms.map((f) => 
           f.id === id ? { ...f, ...updates } : f
-        ),
-        activeFarms: state.activeFarms.map((f) =>
-          f.id === id ? { ...f, ...updates } : f
-        ),
-      })),
+        );
+        
+        // Rebuild activeFarms based on status
+        const activeFarms = updatedFarms.filter(f => 
+          f.status === 'active' || f.status === 'running'
+        );
+        
+        return {
+          farms: updatedFarms,
+          activeFarms
+        };
+      }),
       
       removeFarm: (id) => set((state) => ({
         farms: state.farms.filter((f) => f.id !== id),
@@ -92,17 +99,26 @@ export const useFarmStore = create<FarmState>()(
           const { farms } = await farmService.fetchFarms();
           // Ensure all farms have agents arrays
           const normalizedFarms = farms.map(f => ({ ...f, agents: f.agents || [] }));
-          const activeFarms = normalizedFarms.filter(f => f.status === 'active' || f.status === 'launching');
+          const activeFarms = normalizedFarms.filter(f => f.status === 'active' || f.status === 'running');
           set({ 
             farms: normalizedFarms, 
             activeFarms,
             recentFarms: normalizedFarms.slice(0, 5),
             stats: {
               activeFarms: activeFarms.length,
-              totalAgents: farms.reduce((sum, f) => sum + (f.agents?.length || 0), 0),
-              tasksCompleted: farms.reduce((sum, f) => sum + f.metrics.completedTasks, 0),
+              totalAgents: (() => {
+                // Count unique agents from active farms only
+                const uniqueAgents = new Set();
+                activeFarms.forEach(f => {
+                  (f.agents || []).forEach(agent => {
+                    if (agent?.id) uniqueAgents.add(agent.id);
+                  });
+                });
+                return uniqueAgents.size || activeFarms.reduce((sum, f) => sum + (f.agents?.length || 0), 0);
+              })(),
+              tasksCompleted: farms.reduce((sum, f) => sum + (f.metrics?.completedTasks || 0), 0),
               successRate: farms.length > 0 
-                ? Math.round(farms.reduce((sum, f) => sum + (f.metrics.completedTasks / (f.metrics.totalTasks || 1) * 100), 0) / farms.length)
+                ? Math.round(farms.reduce((sum, f) => sum + ((f.metrics?.completedTasks || 0) / (f.metrics?.totalTasks || 1) * 100), 0) / farms.length)
                 : 0
             },
             loading: false 
@@ -126,7 +142,7 @@ export const useFarmStore = create<FarmState>()(
 
       reorderAgentsInFarm: (farmId, startIndex, endIndex) => set((state) => ({
         farms: state.farms.map(farm => {
-          if (farm.id === farmId) {
+          if (farm.id === farmId && farm.agents) {
             const agents = Array.from(farm.agents);
             const [removed] = agents.splice(startIndex, 1);
             agents.splice(endIndex, 0, removed);
@@ -141,7 +157,7 @@ export const useFarmStore = create<FarmState>()(
         const sourceFarm = farms.find(f => f.id === sourceFarmId);
         const destFarm = farms.find(f => f.id === destFarmId);
         
-        if (!sourceFarm || !destFarm) return state;
+        if (!sourceFarm || !destFarm || !sourceFarm.agents || !destFarm.agents) return state;
         
         const agentIndex = sourceFarm.agents.findIndex(a => a.id === agentId);
         if (agentIndex === -1) return state;

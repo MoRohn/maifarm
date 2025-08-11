@@ -1,4 +1,4 @@
-export type FarmStatus = 'idle' | 'running' | 'paused' | 'failed' | 'completed';
+export type FarmStatus = 'idle' | 'running' | 'paused' | 'failed' | 'completed' | 'harvesting' | 'stopped';
 export type AgentStatus = 'idle' | 'running' | 'paused' | 'failed' | 'completed';
 
 export interface Agent {

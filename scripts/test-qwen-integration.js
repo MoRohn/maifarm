@@ -200,28 +200,28 @@ async function testCoordinationDirectory() {
   }
 }
 
-async function testMultiClaudeScript() {
-  log('Checking multi_claude.py availability...', 'info');
+async function testOrchestratorScript() {
+  log('Checking orchestrator.py availability...', 'info');
   
-  const scriptPath = path.join(process.cwd(), 'multi_claude.py');
+  const scriptPath = path.join(process.cwd(), 'orchestrator.py');
   try {
     await fs.access(scriptPath);
-    log('multi_claude.py found', 'success');
+    log('orchestrator.py found', 'success');
     
     // Check if it supports --provider flag
     const result = await executeCommand('python3', [scriptPath, '--help']);
     if (result.success && result.stdout.includes('--provider')) {
-      log('multi_claude.py supports provider selection', 'success');
-      results.passed.push('multi_claude.py with provider support');
+      log('orchestrator.py supports provider selection', 'success');
+      results.passed.push('orchestrator.py with provider support');
     } else {
-      results.warnings.push('multi_claude.py may need updates for provider support');
-      log('multi_claude.py may need provider flag support', 'warning');
+      results.warnings.push('orchestrator.py may need updates for provider support');
+      log('orchestrator.py may need provider flag support', 'warning');
     }
     
     return true;
   } catch {
-    results.failed.push('multi_claude.py not found');
-    log('multi_claude.py script not found', 'error');
+    results.failed.push('orchestrator.py not found');
+    log('orchestrator.py script not found', 'error');
     return false;
   }
 }
@@ -277,7 +277,7 @@ async function testBasicFarmCreation() {
   log('Testing basic farm creation with Qwen...', 'info');
   
   const testCommand = [
-    'multi_claude.py',
+    'orchestrator.py',
     '-n', '2',
     '-p', 'Create a hello world function',
     '--provider', 'qwen',
@@ -351,7 +351,7 @@ async function runTests() {
     testEnvironmentSetup,
     testQwenCLI,
     testCoordinationDirectory,
-    testMultiClaudeScript,
+    testOrchestratorScript,
     testQwenAPI,
     testBasicFarmCreation,
     runJestTests

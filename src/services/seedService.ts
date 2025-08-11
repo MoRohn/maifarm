@@ -16,6 +16,7 @@ class SeedService {
       if (filter.isOfficial !== undefined) params.append('isOfficial', String(filter.isOfficial));
       if (filter.sortBy) params.append('sortBy', filter.sortBy);
       if (filter.sortOrder) params.append('sortOrder', filter.sortOrder);
+      if (filter.limit !== undefined) params.append('limit', String(filter.limit));
     }
 
     const queryString = params.toString();

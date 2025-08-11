@@ -12,6 +12,31 @@ interface YAMLDisplayProps {
 
 export const YAMLDisplay: React.FC<YAMLDisplayProps> = ({ yaml, farmName, className }) => {
   const [copied, setCopied] = React.useState(false);
+  const yamlContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when YAML changes or component mounts
+  React.useEffect(() => {
+    if (yamlContainerRef.current) {
+      // Use smooth scrolling for better UX
+      yamlContainerRef.current.scrollTo({
+        top: yamlContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [yaml]);
+
+  // Also scroll on initial mount with a slight delay to ensure content is rendered
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (yamlContainerRef.current) {
+        yamlContainerRef.current.scrollTo({
+          top: yamlContainerRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(yaml);
@@ -127,7 +152,10 @@ export const YAMLDisplay: React.FC<YAMLDisplayProps> = ({ yaml, farmName, classN
         </div>
       </div>
 
-      <div className="bg-gray-50 dark:bg-gray-900 rounded-apple p-6 border border-gray-200 dark:border-gray-700 overflow-x-auto">
+      <div 
+        ref={yamlContainerRef}
+        className="bg-gray-50 dark:bg-gray-900 rounded-apple p-6 border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto overflow-x-auto"
+      >
         <div className="space-y-1">
           {formatYAML(yaml)}
         </div>

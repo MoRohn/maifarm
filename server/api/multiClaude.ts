@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { coordinationService } from '../services/coordinationService';
 import { apiRateLimits } from '../middleware/rateLimit';
-import { multiClaudeService } from '../services/multiClaudeService';
+import { orchestratorService } from '../services/OrchestratorService';
 import { websocketManager } from '../websocket/websocketManager';
 
 const router = Router();
@@ -28,7 +28,8 @@ router.post('/launch',
         stagger = 5,
         contextFiles = [],
         yamlContent,
-        provider = 'claude'
+        provider = 'claude',
+        timeout // timeout in seconds from the request
       } = req.body;
       
       // Validate input
@@ -57,7 +58,7 @@ router.post('/launch',
       
       // Build command arguments
       const args = [
-        'multi_claude.py',
+        'orchestrator.py',
         '-n', agents.toString(),
         '-p', prompt,
         '-s', session || sessionId
@@ -77,6 +78,14 @@ router.post('/launch',
       
       if (contextFiles && contextFiles.length > 0) {
         args.push('--context-files', ...contextFiles);
+      }
+      
+      // Add timeout if specified (convert to seconds for Python script)
+      if (timeout && timeout > 0) {
+        args.push('--max-runtime', timeout.toString());
+        console.log(`[MultiClaude API] Setting max runtime to ${timeout} seconds`);
+      } else {
+        console.log(`[MultiClaude API] No timeout specified - farm will run indefinitely`);
       }
       
       // Launch the Python script
@@ -362,8 +371,8 @@ router.post('/launch-farm',
         });
       }
       
-      // Launch farm using multiClaudeService
-      const processId = await multiClaudeService.launchFarm({
+      // Launch farm using orchestratorService
+      const processId = await orchestratorService.launchFarm({
         farmId,
         name,
         description,

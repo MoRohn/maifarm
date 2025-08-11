@@ -157,7 +157,7 @@ const GoWildMode: React.FC<GoWildModeProps> = ({ farmId, onDiscoverySaved }) => 
       {session && session.explorationPath.nodes.length > 0 && (
         <div className="h-96 bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
           <ExplorationGraph
-            path={session.explorationPath}
+            path={{ ...session.explorationPath, startTime: session.startTime, currentNodeId: session.explorationPath.currentNodeId || '' }}
             onNodeClick={(node) => {
               const discovery = session.explorationPath.discoveries.find(
                 d => d.nodeId === node.id

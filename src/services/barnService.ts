@@ -133,7 +133,8 @@ class BarnService {
       createdAt: new Date(item.createdAt),
       updatedAt: new Date(item.updatedAt),
       lastUsedAt: item.lastUsedAt ? new Date(item.lastUsedAt) : undefined,
-      artifacts: item.artifacts || []
+      // Note: 'artifacts' replaced with 'yield' in the new data model
+      yield: item.yield || []
     };
   }
 

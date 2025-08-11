@@ -84,7 +84,7 @@ router.post('/collect/:farmId', async (req, res) => {
     // Add artifacts if included
     if (includeArtifacts && aggregatedData.artifacts) {
       for (const artifact of aggregatedData.artifacts) {
-        harvest.artifacts.push({
+        harvest.yield.push({
           id: artifact.id,
           type: artifact.type || 'file',
           name: artifact.name,
@@ -124,6 +124,22 @@ router.post('/collect/:farmId', async (req, res) => {
 
     // Save updated harvest
     await harvestService.updateHarvest(harvest);
+    
+    // Automatically store completed harvest in barn
+    try {
+      const { barnService } = await import('../services/barnService');
+      const barnItem = await barnService.storeHarvest(harvest.id, {
+        name: `${harvest.farmName} - ${new Date().toLocaleDateString()}`,
+        description: harvest.summary.description || 'Collected harvest',
+        type: 'harvest',
+        category: 'collected',
+        tags: [...(harvest.tags || []), 'collected', 'auto-stored']
+      });
+      logger.info(`Collected harvest ${harvest.id} automatically stored in barn as ${barnItem.id}`);
+    } catch (barnError) {
+      logger.error('Failed to store collected harvest in barn:', barnError);
+      // Don't fail the request if barn storage fails
+    }
 
     // Broadcast harvest ready event
     websocketManager.broadcast('harvest:collected', {

@@ -3,6 +3,8 @@ import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
+import { pathConfig } from '../config/paths';
+import { fileManager } from './fileManagerService';
 
 interface ClaudeCodeAgentConfig {
   id: string;
@@ -59,6 +61,7 @@ export class ClaudeCodeManager extends EventEmitter {
     steps?: string[];
     collaborative?: boolean;
     projectPath?: string;
+    attachmentPaths?: string[];
   }): Promise<ClaudeCodeFarmConfig> {
     const farmId = uuidv4();
     const sessionName = `farm_${farmId.substring(0, 8)}`;
@@ -72,19 +75,19 @@ export class ClaudeCodeManager extends EventEmitter {
       steps: config.steps,
       collaborative: config.collaborative || false,
       sessionName,
-      projectPath: config.projectPath || process.cwd(),
+      projectPath: pathConfig.getFarmWorkspacePath(farmId, false),
       status: 'creating'
     };
 
     this.farms.set(farmId, farm);
 
     try {
-      // Create prompt file for multi_claude.py
-      const promptFile = await this.createPromptFile(farm);
+      // Create prompt file for orchestrator.py
+      const promptFile = await this.createPromptFile(farm, config.attachmentPaths);
 
       // Build command arguments
       const args = [
-        path.join(process.cwd(), 'multi_claude.py'),
+        path.join(process.cwd(), 'orchestrator.py'),
         '-n', farm.agents.toString(),
         '--prompt-file', promptFile,
         '-s', sessionName,
@@ -99,10 +102,17 @@ export class ClaudeCodeManager extends EventEmitter {
         args.push('--steps', ...farm.steps);
       }
 
-      // Spawn the multi_claude.py process
+      // Ensure workspace exists
+      await fileManager.ensureDirectory(farm.projectPath);
+      
+      // Spawn the orchestrator.py process with maibarn environment
       const pythonProcess = spawn('python3', args, {
         cwd: farm.projectPath,
-        env: { ...process.env },
+        env: { 
+          ...process.env,
+          MAIFARM_WORKSPACE: farm.projectPath,
+          MAIBARN_ROOT: pathConfig.getPath('MAIBARN_ROOT')
+        },
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
@@ -139,13 +149,30 @@ export class ClaudeCodeManager extends EventEmitter {
   }
 
   /**
-   * Create a prompt file for multi_claude.py
+   * Create a prompt file for orchestrator.py
    */
-  private async createPromptFile(farm: ClaudeCodeFarmConfig): Promise<string> {
+  private async createPromptFile(farm: ClaudeCodeFarmConfig, attachmentPaths?: string[]): Promise<string> {
+    // If there are attachments, include their information in the prompt
+    let enhancedPrompt = farm.prompt;
+    if (attachmentPaths && attachmentPaths.length > 0) {
+      const attachmentInfo = attachmentPaths.map(path => 
+        `- ${path.split('/').pop()}: ${path}`
+      ).join('\n');
+      
+      enhancedPrompt = `${farm.prompt}
+
+## Attached Files
+The following files have been provided as context:
+${attachmentInfo}
+
+Please analyze these files and incorporate their content into your work.`;
+    }
+    
     const promptData = {
       name: farm.name,
-      initial_prompt: farm.prompt,
-      steps: farm.steps || []
+      initial_prompt: enhancedPrompt,
+      steps: farm.steps || [],
+      attachments: attachmentPaths || []
     };
 
     const promptFile = path.join(this.coordinationPath, `prompt_${farm.id}.yaml`);
@@ -155,7 +182,7 @@ export class ClaudeCodeManager extends EventEmitter {
   }
 
   /**
-   * Parse agent status from multi_claude output
+   * Parse agent status from orchestrator output
    */
   private parseAgentStatus(farmId: string, output: string) {
     // Parse agent status updates from output

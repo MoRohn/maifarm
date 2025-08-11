@@ -12,14 +12,16 @@ import {
   TrendingUp,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Wheat
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FarmCard } from './FarmCard';
+import { FarmBlueprint } from './FarmBlueprint';
 import { ThemedAccent } from '../common/ThemedLayout';
 import { StatsCard } from './StatsCard';
 import { QuickActions } from './QuickActions';
-import { RecentActivity } from './RecentActivity';
+import { RecentActivity, ActivityItem } from './RecentActivity';
 import { FarmCreator } from '../Farm/FarmCreator';
 import { HarvestSection } from '../Harvest/HarvestSection';
 import { DynamicLogo } from '../common/DynamicLogo';
@@ -28,8 +30,10 @@ import { useFarmStore } from '../../store/farmStore';
 import { useUserStore } from '../../store/userStore';
 import { useThemeStore } from '../../store/themeStore';
 import { useWebSocketStore } from '../../store/websocketStore';
+import { useActivityStore } from '../../store/activityStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
-import { metricsService } from '../../services/metricsService';
+import { unifiedMetricsService } from '../../services/unifiedMetricsService';
+import { MetricName, formatMetricValue, getMetricUnit } from '../../types/metrics';
 import { createMockFarm } from '../../utils/mockFarmData';
 
 interface DashboardProps {
@@ -38,20 +42,67 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
   const [greeting, setGreeting] = useState('');
-  const [metricsLoading, setMetricsLoading] = useState(true);
-  const [metricsError, setMetricsError] = useState<string | null>(null);
   const [showFarmCreator, setShowFarmCreator] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [metrics, setMetrics] = useState(unifiedMetricsService.getMetrics());
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
   
   const { user } = useUserStore();
   const { farms, activeFarms, recentFarms, stats, fetchFarms, addFarm } = useFarmStore();
   const theme = useThemeStore((state) => state.theme);
   const { connected: isConnected } = useWebSocketStore();
   
+  // Subscribe to activity store changes - this will make it reactive
+  const activities = useActivityStore(state => state.activities);
+  const getRecentActivities = useActivityStore(state => state.getRecentActivities);
+  
   // Initialize WebSocket connection
   const { lastMessage, socket } = useWebSocket({
     url: import.meta.env.VITE_API_URL || 'http://localhost:4567'
   });
+
+  // Set up unified metrics
+  useEffect(() => {
+    // Subscribe to metrics updates
+    const handleMetricsUpdate = (updatedMetrics: any) => {
+      setMetrics(updatedMetrics);
+    };
+    
+    unifiedMetricsService.on('metrics:updated', handleMetricsUpdate);
+    
+    // Connect WebSocket to metrics service
+    if (socket) {
+      unifiedMetricsService.connectWebSocket(socket);
+      
+      // Subscribe to metrics updates via WebSocket
+      socket.emit('metrics:subscribe');
+    }
+    
+    // Start periodic updates
+    unifiedMetricsService.startPeriodicUpdates(30000); // 30 seconds
+    
+    // Initial fetch
+    setMetricsLoading(true);
+    setMetricsError(null);
+    unifiedMetricsService.fetchMetrics()
+      .then(() => {
+        setMetrics(unifiedMetricsService.getMetrics());
+        setMetricsLoading(false);
+      })
+      .catch((error) => {
+        console.error('Failed to fetch metrics:', error);
+        setMetricsError('Failed to load metrics. Please try again later.');
+        setMetricsLoading(false);
+      });
+    
+    return () => {
+      unifiedMetricsService.off('metrics:updated', handleMetricsUpdate);
+      if (socket) {
+        socket.emit('metrics:unsubscribe');
+      }
+    };
+  }, [socket]);
 
   // Set up WebSocket alerts
   useEffect(() => {
@@ -80,17 +131,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     };
   }, [socket]);
 
-  // Convert farms to activity items with unique IDs
-  const recentActivities = recentFarms.map((farm, index) => ({
-    id: farm.id || `farm-activity-${index}-${Date.now()}`,
-    type: farm.status === 'completed' ? 'farm_completed' as const : 
-          farm.status === 'paused' ? 'farm_paused' as const : 
-          farm.status === 'failed' ? 'agent_error' as const : 
-          'farm_created' as const,
-    title: farm.name,
-    description: `Farm ${farm.status} - ${farm.agents?.length || 0} agents`,
-    timestamp: farm.updatedAt
-  }));
+  // Get recent activities from the activity store - now reactive to changes
+  const recentActivities = activities.slice(0, 10) as ActivityItem[];
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -99,7 +141,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     else setGreeting('Good evening');
   }, []);
 
-  // Fetch farms on component mount
   useEffect(() => {
     fetchFarms().catch(error => {
       console.error('Failed to fetch farms:', error);
@@ -135,26 +176,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
   // Initialize metrics fetching
   useEffect(() => {
     const initializeMetrics = async () => {
-      setMetricsLoading(true);
       try {
-        await metricsService.refreshMetrics();
-        setMetricsError(null);
+        await unifiedMetricsService.refreshMetrics();
       } catch (error) {
         // Don't log error for initial load if backend is not available
         // The apiClient already handles this and provides mock data
         if (isConnected) {
           console.error('Failed to load metrics:', error);
-          setMetricsError('Failed to load metrics. Using cached data.');
         }
-      } finally {
-        setMetricsLoading(false);
       }
     };
 
     initializeMetrics();
     
     // Start periodic updates with retry logic
-    metricsService.startMetricsUpdates(5000);
+    unifiedMetricsService.startMetricsUpdates(5000);
 
     // Subscribe to WebSocket metrics updates
     if (isConnected) {
@@ -162,39 +198,130 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     }
 
     return () => {
-      metricsService.stopMetricsUpdates();
+      unifiedMetricsService.stopMetricsUpdates();
     };
   }, [isConnected]);
 
   // Handle WebSocket metrics updates
   useEffect(() => {
     if (lastMessage) {
-      metricsService.handleWebSocketMetrics(lastMessage);
+      unifiedMetricsService.handleWebSocketMetrics(lastMessage);
     }
   }, [lastMessage]);
 
-  // Handle WebSocket farm updates
+  // Handle WebSocket farm and agent updates
   useEffect(() => {
-    if (lastMessage?.type === 'farm_update') {
-      const { event, farm, farmId } = lastMessage.payload;
+    if (!socket) return;
+
+    // Handle farm status updates
+    const handleFarmStatus = (data: any) => {
+      const { farmId, status, farm } = data;
+      const farmName = farm?.name || farmId;
       
-      switch (event) {
+      // Update farm in store
+      if (farmId) {
+        useFarmStore.getState().updateFarm(farmId, { status });
+      }
+      
+      // Add activity based on status
+      const activityStore = useActivityStore.getState();
+      switch (status) {
         case 'created':
-          useFarmStore.getState().addFarm(farm);
+        case 'launching':
+          activityStore.addActivity({
+            type: 'farm_created',
+            title: 'Farm Created',
+            description: `Farm "${farmName}" has been created`,
+            farmId
+          });
           break;
-        case 'updated':
-          useFarmStore.getState().updateFarm(farm.id, farm);
+        case 'running':
+        case 'active':
+          activityStore.addActivity({
+            type: 'agent_started',
+            title: 'Farm Started',
+            description: `Farm "${farmName}" is now running`,
+            farmId
+          });
           break;
-        case 'deleted':
-          useFarmStore.getState().removeFarm(farmId);
+        case 'completed':
+          activityStore.addActivity({
+            type: 'farm_completed',
+            title: 'Farm Completed',
+            description: `Farm "${farmName}" has completed successfully`,
+            farmId
+          });
           break;
-        case 'started':
-        case 'stopped':
-          useFarmStore.getState().updateFarm(farm.id, { status: event === 'started' ? 'active' : 'completed' });
+        case 'failed':
+        case 'error':
+          activityStore.addActivity({
+            type: 'agent_error',
+            title: 'Farm Error',
+            description: `Farm "${farmName}" encountered an error`,
+            farmId
+          });
+          break;
+        case 'paused':
+          activityStore.addActivity({
+            type: 'farm_paused',
+            title: 'Farm Paused',
+            description: `Farm "${farmName}" has been paused`,
+            farmId
+          });
           break;
       }
+    };
+
+    // Handle agent status updates
+    const handleAgentStatus = (data: any) => {
+      const { agentId, status, agentName, farmId } = data;
+      
+      if (status === 'error' || status === 'failed') {
+        const activityStore = useActivityStore.getState();
+        activityStore.addActivity({
+          type: 'agent_error',
+          title: 'Agent Error',
+          description: `Agent "${agentName || agentId}" encountered an error`,
+          agentId,
+          farmId
+        });
+      }
+    };
+
+    // Handle harvest events
+    const handleHarvestReady = (data: any) => {
+      const { harvestId, farmId, farmName } = data;
+      const activityStore = useActivityStore.getState();
+      activityStore.addActivity({
+        type: 'harvest_created',
+        title: 'Harvest Ready',
+        description: `Harvest ready for farm "${farmName || farmId}"`,
+        farmId,
+        metadata: { harvestId }
+      });
+    };
+
+    // Subscribe to WebSocket events
+    socket.on('farm:status', handleFarmStatus);
+    socket.on('farm:state', handleFarmStatus);
+    socket.on('agent:status', handleAgentStatus);
+    socket.on('agent:error', handleAgentStatus);
+    socket.on('harvest:ready', handleHarvestReady);
+
+    // Also handle legacy message format
+    if (lastMessage?.type === 'farm_update') {
+      const { event, farm, farmId } = lastMessage.payload;
+      handleFarmStatus({ farmId, status: event, farm });
     }
-  }, [lastMessage]);
+
+    return () => {
+      socket.off('farm:status', handleFarmStatus);
+      socket.off('farm:state', handleFarmStatus);
+      socket.off('agent:status', handleAgentStatus);
+      socket.off('agent:error', handleAgentStatus);
+      socket.off('harvest:ready', handleHarvestReady);
+    };
+  }, [socket, lastMessage]);
 
 
 
@@ -213,92 +340,52 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           animate={{ scale: 1, opacity: 1 }}
           className="flex items-center space-x-3"
         >
-          <div className="p-2 bg-gradient-to-br from-orange-400 to-orange-700 rounded-apple">
-            <Home className="w-6 h-6 text-white" />
+          <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-apple">
+            <Wheat className="w-6 h-6 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Home
+            MaiFarm Dashboard
           </h1>
         </motion.div>
       </div>
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto">
-        {/* Hero Section */}
+        {/* Hero Section with Welcome */}
         <motion.section
           {...fadeIn}
           transition={{ delay: 0.1 }}
           className="mb-8"
         >
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Welcome MaiFarmer!
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            This is your AI cultivation ecosystem, plant your seeds and watch them grow.
-          </p>
+          <div className="text-center mb-6">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+              Welcome to Your AI Farm! 🌾
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              Plant your seeds, cultivate with AI agents, and harvest amazing results
+            </p>
+          </div>
         </motion.section>
 
-        {/* Stats Grid */}
+        {/* Farm Blueprint Visualization */}
         <motion.section
           {...fadeIn}
           transition={{ delay: 0.2 }}
           className="mb-8"
         >
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-            Metrics Overview
-          </h3>
-
-          {metricsError && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-apple-lg"
-            >
-              <div className="flex items-center space-x-2">
-                <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                <p className="text-sm text-red-700 dark:text-red-300">{metricsError}</p>
-              </div>
-            </motion.div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatsCard
-              title="Total Farms"
-              value={metricsLoading ? '—' : (farms?.length || 0)}
-              icon={Activity}
-              trend="+12%"
-              color="primary"
-              loading={metricsLoading}
-            />
-            <StatsCard
-              title="Total Agents"
-              value={metricsLoading ? '—' : (farms?.reduce((sum, farm) => sum + (farm.agents?.length || 0), 0) || 0)}
-              icon={Grid3x3}
-              trend="+8%"
-              color="green"
-              loading={metricsLoading}
-            />
-            <StatsCard
-              title="Tasks Completed"
-              value={metricsLoading ? '—' : (farms?.reduce((sum, farm) => sum + (farm.metrics?.completedTasks || 0), 0) || 0)}
-              icon={CheckCircle2}
-              trend="+23%"
-              color="blue"
-              loading={metricsLoading}
-            />
-            <StatsCard
-              title="Success Rate"
-              value={metricsLoading ? '—' : farms && farms.length > 0 
-                ? `${Math.round(farms.reduce((sum, farm) => 
-                    sum + ((farm.metrics?.completedTasks || 0) / (farm.metrics?.totalTasks || 1) * 100), 0
-                  ) / farms.length)}%`
-                : '100%'}
-              icon={TrendingUp}
-              trend="+5%"
-              color="purple"
-              loading={metricsLoading}
-            />
-          </div>
+          <FarmBlueprint 
+            metrics={{
+              activeFarms: metrics.activeFarms,
+              totalFarms: metrics.totalFarms,
+              activeAgents: metrics.activeAgents,
+              uniqueAgents: metrics.uniqueAgents,
+              completedTasks: metrics.completedTasks,
+              successRate: metrics.successRate,
+              totalSeeds: 15,
+              activeHarvests: 5,
+              barnItems: 48
+            }}
+          />
         </motion.section>
 
         {/* Quick Actions */}

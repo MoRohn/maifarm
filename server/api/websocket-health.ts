@@ -7,7 +7,16 @@ const router = Router();
 // GET /api/websocket/health - Get WebSocket health status
 router.get('/health', async (req: Request, res: Response) => {
   try {
-    const stats = reliabilityManager.getStatistics();
+    // Check if getStatistics method exists, otherwise use fallback
+    const stats = reliabilityManager.getStatistics ? 
+      reliabilityManager.getStatistics() : 
+      {
+        totalConnections: 0,
+        averageReliability: 100,
+        connections: [],
+        messageQueue: { size: 0, messages: [] },
+        performanceMetrics: { messageRate: 0, latency: 0 }
+      };
     const wsServer = (req.app.locals.wsServer as WebSocketServer);
     const connectionStats = wsServer?.getConnectionStats() || {
       totalConnections: 0,

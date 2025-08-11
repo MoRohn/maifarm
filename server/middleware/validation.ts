@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
+import { z } from 'zod';
 
-// Generic validation result handler
-export const validateRequest = (req: Request, res: Response, next: NextFunction) => {
+// Generic validation result handler for express-validator
+export const validateExpressRequest = (req: Request, res: Response, next: NextFunction) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({
@@ -14,6 +15,51 @@ export const validateRequest = (req: Request, res: Response, next: NextFunction)
     });
   }
   next();
+};
+
+// Zod validation middleware
+interface ValidationSchemas {
+  body?: z.ZodType<any, any>;
+  query?: z.ZodType<any, any>;
+  params?: z.ZodType<any, any>;
+}
+
+export const validateRequest = (schemas: ValidationSchemas) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Validate body
+      if (schemas.body) {
+        req.body = await schemas.body.parseAsync(req.body);
+      }
+      
+      // Validate query
+      if (schemas.query) {
+        req.query = await schemas.query.parseAsync(req.query);
+      }
+      
+      // Validate params
+      if (schemas.params) {
+        req.params = await schemas.params.parseAsync(req.params);
+      }
+      
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          errors: error.errors.map(err => ({
+            field: err.path.join('.'),
+            message: err.message
+          }))
+        });
+      }
+      
+      return res.status(500).json({
+        success: false,
+        error: 'Validation error'
+      });
+    }
+  };
 };
 
 export const validateFarmInput = [

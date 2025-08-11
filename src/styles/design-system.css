@@ -1,0 +1,579 @@
+/* MaiFarm Design System - Modern UI/UX Enhancement */
+
+/* ========================================================================
+   Design Tokens & Custom Properties
+   ======================================================================== */
+
+:root {
+  /* Spacing Scale (8px base) */
+  --space-0: 0;
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.25rem;  /* 20px */
+  --space-6: 1.5rem;   /* 24px */
+  --space-8: 2rem;     /* 32px */
+  --space-10: 2.5rem;  /* 40px */
+  --space-12: 3rem;    /* 48px */
+  --space-16: 4rem;    /* 64px */
+  --space-20: 5rem;    /* 80px */
+  --space-24: 6rem;    /* 96px */
+
+  /* Typography Scale */
+  --text-xs: 0.75rem;      /* 12px */
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg: 1.125rem;     /* 18px */
+  --text-xl: 1.25rem;      /* 20px */
+  --text-2xl: 1.5rem;      /* 24px */
+  --text-3xl: 1.875rem;    /* 30px */
+  --text-4xl: 2.25rem;     /* 36px */
+  --text-5xl: 3rem;        /* 48px */
+
+  /* Font Weights */
+  --font-thin: 100;
+  --font-light: 300;
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+  --font-black: 900;
+
+  /* Border Radius */
+  --radius-none: 0;
+  --radius-sm: 0.125rem;   /* 2px */
+  --radius-base: 0.25rem;  /* 4px */
+  --radius-md: 0.375rem;   /* 6px */
+  --radius-lg: 0.5rem;     /* 8px */
+  --radius-xl: 0.75rem;    /* 12px */
+  --radius-2xl: 1rem;      /* 16px */
+  --radius-3xl: 1.5rem;    /* 24px */
+  --radius-full: 9999px;
+
+  /* Elevation (Box Shadows) */
+  --elevation-none: none;
+  --elevation-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --elevation-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --elevation-base: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --elevation-md: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --elevation-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --elevation-xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --elevation-2xl: 0 35px 60px -15px rgba(0, 0, 0, 0.3);
+
+  /* Animation Durations */
+  --duration-instant: 0ms;
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 350ms;
+  --duration-slower: 500ms;
+  --duration-slowest: 1000ms;
+
+  /* Animation Easing Functions */
+  --ease-linear: linear;
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.85);
+  --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+  /* Z-index Layers */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-popover: 500;
+  --z-tooltip: 600;
+  --z-notification: 700;
+  --z-maximum: 9999;
+}
+
+/* Dark mode elevation adjustments */
+.dark {
+  --elevation-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --elevation-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --elevation-base: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --elevation-md: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  --elevation-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+  --elevation-xl: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  --elevation-2xl: 0 35px 60px -15px rgba(0, 0, 0, 0.6);
+}
+
+/* ========================================================================
+   Glassmorphism Effects
+   ======================================================================== */
+
+.glass-morphism {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+}
+
+.dark .glass-morphism {
+  background: rgba(17, 25, 40, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.125);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-morphism-light {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.dark .glass-morphism-light {
+  background: rgba(17, 25, 40, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-morphism-heavy {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(40px) saturate(150%);
+  -webkit-backdrop-filter: blur(40px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.dark .glass-morphism-heavy {
+  background: rgba(17, 25, 40, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* ========================================================================
+   Neumorphism Effects
+   ======================================================================== */
+
+.neumorphism {
+  background: linear-gradient(145deg, #f0f0f3, #cacace);
+  box-shadow: 20px 20px 60px #bebec0,
+              -20px -20px 60px #ffffff;
+  border-radius: var(--radius-xl);
+}
+
+.dark .neumorphism {
+  background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
+  box-shadow: 20px 20px 60px #0a0a0a,
+              -20px -20px 60px #323232;
+}
+
+.neumorphism-inset {
+  background: linear-gradient(145deg, #cacace, #f0f0f3);
+  box-shadow: inset 20px 20px 60px #bebec0,
+              inset -20px -20px 60px #ffffff;
+  border-radius: var(--radius-xl);
+}
+
+.dark .neumorphism-inset {
+  background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
+  box-shadow: inset 20px 20px 60px #0a0a0a,
+              inset -20px -20px 60px #323232;
+}
+
+/* ========================================================================
+   Modern Gradient Effects
+   ======================================================================== */
+
+.gradient-mesh {
+  background-image: 
+    radial-gradient(at 40% 20%, hsla(28, 100%, 74%, 0.3) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, hsla(189, 100%, 56%, 0.3) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, hsla(355, 100%, 93%, 0.3) 0px, transparent 50%),
+    radial-gradient(at 80% 50%, hsla(340, 100%, 76%, 0.3) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsla(22, 100%, 77%, 0.3) 0px, transparent 50%),
+    radial-gradient(at 80% 100%, hsla(242, 100%, 70%, 0.3) 0px, transparent 50%),
+    radial-gradient(at 0% 0%, hsla(343, 100%, 76%, 0.3) 0px, transparent 50%);
+}
+
+.gradient-aurora {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #ffc0cb 75%, #667eea 100%);
+  background-size: 400% 400%;
+  animation: aurora 15s ease infinite;
+}
+
+@keyframes aurora {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.gradient-holographic {
+  background: linear-gradient(
+    135deg,
+    hsl(260deg 80% 60%) 0%,
+    hsl(290deg 80% 60%) 20%,
+    hsl(320deg 80% 60%) 40%,
+    hsl(350deg 80% 60%) 60%,
+    hsl(20deg 80% 60%) 80%,
+    hsl(50deg 80% 60%) 100%
+  );
+  background-size: 200% 200%;
+  animation: holographic 4s ease infinite;
+}
+
+@keyframes holographic {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+
+/* ========================================================================
+   Glow Effects
+   ======================================================================== */
+
+.glow {
+  box-shadow: 0 0 20px rgba(var(--color-primary-rgb), 0.5);
+}
+
+.glow-hover {
+  transition: box-shadow var(--duration-normal) var(--ease-out);
+}
+
+.glow-hover:hover {
+  box-shadow: 0 0 30px rgba(var(--color-primary-rgb), 0.6);
+}
+
+.text-glow {
+  text-shadow: 0 0 10px rgba(var(--color-primary-rgb), 0.5);
+}
+
+.neon-glow {
+  color: var(--color-primary);
+  text-shadow:
+    0 0 7px var(--color-primary),
+    0 0 10px var(--color-primary),
+    0 0 21px var(--color-primary),
+    0 0 42px var(--color-primary-light),
+    0 0 82px var(--color-primary-light),
+    0 0 92px var(--color-primary-light),
+    0 0 102px var(--color-primary-light),
+    0 0 151px var(--color-primary-light);
+}
+
+/* ========================================================================
+   Skeleton Loading Effects
+   ======================================================================== */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 20%,
+    rgba(255, 255, 255, 0.5) 60%,
+    rgba(255, 255, 255, 0)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(255, 255, 255, 0.1) 60%,
+    rgba(255, 255, 255, 0)
+  );
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-base {
+  background-color: rgba(0, 0, 0, 0.11);
+  border-radius: var(--radius-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.dark .skeleton-base {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* ========================================================================
+   Micro-interactions & Animations
+   ======================================================================== */
+
+.hover-lift {
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+
+.hover-grow {
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.hover-grow:hover {
+  transform: scale(1.05);
+}
+
+.hover-shrink {
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.hover-shrink:hover {
+  transform: scale(0.95);
+}
+
+.hover-rotate {
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.hover-rotate:hover {
+  transform: rotate(5deg);
+}
+
+.pulse-soft {
+  animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.bounce-in {
+  animation: bounce-in var(--duration-slow) var(--ease-elastic);
+}
+
+@keyframes bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.slide-in-bottom {
+  animation: slide-in-bottom var(--duration-normal) var(--ease-out);
+}
+
+@keyframes slide-in-bottom {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.fade-in-up {
+  animation: fade-in-up var(--duration-normal) var(--ease-out);
+}
+
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========================================================================
+   Focus States & Accessibility
+   ======================================================================== */
+
+.focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.focus-ring:focus {
+  outline-color: var(--color-primary);
+  outline-offset: 4px;
+}
+
+.focus-ring:focus-visible {
+  outline-color: var(--color-primary);
+  box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.1);
+}
+
+/* Keyboard navigation indicator */
+.keyboard-only:focus {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Skip to main content link */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary);
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  text-decoration: none;
+  z-index: var(--z-maximum);
+  border-radius: var(--radius-md);
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* ========================================================================
+   Responsive Utilities
+   ======================================================================== */
+
+/* Hide visually but keep for screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Show only on focus (for skip links) */
+.sr-only-focusable:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* ========================================================================
+   Scrollbar Styling
+   ======================================================================== */
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--color-primary-rgb), 0.3) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-full);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(var(--color-primary-rgb), 0.3);
+  border-radius: var(--radius-full);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--color-primary-rgb), 0.5);
+}
+
+/* ========================================================================
+   Loading Spinner
+   ======================================================================== */
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(var(--color-primary-rgb), 0.1);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ========================================================================
+   Tooltip Styles
+   ======================================================================== */
+
+.tooltip {
+  position: relative;
+}
+
+.tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+  z-index: var(--z-tooltip);
+}
+
+.tooltip:hover::after {
+  opacity: 1;
+}
+
+/* ========================================================================
+   Responsive Grid System
+   ======================================================================== */
+
+.container-fluid {
+  width: 100%;
+  padding-right: var(--space-4);
+  padding-left: var(--space-4);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+@media (min-width: 640px) {
+  .container-fluid {
+    padding-right: var(--space-6);
+    padding-left: var(--space-6);
+  }
+}
+
+@media (min-width: 1024px) {
+  .container-fluid {
+    padding-right: var(--space-8);
+    padding-left: var(--space-8);
+  }
+}
+
+@media (min-width: 1280px) {
+  .container-fluid {
+    max-width: 1280px;
+  }
+}

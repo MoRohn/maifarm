@@ -14,18 +14,25 @@ import {
   ChevronRight,
   Wheat,
   Circle,
-  Trash2
+  Trash2,
+  Brain,
+  Sparkles,
+  Stars,
+  Rocket,
+  Users
 } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useThemeStore } from '../../store/themeStore'
 import { useWebSocketStore } from '../../store/websocketStore'
 import { useFarmStore } from '../../store/farmStore'
+import { logFarmDeletion } from '../../store/activityStore'
 import clsx from 'clsx'
 import { toast } from 'react-hot-toast'
 
 const navigation = [
   { name: 'Home', href: '/home', icon: Home },
+  { name: 'Farmers', href: '/farmers', icon: Users },
   { name: 'Barn', href: '/barn', icon: Warehouse },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
 ]
@@ -121,12 +128,15 @@ export function DashboardLayout() {
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4567'
     
     try {
-      // First, try to stop the farm if it's running
+      // First, try to stop the farm gracefully if it's running to collect yields
       const stopResponse = await fetch(`${apiUrl}/api/farms/${farmToDelete.id}/stop`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          graceful: true // Use graceful shutdown before deletion to collect yields
+        })
       })
       
       // Wait a moment for graceful shutdown
@@ -143,8 +153,12 @@ export function DashboardLayout() {
       })
       
       if (deleteResponse.ok) {
+        // Log the deletion activity
+        logFarmDeletion(farmToDelete.name, farmToDelete.id)
+        
         // Remove from local store
         removeFarm(farmToDelete.id)
+        
         // Show success message
         toast.success(`Farm "${farmToDelete.name}" deleted successfully`)
         console.log(`Farm "${farmToDelete.name}" deleted successfully`)

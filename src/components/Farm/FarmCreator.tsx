@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
   Plus, 
-  Wand2, 
   Code, 
   Settings, 
   Play,
@@ -15,20 +14,24 @@ import {
   CheckCircle,
   Sparkles,
   X,
-  Cpu
+  Cpu,
+  Clock
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Farm, FarmConfig, YAMLTemplate } from '../../types';
+import { Farm, FarmConfig } from '../../types';
 import { YAMLEditor } from './YAMLEditor';
 import { YAMLDisplay } from './YAMLDisplay';
-import { SeedSelector } from '../Seeds/SeedSelector';
+import { SeedPills } from '../Seeds/SeedPills';
 import { useFarmStore } from '../../store/farmStore';
-import { useSettingsStore } from '../../store/settingsStore';
+import { useSettingsStore, calculateMaxAgents } from '../../store/settingsStore';
+import { useUserStore } from '../../store/userStore';
+import { logFarmCreation, useActivityStore } from '../../store/activityStore';
 import { farmService } from '../../services/farmService';
 import { api } from '../../services/apiClient';
 import { Seed } from '../../types/seed';
 import yamlGeneratorService from '../../services/yamlGeneratorService';
 import { toast } from 'react-hot-toast';
+import { TIMEOUT_PRESETS, getTimeoutPreset, formatTimeout, getRecommendedTimeout } from '../../config/timeoutPresets';
 import FileUpload from '../common/FileUpload';
 import { AIProvider } from './ProviderSelector';
 
@@ -40,6 +43,7 @@ interface FarmCreatorProps {
 export const FarmCreator: React.FC<FarmCreatorProps> = ({ onClose, className }) => {
   const navigate = useNavigate();
   const { settings } = useSettingsStore();
+  const { user } = useUserStore();
   const [step, setStep] = useState<'plant' | 'plow' | 'grow'>('plant');
   const [farmDetails, setFarmDetails] = useState({
     name: '',
@@ -48,28 +52,29 @@ export const FarmCreator: React.FC<FarmCreatorProps> = ({ onClose, className }) 
   });
   const [selectedSeed, setSelectedSeed] = useState<Seed | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const contentContainerRef = React.useRef<HTMLDivElement>(null);
   
   // Get AI provider from settings, defaulting to 'claude' if not set
   const selectedProvider = (settings.aiProvider as AIProvider) || 'claude';
   
   const [config, setConfig] = useState<FarmConfig>({
     autoScale: true,
-    maxAgents: 5,
-    timeout: 3600,
+    maxAgents: settings.agentConfig?.maxAgents || 8,
+    timeout: 600, // Default to 10 minutes
     retryPolicy: {
-      enabled: true,
-      maxRetries: 3,
+      enabled: settings.agentConfig?.autoRestart ?? true,
+      maxRetries: (settings.agentConfig as any)?.retryAttempts || 3,
       backoffMultiplier: 2
     },
     goWildMode: {
       enabled: false,
-      creativityLevel: 3,
-      boundaries: []
-    }
+      creativityLevel: (user?.preferences?.goWild?.creativityLevel || 3) as 1 | 2 | 3 | 4 | 5,
+      boundaries: user?.preferences?.goWild?.boundaries?.restrictedDomains || []
+    },
+    persistInBackground: true // Default to true for persistence
   });
 
   const [yaml, setYaml] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<YAMLTemplate | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveAsSeed, setSaveAsSeed] = useState(false);
@@ -78,6 +83,41 @@ export const FarmCreator: React.FC<FarmCreatorProps> = ({ onClose, className }) 
   const [yamlGenerated, setYamlGenerated] = useState(false);
 
   const { addFarm } = useFarmStore();
+
+  // Auto-scroll to bottom when entering grow phase or when content updates
+  React.useEffect(() => {
+    if (step === 'grow' && contentContainerRef.current) {
+      // Scroll to bottom with smooth animation
+      setTimeout(() => {
+        if (contentContainerRef.current) {
+          contentContainerRef.current.scrollTo({
+            top: contentContainerRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
+      }, 100); // Small delay to ensure content is rendered
+    }
+  }, [step, yaml, error, saveAsSeed, isGeneratingYaml]);
+
+  // Update config when settings change
+  React.useEffect(() => {
+    setConfig(prev => ({
+      ...prev,
+      maxAgents: settings.agentConfig?.maxAgents || 8,
+      // Keep the user's selected timeout, don't override from settings
+      retryPolicy: {
+        enabled: settings.agentConfig?.autoRestart ?? true,
+        maxRetries: (settings.agentConfig as any)?.retryAttempts || 3,
+        backoffMultiplier: 2
+      },
+      goWildMode: {
+        ...prev.goWildMode,
+        enabled: prev.goWildMode?.enabled ?? false, // Ensure enabled is always boolean
+        creativityLevel: (user?.preferences?.goWild?.creativityLevel || prev.goWildMode?.creativityLevel || 3) as 1 | 2 | 3 | 4 | 5,
+        boundaries: user?.preferences?.goWild?.boundaries?.restrictedDomains || prev.goWildMode?.boundaries || []
+      }
+    }));
+  }, [settings.agentConfig, user?.preferences?.goWild]);
 
   // Auto-generate YAML when reaching the review step
   React.useEffect(() => {
@@ -102,7 +142,7 @@ Description: ${farmDetails.description}
 Type: ${farmDetails.type}
 Auto-scaling: ${config.autoScale ? 'enabled' : 'disabled'}
 Max agents: ${config.maxAgents}
-Timeout: ${config.timeout} seconds
+Timeout: ${config.timeout || 3600} seconds (${Math.floor((config.timeout || 3600) / 3600)} hour${Math.floor((config.timeout || 3600) / 3600) !== 1 ? 's' : ''} ${Math.floor(((config.timeout || 3600) % 3600) / 60)} minutes)
 ${config.goWildMode?.enabled ? `GoWild mode enabled with creativity level ${config.goWildMode?.creativityLevel}` : ''}${fileContext}`;
 
       const response = await yamlGeneratorService.generateYaml({
@@ -148,64 +188,6 @@ config:
     }
   };
 
-  const templates: YAMLTemplate[] = [
-    {
-      id: '1',
-      name: 'Web App Builder',
-      description: 'Full-stack web application with React and Node.js',
-      category: 'Development',
-      popularity: 95,
-      aiGenerated: false,
-      yaml: `name: Web App Builder Farm
-type: collaborative
-agents:
-  - name: Frontend Builder
-    type: builder
-    capabilities: [React, TypeScript, Tailwind CSS]
-    tasks:
-      - Initialize React project
-      - Build UI components
-      - Implement routing
-  - name: Backend Builder
-    type: builder
-    capabilities: [Node.js, Express, MongoDB]
-    tasks:
-      - Setup API server
-      - Implement endpoints
-      - Database integration
-  - name: Test Runner
-    type: tester
-    capabilities: [Jest, Cypress]
-    tasks:
-      - Write unit tests
-      - E2E testing
-config:
-  autoScale: true
-  maxAgents: 6`,
-      parameters: []
-    },
-    {
-      id: '2',
-      name: 'Code Review Pipeline',
-      description: 'Automated code review and quality assurance',
-      category: 'Quality',
-      popularity: 88,
-      aiGenerated: true,
-      yaml: `name: Code Review Pipeline
-type: sequential
-agents:
-  - name: Linter
-    type: reviewer
-    capabilities: [ESLint, Prettier]
-  - name: Security Scanner
-    type: reviewer
-    capabilities: [Security, OWASP]
-  - name: Performance Analyzer
-    type: reviewer
-    capabilities: [Performance, Optimization]`,
-      parameters: []
-    }
-  ];
 
   const handleSelectSeed = (seed: Seed) => {
     setSelectedSeed(seed);
@@ -308,6 +290,11 @@ config:
   };
 
   const handleCreateFarm = async () => {
+    console.log('[DEBUG] Farm creation started');
+    console.log('[DEBUG] farmDetails:', farmDetails);
+    console.log('[DEBUG] config:', config);
+    console.log('[DEBUG] attachedFiles:', attachedFiles.length);
+    
     // Pre-validation checks
     if (!farmDetails.name || farmDetails.name.trim().length === 0) {
       setError('Farm name is required');
@@ -400,7 +387,11 @@ config:
         }
       });
       
+      // Log the creation activity
+      logFarmCreation(newFarm.name, newFarm.id);
+      
       // Launch the farm with multi-claude agents
+      console.log('Launching farm with agents...');
       try {
         const launchResponse = await fetch(`/api/farms/${newFarm.id}/launch`, {
           method: 'POST',
@@ -411,24 +402,28 @@ config:
             numberOfAgents: config.maxAgents || 3,
             collaborative: farmDetails.type === 'collaborative',
             bundleSteps: farmDetails.type === 'sequential' ? 1 : undefined,
-            provider: selectedProvider
+            provider: selectedProvider,
+            timeout: config.timeout ? config.timeout * 1000 : 3600000 // Convert seconds to milliseconds, default 1 hour
           })
         });
 
         if (!launchResponse.ok) {
           console.error('Failed to launch farm agents, but farm was created');
+          toast.error('Farm created but agents failed to start. Please try launching manually.');
         } else {
           console.log('Farm agents launching successfully');
+          toast.success('Agents are starting up...');
         }
       } catch (launchError) {
         console.error('Error launching farm agents:', launchError);
+        toast.error('Farm created but agents failed to start. Please try launching manually.');
         // Don't fail the whole operation if launching fails
       }
       
       // Optionally save as seed
       if (saveAsSeed && seedName) {
         try {
-          await api.seeds.create({
+          const seedResponse = await api.seeds.create({
             name: seedName.trim(),
             description: farmDetails.description?.trim() || '',
             yaml: yaml,
@@ -437,6 +432,20 @@ config:
             tags: ['user-created', farmDetails.type],
             isPublic: false
           });
+          
+          // Log seed creation activity
+          const activityStore = useActivityStore.getState();
+          activityStore.addActivity({
+            type: 'seed_created',
+            title: 'Seed Created',
+            description: `Seed "${seedName.trim()}" has been saved from farm "${farmDetails.name}"`,
+            farmId: newFarm.id,
+            metadata: {
+              seedName: seedName.trim(),
+              farmName: farmDetails.name
+            }
+          });
+          
           toast.success('Farm created and saved as seed');
         } catch (seedError: any) {
           console.error('Failed to save as seed:', seedError);
@@ -447,11 +456,13 @@ config:
         toast.success('Farm created successfully');
       }
       
-      // Navigate to growing page to show progress animation
+      // Close modal first, then navigate (like GoWild does)
+      onClose?.();
+      
+      // Small delay to ensure modal closes before navigation
       setTimeout(() => {
-        navigate(`/farms/${newFarm.id}/growing`);
-        onClose?.();
-      }, 500);
+        navigate(`/harvests/${newFarm.id}`);
+      }, 100);
     } catch (err: any) {
       // Detailed error handling
       let errorMessage = 'Failed to create farm';
@@ -573,14 +584,12 @@ config:
               />
             </div>
 
-            {/* Seeds Section */}
+            {/* Seeds Section - Minimal Pills */}
             <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
-              <h4 className="text-base font-medium text-gray-900 dark:text-white mb-4">
-                Use a Seed Template (Optional)
-              </h4>
-              <SeedSelector
+              <SeedPills
                 onSelectSeed={handleSelectSeed}
                 selectedSeedId={selectedSeed?.id}
+                className="mt-2"
               />
             </div>
           </motion.div>
@@ -621,54 +630,79 @@ config:
                 </button>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Maximum Agents
-                </label>
-                <input
-                  type="number"
-                  value={config.maxAgents}
-                  onChange={(e) => setConfig({ ...config, maxAgents: parseInt(e.target.value) || 1 })}
-                  min="1"
-                  max="20"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-apple bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Timeout
-                </label>
-                <div className="flex items-center space-x-2">
-                  <div className="flex-1">
-                    <input
-                      type="number"
-                      value={Math.floor((config.timeout || 0) / 3600)}
-                      onChange={(e) => {
-                        const hours = parseInt(e.target.value) || 0;
-                        const minutes = (config.timeout || 0) % 3600 / 60;
-                        setConfig({ ...config, timeout: hours * 3600 + minutes * 60 });
-                      }}
-                      min="0"
-                      max="24"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-apple bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">Hours</span>
+              {/* Agent Configuration Display */}
+              <div className="p-4 bg-primary-50 dark:bg-primary-900/20 rounded-apple-lg border border-primary-200 dark:border-primary-800">
+                <h4 className="font-medium text-primary-900 dark:text-primary-300 mb-3 flex items-center space-x-2">
+                  <Cpu className="w-5 h-5" />
+                  <span>Agent Configuration</span>
+                </h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
+                      Max Agents
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="range"
+                        min="1"
+                        max="20"
+                        value={config.maxAgents}
+                        onChange={(e) => setConfig({ ...config, maxAgents: parseInt(e.target.value) || 1 })}
+                        className="flex-1"
+                      />
+                      <span className="w-12 text-center font-semibold text-primary-900 dark:text-primary-100">
+                        {config.maxAgents}
+                      </span>
+                    </div>
+                    <p className="text-xs text-primary-600 dark:text-primary-400 mt-1">
+                      {settings.agentConfig?.agentMode || 'default'} mode
+                    </p>
                   </div>
-                  <div className="flex-1">
-                    <input
-                      type="number"
-                      value={Math.floor(((config.timeout || 0) % 3600) / 60)}
-                      onChange={(e) => {
-                        const hours = Math.floor((config.timeout || 0) / 3600);
-                        const minutes = parseInt(e.target.value) || 0;
-                        setConfig({ ...config, timeout: hours * 3600 + Math.min(minutes, 59) * 60 });
-                      }}
-                      min="0"
-                      max="59"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-apple bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">Minutes</span>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-3">
+                      <Clock className="inline w-4 h-4 mr-1" />
+                      Execution Timeout
+                    </label>
+                    <div className="grid grid-cols-5 gap-2">
+                      {[
+                        { label: '5m', value: 300 },
+                        { label: '10m', value: 600 },
+                        { label: '20m', value: 1200 },
+                        { label: '30m', value: 1800 },
+                        { label: '1hr', value: 3600 },
+                        { label: '2hr', value: 7200 },
+                        { label: '4hr', value: 14400 },
+                        { label: '6hr', value: 21600 },
+                        { label: '12hr', value: 43200 },
+                        { label: '24hr', value: 86400 }
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setConfig({ ...config, timeout: option.value })}
+                          className={clsx(
+                            'relative px-3 py-2 rounded-apple text-sm font-medium transition-all',
+                            'flex items-center justify-center',
+                            config.timeout === option.value
+                              ? 'bg-gray-400 dark:bg-gray-400 text-black shadow-sm'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          )}
+                        >
+                          <div className={clsx(
+                            'absolute left-2 w-3 h-3 rounded-full border-2 transition-all',
+                            config.timeout === option.value
+                              ? 'border-white bg-white'
+                              : 'border-gray-400 dark:border-gray-500'
+                          )} />
+                          <span className="ml-3">{option.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-primary-600 dark:text-primary-400 mt-2">
+                      {formatTimeout(config.timeout || 600)}
+                      {config.timeout === 600 && ' (Default)'}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -707,6 +741,32 @@ config:
                       Change in Settings
                     </a>
                   </div>
+                </div>
+              </div>
+
+              {/* Database Persistence Toggle */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900 dark:text-white">Persist in Background</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Keep farm data after completion (recommended)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setConfig({ ...config, persistInBackground: !config.persistInBackground })}
+                    className={clsx(
+                      'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                      config.persistInBackground ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-700'
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                        config.persistInBackground ? 'translate-x-6' : 'translate-x-1'
+                      )}
+                    />
+                  </button>
                 </div>
               </div>
 
@@ -771,38 +831,6 @@ config:
               </div>
             </div>
 
-            <div className="pt-4">
-              <h4 className="font-medium text-gray-900 dark:text-white mb-3">
-                Use a Template
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {templates.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => {
-                      setSelectedTemplate(template);
-                      setYaml(template.yaml);
-                      setStep('grow');
-                    }}
-                    className="p-4 border border-gray-300 dark:border-gray-600 rounded-apple hover:border-primary-500 dark:hover:border-primary-400 transition-colors text-left"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h5 className="font-medium text-gray-900 dark:text-white">
-                          {template.name}
-                        </h5>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                          {template.description}
-                        </p>
-                      </div>
-                      {template.aiGenerated && (
-                        <Wand2 className="w-4 h-4 text-primary-500 ml-2 flex-shrink-0" />
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
           </motion.div>
         );
 
@@ -998,7 +1026,11 @@ config:
       </div>
 
       {/* Content */}
-      <div className="p-6">
+      <div 
+        ref={contentContainerRef}
+        className="p-6 max-h-[70vh] overflow-y-auto"
+        style={{ scrollBehavior: 'smooth' }}
+      >
         {renderStep()}
       </div>
 
@@ -1025,17 +1057,16 @@ config:
               whileTap={{ scale: 0.95 }}
               onClick={handleCreateFarm}
               disabled={loading || !yaml || !farmDetails.name}
-              className="flex items-center space-x-2 px-6 py-2 bg-primary-600 text-gray-700 rounded-apple hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="flex items-center space-x-2 px-6 py-2 bg-[var(--color-primary)] text-white rounded-apple hover:bg-[var(--color-primary-dark)] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-[rgba(var(--color-primary-rgb),0.25)]"
             >
               {loading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 text-gray-700 border-2 border-white border-t-transparent" />
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                   <span>Creating Farm...</span>
                 </>
               ) : (
                 <>
-                  <div className="px-0 py-2 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white" />
-                  <Play className="w-4 h-4 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white" />
+                  <Play className="w-4 h-4" />
                   <span>Create Farm</span>
                 </>
               )}

@@ -27,13 +27,37 @@ class DatabaseWrapper {
     
     try {
       return await pgPool.query(text, params);
-    } catch (error) {
+    } catch (error: any) {
+      // Check for various connection error codes
+      const connectionErrorCodes = [
+        'ECONNREFUSED',  // Connection refused
+        'ENOTFOUND',     // Host not found
+        '28P01',         // Authentication failed
+        '3D000',         // Database does not exist
+        '28000',         // Invalid authorization
+        'ETIMEDOUT',     // Connection timeout
+        'EHOSTUNREACH',  // Host unreachable
+        '57P03'          // Server shutting down
+      ];
+      
       // If it's a connection error and we haven't switched to in-memory yet
-      if (!this.useInMemory && (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === '28P01')) {
-        console.warn('PostgreSQL unavailable, switching to in-memory database');
+      if (!this.useInMemory && (connectionErrorCodes.includes(error.code) || error.message?.includes('connect'))) {
+        console.warn(`PostgreSQL unavailable (${error.code || 'connection error'}), switching to in-memory database`);
         this.useInMemory = true;
-        return inMemoryDb.query(text, params);
+        
+        // Initialize in-memory DB if needed
+        await inMemoryDb.connect();
+        
+        try {
+          return await inMemoryDb.query(text, params);
+        } catch (inMemoryError) {
+          console.error('In-memory database query failed:', inMemoryError);
+          throw inMemoryError;
+        }
       }
+      
+      // Log the error for debugging
+      console.error('Database query error:', error.message || error);
       throw error;
     }
   }
@@ -115,12 +139,13 @@ if (process.env.REDIS_URL) {
 export const redis = Redis.createClient(redisConfig);
 
 // Database health check
-export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis: boolean }> {
+export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis: boolean; inMemoryMode: boolean }> {
   let postgresHealthy = false;
   let redisHealthy = false;
+  const inMemoryMode = db.isInMemoryMode();
 
   try {
-    if (db.isInMemoryMode()) {
+    if (inMemoryMode) {
       // In-memory mode is always "healthy"
       postgresHealthy = true;
     } else {
@@ -130,11 +155,18 @@ export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis:
         setTimeout(() => reject(new Error('PostgreSQL health check timeout')), 1000)
       );
       
-      const result = await Promise.race([pgPromise, pgTimeout]) as any;
-      postgresHealthy = result.rows.length > 0;
+      try {
+        const result = await Promise.race([pgPromise, pgTimeout]) as any;
+        postgresHealthy = result.rows.length > 0;
+      } catch (pgError: any) {
+        console.warn('PostgreSQL health check failed:', pgError.message);
+        // Don't throw, just mark as unhealthy
+        postgresHealthy = false;
+      }
     }
-  } catch (error) {
-    console.error('PostgreSQL health check failed:', error.message);
+  } catch (error: any) {
+    console.error('PostgreSQL health check error:', error.message);
+    postgresHealthy = false;
   }
 
   try {
@@ -145,14 +177,19 @@ export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis:
         setTimeout(() => reject(new Error('Redis health check timeout')), 1000)
       );
       
-      await Promise.race([redisPromise, redisTimeout]);
-      redisHealthy = true;
+      try {
+        await Promise.race([redisPromise, redisTimeout]);
+        redisHealthy = true;
+      } catch (redisError: any) {
+        console.warn('Redis health check failed:', redisError.message);
+        redisHealthy = false;
+      }
     }
   } catch (error) {
     console.error('Redis health check failed:', error.message);
   }
 
-  return { postgres: postgresHealthy, redis: redisHealthy };
+  return { postgres: postgresHealthy, redis: redisHealthy, inMemoryMode };
 }
 
 // Initialize connections with graceful fallback

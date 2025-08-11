@@ -3,20 +3,18 @@ import { Toaster } from 'react-hot-toast'
 import { useEffect, useState } from 'react'
 import { DashboardLayout } from './components/layouts/DashboardLayout'
 import { Dashboard } from './components/Dashboard/Dashboard'
+import { FarmersPage } from './components/Farmers/FarmersPage'
 import { BarnPage } from './components/Barn/BarnPage'
 import { CreateFarmFromSeed } from './components/Farm/CreateFarmFromSeed'
+import { CreateFarmFromFarmer } from './components/Farm/CreateFarmFromFarmer'
 import { HarvestPage } from './components/Harvest/HarvestPage'
-import { GrowingPage } from './components/Farm/GrowingPage'
 import SettingsPage from './components/Settings/SettingsPage'
-import { AnalyticsPage } from './components/Analytics/AnalyticsPage'
+import Analytics from './components/Analytics/Analytics'
 import { MultiClaudeManager } from './components/MultiClaude/MultiClaudeManager'
 import SafeErrorPage from './components/ErrorPage/SafeErrorPage'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { useThemeStore } from './store/themeStore'
 import { AuthProvider } from './hooks/useAuth'
-import { AlertNotification } from './components/common/AlertNotification'
-import { alertService } from './services/alertService'
-import { ConnectionStatus } from './components/common/ConnectionStatus'
 import { ThemeProvider } from './components/common/ThemeProvider'
 import BackgroundIndicator from './components/common/BackgroundIndicator'
 import { ApiErrorDisplay } from './components/common/ApiErrorDisplay'
@@ -55,16 +53,18 @@ function AppContent() {
         <Route path="/" element={<DashboardLayout />}>
           <Route index element={<Navigate to="/home" replace />} />
           <Route path="home" element={<Dashboard />} />
+          <Route path="farmers" element={<FarmersPage />} />
           <Route path="barn" element={<BarnPage />} />
           <Route path="farms/new" element={<CreateFarmFromSeed />} />
+          <Route path="farms/create-from-farmer" element={<CreateFarmFromFarmer />} />
           <Route path="farms/:farmId" element={<div>Farm Details (Coming Soon)</div>} />
           <Route path="harvests/:farmId" element={<HarvestPage />} />
+          <Route path="harvest/:harvestId" element={<HarvestPage />} />
           <Route path="multiclaude" element={<MultiClaudeManager />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="analytics" element={<Analytics />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Route>
-        <Route path="/farms/:farmId/growing" element={<GrowingPage />} />
         <Route path="/error" element={<SafeErrorPage />} />
       </Routes>
       <Toaster

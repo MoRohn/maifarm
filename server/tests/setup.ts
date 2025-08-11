@@ -1,5 +1,10 @@
 import { jest } from '@jest/globals';
 import dotenv from 'dotenv';
+import { TextEncoder, TextDecoder } from 'util';
+
+// Setup globals for Node test environment
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder as any;
 
 // Load test environment variables
 dotenv.config({ path: '.env.test' });

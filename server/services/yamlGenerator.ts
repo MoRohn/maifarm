@@ -7,6 +7,9 @@ import * as yaml from 'js-yaml';
 import { getFarmAgentName, formatFarmAgentName, formatFarmAgentNameNoEmoji } from '../utils/farmAgentNames';
 import { promptEnhancer } from './promptEnhancer';
 import { promptEnhancementService } from './promptEnhancementService';
+import { barnCatalogService } from './barnCatalogService';
+import { thinkingStrategyService } from './thinkingStrategyService';
+import { ThinkingLevel, ThinkingConfig } from '../types/thinking';
 
 interface ParsedPrompt {
   agentCount: number;
@@ -15,6 +18,7 @@ interface ParsedPrompt {
   description: string;
   provider?: 'claude' | 'qwen';
   contextWindowSize?: number;
+  barnReferences?: string[];
 }
 
 export class YamlGeneratorService {
@@ -34,6 +38,103 @@ export class YamlGeneratorService {
     return YamlGeneratorService.instance;
   }
 
+  /**
+   * Process barn references in YAML template
+   */
+  private async processBarnReferences(yamlContent: string, farmId?: string): Promise<string> {
+    const barnReferenceRegex = /@barn:([a-f0-9-]+)/gi;
+    const matches = yamlContent.match(barnReferenceRegex);
+    
+    if (!matches || matches.length === 0) {
+      return yamlContent;
+    }
+    
+    let processedYaml = yamlContent;
+    
+    for (const reference of matches) {
+      try {
+        const item = await barnCatalogService.resolveReference(reference);
+        if (item) {
+          // Track usage if farmId provided
+          if (farmId) {
+            await barnCatalogService.trackItemUsage(item.id, farmId);
+          }
+          
+          // Add barn reference as a comment in YAML
+          const comment = `# Barn Reference: ${item.name} (${item.type})`;
+          const referenceInfo = `# Description: ${item.description}`;
+          const replacement = `${comment}\n${referenceInfo}\n# Original Reference: ${reference}`;
+          
+          processedYaml = processedYaml.replace(reference, replacement);
+        }
+      } catch (error) {
+        console.error(`[YamlGenerator] Error processing barn reference ${reference}:`, error);
+      }
+    }
+    
+    return processedYaml;
+  }
+  
+  /**
+   * Extract barn references from text
+   */
+  private extractBarnReferences(text: string): string[] {
+    const barnReferenceRegex = /@barn:([a-f0-9-]+)/gi;
+    const matches = text.match(barnReferenceRegex);
+    return matches || [];
+  }
+  
+  /**
+   * Suggest relevant barn items for a prompt
+   */
+  async suggestBarnItems(prompt: string, limit: number = 5): Promise<Array<{
+    id: string;
+    name: string;
+    description: string;
+    reference: string;
+    relevanceScore: number;
+  }>> {
+    try {
+      const searchResults = await barnCatalogService.searchCatalog({
+        searchText: prompt.substring(0, 200) // Use first 200 chars of prompt
+      });
+      
+      // Simple relevance scoring based on keyword matches
+      const keywordScored = searchResults.map(item => {
+        const promptLower = prompt.toLowerCase();
+        const itemText = `${item.name} ${item.description} ${item.tags.join(' ')}`.toLowerCase();
+        
+        let score = 0;
+        const words = promptLower.split(/\s+/);
+        
+        for (const word of words) {
+          if (word.length > 3 && itemText.includes(word)) {
+            score += 1;
+          }
+        }
+        
+        // Boost score for popular items
+        score += item.useCount * 0.1;
+        
+        return {
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          reference: item.reference,
+          relevanceScore: score
+        };
+      });
+      
+      return keywordScored
+        .filter(item => item.relevanceScore > 0)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, limit);
+    } catch (error) {
+      console.error('[YamlGenerator] Error suggesting barn items:', error);
+      return [];
+    }
+  }
+
   private initializeTemplates() {
     // Basic templates
     this.templates.set('react-testing', {
@@ -42,6 +143,8 @@ export class YamlGeneratorService {
       description: 'Farm for testing React applications',
       category: 'testing',
       content: `name: React Testing Farm
+# Barn References: Use @barn:item-id to reference items from the barn
+# Example: @barn:abc-123-def for a specific testing configuration
 agents:
   - name: Clucky the Chicken
     role: Run unit and integration tests
@@ -124,11 +227,15 @@ agents:
       }
     });
 
+    // Extract barn references from prompt
+    const barnReferences = this.extractBarnReferences(prompt);
+    
     return {
       agentCount,
       taskType,
       technologies,
-      description: prompt
+      description: prompt,
+      barnReferences
     };
   }
 
@@ -251,11 +358,16 @@ agents:
       
       // Generate configuration based on parsed prompt - matching Claude Code format
       const agents = this.generateAgentConfig(parsed);
+      
+      // Generate unique farm ID for workspace isolation
+      const farmId = `farm-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const farmWorkspace = `maibarn/workspaces/active/${farmId}`;
+      
       const config = {
         name: `${parsed.technologies.join('-') || 'general'}-${parsed.taskType}-farm`,
         description: originalPrompt, // Use original prompt as description
         agents: agents,
-        initial_prompt: this.generateInitialPrompt(parsed, agents),
+        initial_prompt: this.generateInitialPrompt(parsed, agents, farmId),
         steps: this.generateSteps(parsed),
         config: {
           autoScale: false,
@@ -272,7 +384,9 @@ agents:
           complexity: this.determineComplexity(originalPrompt),
           provider: provider,
           contextWindow: parsed.contextWindowSize,
-          original_prompt: originalPrompt
+          original_prompt: originalPrompt,
+          farm_id: farmId,
+          workspace_path: farmWorkspace
         }
       };
 
@@ -312,7 +426,9 @@ agents:
           confidence: 0.95,
           promptEnhanced: !!enhancementMetadata,
           enhancementMetadata,
-          contextWindowSize: parsed.contextWindowSize
+          contextWindowSize: parsed.contextWindowSize,
+          farm_id: farmId,
+          workspace_path: farmWorkspace
         },
         validation,
         suggestions
@@ -325,8 +441,8 @@ agents:
   private generateSteps(parsed: ParsedPrompt): string[] {
     const stepTemplates: Record<string, string[]> = {
       testing: [
-        'Set up comprehensive testing environment: Install Jest, Cypress, Playwright, and other testing frameworks. Configure test databases, mock servers, and test data fixtures. Set up continuous integration hooks and coverage reporting tools',
-        'Create unit test suites with high coverage: Write tests for all utility functions, test React components with Testing Library, properly mock external dependencies, achieve minimum 80% code coverage, and implement snapshot testing where appropriate',
+        'Set up comprehensive testing environment: Install Jest, Cypress, Playwright, and other testing frameworks. Configure test databases, mock servers, and test data fixtures. Set up continuous integration hooks and coverage reporting tools. SAVE all configuration files to your workspace immediately',
+        'Create unit test suites with high coverage: Write tests for all utility functions, test React components with Testing Library, properly mock external dependencies, achieve minimum 80% code coverage, and implement snapshot testing where appropriate. SAVE test files to workspace/tests/ as you create them',
         'Execute integration tests across all services: Test REST API endpoints with various payloads, verify database transactions and rollbacks, test authentication and authorization flows, validate error handling and status codes, check rate limiting and pagination',
         'Perform end-to-end tests on critical user workflows: Map out key user journeys, test registration and login flows, verify core business functionality, check cross-browser compatibility, and test responsive design across breakpoints',
         'Run performance and load testing: Set up k6 or similar tools, simulate concurrent user scenarios, test API response times under load, identify performance bottlenecks, and establish performance baselines',
@@ -343,10 +459,10 @@ agents:
         'Generate comprehensive review report: Compile findings with severity levels (Critical, High, Medium, Low), provide specific code examples for each issue, suggest concrete improvements with code snippets, create prioritized action items, include metrics and visualizations of code quality'
       ],
       development: [
-        'Initialize project with production-ready setup: Create well-organized project structure, configure TypeScript with strict settings, set up ESLint and Prettier with team standards, initialize Git with comprehensive .gitignore, configure environment variables and secrets management',
-        'Design and implement core architecture: Define data models and database schema with migrations, create base classes and interfaces for type safety, implement dependency injection patterns, set up state management (Redux/Zustand/Context), establish error boundary strategies and fallbacks',
-        'Develop authentication and authorization: Implement secure user registration with validation, create JWT-based authentication with refresh tokens, set up role-based access control (RBAC), implement password reset and email verification, add session management and security headers',
-        'Build primary features and business logic: Implement core domain functionality with clean architecture, create reusable service layers and utilities, develop data processing pipelines, implement business rule engines, add feature flags for gradual rollout',
+        'Initialize project with production-ready setup: Create well-organized project structure, configure TypeScript with strict settings, set up ESLint and Prettier with team standards, initialize Git with comprehensive .gitignore, configure environment variables and secrets management. SAVE all files to workspace root immediately after creation',
+        'Design and implement core architecture: Define data models and database schema with migrations, create base classes and interfaces for type safety, implement dependency injection patterns, set up state management (Redux/Zustand/Context), establish error boundary strategies and fallbacks. SAVE each module to workspace/src/ as you complete it',
+        'Develop authentication and authorization: Implement secure user registration with validation, create JWT-based authentication with refresh tokens, set up role-based access control (RBAC), implement password reset and email verification, add session management and security headers. SAVE auth modules to workspace/src/auth/ immediately',
+        'Build primary features and business logic: Implement core domain functionality with clean architecture, create reusable service layers and utilities, develop data processing pipelines, implement business rule engines, add feature flags for gradual rollout. SAVE each feature to workspace/src/features/ as completed',
         'Create responsive and accessible UI: Build component library with Storybook documentation, implement responsive grid layouts with mobile-first approach, ensure WCAG 2.1 AA compliance, add loading states and skeleton screens, implement comprehensive error messaging',
         'Implement data persistence and caching: Set up database connections with connection pooling, implement repository and unit of work patterns, add Redis caching layer with TTL strategies, create database migrations and seeders, implement transaction handling and rollback',
         'Develop RESTful API with documentation: Create Express routes with input validation (Joi/Zod), implement OpenAPI/Swagger documentation, add request/response logging middleware, implement rate limiting and throttling, create API versioning strategy',
@@ -405,10 +521,10 @@ agents:
         'Document and train: Create runbooks for incidents, document dashboard usage, train team on tools, establish on-call procedures, create incident response playbooks'
       ],
       general: [
-        'Initialize project environment: Set up development environment with all necessary tools, configure version control and branching strategy, establish project structure and conventions, set up continuous integration, create initial documentation',
-        'Analyze requirements thoroughly: Gather and document all requirements, identify technical constraints and dependencies, create user stories and acceptance criteria, estimate effort and timeline, identify potential risks',
-        'Design solution architecture: Create high-level design documents, define component interfaces and APIs, establish data flow and schemas, plan for scalability and performance, document architectural decisions',
-        'Implement core functionality: Build main features iteratively, follow coding best practices, implement proper error handling, add comprehensive logging, ensure code maintainability',
+        'Initialize project environment: Set up development environment with all necessary tools, configure version control and branching strategy, establish project structure and conventions, set up continuous integration, create initial documentation. SAVE ALL configuration and setup files to your workspace immediately',
+        'Analyze requirements thoroughly: Gather and document all requirements, identify technical constraints and dependencies, create user stories and acceptance criteria, estimate effort and timeline, identify potential risks. SAVE analysis documents to workspace/docs/',
+        'Design solution architecture: Create high-level design documents, define component interfaces and APIs, establish data flow and schemas, plan for scalability and performance, document architectural decisions. SAVE architecture files to workspace/architecture/',
+        'Implement core functionality: Build main features iteratively, follow coding best practices, implement proper error handling, add comprehensive logging, ensure code maintainability. SAVE each completed module to appropriate workspace subdirectory immediately',
         'Test and validate: Write comprehensive test suites, perform integration testing, validate against requirements, conduct user acceptance testing, ensure performance targets met',
         'Document and deliver: Create user documentation, write technical documentation, prepare deployment guides, conduct knowledge transfer, archive project artifacts'
       ]
@@ -417,13 +533,58 @@ agents:
     return stepTemplates[parsed.taskType] || stepTemplates.general;
   }
 
-  private generateInitialPrompt(parsed: any, agents: any[]): string {
+  private generateInitialPrompt(parsed: any, agents: any[], farmId?: string): string {
     const agentNames = agents.map(a => a.name).slice(0, 3).join(', ');
     const fullTeamSize = agents.length;
+    const workspacePath = farmId ? `maibarn/workspaces/active/${farmId}` : 'maibarn/workspaces/active';
+    
+    // Analyze prompt complexity to determine thinking level
+    const complexityIndicators = thinkingStrategyService.analyzeComplexity(
+      parsed.originalPrompt || parsed.description || ''
+    );
+    const complexityScore = thinkingStrategyService.calculateComplexityScore(complexityIndicators);
+    
+    // Recommend thinking level based on task type and complexity
+    const thinkingRecommendation = thinkingStrategyService.recommendThinkingLevel(
+      parsed.originalPrompt || parsed.description || '',
+      parsed.taskType
+    );
     
     // Build comprehensive prompt with detailed instructions
     let prompt = `🌾 Welcome to MaiFarm! 🌾\n\n`;
     prompt += `You are joining a collaborative team of ${fullTeamSize} specialized agents for an important task.\n\n`;
+    
+    // Add thinking strategy instructions if complexity warrants it
+    if (thinkingRecommendation.level !== ThinkingLevel.NONE) {
+      const thinkingConfig: ThinkingConfig = {
+        level: thinkingRecommendation.level,
+        taskType: parsed.taskType as any,
+        context: `This is a collaborative multi-agent task with ${fullTeamSize} agents. Coordinate effectively and ${thinkingRecommendation.reasoning.toLowerCase()}.`,
+        autoEscalate: false // Don't auto-escalate in YAML generation
+      };
+      
+      // Apply thinking enhancement to the mission description
+      const missionPrompt = parsed.originalPrompt || parsed.description || '';
+      const enhancedMission = thinkingStrategyService.enhancePrompt(missionPrompt, thinkingConfig);
+      
+      prompt += `🧠 **Thinking Strategy Applied:** ${enhancedMission.appliedLevel}\n`;
+      prompt += `📊 **Task Complexity:** ${Math.round(complexityScore)}% (${thinkingRecommendation.reasoning})\n\n`;
+    }
+    
+    // CRITICAL: Add workspace management instructions at the very beginning
+    prompt += `📁 **CRITICAL - File Management Protocol:**\n`;
+    prompt += `- **ALL generated files MUST be saved to:** ${workspacePath}/\n`;
+    prompt += `- **Save files IMMEDIATELY after generation** - do not wait until the end\n`;
+    prompt += `- Use absolute paths when saving: /Users/[username]/maifarm/${workspacePath}/\n`;
+    prompt += `- Create subdirectories as needed (e.g., ${workspacePath}/src/, ${workspacePath}/tests/)\n`;
+    prompt += `- **NEVER save files to the main codebase directory**\n`;
+    prompt += `- Check file exists after saving and confirm successful write\n\n`;
+    
+    prompt += `🔄 **Continuation Instructions:**\n`;
+    prompt += `- To resume your work later, use: \`claude --continue\`\n`;
+    prompt += `- To pick a specific conversation: \`claude --resume\`\n`;
+    prompt += `- For non-interactive continuation: \`claude --continue --print "Continue with [task]"\`\n`;
+    prompt += `- Always save your progress before stopping work\n\n`;
     
     // Add original request if available
     if (parsed.originalPrompt) {
@@ -431,6 +592,31 @@ agents:
     } else if (parsed.description) {
       prompt += `📋 **Task Description:**\n${parsed.description}\n\n`;
     }
+    
+    // Add detailed mission based on task type with thinking strategy
+    const taskThinkingGuidance: Record<string, string> = {
+      testing: thinkingRecommendation.level >= ThinkingLevel.MODERATE 
+        ? '\n\n💭 **Think hard** about edge cases, race conditions, and potential failure modes before writing tests.'
+        : '',
+      review: thinkingRecommendation.level >= ThinkingLevel.MODERATE
+        ? '\n\n💭 **Think deeply** about code quality, security implications, and architectural impacts during review.'
+        : '',
+      development: thinkingRecommendation.level >= ThinkingLevel.BASIC
+        ? '\n\n💭 **Think** about the overall architecture and future maintainability before implementing.'
+        : '',
+      debugging: thinkingRecommendation.level >= ThinkingLevel.DEEP
+        ? '\n\n💭 **Think harder** about all possible root causes and system interactions before debugging.'
+        : '',
+      analysis: thinkingRecommendation.level >= ThinkingLevel.MODERATE
+        ? '\n\n💭 **Think hard** about data patterns, correlations, and hidden insights during analysis.'
+        : '',
+      optimization: thinkingRecommendation.level >= ThinkingLevel.MODERATE
+        ? '\n\n💭 **Think hard** about performance bottlenecks and optimization trade-offs.'
+        : '',
+      general: thinkingRecommendation.level >= ThinkingLevel.BASIC
+        ? '\n\n💭 **Think** carefully about the problem and plan your approach systematically.'
+        : ''
+    };
     
     // Add detailed mission based on task type
     const missionDescriptions: Record<string, string> = {
@@ -578,7 +764,10 @@ agents:
 5. Deliver complete solution`
     };
 
-    prompt += missionDescriptions[parsed.taskType] || missionDescriptions.general;
+    const selectedMission = missionDescriptions[parsed.taskType] || missionDescriptions.general;
+    const thinkingGuidance = taskThinkingGuidance[parsed.taskType] || taskThinkingGuidance.general;
+    prompt += selectedMission;
+    prompt += thinkingGuidance;
     
     // Add team information
     prompt += `\n\n👥 **Your Team:**\n`;
@@ -593,13 +782,15 @@ agents:
       prompt += `- Optimized for complex multi-file operations\n`;
     }
     
-    // Add coordination protocol
+    // Add coordination protocol with proper maibarn paths
     prompt += `\n📁 **Coordination Protocol:**\n`;
-    prompt += `- Shared workspace: /tmp/claude_coordination/\n`;
-    prompt += `- Claim work in active_agents.json before starting\n`;
-    prompt += `- Update progress in work_claims.json regularly\n`;
+    prompt += `- Shared coordination directory: maibarn/coordination/\n`;
+    prompt += `- Farm-specific workspace: ${workspacePath}/\n`;
+    prompt += `- Claim work in maibarn/coordination/active_agents.json before starting\n`;
+    prompt += `- Update progress in maibarn/coordination/work_claims.json regularly\n`;
     prompt += `- Check existing claims to avoid duplicate work\n`;
-    prompt += `- Communicate via shared status files\n`;
+    prompt += `- Communicate via shared status files in coordination directory\n`;
+    prompt += `- **Remember: Save all your generated files to ${workspacePath}/ immediately**\n`;
     
     // Add technology stack if detected
     if (parsed.technologies && parsed.technologies.length > 0) {
@@ -628,11 +819,14 @@ agents:
     
     // Final call to action
     prompt += `\n📝 **Getting Started:**\n`;
-    prompt += `1. Review the detailed task steps below\n`;
-    prompt += `2. Claim your work area in coordination files\n`;
-    prompt += `3. Begin with your specialized responsibilities\n`;
-    prompt += `4. Coordinate with other agents as needed\n`;
-    prompt += `5. Update your progress regularly\n\n`;
+    prompt += `1. Create your workspace directory: ${workspacePath}/\n`;
+    prompt += `2. Review the detailed task steps below\n`;
+    prompt += `3. Claim your work area in coordination files\n`;
+    prompt += `4. **SAVE EVERY FILE YOU CREATE IMMEDIATELY to ${workspacePath}/**\n`;
+    prompt += `5. Begin with your specialized responsibilities\n`;
+    prompt += `6. Coordinate with other agents as needed\n`;
+    prompt += `7. Update your progress regularly\n\n`;
+    prompt += `⚠️ **REMINDER**: Save ALL generated files to ${workspacePath}/ immediately after creation!\n\n`;
     prompt += `When ready to begin this collaborative effort with your farm colleagues, respond with "Ready to begin" and start claiming your work areas.`;
     
     return prompt;
@@ -743,6 +937,62 @@ agents:
   }
 
   /**
+   * Generate YAML with barn integration
+   */
+  async generateWithBarnIntegration(request: YamlGenerationRequest & {
+    farmId?: string;
+    includeBarnSuggestions?: boolean;
+    barnReferences?: string[];
+  }): Promise<YamlGenerationResponse> {
+    // First generate the regular YAML
+    const baseResponse = await this.generateYaml(request);
+    
+    let yamlContent = baseResponse.yaml;
+    const suggestions = [...(baseResponse.suggestions || [])];
+    
+    // Process barn references if provided
+    if (request.barnReferences && request.barnReferences.length > 0) {
+      yamlContent = await this.processBarnReferences(yamlContent, request.farmId);
+    }
+    
+    // Extract barn references from the prompt and add them to YAML
+    const extractedRefs = this.extractBarnReferences(request.prompt);
+    if (extractedRefs.length > 0) {
+      yamlContent = await this.processBarnReferences(yamlContent, request.farmId);
+    }
+    
+    // Add barn suggestions if requested
+    if (request.includeBarnSuggestions) {
+      const barnSuggestions = await this.suggestBarnItems(request.prompt);
+      if (barnSuggestions.length > 0) {
+        // Add barn suggestions as comments
+        let barnSection = '\n# Suggested Barn Items:\n';
+        barnSuggestions.forEach(item => {
+          barnSection += `# - ${item.name}: ${item.description} (${item.reference})\n`;
+        });
+        yamlContent = yamlContent + barnSection;
+        
+        suggestions.push(
+          `Consider using ${barnSuggestions.length} relevant items from the Barn: ` +
+          barnSuggestions.map(item => item.name).join(', ')
+        );
+      }
+    }
+    
+    return {
+      ...baseResponse,
+      yaml: yamlContent,
+      suggestions,
+      barnReferences: extractedRefs,
+      metadata: {
+        ...baseResponse.metadata,
+        barnIntegration: true,
+        barnReferencesCount: extractedRefs.length
+      }
+    };
+  }
+
+  /**
    * Enhance a user prompt to make it more effective for YAML generation
    * This method uses creative prompt engineering to improve the user's input
    */
@@ -835,10 +1085,12 @@ agents:
     
     // Add collaboration requirements
     enhancedPrompt += '\n\nAgents should collaborate using:';
-    enhancedPrompt += '\n- Shared coordination files at /tmp/claude_coordination/';
+    enhancedPrompt += '\n- Shared coordination files at maibarn/coordination/';
+    enhancedPrompt += '\n- Farm-specific workspace at maibarn/workspaces/active/{farm-id}/';
     enhancedPrompt += '\n- Work claims to prevent duplicate efforts';
     enhancedPrompt += '\n- Clear interfaces and integration points';
     enhancedPrompt += '\n- Regular status updates and progress tracking';
+    enhancedPrompt += '\n- Immediate file saving to workspace - never wait until completion';
     
     // Add farm-themed personality
     enhancedPrompt += '\n\nEach agent should have a unique farm animal personality that reflects their role:';
@@ -888,6 +1140,323 @@ agents:
       suggestions,
       improvements
     };
+  }
+
+  /**
+   * Generate YAML from harvest data
+   */
+  async generateFromHarvest(harvest: any, options?: {
+    additionalPrompt?: string;
+    preserveOriginalConfig?: boolean;
+    enhanceWithResults?: boolean;
+  }): Promise<string> {
+    try {
+      // If harvest already has YAML configuration, use it as base
+      if (harvest.farmConfig?.yaml && options?.preserveOriginalConfig !== false) {
+        let yamlContent = harvest.farmConfig.yaml;
+        
+        // Add additional prompt if provided
+        if (options?.additionalPrompt) {
+          yamlContent = this.insertAdditionalPromptInYaml(yamlContent, options.additionalPrompt);
+        }
+        
+        // Enhance with harvest results if requested
+        if (options?.enhanceWithResults && harvest.results) {
+          yamlContent = this.enhanceYamlWithHarvestResults(yamlContent, harvest);
+        }
+        
+        return yamlContent;
+      }
+
+      // Generate new YAML based on harvest information
+      const request: YamlGenerationRequest = {
+        prompt: this.buildPromptFromHarvest(harvest, options?.additionalPrompt),
+        mode: 'farm',
+        constraints: {
+          maxAgents: harvest.summary?.agents?.length || 3,
+          context: `Recreating farm configuration based on harvest: ${harvest.name}`
+        }
+      };
+
+      const response = await this.generateYaml(request);
+      return response.yaml;
+    } catch (error) {
+      console.error('[YamlGenerator] Error generating YAML from harvest:', error);
+      throw new Error(`Failed to generate YAML from harvest: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Build a comprehensive prompt from harvest data
+   */
+  private buildPromptFromHarvest(harvest: any, additionalPrompt?: string): string {
+    let prompt = '';
+    
+    // Start with harvest description
+    if (harvest.description) {
+      prompt += harvest.description;
+    } else if (harvest.name) {
+      prompt += `Create a farm configuration for: ${harvest.name}`;
+    }
+    
+    // Add farm context
+    if (harvest.farmName) {
+      prompt += `\n\nOriginal farm: ${harvest.farmName}`;
+    }
+    
+    // Add agent information if available
+    if (harvest.summary?.agents) {
+      prompt += `\n\nUse ${harvest.summary.agents.length} agents similar to the original configuration.`;
+    }
+    
+    // Add task types from results
+    if (harvest.results && harvest.results.length > 0) {
+      const taskTypes = [...new Set(harvest.results.map((r: any) => r.taskType))].filter(Boolean);
+      if (taskTypes.length > 0) {
+        prompt += `\n\nTasks should include: ${taskTypes.join(', ')}`;
+      }
+    }
+    
+    // Add quality insights
+    if (harvest.insights && harvest.insights.length > 0) {
+      prompt += `\n\nKey insights from previous execution:`;
+      harvest.insights.slice(0, 3).forEach((insight: any) => {
+        prompt += `\n- ${insight.title || insight.description || insight}`;
+      });
+    }
+    
+    // Add technology stack from yield
+    if (harvest.yield && harvest.yield.length > 0) {
+      const techStack = this.extractTechnologyFromYield(harvest.yield);
+      if (techStack.length > 0) {
+        prompt += `\n\nTechnology stack: ${techStack.join(', ')}`;
+      }
+    }
+    
+    // Add additional prompt if provided
+    if (additionalPrompt && additionalPrompt.trim()) {
+      prompt += `\n\n📝 Additional Requirements:\n${additionalPrompt}`;
+    }
+    
+    return prompt;
+  }
+
+  /**
+   * Extract technology information from harvest yield
+   */
+  private extractTechnologyFromYield(yieldItems: any[]): string[] {
+    const technologies = new Set<string>();
+    
+    yieldItems.forEach(item => {
+      // Check file extensions
+      if (item.name) {
+        const ext = item.name.split('.').pop()?.toLowerCase();
+        const techMap: Record<string, string> = {
+          'js': 'javascript',
+          'ts': 'typescript', 
+          'jsx': 'react',
+          'tsx': 'react',
+          'py': 'python',
+          'java': 'java',
+          'go': 'golang',
+          'rs': 'rust',
+          'php': 'php',
+          'rb': 'ruby',
+          'cpp': 'cpp',
+          'cs': 'csharp',
+          'sql': 'sql'
+        };
+        
+        if (ext && techMap[ext]) {
+          technologies.add(techMap[ext]);
+        }
+      }
+      
+      // Check content for framework indicators
+      if (item.content || item.description) {
+        const content = (item.content || item.description || '').toLowerCase();
+        if (content.includes('react')) technologies.add('react');
+        if (content.includes('vue')) technologies.add('vue');
+        if (content.includes('angular')) technologies.add('angular');
+        if (content.includes('express')) technologies.add('express');
+        if (content.includes('fastapi')) technologies.add('fastapi');
+        if (content.includes('django')) technologies.add('django');
+        if (content.includes('flask')) technologies.add('flask');
+        if (content.includes('docker')) technologies.add('docker');
+        if (content.includes('kubernetes')) technologies.add('kubernetes');
+      }
+    });
+    
+    return Array.from(technologies);
+  }
+
+  /**
+   * Insert additional prompt into existing YAML
+   */
+  private insertAdditionalPromptInYaml(yamlContent: string, additionalPrompt: string): string {
+    try {
+      const yamlObj = yaml.load(yamlContent) as any;
+      
+      if (yamlObj && yamlObj.initial_prompt) {
+        yamlObj.initial_prompt = `${yamlObj.initial_prompt}\n\n📝 **Additional Instructions:**\n${additionalPrompt}`;
+      } else {
+        yamlObj.initial_prompt = `📝 **Additional Instructions:**\n${additionalPrompt}`;
+      }
+
+      return yaml.dump(yamlObj, {
+        indent: 2,
+        lineWidth: 80,
+        noRefs: true
+      });
+    } catch (error) {
+      console.warn('[YamlGenerator] Failed to parse YAML for prompt insertion, appending as comment:', error);
+      return `${yamlContent}\n\n# Additional Instructions:\n# ${additionalPrompt.split('\n').join('\n# ')}`;
+    }
+  }
+
+  /**
+   * Enhance YAML with insights from harvest results
+   */
+  private enhanceYamlWithHarvestResults(yamlContent: string, harvest: any): string {
+    try {
+      const yamlObj = yaml.load(yamlContent) as any;
+      
+      // Add metadata section with harvest insights
+      if (!yamlObj.metadata) {
+        yamlObj.metadata = {};
+      }
+      
+      yamlObj.metadata.harvest_derived = true;
+      yamlObj.metadata.original_harvest = harvest.id;
+      yamlObj.metadata.original_farm = harvest.farmName;
+      
+      // Add performance insights if available
+      if (harvest.quality?.overallScore) {
+        yamlObj.metadata.expected_quality_score = harvest.quality.overallScore;
+      }
+      
+      if (harvest.summary?.efficiency) {
+        yamlObj.metadata.expected_efficiency = harvest.summary.efficiency;
+      }
+      
+      // Add successful task patterns
+      if (harvest.results) {
+        const successfulTasks = harvest.results
+          .filter((r: any) => r.success)
+          .map((r: any) => r.taskType)
+          .filter(Boolean);
+          
+        if (successfulTasks.length > 0) {
+          yamlObj.metadata.proven_task_types = [...new Set(successfulTasks)];
+        }
+      }
+      
+      // Add insights as comments in the steps
+      if (harvest.insights && harvest.insights.length > 0 && yamlObj.steps) {
+        const insightComments = harvest.insights
+          .slice(0, 3)
+          .map((insight: any) => `# Insight: ${insight.title || insight.description || insight}`)
+          .join('\n');
+          
+        if (Array.isArray(yamlObj.steps)) {
+          yamlObj.steps = [
+            `# Insights from previous execution:\n${insightComments}`,
+            ...yamlObj.steps
+          ];
+        }
+      }
+      
+      return yaml.dump(yamlObj, {
+        indent: 2,
+        lineWidth: 80,
+        noRefs: true
+      });
+    } catch (error) {
+      console.warn('[YamlGenerator] Failed to enhance YAML with harvest results:', error);
+      return yamlContent; // Return original if enhancement fails
+    }
+  }
+
+  /**
+   * Generate customized YAML from a farmer template
+   */
+  async generateYamlFromFarmer(
+    farmerTemplate: any,
+    userInputs: {
+      farmName: string;
+      description: string;
+      customPrompt?: string;
+      maxAgents?: number;
+      timeout?: number;
+    }
+  ): Promise<string> {
+    try {
+      // Start with the farmer template's YAML content
+      let customizedYaml = farmerTemplate.yaml_content || '';
+
+      // If no YAML content, create from farmer template structure
+      if (!customizedYaml) {
+        const yamlData = {
+          name: farmerTemplate.name,
+          title: farmerTemplate.title,
+          description: farmerTemplate.description,
+          agents: farmerTemplate.agents,
+          initial_prompt: farmerTemplate.initial_prompt,
+          steps: farmerTemplate.steps,
+          config: {
+            ...farmerTemplate.config,
+            maxAgents: userInputs.maxAgents || farmerTemplate.config?.maxAgents || 8,
+            timeout: userInputs.timeout || farmerTemplate.config?.timeout || 3600
+          },
+          metadata: {
+            ...farmerTemplate.metadata,
+            generated_at: new Date().toISOString(),
+            generated_from: 'farmer_template'
+          }
+        };
+        
+        customizedYaml = yaml.dump(yamlData, { 
+          indent: 2,
+          lineWidth: -1,
+          noRefs: true 
+        });
+      }
+
+      // Apply customizations
+      customizedYaml = customizedYaml
+        .replace(/\{\{FARM_NAME\}\}/g, userInputs.farmName)
+        .replace(/\{\{FARM_DESCRIPTION\}\}/g, userInputs.description)
+        .replace(/\{\{USER_PROMPT\}\}/g, userInputs.customPrompt || 'Please help me with my task.')
+        .replace(/\{\{MAX_AGENTS\}\}/g, (userInputs.maxAgents || 8).toString())
+        .replace(/\{\{TIMEOUT\}\}/g, (userInputs.timeout || 3600).toString());
+
+      // Update the name and description in the YAML if they exist
+      if (customizedYaml.includes('name:')) {
+        customizedYaml = customizedYaml.replace(/^name:\s*.*$/m, `name: ${userInputs.farmName.toLowerCase().replace(/\s+/g, '-')}`);
+      }
+      
+      if (customizedYaml.includes('title:')) {
+        customizedYaml = customizedYaml.replace(/^title:\s*.*$/m, `title: ${userInputs.farmName}`);
+      }
+
+      if (customizedYaml.includes('description:')) {
+        customizedYaml = customizedYaml.replace(/^description:\s*.*$/m, `description: ${userInputs.description}`);
+      }
+
+      // Update config values
+      if (userInputs.maxAgents && customizedYaml.includes('maxAgents:')) {
+        customizedYaml = customizedYaml.replace(/maxAgents:\s*\d+/g, `maxAgents: ${userInputs.maxAgents}`);
+      }
+
+      if (userInputs.timeout && customizedYaml.includes('timeout:')) {
+        customizedYaml = customizedYaml.replace(/timeout:\s*\d+/g, `timeout: ${userInputs.timeout}`);
+      }
+
+      return customizedYaml;
+    } catch (error) {
+      console.error('Error in generateYamlFromFarmer:', error);
+      throw new Error('Failed to generate YAML from farmer template');
+    }
   }
 }
 

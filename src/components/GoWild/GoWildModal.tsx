@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { X, Sparkles, AlertTriangle, Info, Wand2, Rocket } from 'lucide-react';
+import { clsx } from 'clsx';
 import { GoWildConfig } from '../../types/goWild';
 import { CreativityControls } from './CreativityControls';
 import { BoundaryControls } from './BoundaryControls';
@@ -29,7 +30,7 @@ export const GoWildModal: React.FC<GoWildModalProps> = ({ isOpen, onClose, farmI
   const [config, setConfig] = useState<GoWildConfig>({
     creativityLevel: 70,
     explorationDepth: 5,
-    maxDuration: 30,
+    maxDuration: 10, // Default to 10 minutes
     boundaries: {
       allowExternalAPIs: true,
       allowFileSystem: true,
@@ -113,8 +114,23 @@ export const GoWildModal: React.FC<GoWildModalProps> = ({ isOpen, onClose, farmI
         setTempFarmId(newFarm.id);
         toast.success('Go Wild farm created successfully!');
         
-        // Navigate to growing page to show progress animation
-        const harvestPath = `/farms/${newFarm.id}/growing`;
+        // Launch the farm with agents
+        console.log('Launching Go Wild farm with agents...');
+        try {
+          const launchResponse = await api.post(`/api/farms/${newFarm.id}/launch`, {
+            numberOfAgents: config.explorationDepth || 5,
+            collaborative: true,
+            prompt: description || `Explore and innovate on: ${farmName}. Be creative and think outside the box!`
+          });
+          console.log('Farm launch response:', launchResponse);
+          toast.success('Agents are starting up...');
+        } catch (launchError) {
+          console.error('Failed to launch farm agents:', launchError);
+          toast.error('Farm created but agents failed to start. Please try launching manually.');
+        }
+        
+        // Navigate directly to harvest page to show progress
+        const harvestPath = `/harvests/${newFarm.id}`;
         console.log('Navigating to harvest page:', harvestPath);
         
         // Close modal first, then navigate
@@ -132,9 +148,9 @@ export const GoWildModal: React.FC<GoWildModalProps> = ({ isOpen, onClose, farmI
         setIsCreating(false);
       }
     } else {
-      // Use existing farm - navigate to growing page
+      // Use existing farm - navigate to harvest page
       const existingFarmId = farmId || tempFarmId;
-      const harvestPath = `/farms/${existingFarmId}/growing`;
+      const harvestPath = `/harvests/${existingFarmId}`;
       
       toast.success('Starting Go Wild exploration!');
       console.log('Using existing farm, navigating to:', harvestPath);
@@ -278,17 +294,52 @@ export const GoWildModal: React.FC<GoWildModalProps> = ({ isOpen, onClose, farmI
 
           {/* Duration Control */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Max Duration (minutes)
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              Max Duration
             </label>
-            <input
-              type="number"
-              min={5}
-              max={120}
-              value={config.maxDuration}
-              onChange={(e) => setConfig({ ...config, maxDuration: parseInt(e.target.value) })}
-              className="w-full px-4 py-2 rounded-apple border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            />
+            <div className="grid grid-cols-5 gap-2">
+              {[
+                { label: '5m', value: 5 },
+                { label: '10m', value: 10 },
+                { label: '20m', value: 20 },
+                { label: '30m', value: 30 },
+                { label: '1hr', value: 60 },
+                { label: '2hr', value: 120 },
+                { label: '4hr', value: 240 },
+                { label: '6hr', value: 360 },
+                { label: '12hr', value: 720 },
+                { label: '24hr', value: 1440 }
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setConfig({ ...config, maxDuration: option.value })}
+                  className={clsx(
+                    'relative px-3 py-2 rounded-apple text-sm font-medium transition-all',
+                    'flex items-center justify-center',
+                    config.maxDuration === option.value
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  )}
+                >
+                  <div className={clsx(
+                    'absolute left-2 w-3 h-3 rounded-full border-2 transition-all',
+                    config.maxDuration === option.value
+                      ? 'border-white bg-white'
+                      : 'border-gray-400 dark:border-gray-500'
+                  )} />
+                  <span className="ml-3">{option.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">
+              {config.maxDuration < 60 
+                ? `${config.maxDuration} minutes`
+                : config.maxDuration === 60
+                ? '1 hour'
+                : `${config.maxDuration / 60} hours`}
+              {config.maxDuration === 10 && ' (Default)'}
+            </p>
           </div>
 
           {/* Focus Areas */}

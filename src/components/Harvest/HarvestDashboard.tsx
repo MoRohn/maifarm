@@ -6,27 +6,26 @@ import {
   TrendingUp,
   Clock,
   CheckCircle,
-  Activity,
-  Award,
   Zap,
-  Grid,
-  List,
   Download,
   Save
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Harvest } from '../../types/harvest';
-import { HarvestDisplay } from './HarvestDisplay';
-import { ArtifactCard } from './ArtifactCard';
+import { Tooltip } from '../common/Tooltip';
+import { YieldCard } from './YieldCard';
 import { InsightsPanel } from './InsightsPanel';
 import { SeedCreator } from './SeedCreator';
 import { HarvestResults } from './HarvestResults';
-import { HarvestArtifacts } from './HarvestArtifacts';
-import { HarvestAnalytics } from './HarvestAnalytics';
 import { HarvestHeadlineSummary } from './HarvestHeadlineSummary';
 import { HarvestCompletionAnimation } from './HarvestCompletionAnimation';
 import { SaveSeedModal } from './SaveSeedModal';
+import { SeedQuickAction } from '../Seeds/SeedQuickAction';
+import { YieldPreviewModal } from './YieldPreviewModal';
 import { harvestService } from '../../services/harvestService';
+import { farmService } from '../../services/farmService';
+import { mapAgentNamesInHarvest } from '../../utils/agentNameMapper';
+import { useActivityStore } from '../../store/activityStore';
 import { format } from 'date-fns';
 
 interface HarvestDashboardProps {
@@ -42,13 +41,14 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
 }) => {
   const [harvest, setHarvest] = useState<Harvest | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [view] = useState<'grid' | 'list'>('grid'); // Keep for HarvestResults component
   const [showSeedModal, setShowSeedModal] = useState(false);
   const [showSeedCreator, setShowSeedCreator] = useState(false);
+  const [showSeedQuickAction, setShowSeedQuickAction] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
   const [showCompletionAnimation, setShowCompletionAnimation] = useState(false);
-  const [showEnhancedView, setShowEnhancedView] = useState(false);
   const [realtimeAgents, setRealtimeAgents] = useState<any[]>([]);
+  const [previewYieldItem, setPreviewYieldItem] = useState<any>(null);
 
   useEffect(() => {
     loadHarvest();
@@ -75,6 +75,19 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
       if (completed.length > 0 && !celebrating) {
         setShowCompletionAnimation(true);
         setCelebrating(true);
+        
+        // Log harvest completion activity
+        const activityStore = useActivityStore.getState();
+        activityStore.addActivity({
+          type: 'harvest_created',
+          title: 'Harvest Completed',
+          description: `Harvest for "${farmName}" has been successfully completed`,
+          farmId: farmId,
+          metadata: {
+            harvestId: harvest?.id,
+            completedAt: new Date().toISOString()
+          }
+        });
       }
     });
     
@@ -92,10 +105,27 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
       const harvestData = await harvestService.getByFarmId(farmId);
       // Get the most recent harvest for this farm
       const latestHarvest = harvestData.length > 0 ? harvestData[0] : null;
-      setHarvest(latestHarvest);
+      
+      // Apply agent name mapping if we have harvest data
+      if (latestHarvest) {
+        try {
+          const farmData = await farmService.getFarm(farmId);
+          if (farmData) {
+            const mappedHarvest = mapAgentNamesInHarvest(latestHarvest, farmData);
+            setHarvest(mappedHarvest);
+          } else {
+            setHarvest(latestHarvest);
+          }
+        } catch (farmError) {
+          console.warn('Could not fetch farm data for agent mapping:', farmError);
+          setHarvest(latestHarvest);
+        }
+      } else {
+        setHarvest(latestHarvest);
+      }
       
       // Trigger celebration animation for completed harvests
-      if (latestHarvest?.status === 'ready' && !celebrating) {
+      if (latestHarvest?.status === 'ready' && latestHarvest?.completedAt && !celebrating) {
         setShowCompletionAnimation(true);
         setCelebrating(true);
         setTimeout(() => setCelebrating(false), 3000);
@@ -116,7 +146,7 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
         format,
         includeResults: true,
         includeInsights: true,
-        includeArtifacts: true
+        includeYield: true
       });
     } catch (error) {
       console.error('Failed to export harvest:', error);
@@ -129,14 +159,21 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
     setShowSeedCreator(false);
   }, []);
 
-  const handleArtifactView = useCallback((artifact: any) => {
-    console.log('Viewing artifact:', artifact);
-    // TODO: Implement artifact viewer
+  const handleSeedSuccess = useCallback((seed: any) => {
+    console.log('Seed created successfully:', seed);
+    // Show success notification or navigate to seed
+    setShowSeedQuickAction(false);
+    // You could show a toast notification here
   }, []);
 
-  const handleArtifactDownload = useCallback(async (artifact: any) => {
+  const handleYieldView = useCallback((yieldItem: any) => {
+    console.log('Viewing yield item:', yieldItem);
+    setPreviewYieldItem(yieldItem);
+  }, []);
+
+  const handleYieldDownload = useCallback(async (yieldItem: any) => {
     if (!harvest) return;
-    await harvestService.downloadArtifact(harvest.id, artifact.id);
+    await harvestService.downloadYield(harvest.id, yieldItem.id);
   }, [harvest]);
 
   if (loading) {
@@ -238,6 +275,13 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
                     className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"
                   />
                 )}
+                {harvest.status === 'processing' && (
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-white dark:border-gray-900"
+                  />
+                )}
               </motion.div>
               
               <div>
@@ -254,73 +298,42 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
                   transition={{ delay: 0.1 }}
                   className="text-sm text-gray-600 dark:text-gray-400 mt-1"
                 >
-                  Completed {format(new Date(harvest.completedAt || harvest.createdAt), 'MMM d, yyyy • h:mm a')}
+                  {harvest.status === 'ready' 
+                    ? `Completed ${format(new Date(harvest.completedAt || harvest.createdAt), 'MMM d, yyyy • h:mm a')}`
+                    : harvest.status === 'processing'
+                    ? `Processing since ${format(new Date(harvest.createdAt), 'MMM d, yyyy • h:mm a')}`
+                    : `Status: ${harvest.status}`}
                 </motion.p>
               </div>
             </div>
 
             <div className="flex items-center space-x-2">
-              {/* View Toggle */}
-              <div className="bg-gray-100 dark:bg-gray-800 rounded-apple-lg p-1 flex">
-                <button
-                  onClick={() => setView('grid')}
-                  className={clsx(
-                    'p-2 rounded-apple transition-all',
-                    view === 'grid' 
-                      ? 'bg-white dark:bg-gray-700 shadow-sm text-primary-600 dark:text-primary-400' 
-                      : 'text-gray-600 dark:text-gray-400'
-                  )}
-                >
-                  <Grid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setView('list')}
-                  className={clsx(
-                    'p-2 rounded-apple transition-all',
-                    view === 'list' 
-                      ? 'bg-white dark:bg-gray-700 shadow-sm text-primary-600 dark:text-primary-400' 
-                      : 'text-gray-600 dark:text-gray-400'
-                  )}
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
 
-              {/* Enhanced View Toggle */}
-              <button
-                onClick={() => setShowEnhancedView(!showEnhancedView)}
-                className={clsx(
-                  'px-4 py-2 rounded-apple-lg transition-all',
-                  showEnhancedView
-                    ? 'bg-purple-600 text-white shadow-apple'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                )}
-              >
-                <Sparkles className="w-4 h-4 inline mr-2" />
-                {showEnhancedView ? 'Classic View' : 'Enhanced View'}
-              </button>
-
-              {/* Save Seed */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowSeedCreator(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-apple-lg shadow-apple transition-colors"
-              >
-                <Save className="w-4 h-4" />
-                <span>Save Seed</span>
-              </motion.button>
-
-              {/* Export Menu */}
-              <div className="relative group">
+              {/* Save Seed - Updated to use new SeedQuickAction */}
+              <Tooltip content="Save this harvest configuration as a reusable seed template" position="bottom">
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-apple-lg transition-colors"
+                  onClick={() => setShowSeedQuickAction(true)}
+                  className="flex items-center space-x-2 px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-apple-lg shadow-apple transition-colors whitespace-nowrap"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Export</span>
+                  <Save className="w-4 h-4" />
+                  <span>Create Seed</span>
                 </motion.button>
+              </Tooltip>
+
+              {/* Export Menu */}
+              <div className="relative group">
+                <Tooltip content="Export harvest data in various formats" position="bottom">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="flex items-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-apple-lg transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Export</span>
+                  </motion.button>
+                </Tooltip>
                 <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-apple-xl shadow-apple-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all transform group-hover:scale-100 scale-95">
                   {['json', 'markdown', 'pdf', 'csv'].map((format) => (
                     <button
@@ -338,119 +351,73 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
         </div>
       </div>
 
-      {/* Hero Stats */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Simplified Header Stats */}
+      <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 py-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8"
+          transition={{ duration: 0.5 }}
+          className="flex flex-wrap gap-6 items-center justify-center mb-4 text-sm text-gray-600 dark:text-gray-400"
         >
-          {[
-            {
-              icon: CheckCircle,
-              label: 'Tasks Completed',
-              value: harvest.summary.completedTasks,
-              total: harvest.summary.totalTasks,
-              color: 'from-green-500 to-green-600'
-            },
-            {
-              icon: TrendingUp,
-              label: 'Efficiency',
-              value: `${harvest.summary.efficiency}%`,
-              color: 'from-blue-500 to-blue-600'
-            },
-            {
-              icon: Clock,
-              label: 'Duration',
-              value: `${Math.floor(harvest.summary.duration / 60)}m`,
-              subvalue: `${harvest.summary.duration % 60}s`,
-              color: 'from-purple-500 to-purple-600'
-            },
-            {
-              icon: Award,
-              label: 'Quality Score',
-              value: `${harvest.quality.overallScore}`,
-              max: 100,
-              color: 'from-yellow-500 to-orange-500'
-            }
-          ].map((stat, index) => (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="relative overflow-hidden bg-white dark:bg-gray-900 rounded-apple-xl shadow-apple-lg p-6"
-            >
-              <div className="absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8">
-                <div className={clsx(
-                  'w-full h-full rounded-full opacity-10 bg-gradient-to-br',
-                  stat.color
-                )} />
-              </div>
-              
-              <div className="relative">
-                <div className="flex items-center justify-between mb-2">
-                  <stat.icon className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  {stat.total && (
-                    <span className="text-xs text-gray-500 dark:text-gray-500">
-                      of {stat.total}
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {stat.value}
-                    {stat.subvalue && (
-                      <span className="text-lg font-normal text-gray-600 dark:text-gray-400 ml-1">
-                        {stat.subvalue}
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{stat.label}</p>
-                </div>
-                
-                {stat.max && (
-                  <div className="mt-3 w-full bg-gray-200 dark:bg-gray-800 rounded-full h-1.5">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(parseInt(stat.value) / stat.max) * 100}%` }}
-                      transition={{ duration: 1, ease: "easeOut" }}
-                      className={clsx('h-1.5 rounded-full bg-gradient-to-r', stat.color)}
-                    />
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ))}
+          <div className="flex items-center space-x-2">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{harvest.summary?.filesGenerated || harvest.summary?.completedTasks || 0} files generated</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Clock className="w-4 h-4 text-blue-600" />
+            <span>{Math.floor((harvest.summary?.duration || 0) / 60)}m {(harvest.summary?.duration || 0) % 60}s duration</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="w-4 h-4 text-purple-600" />
+            <span>{harvest.summary?.efficiency || 0}% efficiency</span>
+          </div>
         </motion.div>
 
-        {/* Headline Summary Section - New Apple-inspired design */}
+        {/* Yielded Items Section - Moved to Top */}
+        {harvest.yield && harvest.yield.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mb-8"
+          >
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+              Yielded Items
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {harvest.yield.map((yieldItem, index) => (
+                <motion.div
+                  key={yieldItem.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * index }}
+                >
+                  <YieldCard
+                    yieldItem={yieldItem}
+                    onView={handleYieldView}
+                    onDownload={handleYieldDownload}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </div>
+
+        {/* Headline Summary Section - Moved up with reduced margins */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mb-8"
+          transition={{ delay: 0.2 }}
+          className="mb-6"
         >
           <HarvestHeadlineSummary harvest={harvest} />
         </motion.div>
 
-        {/* Main Content - Conditional Enhanced/Classic View */}
-        {showEnhancedView ? (
-          <div className="space-y-8">
-            {/* Enhanced Harvest Display */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5 }}
-            >
-              <HarvestDisplay
-                harvest={harvest}
-                onSaveAsSeed={() => setShowSeedCreator(true)}
-                onExport={handleExport}
-              />
-            </motion.div>
-
-            {/* Insights Panel */}
+        {/* Main Content - Single Consolidated View */}
+        <div className="space-y-8">
+          {/* Insights Panel */}
+          {harvest.insights && harvest.insights.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -461,55 +428,14 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
               </h2>
               <InsightsPanel insights={harvest.insights} />
             </motion.div>
+          )}
 
-            {/* Artifacts Grid */}
+          {/* Results Section */}
+          {harvest.results && harvest.results.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-            >
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                Generated Artifacts
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {harvest.artifacts.map((artifact, index) => (
-                  <motion.div
-                    key={artifact.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 * index }}
-                  >
-                    <ArtifactCard
-                      artifact={artifact}
-                      onView={handleArtifactView}
-                      onDownload={handleArtifactDownload}
-                    />
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          </div>
-        ) : (
-          <div className="space-y-8">
-            {/* Classic View - Original Components */}
-            {/* Analytics Section */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <div className="flex items-center space-x-2 mb-4">
-                <Activity className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Performance Analytics</h2>
-              </div>
-              <HarvestAnalytics harvest={harvest} />
-            </motion.div>
-
-            {/* Results Section */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
             >
               <div className="flex items-center space-x-2 mb-4">
                 <Zap className="w-5 h-5 text-primary-600 dark:text-primary-400" />
@@ -517,30 +443,36 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
               </div>
               <HarvestResults harvest={harvest} view={view} />
             </motion.div>
-
-            {/* Artifacts Section */}
+          )}
+          
+          {/* Empty State */}
+          {(!harvest.insights || harvest.insights.length === 0) && 
+           (!harvest.results || harvest.results.length === 0) && 
+           (!harvest.yield || harvest.yield.length === 0) && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
+              transition={{ delay: 0.3 }}
+              className="bg-gray-50 dark:bg-gray-800 rounded-apple-xl p-8 text-center"
             >
-              <div className="flex items-center space-x-2 mb-4">
-                <Package className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Digital Artifacts</h2>
-              </div>
-              <HarvestArtifacts harvest={harvest} view={view} />
+              <Sparkles className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+              <p className="text-gray-600 dark:text-gray-400">
+                No insights or results generated yet. The harvest may still be processing or completed without outputs.
+              </p>
             </motion.div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Completion Animation */}
+      {/* Completion Animation - Inline Mode */}
       <AnimatePresence>
         {showCompletionAnimation && (
-          <HarvestCompletionAnimation
-            harvest={harvest}
-            onComplete={() => setShowCompletionAnimation(false)}
-          />
+          <div className="fixed top-4 right-4 z-40 max-w-md">
+            <HarvestCompletionAnimation
+              harvest={harvest}
+              onComplete={() => setShowCompletionAnimation(false)}
+              inline={true}
+            />
+          </div>
         )}
       </AnimatePresence>
 
@@ -566,6 +498,31 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
             isOpen={showSeedCreator}
             onClose={() => setShowSeedCreator(false)}
             onSave={handleSaveSeed}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Seed Quick Action Modal - New primary method */}
+      <AnimatePresence>
+        {showSeedQuickAction && (
+          <SeedQuickAction
+            harvest={harvest}
+            isOpen={showSeedQuickAction}
+            onClose={() => setShowSeedQuickAction(false)}
+            onSuccess={handleSeedSuccess}
+            context="harvest_completion"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Yield Preview Modal */}
+      <AnimatePresence>
+        {previewYieldItem && (
+          <YieldPreviewModal
+            yieldItem={previewYieldItem}
+            harvestId={harvest?.id}
+            onClose={() => setPreviewYieldItem(null)}
+            onDownload={handleYieldDownload}
           />
         )}
       </AnimatePresence>

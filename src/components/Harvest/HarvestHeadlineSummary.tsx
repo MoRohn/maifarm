@@ -1,11 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import {
-  Zap,
   TrendingUp,
   Award,
   Target,
-  Cpu,
   GitBranch,
   Layers,
   MessageSquare
@@ -18,16 +16,8 @@ interface HarvestHeadlineSummaryProps {
 }
 
 export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ harvest }) => {
-  // Extract key headlines from harvest data
+  // Extract key headlines from harvest data - showing only 2 key sections
   const headlines = [
-    {
-      icon: Zap,
-      category: 'Performance',
-      headline: `${harvest.summary.efficiency}% Efficiency Achieved`,
-      subheadline: `Completed ${harvest.summary.completedTasks} tasks in ${Math.floor(harvest.summary.duration / 60)} minutes`,
-      impact: 'high' as const,
-      color: 'text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-900/30'
-    },
     {
       icon: Target,
       category: 'Success Rate',
@@ -48,16 +38,6 @@ export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ 
         .join(', ')}`,
       impact: harvest.quality.overallScore > 85 ? 'high' : 'medium' as const,
       color: 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30'
-    },
-    {
-      icon: Cpu,
-      category: 'Agent Collaboration',
-      headline: `${new Set(harvest.results.map(r => r.agentId)).size} Agents Coordinated`,
-      subheadline: `Parallel processing with ${
-        harvest.results.filter(r => r.success).length
-      } successful operations`,
-      impact: 'medium' as const,
-      color: 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30'
     }
   ];
 
@@ -96,9 +76,9 @@ export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ 
 
   return (
     <div className="space-y-6">
-      {/* Main Headlines Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {allHeadlines.slice(0, 4).map((headline, index) => (
+      {/* Main Headlines Grid - Reduced to 2 cards in a single row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+        {allHeadlines.slice(0, 2).map((headline, index) => (
           <motion.div
             key={index}
             initial={{ opacity: 0, y: 20 }}
@@ -148,7 +128,7 @@ export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ 
       </div>
 
       {/* Additional Insights */}
-      {allHeadlines.length > 4 && (
+      {allHeadlines.length > 2 && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -159,7 +139,7 @@ export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ 
             Additional Key Findings
           </h4>
           <div className="space-y-2">
-            {allHeadlines.slice(4).map((headline, index) => (
+            {allHeadlines.slice(2).map((headline, index) => (
               <div
                 key={index}
                 className="flex items-center space-x-3 text-sm"
@@ -184,10 +164,10 @@ export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ 
         <div className="flex items-center justify-around text-center">
           <div>
             <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">
-              {harvest.artifacts.length}
+              {harvest.yield?.length || 0}
             </p>
             <p className="text-xs text-gray-600 dark:text-gray-400 uppercase">
-              Artifacts Created
+              Yield Items
             </p>
           </div>
           <div className="w-px h-12 bg-primary-300 dark:bg-primary-700" />

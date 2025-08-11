@@ -72,9 +72,9 @@ describe('Qwen Farm Creation Tests', () => {
         expect(['launching', 'running']).toContain(status.status);
 
       } catch (error: any) {
-        // If multi_claude.py doesn't exist, skip test
+        // If orchestrator.py doesn't exist, skip test
         if (error.message.includes('not found')) {
-          console.log('Skipping test: multi_claude.py not available');
+          console.log('Skipping test: orchestrator.py not available');
           expect(error.message).toContain('not found');
         } else {
           throw error;

@@ -3,6 +3,9 @@ import { Task } from '../types/api';
 import { db, redis } from '../database/connection';
 import { WebSocketManager } from '../websocket/websocketManager';
 import { orchestrator } from '../orchestrator';
+import { harvestService } from './harvestService';
+import { shutdownCoordinator } from './shutdownCoordinator';
+import { QUICK_TASK_TIMEOUT } from '../constants/timing';
 
 export interface QuickTaskConfig {
   title: string;
@@ -15,19 +18,19 @@ export interface QuickTaskConfig {
 export interface QuickTaskResult {
   taskId: string;
   farmId: string;
+  harvestId?: string;
   status: 'created' | 'queued' | 'processing' | 'completed' | 'failed';
   result?: any;
   error?: string;
 }
 
 class QuickTaskService {
-  private readonly DEFAULT_TIMEOUT = 300000; // 5 minutes
   private readonly QUICK_TASK_FARM_PREFIX = 'quick-task-';
 
   /**
    * Creates a quick task with minimal setup
    */
-  async createQuickTask(config: QuickTaskConfig): Promise<QuickTaskResult> {
+  async createQuickTask(config: QuickTaskConfig, userId: string = 'default-user'): Promise<QuickTaskResult> {
     const taskId = uuidv4();
     const farmId = `${this.QUICK_TASK_FARM_PREFIX}${taskId}`;
     
@@ -42,7 +45,7 @@ class QuickTaskService {
         config: {
           maxAgents: 1,
           autoScale: false,
-          timeout: config.timeout || this.DEFAULT_TIMEOUT,
+          timeout: QUICK_TASK_TIMEOUT, // Always use fixed 5-minute timeout for Quick Tasks
           quickTask: true
         },
         metadata: {
@@ -55,10 +58,10 @@ class QuickTaskService {
       // Store farm in database (with fallback to in-memory)
       try {
         await db.query(
-          `INSERT INTO farms (id, name, description, type, status, config, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [farm.id, farm.name, farm.description, farm.type, farm.status, 
-           JSON.stringify(farm.config), JSON.stringify(farm.metadata)]
+          `INSERT INTO farms (id, name, description, status, config)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [farm.id, farm.name, farm.description, farm.status, 
+           JSON.stringify({...farm.config, type: farm.type, metadata: farm.metadata})]
         );
       } catch (dbError) {
         console.warn('Database insert failed, using in-memory storage:', dbError);
@@ -81,7 +84,7 @@ class QuickTaskService {
         dependencies: [],
         retries: 0,
         maxRetries: 1, // Quick tasks get limited retries
-        timeout: config.timeout || this.DEFAULT_TIMEOUT,
+        timeout: QUICK_TASK_TIMEOUT, // Always use fixed 5-minute timeout
         metadata: {
           isQuickTask: true,
           ...config.metadata
@@ -91,6 +94,7 @@ class QuickTaskService {
       };
 
       // Store task
+      console.log(`[QuickTaskService] Attempting to store task ${task.id} in database...`);
       try {
         await db.query(
           `INSERT INTO tasks (id, farm_id, type, priority, status, payload, dependencies, 
@@ -101,8 +105,9 @@ class QuickTaskService {
            task.maxRetries, task.timeout, JSON.stringify(task.metadata),
            task.createdAt, task.updatedAt]
         );
+        console.log(`[QuickTaskService] ✓ Task ${task.id} stored in database successfully`);
       } catch (dbError) {
-        console.warn('Database task insert failed, using Redis:', dbError);
+        console.error('[QuickTaskService] ✗ Database task insert failed:', dbError);
       }
 
       // Add to Redis queue
@@ -130,13 +135,108 @@ class QuickTaskService {
         timestamp: new Date()
       });
 
-      // Start task processing immediately
-      orchestrator.processQuickTask(task);
+      // Create harvest for this quick task farm
+      let harvestId: string | null = null;
+      try {
+        const harvest = await harvestService.startHarvest(
+          farm.id,
+          farm.name,
+          userId
+        );
+        harvestId = harvest.id;
+        
+        // Emit harvest created event
+        WebSocketManager.broadcast('harvest:created', {
+          harvestId: harvest.id,
+          farmId: farm.id,
+          farmName: farm.name,
+          isQuickTask: true,
+          timestamp: new Date()
+        });
+        
+        // Update farm status to active
+        farm.status = 'active';
+        try {
+          await db.query(
+            'UPDATE farms SET status = $1 WHERE id = $2',
+            ['active', farm.id]
+          );
+        } catch (dbError) {
+          console.warn('Failed to update farm status in DB:', dbError);
+        }
+        
+        // Emit farm status update
+        WebSocketManager.broadcast('farm:status', {
+          farmId: farm.id,
+          status: 'active',
+          harvestId: harvest.id,
+          timestamp: new Date()
+        });
+        
+      } catch (harvestError) {
+        console.error('Failed to create harvest for quick task:', harvestError);
+        // Continue without harvest - not critical
+      }
+
+      // Launch the farm with multi-claude agents for Quick Task
+      try {
+        const orchestratorModule = await import('./OrchestratorService');
+        const orchestratorService = orchestratorModule.orchestratorService;
+        const processId = await orchestratorService.launchFarm({
+          farmId: farm.id,
+          name: farm.name,
+          description: farm.description,
+          numberOfAgents: 1, // Quick tasks use single agent
+          prompt: config.description || config.title,
+          collaborative: false,
+          provider: (config.metadata?.provider as 'claude' | 'qwen') || 'claude',
+          harvestId: harvestId || undefined
+        });
+        
+        console.log(`[QuickTaskService] Launched multi-claude agents for farm ${farm.id}, process: ${processId}`);
+        
+        // Schedule graceful shutdown using the coordinator
+        shutdownCoordinator.scheduleShutdown({
+          mode: 'quick-task',
+          farmId: farm.id,
+          userId: userId,
+          reason: 'timeout', // Will be overridden if completed earlier
+          harvestId: harvestId || undefined,
+          agentIds: [] // Will be populated by the coordinator
+        });
+        
+        console.log(`[QuickTaskService] Scheduled graceful shutdown for ${farm.id} at ${(QUICK_TASK_TIMEOUT - 30000) / 1000}s (30s before 5min timeout)`);
+        
+        // Update farm status to running after successful launch
+        farm.status = 'running';
+        try {
+          await db.query(
+            'UPDATE farms SET status = $1, config = $2 WHERE id = $3',
+            ['running', JSON.stringify({ ...farm.config, processId }), farm.id]
+          );
+        } catch (dbError) {
+          console.warn('Failed to update farm status after launch:', dbError);
+        }
+        
+        // Emit farm running event
+        WebSocketManager.broadcast('farm:status', {
+          farmId: farm.id,
+          status: 'running',
+          processId,
+          harvestId,
+          timestamp: new Date()
+        });
+      } catch (launchError) {
+        console.error('[QuickTaskService] Failed to launch multi-claude agents:', launchError);
+        // Continue without agents - fallback to orchestrator
+        orchestrator.processQuickTask(task);
+      }
 
       return {
         taskId: task.id,
         farmId: farm.id,
         status: 'queued',
+        harvestId,
         result: null,
         error: null
       };
@@ -249,19 +349,40 @@ class QuickTaskService {
       if (taskResult.rows.length > 0) {
         const farmId = taskResult.rows[0].farm_id;
         
-        // Update farm status to completed before cleanup
+        // Use graceful shutdown for quick task completion to collect yields
         if (farmId.startsWith(this.QUICK_TASK_FARM_PREFIX)) {
           try {
-            await db.query(
-              `UPDATE farms SET status = 'completed', updated_at = $1 WHERE id = $2`,
-              [new Date(), farmId]
-            );
-            console.log(`[QuickTaskService] Farm ${farmId} status updated to 'completed'`);
-          } catch (error) {
-            console.error('Error updating farm status:', error);
+            console.log(`[QuickTaskService] Initiating graceful shutdown for quick task farm ${farmId}`);
+            
+            // Use the centralized shutdown coordinator for completion
+            const shutdownResult = await shutdownCoordinator.executeGracefulShutdown({
+              mode: 'quick-task',
+              farmId: farmId,
+              userId: 'dev-user',
+              reason: 'completion'
+            });
+            
+            console.log(`[QuickTaskService] Graceful shutdown completed for quick task farm ${farmId}`, {
+              success: shutdownResult.success,
+              filesCollected: shutdownResult.filesCollected,
+              barnStored: shutdownResult.barnStored
+            });
+          } catch (gracefulError) {
+            console.warn(`[QuickTaskService] Graceful shutdown failed for farm ${farmId}, using standard cleanup:`, gracefulError);
+            
+            // Fallback to standard cleanup
+            try {
+              await db.query(
+                `UPDATE farms SET status = 'completed', updated_at = $1 WHERE id = $2`,
+                [new Date(), farmId]
+              );
+              console.log(`[QuickTaskService] Farm ${farmId} status updated to 'completed'`);
+            } catch (error) {
+              console.error('Error updating farm status:', error);
+            }
+            
+            await this.cleanupQuickTaskFarm(farmId);
           }
-          
-          await this.cleanupQuickTaskFarm(farmId);
         }
       }
 
@@ -300,16 +421,39 @@ class QuickTaskService {
       if (taskResult.rows.length > 0) {
         const farmId = taskResult.rows[0].farm_id;
         
-        // Update farm status to failed
+        // Use graceful shutdown even for failed tasks to collect partial yields
         if (farmId.startsWith(this.QUICK_TASK_FARM_PREFIX)) {
           try {
-            await db.query(
-              `UPDATE farms SET status = 'failed', updated_at = $1 WHERE id = $2`,
-              [new Date(), farmId]
-            );
-            console.log(`[QuickTaskService] Farm ${farmId} status updated to 'failed'`);
-          } catch (error) {
-            console.error('Error updating farm status:', error);
+            console.log(`[QuickTaskService] Task ${taskId} failed (${error}), attempting graceful shutdown to collect partial yields`);
+            
+            // Import farmManager dynamically to avoid circular dependency
+            // Use the centralized shutdown coordinator for failed tasks
+            const shutdownReason = error.toLowerCase().includes('timeout') ? 'timeout' : 'completion';
+            const shutdownResult = await shutdownCoordinator.executeGracefulShutdown({
+              mode: 'quick-task',
+              farmId: farmId,
+              userId: 'dev-user',
+              reason: shutdownReason as 'timeout' | 'completion'
+            });
+            
+            console.log(`[QuickTaskService] Graceful shutdown completed for failed quick task farm ${farmId}`, {
+              success: shutdownResult.success,
+              filesCollected: shutdownResult.filesCollected,
+              barnStored: shutdownResult.barnStored
+            });
+          } catch (gracefulError) {
+            console.warn(`[QuickTaskService] Graceful shutdown failed for failed farm ${farmId}, using standard cleanup:`, gracefulError);
+            
+            // Fallback to standard cleanup
+            try {
+              await db.query(
+                `UPDATE farms SET status = 'failed', updated_at = $1 WHERE id = $2`,
+                [new Date(), farmId]
+              );
+              console.log(`[QuickTaskService] Farm ${farmId} status updated to 'failed'`);
+            } catch (updateError) {
+              console.error('Error updating farm status:', updateError);
+            }
           }
         }
       }

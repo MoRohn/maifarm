@@ -6,7 +6,7 @@ import { harvestService } from '../services/harvestService';
 import { api } from '../services/apiClient';
 
 interface HarvestData {
-  artifacts: any[];
+  yield: any[];
   metrics: any[];
   insights: any[];
   agents: any[];
@@ -50,9 +50,31 @@ export const useHarvestStore = create<HarvestState>()(
         set({ loading: true, error: null });
         try {
           const harvests = await harvestService.getAll(filter);
+          // Normalize harvests to ensure they have all required properties
+          const normalizedHarvests = (harvests || []).map(harvest => ({
+            ...harvest,
+            results: harvest.results || [],
+            insights: harvest.insights || [],
+            yield: harvest.yield || [],
+            summary: harvest.summary || {
+              description: '',
+              totalTasks: 0,
+              completedTasks: 0,
+              failedTasks: 0,
+              duration: 0,
+              efficiency: 0
+            },
+            quality: harvest.quality || {
+              completeness: 0,
+              accuracy: 0,
+              relevance: 0,
+              overallScore: 0
+            }
+          }));
+          
           set({
-            harvests,
-            recentHarvests: harvests
+            harvests: normalizedHarvests,
+            recentHarvests: normalizedHarvests
               .sort((a, b) => 
                 new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
               )
@@ -76,10 +98,34 @@ export const useHarvestStore = create<HarvestState>()(
         }
       },
 
-      addHarvest: (harvest) => set((state) => ({
-        harvests: [harvest, ...state.harvests],
-        recentHarvests: [harvest, ...state.recentHarvests].slice(0, 10)
-      })),
+      addHarvest: (harvest) => set((state) => {
+        // Normalize the harvest before adding
+        const normalizedHarvest = {
+          ...harvest,
+          results: harvest.results || [],
+          insights: harvest.insights || [],
+          yield: harvest.yield || [],
+          summary: harvest.summary || {
+            description: '',
+            totalTasks: 0,
+            completedTasks: 0,
+            failedTasks: 0,
+            duration: 0,
+            efficiency: 0
+          },
+          quality: harvest.quality || {
+            completeness: 0,
+            accuracy: 0,
+            relevance: 0,
+            overallScore: 0
+          }
+        };
+        
+        return {
+          harvests: [normalizedHarvest, ...state.harvests],
+          recentHarvests: [normalizedHarvest, ...state.recentHarvests].slice(0, 10)
+        };
+      }),
 
       updateHarvest: (id, updates) => set((state) => ({
         harvests: state.harvests.map(h => 
@@ -137,7 +183,7 @@ export const useHarvestStore = create<HarvestState>()(
           if (harvests.length > 0) {
             // Simulate harvest data - in production this would come from agent outputs
             const harvestData: HarvestData = {
-              artifacts: [],
+              yield: [],
               metrics: [],
               insights: [],
               agents: []
@@ -155,7 +201,7 @@ export const useHarvestStore = create<HarvestState>()(
       updateHarvestData: (data: Partial<HarvestData>) => set((state) => ({
         harvestData: state.harvestData 
           ? { ...state.harvestData, ...data }
-          : { artifacts: [], metrics: [], insights: [], agents: [], ...data }
+          : { yield: [], metrics: [], insights: [], agents: [], ...data }
       })),
       
       clearHarvest: () => set({ 

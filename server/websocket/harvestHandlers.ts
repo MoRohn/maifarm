@@ -174,6 +174,38 @@ class HarvestWebSocketHandler {
         }
       });
 
+      // Handle keep-alive to prevent timeout
+      socket.on('harvest:keepalive', (data: { 
+        farmId?: string; 
+        sessionName?: string;
+        tabHidden?: boolean;
+        timestamp: number 
+      }) => {
+        // Log keep-alive for debugging
+        const status = data.tabHidden ? 'tab hidden' : 'active';
+        logger.debug(`[HarvestWebSocket] Keep-alive from ${socket.id} (${status})`);
+        
+        // Send acknowledgment
+        socket.emit('harvest:keepalive:ack', { 
+          timestamp: Date.now(),
+          received: data.timestamp 
+        });
+        
+        // If tab is hidden, reduce polling frequency for this client
+        if (data.tabHidden && data.farmId) {
+          // Mark client as backgrounded (could be used for optimization)
+          socket.data.isBackgrounded = true;
+        } else if (socket.data.isBackgrounded) {
+          // Tab is visible again
+          socket.data.isBackgrounded = false;
+          
+          // Send fresh data when returning from background
+          if (data.farmId) {
+            this.sendInitialHarvestData(socket, data.farmId);
+          }
+        }
+      });
+
       // Handle disconnect
       socket.on('disconnect', () => {
         logger.info(`Harvest WebSocket client disconnected: ${socket.id}`);
@@ -367,8 +399,8 @@ class HarvestWebSocketHandler {
   }
 
   private async getFarmIdFromSession(sessionName: string): Promise<string | null> {
-    // Extract farm ID from session name (e.g., "farm_123" -> "123")
-    const match = sessionName.match(/farm_(.+)/);
+    // Extract farm ID from session name (e.g., "farm_123" or "farm-123" -> "123")
+    const match = sessionName.match(/farm[_-](.+)/);
     return match ? match[1] : null;
   }
 

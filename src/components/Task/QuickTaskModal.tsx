@@ -5,6 +5,7 @@ import { X, Zap, Send, Clock, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { api } from '../../services/apiClient';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { useSettingsStore } from '../../store/settingsStore';
 import { toast } from 'react-hot-toast';
 
 interface QuickTaskModalProps {
@@ -14,6 +15,7 @@ interface QuickTaskModalProps {
 
 export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
+  const { settings } = useSettingsStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
@@ -22,6 +24,9 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose 
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<string | null>(null);
   const [farmId, setFarmId] = useState<string | null>(null);
+
+  // Get the user's preferred AI provider from settings
+  const preferredProvider = settings.aiProvider || 'claude';
 
   const { socket } = useWebSocket({
     url: import.meta.env.VITE_API_URL || 'http://localhost:4567'
@@ -78,6 +83,7 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose 
         title,
         description,
         priority,
+        provider: preferredProvider,
         metadata: {
           source: 'quick-task-modal',
           timestamp: new Date().toISOString()
@@ -89,41 +95,63 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose 
         setTaskId(taskData.taskId || taskData.id);
         setTaskStatus('created');
         
-        // Get the farmId from the response or use the Quick Task Farm
+        // Get the farmId and harvestId from the response
         const quickFarmId = taskData.farmId || response.data.farmId;
+        const harvestId = taskData.harvestId;
+        
         if (quickFarmId) {
           setFarmId(quickFarmId);
           toast.success('Quick task created successfully!');
           
-          // Navigate to growing page to show progress animation
-          const harvestPath = `/farms/${quickFarmId}/growing`;
-          console.log('Quick task created, navigating to:', harvestPath);
+          // Navigate directly to harvest page to show progress
+          const navigationPath = `/harvests/${quickFarmId}`;
+          console.log('Quick task created, navigating to harvest page:', navigationPath);
+          
+          // Store harvestId in sessionStorage for the harvest page to use
+          if (harvestId) {
+            sessionStorage.setItem(`quicktask-harvest-${quickFarmId}`, `/harvest/${harvestId}`);
+          }
           
           // Close modal first, then navigate
           handleClose();
           
           setTimeout(() => {
-            console.log('Executing navigation to:', harvestPath);
-            navigate(harvestPath);
+            console.log('Executing navigation to:', navigationPath);
+            navigate(navigationPath);
           }, 100);
         } else {
           // If no farmId, try to get it from the quick task service
           try {
             const farms = await api.farms.list();
-            const quickTaskFarm = farms.data.data?.find((f: any) => f.name === 'Quick Task Farm');
+            const quickTaskFarm = farms.data.data?.find((f: any) => 
+              f.name.includes('Quick Task') || f.id.startsWith('quick-task-')
+            );
             if (quickTaskFarm) {
               toast.success('Quick task created successfully!');
-              const harvestPath = `/farms/${quickTaskFarm.id}/growing`;
-              console.log('Found quick task farm, navigating to:', harvestPath);
+              
+              // Try to find harvest for this farm
+              try {
+                const harvests = await api.harvests.list();
+                const quickHarvest = harvests.data.data?.find((h: any) => h.farmId === quickTaskFarm.id);
+                if (quickHarvest) {
+                  sessionStorage.setItem(`quicktask-harvest-${quickTaskFarm.id}`, `/harvest/${quickHarvest.id}`);
+                }
+              } catch (err) {
+                console.warn('Could not fetch harvests:', err);
+              }
+              
+              // Navigate directly to harvest page 
+              const navigationPath = `/harvests/${quickTaskFarm.id}`;
+              console.log('Found quick task farm, navigating to harvest page:', navigationPath);
               
               handleClose();
               
               setTimeout(() => {
-                console.log('Executing navigation to:', harvestPath);
-                navigate(harvestPath);
+                console.log('Executing navigation to:', navigationPath);
+                navigate(navigationPath);
               }, 100);
             } else {
-              toast('Quick task created but cannot navigate to growing page', { icon: '⚠️' });
+              toast('Quick task created but cannot navigate to harvest page', { icon: '⚠️' });
               console.warn('No quick task farm found for navigation');
               handleClose();
             }

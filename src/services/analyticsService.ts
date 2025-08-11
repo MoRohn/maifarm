@@ -26,11 +26,24 @@ class AnalyticsService {
   // Generate mock historical data for development
   generateMockTimeSeriesData(timeRange: TimeRange): TimeSeriesData[] {
     const { start, end } = timeRange;
+    
+    // Defensive type checking - ensure start and end are Date objects
+    const startDate = start instanceof Date ? start : new Date(start);
+    const endDate = end instanceof Date ? end : new Date(end);
+    
+    // Validate dates
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.warn('Invalid date range provided to generateMockTimeSeriesData, using default range');
+      const now = new Date();
+      const defaultStart = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
+      return this.generateMockTimeSeriesData({ start: defaultStart, end: now });
+    }
+    
     const dataPoints: Array<{ timestamp: Date; value: number }> = [];
-    const interval = differenceInMinutes(end, start) / 50; // 50 data points
+    const interval = differenceInMinutes(endDate, startDate) / 50; // 50 data points
     
     for (let i = 0; i < 50; i++) {
-      const timestamp = new Date(start.getTime() + i * interval * 60 * 1000);
+      const timestamp = new Date(startDate.getTime() + i * interval * 60 * 1000);
       dataPoints.push({
         timestamp: timestamp,
         value: Math.random() * 100 + Math.sin(i / 10) * 20,
@@ -258,13 +271,22 @@ class AnalyticsService {
     timeRange: TimeRange,
     limit: number = 100
   ): Promise<TaskCompletion[]> {
+    // Defensive type checking
+    const startDate = timeRange.start instanceof Date ? timeRange.start : new Date(timeRange.start);
+    const endDate = timeRange.end instanceof Date ? timeRange.end : new Date(timeRange.end);
+    
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.warn('Invalid date range provided to getTaskCompletions');
+      return [];
+    }
+    
     const tasks: TaskCompletion[] = [];
     const statuses: TaskCompletion['status'][] = ['completed', 'failed', 'in_progress', 'pending'];
     
     for (let i = 0; i < limit; i++) {
       const startTime = new Date(
-        timeRange.start.getTime() + 
-        Math.random() * (timeRange.end.getTime() - timeRange.start.getTime())
+        startDate.getTime() + 
+        Math.random() * (endDate.getTime() - startDate.getTime())
       );
       const duration = Math.random() * 3600000; // Up to 1 hour
       const status = statuses[Math.floor(Math.random() * statuses.length)];
@@ -291,14 +313,23 @@ class AnalyticsService {
 
   // Get error metrics
   async getErrorMetrics(timeRange: TimeRange): Promise<ErrorMetric[]> {
+    // Defensive type checking
+    const startDate = timeRange.start instanceof Date ? timeRange.start : new Date(timeRange.start);
+    const endDate = timeRange.end instanceof Date ? timeRange.end : new Date(timeRange.end);
+    
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.warn('Invalid date range provided to getErrorMetrics');
+      return [];
+    }
+    
     const errors: ErrorMetric[] = [];
     const errorTypes = ['NetworkError', 'TimeoutError', 'ValidationError', 'AuthenticationError', 'SystemError'];
     const severities: ErrorMetric['severity'][] = ['low', 'medium', 'high', 'critical'];
     
     for (let i = 0; i < 20; i++) {
       const timestamp = new Date(
-        timeRange.start.getTime() + 
-        Math.random() * (timeRange.end.getTime() - timeRange.start.getTime())
+        startDate.getTime() + 
+        Math.random() * (endDate.getTime() - startDate.getTime())
       );
       
       errors.push({

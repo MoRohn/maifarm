@@ -110,6 +110,10 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       // Use custom fallback if provided
       if (this.props.fallback) {
+        // Make sure fallback is renderable - if it's an object, wrap it in a div
+        if (typeof this.props.fallback === 'object' && !React.isValidElement(this.props.fallback)) {
+          return <div>Error: Unable to render fallback</div>;
+        }
         return <>{this.props.fallback}</>;
       }
 

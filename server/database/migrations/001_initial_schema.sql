@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS farms (
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CHECK (status IN ('preparing', 'running', 'paused', 'failed', 'terminated'))
+    CHECK (status IN ('preparing', 'running', 'paused', 'failed', 'terminated', 'completed', 'stopped', 'harvesting', 'launching', 'active', 'deleted'))
 );
 
 -- Agents table

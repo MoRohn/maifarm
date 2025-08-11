@@ -31,7 +31,7 @@ export const SaveSeedModal: React.FC<SaveSeedModalProps> = ({
     description: '',
     tags: [] as string[],
     category: 'general',
-    visibility: 'private' as const
+    visibility: 'private' as 'private' | 'team' | 'public'
   });
   const [tagInput, setTagInput] = useState('');
   const [saving, setSaving] = useState(false);

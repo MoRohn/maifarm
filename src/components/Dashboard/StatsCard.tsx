@@ -11,6 +11,8 @@ interface StatsCardProps {
   color?: 'primary' | 'green' | 'blue' | 'purple' | 'red' | 'yellow';
   className?: string;
   loading?: boolean;
+  subtitle?: string;
+  subtitleValue?: string | number;
 }
 
 export const StatsCard: React.FC<StatsCardProps> = ({
@@ -20,7 +22,9 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   trend,
   color = 'primary',
   className,
-  loading = false
+  loading = false,
+  subtitle,
+  subtitleValue
 }) => {
   const colorClasses = {
     primary: 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400',
@@ -71,9 +75,16 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         {loading ? (
           <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
         ) : (
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">
-            {value}
-          </p>
+          <>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              {value}
+            </p>
+            {subtitle && subtitleValue !== undefined && (
+              <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                {subtitle}: {subtitleValue}
+              </p>
+            )}
+          </>
         )}
       </div>
     </motion.div>

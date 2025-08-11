@@ -15,6 +15,7 @@ const execAsync = promisify(exec);
 
 export class OllamaModelDetector {
   private ollamaBasePath: string;
+  private customModelPaths: string[] = [];
   private supportedQwenModels = [
     'qwen2.5-coder:32b',
     'qwen2.5-coder:14b',
@@ -23,11 +24,42 @@ export class OllamaModelDetector {
     'qwen2.5-coder:1.5b',
     'qwen2.5-coder:0.5b',
     'qwen2.5-coder',
-    'qwen-coder'
+    'qwen-coder',
+    'qwen3-coder',
+    'qwen3-coder:480b'
   ];
 
   constructor() {
     this.ollamaBasePath = this.getOllamaPath();
+    this.loadCustomPaths();
+  }
+
+  /**
+   * Load custom model paths from environment or config
+   */
+  private loadCustomPaths(): void {
+    const customPath = process.env.QWEN_MODEL_PATH;
+    if (customPath) {
+      this.customModelPaths.push(customPath);
+    }
+    
+    // Add common alternative locations
+    const homeDir = os.homedir();
+    this.customModelPaths.push(
+      path.join(homeDir, 'models', 'ollama'),
+      path.join(homeDir, 'models', 'qwen'),
+      '/opt/ollama/models',
+      '/usr/local/ollama/models'
+    );
+  }
+
+  /**
+   * Set a custom model path
+   */
+  setCustomModelPath(path: string): void {
+    if (!this.customModelPaths.includes(path)) {
+      this.customModelPaths.unshift(path);
+    }
   }
 
   /**
@@ -59,7 +91,7 @@ export class OllamaModelDetector {
       if (cliModels.length > 0) {
         const qwenModel = cliModels.find(m => 
           this.supportedQwenModels.some(supported => 
-            m.name.toLowerCase().includes(supported.toLowerCase())
+            m.name.toLowerCase().includes(supported.toLowerCase().split(':')[0])
           )
         );
 
@@ -72,9 +104,9 @@ export class OllamaModelDetector {
         }
       }
 
-      // Fallback to file system detection
+      // Check default path
       const fsModels = await this.getModelsFromFileSystem();
-      const qwenModels = fsModels.filter(m => 
+      let qwenModels = fsModels.filter(m => 
         this.supportedQwenModels.some(supported => 
           m.name.toLowerCase().includes('qwen')
         )
@@ -88,11 +120,23 @@ export class OllamaModelDetector {
         };
       }
 
+      // Check custom paths
+      for (const customPath of this.customModelPaths) {
+        const customModels = await this.scanCustomPath(customPath);
+        if (customModels.length > 0) {
+          return {
+            found: true,
+            path: customPath,
+            models: customModels
+          };
+        }
+      }
+
       return {
         found: false,
         path: this.ollamaBasePath,
         models: [],
-        error: 'No Qwen models found in local Ollama installation'
+        error: 'No Qwen models found. Please run: ollama pull qwen2.5-coder:7b or specify a custom model path'
       };
     } catch (error) {
       return {
@@ -100,6 +144,44 @@ export class OllamaModelDetector {
         error: error instanceof Error ? error.message : 'Failed to detect Ollama models'
       };
     }
+  }
+
+  /**
+   * Scan a custom path for Qwen models
+   */
+  private async scanCustomPath(customPath: string): Promise<OllamaModel[]> {
+    const models: OllamaModel[] = [];
+    
+    try {
+      const exists = await fs.access(customPath).then(() => true).catch(() => false);
+      if (!exists) return models;
+
+      // Look for GGUF files or model directories
+      const files = await fs.readdir(customPath);
+      
+      for (const file of files) {
+        const filePath = path.join(customPath, file);
+        const stat = await fs.stat(filePath);
+        
+        // Check for Qwen model files
+        if ((file.toLowerCase().includes('qwen') || file.toLowerCase().includes('coder')) &&
+            (file.endsWith('.gguf') || file.endsWith('.bin') || stat.isDirectory())) {
+          
+          const modelName = file.replace(/\.(gguf|bin)$/, '');
+          models.push({
+            name: modelName,
+            model: modelName,
+            size: stat.size,
+            digest: '',
+            modified_at: stat.mtime.toISOString()
+          });
+        }
+      }
+    } catch (error) {
+      console.log(`Could not scan custom path ${customPath}:`, error);
+    }
+
+    return models;
   }
 
   /**
@@ -276,17 +358,101 @@ export class OllamaModelDetector {
    */
   async startOllama(): Promise<boolean> {
     try {
-      await execAsync('ollama serve', { 
+      // Check if already running
+      if (await this.isOllamaRunning()) {
+        console.log('Ollama service is already running');
+        return true;
+      }
+
+      // Try to start Ollama service
+      exec('ollama serve', { 
         detached: true,
         stdio: 'ignore'
+      }, (error) => {
+        if (error) {
+          console.log('Ollama serve command failed, it might already be running');
+        }
       });
       
       // Wait for service to start
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return this.isOllamaRunning();
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Check if started successfully
+      const isRunning = await this.isOllamaRunning();
+      if (isRunning) {
+        console.log('Ollama service started successfully');
+      } else {
+        console.log('Failed to start Ollama service. Please start it manually with: ollama serve');
+      }
+      
+      return isRunning;
     } catch (error) {
       console.error('Failed to start Ollama:', error);
       return false;
+    }
+  }
+
+  /**
+   * Programmatically run a Qwen model
+   */
+  async runQwenModel(modelName?: string): Promise<{ success: boolean; model?: string; error?: string }> {
+    try {
+      // Ensure Ollama is running
+      if (!await this.isOllamaRunning()) {
+        const started = await this.startOllama();
+        if (!started) {
+          return {
+            success: false,
+            error: 'Failed to start Ollama service. Please install Ollama from https://ollama.com'
+          };
+        }
+      }
+
+      // Detect available Qwen model if not specified
+      if (!modelName) {
+        const detection = await this.detectQwenModel();
+        if (detection.found && detection.models && detection.models.length > 0) {
+          modelName = detection.models[0].name;
+        } else {
+          // Try to pull a default model
+          console.log('No local Qwen model found. Pulling qwen2.5-coder:7b...');
+          try {
+            await execAsync('ollama pull qwen2.5-coder:7b');
+            modelName = 'qwen2.5-coder:7b';
+          } catch (pullError) {
+            return {
+              success: false,
+              error: 'No Qwen model found and failed to pull default model. Please run: ollama pull qwen2.5-coder:7b'
+            };
+          }
+        }
+      }
+
+      // Validate the model exists
+      const validation = await this.validateModel(modelName);
+      if (!validation.valid) {
+        // Try to pull the model
+        console.log(`Model ${modelName} not found. Attempting to pull...`);
+        try {
+          await execAsync(`ollama pull ${modelName}`);
+        } catch (pullError) {
+          return {
+            success: false,
+            error: `Model ${modelName} not found. ${validation.suggestion}`
+          };
+        }
+      }
+
+      console.log(`Qwen model ${modelName} is ready for use`);
+      return {
+        success: true,
+        model: modelName
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to run Qwen model'
+      };
     }
   }
 

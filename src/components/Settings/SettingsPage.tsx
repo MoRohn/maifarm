@@ -2,25 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import { 
-  Cog6ToothIcon, 
-  BellIcon, 
   KeyIcon, 
-  LanguageIcon, 
   DocumentDuplicateIcon,
-  ShieldCheckIcon,
   SparklesIcon,
   PaintBrushIcon,
-  WifiIcon,
   AdjustmentsHorizontalIcon,
   CpuChipIcon
 } from '@heroicons/react/24/outline';
 import ThemeSettings from './ThemeSettings';
-import NotificationSettings from './NotificationSettings';
 import ApiKeyManager from './ApiKeyManager';
 import FarmTemplates from './FarmTemplates';
-import LanguageSelector from './LanguageSelector';
-import SecuritySettings from './SecuritySettings';
-import NetworkSettings from './NetworkSettings';
 import GoWildSettings from './GoWildSettings';
 import BehaviorSettings from './BehaviorSettings';
 import AIProviderSettings from './AIProviderSettings';
@@ -77,18 +68,17 @@ const SettingsPage: React.FC = () => {
       aiRecommended: aiSuggestions.some(s => s.category === 'ai-provider')
     },
     {
+      id: 'apiKeys',
+      label: 'API Keys',
+      icon: KeyIcon,
+      component: ApiKeyManager
+    },
+    {
       id: 'behavior',
       label: 'Behavior',
       icon: AdjustmentsHorizontalIcon,
       component: BehaviorSettings,
       aiRecommended: false
-    },
-    {
-      id: 'notifications',
-      label: 'Notifications',
-      icon: BellIcon,
-      component: NotificationSettings,
-      aiRecommended: aiSuggestions.some(s => s.category === 'notifications')
     },
     {
       id: 'goWild',
@@ -98,35 +88,11 @@ const SettingsPage: React.FC = () => {
       aiRecommended: aiSuggestions.some(s => s.category === 'exploration')
     },
     {
-      id: 'network',
-      label: 'Network',
-      icon: WifiIcon,
-      component: NetworkSettings
-    },
-    {
-      id: 'security',
-      label: 'Security',
-      icon: ShieldCheckIcon,
-      component: SecuritySettings
-    },
-    {
-      id: 'apiKeys',
-      label: 'API Keys',
-      icon: KeyIcon,
-      component: ApiKeyManager
-    },
-    {
       id: 'templates',
       label: 'Farm Templates',
       icon: DocumentDuplicateIcon,
       component: FarmTemplates,
       aiRecommended: aiSuggestions.some(s => s.category === 'templates')
-    },
-    {
-      id: 'language',
-      label: 'Language',
-      icon: LanguageIcon,
-      component: LanguageSelector
     }
   ];
 

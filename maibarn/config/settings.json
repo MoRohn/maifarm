@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "description": "MaiBarn configuration for isolated farm storage",
+  "quotas": {
+    "workspaceSize": "1073741824",
+    "workspaceSizeHuman": "1GB",
+    "totalSize": "10737418240",
+    "totalSizeHuman": "10GB",
+    "maxFileSize": "104857600",
+    "maxFileSizeHuman": "100MB"
+  },
+  "cleanup": {
+    "enabled": true,
+    "schedule": "0 2 * * *",
+    "tempFileAge": {
+      "days": 1,
+      "description": "Delete temporary files older than 1 day"
+    },
+    "archiveAge": {
+      "days": 7,
+      "description": "Delete archived workspaces older than 7 days"
+    },
+    "harvestCompressionAge": {
+      "days": 30,
+      "description": "Compress completed harvests older than 30 days"
+    },
+    "logRotation": {
+      "days": 14,
+      "description": "Rotate logs older than 14 days"
+    }
+  },
+  "security": {
+    "pathValidation": true,
+    "pathTraversalPrevention": true,
+    "symlinkValidation": true,
+    "checksumVerification": true,
+    "auditLogging": true,
+    "accessControl": {
+      "enabled": true,
+      "defaultPermissions": "read",
+      "adminPermissions": "read,write,delete"
+    }
+  },
+  "isolation": {
+    "enforced": true,
+    "workspaceTemplates": [
+      "default",
+      "react-app",
+      "api-service",
+      "data-processing"
+    ],
+    "sharedResourcesAllowed": true,
+    "externalAccessBlocked": true
+  },
+  "monitoring": {
+    "enabled": true,
+    "metricsCollection": true,
+    "alertThresholds": {
+      "storageUsage": 0.9,
+      "workspaceSize": 0.95,
+      "fileCount": 10000
+    },
+    "healthCheckInterval": 300000
+  },
+  "backup": {
+    "enabled": false,
+    "schedule": "0 3 * * 0",
+    "retentionDays": 30,
+    "includeBarnItems": true,
+    "includeCompletedHarvests": true
+  },
+  "features": {
+    "workspaceIsolation": true,
+    "harvestStorage": true,
+    "barnCatalog": true,
+    "coordination": true,
+    "autoCleanup": true,
+    "quotaEnforcement": true,
+    "compressionEnabled": true
+  }
+}

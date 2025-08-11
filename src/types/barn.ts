@@ -9,6 +9,7 @@ export interface BarnItem {
   category: string;
   tags: string[];
   artifacts: BarnArtifact[];
+  yield: BarnArtifact[]; // Alias for artifacts for compatibility with harvest components
   config: {
     yaml?: string;
     env?: Record<string, string>;
@@ -34,6 +35,8 @@ export interface BarnItem {
   updatedAt: Date;
   lastUsedAt?: Date;
   useCount: number;
+  farmerTemplateId?: string;
+  farmerTemplateName?: string;
 }
 
 export interface BarnArtifact {
@@ -41,10 +44,14 @@ export interface BarnArtifact {
   name: string;
   type: 'file' | 'directory' | 'output' | 'log';
   path: string;
+  location: string; // Alias for path for compatibility
   content?: string; // For small files
   size: number;
   mimeType?: string;
   checksum?: string;
+  description?: string; // Added for harvest compatibility
+  createdAt?: Date; // Added for harvest compatibility
+  metadata?: Record<string, any>; // Added for harvest compatibility
 }
 
 export interface BarnFolder {

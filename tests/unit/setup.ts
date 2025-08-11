@@ -1,6 +1,21 @@
 import '@testing-library/jest-dom'
 import { cleanup } from '@testing-library/react'
 
+// Mock import.meta.env for Vite
+(global as any).import = {
+  meta: {
+    env: {
+      VITE_API_URL: 'http://localhost:4567',
+      VITE_WS_URL: 'ws://localhost:4567',
+      VITE_APP_TITLE: 'MaiFarm Test',
+      MODE: 'test',
+      DEV: false,
+      PROD: false,
+      SSR: false
+    }
+  }
+}
+
 // Automatically cleanup after each test
 afterEach(() => {
   cleanup()
@@ -9,6 +24,17 @@ afterEach(() => {
 
 // Mock global objects and APIs
 beforeAll(() => {
+  // Mock fetch API
+  global.fetch = jest.fn(() =>
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ data: [] }),
+      text: () => Promise.resolve(''),
+      status: 200,
+      statusText: 'OK'
+    } as Response)
+  ) as jest.Mock;
+  
   // Mock window.matchMedia
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

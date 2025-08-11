@@ -115,10 +115,11 @@ class HarvestService {
         ...insight,
         timestamp: new Date(insight.timestamp)
       })),
-      artifacts: harvest.artifacts.map((artifact: any) => ({
-        ...artifact,
-        createdAt: new Date(artifact.createdAt)
-      }))
+      // Note: 'artifacts' was replaced with 'yield' in the new data model
+      yield: harvest.yield?.map((item: any) => ({
+        ...item,
+        createdAt: item.createdAt ? new Date(item.createdAt) : new Date()
+      })) || []
     };
   }
 
@@ -203,9 +204,9 @@ class HarvestService {
     await apiClient.put(`${this.baseUrl}/${harvestId}/viewed`);
   }
 
-  async downloadArtifact(harvestId: string, artifactId: string): Promise<void> {
+  async downloadYield(harvestId: string, yieldId: string): Promise<void> {
     const response = await apiClient.get(
-      `${this.baseUrl}/${harvestId}/artifacts/${artifactId}/download`,
+      `${this.baseUrl}/${harvestId}/yield/${yieldId}/download`,
       { responseType: 'blob' }
     );
     

@@ -13,12 +13,15 @@ const AgentPoolManager: React.FC<AgentPoolManagerProps> = ({ farm }) => {
 
   const groupAgentsByType = () => {
     const groups: { [key: string]: Agent[] } = {};
-    farm.agents.forEach(agent => {
-      if (!groups[agent.type]) {
-        groups[agent.type] = [];
-      }
-      groups[agent.type].push(agent);
-    });
+    // Add defensive null check to prevent TypeError
+    if (farm?.agents && Array.isArray(farm.agents)) {
+      farm.agents.forEach(agent => {
+        if (!groups[agent.type]) {
+          groups[agent.type] = [];
+        }
+        groups[agent.type].push(agent);
+      });
+    }
     return groups;
   };
 

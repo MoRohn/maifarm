@@ -156,31 +156,31 @@ test_qwen_farm_creation() {
     fi
 }
 
-# Function to test multi_claude.py with Qwen
-test_multi_claude_qwen() {
-    echo "Testing multi_claude.py with Qwen provider..."
+# Function to test orchestrator.py with Qwen
+test_orchestrator_qwen() {
+    echo "Testing orchestrator.py with Qwen provider..."
     
     cd "$(dirname "$0")/.."
     
     # Test with a simple prompt
-    timeout 30 python3 multi_claude.py \
+    timeout 30 python3 orchestrator.py \
         -n 2 \
         -p "Write a function to calculate fibonacci numbers" \
         --provider qwen \
         --session qwen_test \
         --no-kill-on-exit \
-        > "${TEST_DIR}/multi_claude.log" 2>&1 &
+        > "${TEST_DIR}/orchestrator.log" 2>&1 &
     
     local pid=$!
     sleep 10
     
     if kill -0 $pid 2>/dev/null; then
-        print_status "SUCCESS" "multi_claude.py running with Qwen"
+        print_status "SUCCESS" "orchestrator.py running with Qwen"
         kill $pid 2>/dev/null || true
         return 0
     else
-        print_status "FAIL" "multi_claude.py failed to start with Qwen"
-        cat "${TEST_DIR}/multi_claude.log"
+        print_status "FAIL" "orchestrator.py failed to start with Qwen"
+        cat "${TEST_DIR}/orchestrator.log"
         return 1
     fi
 }
@@ -265,11 +265,11 @@ if curl -s http://localhost:4567/api/health > /dev/null 2>&1; then
         print_status "WARNING" "Skipping Qwen tests (Ollama/Qwen not available)"
     fi
     
-    # Test multi_claude.py integration
-    if [ -f "multi_claude.py" ]; then
-        test_multi_claude_qwen
+    # Test orchestrator.py integration
+    if [ -f "orchestrator.py" ]; then
+        test_orchestrator_qwen
     else
-        print_status "WARNING" "multi_claude.py not found"
+        print_status "WARNING" "orchestrator.py not found"
     fi
     
 else

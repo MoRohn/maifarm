@@ -111,11 +111,44 @@ export class Orchestrator extends EventEmitter {
   }
 
   /**
-   * Execute assigned tasks
+   * Execute assigned tasks and process quick tasks
    */
   private async executeAssignedTasks(): Promise<void> {
     try {
-      // Get assigned tasks
+      // First, process queued Quick Tasks (they don't need agent assignment)
+      const quickTaskResult = await db.query(
+        `SELECT * FROM tasks
+         WHERE status = 'queued' AND type = 'quick-task'
+         ORDER BY priority DESC, created_at ASC
+         LIMIT 3`
+      );
+
+      for (const row of quickTaskResult.rows) {
+        const quickTask = {
+          id: row.id,
+          farmId: row.farm_id,
+          type: row.type,
+          priority: row.priority,
+          status: row.status,
+          payload: row.payload,
+          dependencies: row.dependencies || [],
+          retries: row.retries,
+          maxRetries: row.max_retries,
+          timeout: row.timeout,
+          metadata: row.metadata || {},
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+
+        console.log(`[Orchestrator] Processing Quick Task: ${quickTask.id}`);
+        
+        // Process the quick task immediately (don't await to allow parallel processing)
+        this.processQuickTask(quickTask).catch(error => {
+          console.error(`Failed to process quick task ${quickTask.id}:`, error);
+        });
+      }
+
+      // Then get assigned tasks (regular tasks)
       const result = await db.query(
         `SELECT t.*, a.* 
          FROM tasks t

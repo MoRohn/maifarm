@@ -4,7 +4,6 @@ import {
   X,
   Download,
   Play,
-  Copy,
   GitBranch,
   Clock,
   Users,
@@ -32,6 +31,44 @@ interface HarvestDetailsProps {
 export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose, onUse }) => {
   const [selectedArtifact, setSelectedArtifact] = React.useState<string | null>(null);
   
+  const handleDownloadItem = async (yieldId: string, fileName: string) => {
+    try {
+      const response = await fetch(`/api/barn/items/${harvest.id}/yield/${yieldId}/download`);
+      if (!response.ok) throw new Error('Download failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to download yield item:', error);
+    }
+  };
+  
+  const handleDownloadAll = async () => {
+    try {
+      const response = await fetch(`/api/barn/items/${harvest.id}/download-all`);
+      if (!response.ok) throw new Error('Download failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${harvest.name.replace(/[^a-z0-9]/gi, '_')}_yield.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to download all yield items:', error);
+    }
+  };
+  
   const typeConfig = {
     app: { icon: Package, color: 'blue' },
     tool: { icon: Wrench, color: 'green' },
@@ -40,7 +77,9 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
     other: { icon: FileText, color: 'gray' }
   };
 
-  const config = typeConfig[harvest.type];
+  // Ensure we have a valid type, fallback to 'other' if undefined or invalid
+  const harvestType = (harvest.type && harvest.type in typeConfig) ? harvest.type : 'other';
+  const config = typeConfig[harvestType];
   const Icon = config.icon;
 
   return (
@@ -141,40 +180,67 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
 
           {/* Artifacts */}
           <div>
-            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Artifacts ({harvest.artifacts.length})
-            </h3>
-            <div className="space-y-2">
-              {harvest.artifacts.map((artifact) => (
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Yield ({harvest.yield?.length || 0})
+              </h3>
+              {harvest.yield && harvest.yield.length > 0 && (
                 <button
-                  key={artifact.id}
-                  onClick={() => setSelectedArtifact(artifact.id)}
-                  className={clsx(
-                    'w-full flex items-center justify-between p-3 rounded-apple',
-                    'border transition-colors',
-                    selectedArtifact === artifact.id
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                  )}
+                  onClick={handleDownloadAll}
+                  className="flex items-center space-x-1 text-xs text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                 >
-                  <div className="flex items-center space-x-3">
-                    {artifact.type === 'directory' ? (
-                      <Folder className="w-4 h-4 text-gray-500" />
-                    ) : (
-                      <File className="w-4 h-4 text-gray-500" />
-                    )}
-                    <div className="text-left">
-                      <p className="font-medium text-gray-900 dark:text-white">
-                        {artifact.name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {artifact.path} • {formatFileSize(artifact.size)}
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                  <Download className="w-3 h-3" />
+                  <span>Download All</span>
                 </button>
-              ))}
+              )}
+            </div>
+            <div className="space-y-2">
+              {harvest.yield && harvest.yield.length > 0 ? (
+                harvest.yield.map((yieldItem) => (
+                  <div
+                    key={yieldItem.id}
+                    className={clsx(
+                      'flex items-center justify-between p-3 rounded-apple',
+                      'border transition-colors',
+                      selectedArtifact === yieldItem.id
+                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                    )}
+                  >
+                    <button
+                      onClick={() => setSelectedArtifact(yieldItem.id)}
+                      className="flex-1 flex items-center space-x-3"
+                    >
+                      {yieldItem.type === 'directory' ? (
+                        <Folder className="w-4 h-4 text-gray-500" />
+                      ) : (
+                        <File className="w-4 h-4 text-gray-500" />
+                      )}
+                      <div className="text-left">
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {yieldItem.name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {yieldItem.location || yieldItem.path} • {formatFileSize(yieldItem.size)}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleDownloadItem(yieldItem.id, yieldItem.name)}
+                      className="p-2 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
+                      title="Download"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-center text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-apple">
+                  <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No yield items collected</p>
+                  <p className="text-xs mt-1">Yield items will appear here when collected</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -208,11 +274,6 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
             <button className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-apple hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
               <Download className="w-5 h-5" />
               <span>Download</span>
-            </button>
-            
-            <button className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-apple hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-              <Copy className="w-5 h-5" />
-              <span>Duplicate</span>
             </button>
           </div>
 

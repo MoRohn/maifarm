@@ -40,12 +40,12 @@ steps:
       - Integrated completely within the Farm Creation (Normal, Go Wild) modes
       - Process step in place for YAML rejection if pipeline failed or mis-configured YAML format
 
-  - content: Enhance & Validate the Integration of the multi_claude.py tool into MaiFarm codebase
+  - content: Enhance & Validate the Integration of the orchestrator.py tool into MaiFarm codebase
     description: |
-      Fully integrate the multi_claude.py into the application:
-      - Within integration, multi_claude.py logic should be used to launch AI agent 'Farms'
-      - Monitoring the CLI/Terminal of each agent from multi_claude should be displayed in the Harvest page
-      - Analytics page should be integrated to collect data for processing real-time analytics from the AI agents running through multi_claude
+      Fully integrate the orchestrator.py into the application:
+      - Within integration, orchestrator.py logic should be used to launch AI agent 'Farms'
+      - Monitoring the CLI/Terminal of each agent from orchestrator should be displayed in the Harvest page
+      - Analytics page should be integrated to collect data for processing real-time analytics from the AI agents running through orchestrator
       - Within the Harvest page, users should have capability to click into each AI agent within the Farm to enter CLI commands to Claude Code
       - Implement the connections & integrations needed to operationalize the buttons on each active farm within the Active Farms section of the Home page
 

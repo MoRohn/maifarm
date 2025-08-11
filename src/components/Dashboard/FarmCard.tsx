@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   MoreVertical, 
@@ -55,6 +55,7 @@ export const FarmCard: React.FC<FarmCardProps> = ({ farm: rawFarm, className }) 
   const [showClaudeCode, setShowClaudeCode] = useState(false);
   const [isCreatingHarvest, setIsCreatingHarvest] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [animatedProgress, setAnimatedProgress] = useState(0);
   const navigate = useNavigate();
   const { createHarvest } = useHarvestStore();
   const { success: showSuccess, error: showError } = useToast();
@@ -106,11 +107,17 @@ export const FarmCard: React.FC<FarmCardProps> = ({ farm: rawFarm, className }) 
   const handleStopFarm = async () => {
     try {
       const response = await fetch(`/api/farms/${farm.id}/stop`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          graceful: true // Use graceful shutdown by default to collect yields
+        })
       });
 
       if (response.ok) {
-        showSuccess('Farm stopped');
+        showSuccess('Farm gracefully stopped - yields collected');
         // Refresh farm data
         window.location.reload();
       } else {
@@ -162,9 +169,15 @@ export const FarmCard: React.FC<FarmCardProps> = ({ farm: rawFarm, className }) 
 
   const handleRestartFarm = async () => {
     try {
-      // First stop the farm
+      // First stop the farm gracefully to collect yields
       const stopResponse = await fetch(`/api/farms/${farm.id}/stop`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          graceful: true // Use graceful shutdown for restart to collect yields
+        })
       });
 
       if (!stopResponse.ok) {
@@ -210,21 +223,201 @@ export const FarmCard: React.FC<FarmCardProps> = ({ farm: rawFarm, className }) 
     launching: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
     paused: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
     completed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    stopped: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
     failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
   } as const;
 
-  const progressPercentage = farm.metrics.totalTasks > 0
-    ? (farm.metrics.completedTasks / farm.metrics.totalTasks) * 100
-    : 0;
+  // Get glow effect based on status
+  const getStatusGlow = (status: string) => {
+    // Create CSS custom property for dynamic glow color
+    const glowStyles: Record<string, React.CSSProperties> = {
+      // Blue glow for idle/preparing
+      idle: {
+        '--glow-color-light': 'rgba(59, 130, 246, 0.15)', // blue-500 with low opacity
+        '--glow-color-dark': 'rgba(96, 165, 250, 0.25)', // blue-400 with medium opacity
+      } as React.CSSProperties,
+      preparing: {
+        '--glow-color-light': 'rgba(59, 130, 246, 0.15)',
+        '--glow-color-dark': 'rgba(96, 165, 250, 0.25)',
+      } as React.CSSProperties,
+      // Green glow for launching/running/active
+      launching: {
+        '--glow-color-light': 'rgba(34, 197, 94, 0.15)', // green-500 with low opacity
+        '--glow-color-dark': 'rgba(74, 222, 128, 0.25)', // green-400 with medium opacity
+      } as React.CSSProperties,
+      running: {
+        '--glow-color-light': 'rgba(34, 197, 94, 0.15)',
+        '--glow-color-dark': 'rgba(74, 222, 128, 0.25)',
+      } as React.CSSProperties,
+      active: {
+        '--glow-color-light': 'rgba(34, 197, 94, 0.15)',
+        '--glow-color-dark': 'rgba(74, 222, 128, 0.25)',
+      } as React.CSSProperties,
+      // Gold/yellow glow for completed/harvest_ready
+      completed: {
+        '--glow-color-light': 'rgba(59, 130, 246, 0.15)', // blue-500 with low opacity
+        '--glow-color-dark': 'rgba(96, 165, 250, 0.25)', // blue-400 with medium opacity
+      } as React.CSSProperties,
+      harvest_ready: {
+        '--glow-color-light': 'rgba(250, 204, 21, 0.15)',
+        '--glow-color-dark': 'rgba(251, 191, 36, 0.25)',
+      } as React.CSSProperties,
+      // Red glow for error/failed
+      error: {
+        '--glow-color-light': 'rgba(239, 68, 68, 0.15)', // red-500 with low opacity
+        '--glow-color-dark': 'rgba(248, 113, 113, 0.25)', // red-400 with medium opacity
+      } as React.CSSProperties,
+      failed: {
+        '--glow-color-light': 'rgba(239, 68, 68, 0.15)',
+        '--glow-color-dark': 'rgba(248, 113, 113, 0.25)',
+      } as React.CSSProperties,
+      stopped: {
+        '--glow-color-light': 'rgba(239, 68, 68, 0.15)',
+        '--glow-color-dark': 'rgba(248, 113, 113, 0.25)',
+      } as React.CSSProperties,
+      // Orange glow for paused
+      paused: {
+        '--glow-color-light': 'rgba(251, 146, 60, 0.15)', // orange-400 with low opacity
+        '--glow-color-dark': 'rgba(251, 146, 60, 0.25)', // orange-400 with medium opacity
+      } as React.CSSProperties,
+      // Default gray glow for unknown status
+      default: {
+        '--glow-color-light': 'rgba(156, 163, 175, 0.1)', // gray-400 with very low opacity
+        '--glow-color-dark': 'rgba(209, 213, 219, 0.15)', // gray-300 with low opacity
+      } as React.CSSProperties,
+    };
+
+    return glowStyles[status] || glowStyles.default;
+  };
+
+  // Calculate progress based on available data
+  const calculateProgressPercentage = () => {
+    // If we have explicit task metrics, use those
+    if (farm.metrics.totalTasks > 0) {
+      return (farm.metrics.completedTasks / farm.metrics.totalTasks) * 100;
+    }
+    
+    // For Go Wild farms, calculate based on creativity progression
+    if (farm.config.goWildMode?.enabled) {
+      const farmAge = farm.createdAt ? Date.now() - new Date(farm.createdAt).getTime() : 0;
+      const maxGoWildDuration = farm.config.timeout || 900000; // 15 minutes default
+      const timeProgress = Math.min((farmAge / maxGoWildDuration) * 100, 100);
+      
+      // Adjust based on status
+      switch (farm.status) {
+        case 'launching':
+          return Math.min(timeProgress, 35);
+        case 'running':
+        case 'active':
+          return Math.max(40, Math.min(timeProgress, 85));
+        case 'completed':
+          return 100;
+        case 'failed':
+          return Math.max(timeProgress * 0.7, 10); // Show some progress even on failure
+        case 'paused':
+          return Math.max(timeProgress * 0.8, 20);
+        default:
+          return Math.max(timeProgress, 5);
+      }
+    }
+    
+    // For regular farms, calculate based on agent activity and status
+    const agentCount = farm.agents?.length || 0;
+    const activeAgentCount = farm.agents?.filter(a => 
+      a.status === 'running' || a.status === 'working' || a.status === 'busy'
+    ).length || 0;
+    
+    // Base progress on farm status and agent activity
+    let baseProgress = 0;
+    switch (farm.status) {
+      case 'launching':
+        baseProgress = 25 + (agentCount > 0 ? 15 : 0);
+        break;
+      case 'running':
+      case 'active':
+        baseProgress = 50 + (activeAgentCount / Math.max(agentCount, 1)) * 35;
+        break;
+      case 'completed':
+        baseProgress = 100;
+        break;
+      case 'failed':
+        baseProgress = Math.max((activeAgentCount / Math.max(agentCount, 1)) * 40, 15);
+        break;
+      case 'paused':
+        baseProgress = Math.max((activeAgentCount / Math.max(agentCount, 1)) * 60, 30);
+        break;
+      default:
+        baseProgress = 10;
+    }
+    
+    // Add farm age factor for long-running tasks
+    if (farm.createdAt) {
+      const farmAge = Date.now() - new Date(farm.createdAt).getTime();
+      const timeBonus = Math.min((farmAge / 300000) * 10, 15); // Up to 15% bonus over 5 minutes
+      baseProgress = Math.min(baseProgress + timeBonus, 95);
+    }
+    
+    return Math.round(baseProgress);
+  };
+
+  const progressPercentage = calculateProgressPercentage();
+
+  // Animate progress bar for running farms
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    // For running farms, add subtle animation
+    if (farm.status === 'running' || farm.status === 'active') {
+      interval = setInterval(() => {
+        setAnimatedProgress(prev => {
+          const target = progressPercentage;
+          const diff = target - prev;
+          
+          // Smooth transition towards target
+          if (Math.abs(diff) < 0.5) {
+            return target;
+          }
+          
+          // Add small random variations for dynamic feel
+          const variation = (Math.random() - 0.5) * 2;
+          const step = diff > 0 ? Math.max(0.5, diff * 0.1) : Math.min(-0.5, diff * 0.1);
+          
+          return Math.max(0, Math.min(95, prev + step + variation));
+        });
+      }, 1000);
+    } else {
+      // For non-running farms, set progress immediately
+      setAnimatedProgress(progressPercentage);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [farm.status, progressPercentage, farm.id]);
+
+  // Initialize animated progress
+  useEffect(() => {
+    setAnimatedProgress(progressPercentage);
+  }, [farm.id]);
+
+  const displayProgress = farm.status === 'running' || farm.status === 'active' 
+    ? animatedProgress 
+    : progressPercentage;
 
   const isLaunchingStatus = farm.status === 'launching';
+  const statusGlowStyle = getStatusGlow(farm.status);
 
   return (
     <motion.div
       whileHover={!isLaunchingStatus ? { y: -4 } : {}}
+      style={statusGlowStyle}
       className={clsx(
-        'bg-white dark:bg-gray-900 rounded-apple-lg shadow-apple hover:shadow-apple-lg transition-all duration-300',
+        'bg-white dark:bg-gray-900 rounded-apple-lg transition-all duration-500',
         'border border-gray-200 dark:border-gray-800',
+        // Glow effect using CSS variables - subtle in light mode, slightly brighter in dark
+        'shadow-[0_0_20px_var(--glow-color-light)] dark:shadow-[0_0_30px_var(--glow-color-dark)]',
+        // Enhanced shadow on hover
+        'hover:shadow-[0_0_25px_var(--glow-color-light)] dark:hover:shadow-[0_0_40px_var(--glow-color-dark)]',
         isLaunchingStatus && 'opacity-75 cursor-not-allowed',
         className
       )}
@@ -239,11 +432,20 @@ export const FarmCard: React.FC<FarmCardProps> = ({ farm: rawFarm, className }) 
             <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
               <span className="flex items-center space-x-1">
                 <Users className="w-4 h-4" />
-                <span>{(farm.agents || []).length} agents</span>
+                <span>{(() => {
+                  // Simple agent count - just count array length
+                  const agents = farm.agents || [];
+                  const count = agents.length;
+                  return `${count} ${count === 1 ? 'agent' : 'agents'}`;
+                })()}</span>
               </span>
               <span className="flex items-center space-x-1">
                 <Clock className="w-4 h-4" />
-                <span>{farm.createdAt ? formatDistanceToNow(new Date(farm.createdAt), { addSuffix: true }) : 'Unknown'}</span>
+                <span>{(() => {
+                  if (!farm.createdAt) return 'Unknown';
+                  const date = new Date(farm.createdAt);
+                  return isNaN(date.getTime()) ? 'Unknown' : formatDistanceToNow(date, { addSuffix: true });
+                })()}</span>
               </span>
             </div>
           </div>
@@ -284,14 +486,17 @@ export const FarmCard: React.FC<FarmCardProps> = ({ farm: rawFarm, className }) 
           <div className="flex items-center justify-between text-sm mb-1">
             <span className="text-gray-600 dark:text-gray-400">Progress</span>
             <span className="font-medium text-gray-900 dark:text-white">
-              {Math.round(progressPercentage)}%
+              {Math.round(displayProgress)}%
             </span>
           </div>
           <div className="h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: `${progressPercentage}%` }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
+              animate={{ width: `${displayProgress}%` }}
+              transition={{ 
+                duration: farm.status === 'running' || farm.status === 'active' ? 0.8 : 0.5, 
+                ease: 'easeOut' 
+              }}
               className="h-full bg-gradient-to-r from-primary-500 to-primary-600"
             />
           </div>

@@ -11,16 +11,26 @@ module.exports = {
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', {
       tsconfig: '<rootDir>/tsconfig.json',
-      isolatedModules: true
+      useESM: true
     }]
   },
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^@components/(.*)$': '<rootDir>/src/components/$1',
+    '^@services/(.*)$': '<rootDir>/src/services/$1',
+    '^@hooks/(.*)$': '<rootDir>/src/hooks/$1',
+    '^@types/(.*)$': '<rootDir>/src/types/$1',
+    '^@utils/(.*)$': '<rootDir>/src/utils/$1',
+    '^@store/(.*)$': '<rootDir>/src/store/$1',
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
     '\\.(jpg|jpeg|png|gif|svg)$': '<rootDir>/tests/__mocks__/fileMock.js',
-    '^../../server/(.*)$': '<rootDir>/server/$1'
+    '^../../server/(.*)$': '<rootDir>/server/$1',
+    '^.+/apiClient(\\.ts)?$': '<rootDir>/tests/__mocks__/apiClient.ts',
+    '^.+/websocket(\\.ts)?$': '<rootDir>/tests/__mocks__/websocket.ts',
+    '^.+/websocketService(\\.ts)?$': '<rootDir>/tests/__mocks__/websocket.ts'
   },
-  setupFilesAfterEnv: ['<rootDir>/tests/unit/setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/tests/unit/setup.ts', '<rootDir>/server/tests/setup.ts'],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
     'server/**/*.{ts,tsx}',
@@ -45,14 +55,5 @@ module.exports = {
   // Environment variables for tests
   testEnvironmentOptions: {
     customExportConditions: ['node', 'node-addons'],
-  },
-  globals: {
-    'ts-jest': {
-      tsconfig: {
-        jsx: 'react',
-        esModuleInterop: true,
-        allowSyntheticDefaultImports: true
-      }
-    }
   }
 }

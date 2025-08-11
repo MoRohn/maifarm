@@ -10,8 +10,8 @@ import {
   MoreVertical,
   Download,
   Trash2,
-  Copy,
-  GitBranch
+  GitBranch,
+  Sparkles
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Harvest } from '../../types/barn';
@@ -20,9 +20,21 @@ interface HarvestCardProps {
   harvest: Harvest;
   onClick: () => void;
   onDelete: () => void;
+  onCreateSeed?: () => void;
+  isSelected?: boolean;
+  onSelect?: (selected: boolean) => void;
+  selectionMode?: boolean;
 }
 
-export const HarvestCard: React.FC<HarvestCardProps> = ({ harvest, onClick, onDelete }) => {
+export const HarvestCard: React.FC<HarvestCardProps> = ({ 
+  harvest, 
+  onClick, 
+  onDelete, 
+  onCreateSeed,
+  isSelected = false,
+  onSelect,
+  selectionMode = false
+}) => {
   const [showMenu, setShowMenu] = React.useState(false);
   
   const typeConfig = {
@@ -58,7 +70,9 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({ harvest, onClick, onDe
     }
   };
 
-  const config = typeConfig[harvest.type];
+  // Ensure we have a valid type, fallback to 'other' if undefined or invalid
+  const harvestType = (harvest.type && harvest.type in typeConfig) ? harvest.type : 'other';
+  const config = typeConfig[harvestType];
   const Icon = config.icon;
 
   const handleAction = (e: React.MouseEvent, action: string) => {
@@ -69,8 +83,8 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({ harvest, onClick, onDe
       case 'download':
         // Implement download
         break;
-      case 'duplicate':
-        // Implement duplicate
+      case 'createSeed':
+        onCreateSeed?.();
         break;
       case 'delete':
         onDelete();
@@ -78,17 +92,43 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({ harvest, onClick, onDe
     }
   };
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (selectionMode && onSelect) {
+      e.stopPropagation();
+      onSelect(!isSelected);
+    } else {
+      onClick();
+    }
+  };
+
   return (
     <motion.div
       whileHover={{ y: -4 }}
-      onClick={onClick}
+      onClick={handleCardClick}
       className={clsx(
         'relative bg-white dark:bg-gray-900 rounded-apple-lg p-6',
-        'border border-gray-200 dark:border-gray-800',
-        'shadow-sm hover:shadow-apple-md transition-all duration-300',
+        'border transition-all duration-300',
+        isSelected 
+          ? 'border-primary-500 dark:border-primary-400 shadow-apple-lg' 
+          : 'border-gray-200 dark:border-gray-800',
+        'shadow-sm hover:shadow-apple-md',
         'cursor-pointer group'
       )}
     >
+      {/* Selection Checkbox */}
+      {selectionMode && (
+        <div className="absolute top-4 left-4 z-10">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onSelect?.(!isSelected);
+            }}
+            className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className={clsx('p-3 rounded-apple', config.bgColor)}>
@@ -113,18 +153,19 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({ harvest, onClick, onDe
               className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-apple shadow-apple-lg border border-gray-200 dark:border-gray-700 z-10"
             >
               <button
+                onClick={(e) => handleAction(e, 'createSeed')}
+                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Create Seed</span>
+              </button>
+              <hr className="my-1 border-gray-200 dark:border-gray-700" />
+              <button
                 onClick={(e) => handleAction(e, 'download')}
                 className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
                 <Download className="w-4 h-4" />
                 <span>Download</span>
-              </button>
-              <button
-                onClick={(e) => handleAction(e, 'duplicate')}
-                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                <Copy className="w-4 h-4" />
-                <span>Duplicate</span>
               </button>
               <hr className="my-1 border-gray-200 dark:border-gray-700" />
               <button
@@ -155,12 +196,24 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({ harvest, onClick, onDe
           <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-1">
               <Clock className="w-3.5 h-3.5" />
-              <span>{new Date(harvest.createdAt).toLocaleDateString()}</span>
+              <span>{(() => {
+                if (!harvest.createdAt) return 'Unknown';
+                const date = new Date(harvest.createdAt);
+                return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString();
+              })()}</span>
             </div>
             <div className="flex items-center space-x-1">
               <Star className="w-3.5 h-3.5" />
               <span>{harvest.useCount}</span>
             </div>
+            {harvest.farmerTemplateName && (
+              <div className="flex items-center space-x-1 px-2 py-0.5 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-full border border-green-200/50 dark:border-green-700/30">
+                <span className="text-xs">🌾</span>
+                <span className="text-green-700 dark:text-green-400 font-medium max-w-16 truncate">
+                  {harvest.farmerTemplateName}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -187,9 +240,9 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({ harvest, onClick, onDe
         <div className="pt-3 border-t border-gray-200 dark:border-gray-800">
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <span className="text-gray-500 dark:text-gray-500">Artifacts</span>
+              <span className="text-gray-500 dark:text-gray-500">Yield</span>
               <p className="font-medium text-gray-900 dark:text-white">
-                {harvest.artifacts.length} files
+                {harvest.yield?.length || 0} files
               </p>
             </div>
             <div>

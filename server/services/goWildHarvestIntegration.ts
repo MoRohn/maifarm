@@ -33,7 +33,7 @@ export class GoWildHarvestIntegration {
       // Update harvest with Go Wild data
       harvest.results.push(...results);
       harvest.insights.push(...insights);
-      harvest.artifacts.push(...artifacts);
+      harvest.yield.push(...artifacts);
       
       // Calculate quality metrics
       harvest.quality = {
@@ -123,7 +123,7 @@ export class GoWildHarvestIntegration {
    */
   async createTmuxSessionForExploration(sessionId: string, agentCount: number = 3): Promise<boolean> {
     try {
-      const sessionName = `gowild-${sessionId.substring(0, 8)}`;
+      const sessionName = `gowild_${sessionId.substring(0, 8)}`;
       
       // Create main tmux session
       const created = await TmuxHelper.createSession(sessionName, 'exploration');
@@ -166,7 +166,7 @@ export class GoWildHarvestIntegration {
    * Captures output from tmux session
    */
   async captureTmuxOutput(sessionId: string): Promise<string[]> {
-    const sessionName = `gowild-${sessionId.substring(0, 8)}`;
+    const sessionName = `gowild_${sessionId.substring(0, 8)}`;
     const outputs: string[] = [];
     
     try {

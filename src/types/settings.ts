@@ -8,7 +8,25 @@ export interface Settings {
   notifications?: NotificationSettings;
   language?: string;
   aiAssistance?: AIAssistantSettings;
-  aiProvider?: 'claude' | 'qwen';
+  aiProvider?: 'claude' | 'qwen' | 'qwen_local';
+  qwenLocalModel?: string;
+  qwenLocalEnabled?: boolean;
+  agentConfig?: {
+    maxAgents: number;
+    agentMode: 'default' | 'supercharge' | 'ultrafarmer';
+    defaultInterval: number;
+    staggerTime: number;
+    defaultTimeout: number;
+    autoRestart: boolean;
+    parallelExecution: boolean;
+    memoryLimit: number;
+    cpuLimit: number;
+    enableLogging: boolean;
+    logLevel: 'debug' | 'info' | 'warn' | 'error';
+    coordinationMode: 'centralized' | 'distributed' | 'hybrid';
+    taskAllocation: 'round-robin' | 'load-balanced';
+    failoverStrategy: 'restart' | 'reassign' | 'skip';
+  };
   appearance?: {
     theme: 'light' | 'dark' | 'system';
     primaryColor?: string;

@@ -14,12 +14,16 @@ import {
   MetricUpdate,
   AggregatedMetrics,
   AnalyticsFilter,
+  FarmYieldMetrics,
 } from '../types/analytics';
+import { unifiedMetricsService } from '../services/unifiedMetricsService';
+import { ExtendedMetrics, MetricUpdateEvent } from '../types/metrics';
 
 interface AnalyticsStore extends AnalyticsState {
   // Actions
   setOverview: (overview: AnalyticsOverview) => void;
   setMetrics: (metrics: AggregatedMetrics) => void;
+  setFarmYieldMetrics: (metrics: FarmYieldMetrics) => void;
   updateTimeSeriesData: (data: TimeSeriesData[]) => void;
   addTimeSeriesPoint: (seriesId: string, point: any) => void;
   updateAgentPerformance: (performance: AgentPerformanceMetric[]) => void;
@@ -49,6 +53,7 @@ const initialState: AnalyticsState = {
   timeSeriesData: [],
   agentPerformance: [],
   taskCompletions: [],
+  farmYieldMetrics: null,
   errors: [],
   predictions: [],
   anomalies: [],
@@ -73,6 +78,8 @@ export const useAnalyticsStore = create<AnalyticsStore>()(
         setOverview: (overview) => set({ overview, lastUpdated: new Date() }),
 
         setMetrics: (metrics) => set({ metrics }),
+
+        setFarmYieldMetrics: (metrics) => set({ farmYieldMetrics: metrics }),
 
         updateTimeSeriesData: (data) => set({ timeSeriesData: data }),
 
@@ -218,36 +225,50 @@ export const useAnalyticsStore = create<AnalyticsStore>()(
         fetchAnalytics: async (filter) => {
           set({ isLoading: true, error: null });
           try {
-            // This would normally call the API
-            // For now, we'll use mock data
-            const mockOverview: AnalyticsOverview = {
-              farmPerformance: [],
+            // Fetch metrics from unified service
+            const metrics = await unifiedMetricsService.fetchMetrics();
+            const dashboardMetrics = unifiedMetricsService.getDashboardMetrics();
+            
+            // Convert unified metrics to analytics overview format
+            const overview: AnalyticsOverview = {
+              farmPerformance: dashboardMetrics.farms.map(farm => ({
+                farmId: farm.farmId,
+                farmName: farm.farmName,
+                status: farm.status,
+                activeAgents: farm.activeAgents,
+                completedTasks: farm.completedTasks,
+                successRate: farm.successRate,
+                cpuUsage: farm.cpuUsage,
+                memoryUsage: farm.memoryUsage,
+                uptime: farm.uptime,
+                lastActivity: farm.lastUpdated
+              })),
               resourceUsage: {
-                cpu: 65,
-                memory: 72,
-                storage: 45,
-                network: 38,
-                timestamp: new Date()
+                cpu: metrics.cpuUsage,
+                memory: metrics.memoryUsage,
+                storage: metrics.diskUsage,
+                network: metrics.networkUsage,
+                timestamp: metrics.timestamp
               },
               harvestAnalytics: [],
               claudeCodeMetrics: {
-                apiCalls: 1250,
-                tokensUsed: 458000,
+                apiCalls: Math.round(metrics.throughput * 100),
+                tokensUsed: Math.round(metrics.totalCost * 50000),
                 costPerToken: 0.00002,
-                totalCost: 9.16,
-                averageLatency: 850,
-                errorRate: 0.02,
+                totalCost: metrics.apiCost,
+                averageLatency: metrics.avgResponseTime,
+                errorRate: metrics.errorRate / 100,
                 modelType: 'claude-3-opus',
-                timestamp: new Date()
+                timestamp: metrics.timestamp
               },
               systemHealth: {
-                uptime: 99.95,
-                errorRate: 0.12,
-                avgResponseTime: 145,
-                activeConnections: 42,
-                memoryUsage: 62.5,
-                cpuUsage: 45.8,
-                diskUsage: 38.2,
+                uptime: metrics.uptime,
+                errorRate: metrics.errorRate,
+                avgResponseTime: metrics.avgResponseTime,
+                activeConnections: metrics.activeAgents,
+                memoryUsage: metrics.memoryUsage,
+                cpuUsage: metrics.cpuUsage,
+                diskUsage: metrics.diskUsage,
                 networkLatency: 23,
                 serviceStatus: {
                   api_server: 'healthy',
@@ -257,20 +278,66 @@ export const useAnalyticsStore = create<AnalyticsStore>()(
                 }
               },
               costBreakdown: {
-                total: 1250.50,
-                compute: 650.25,
-                storage: 125.30,
-                network: 85.15,
-                api: 389.80,
+                total: metrics.totalCost,
+                compute: metrics.computeCost,
+                storage: metrics.storageCost,
+                network: 0,
+                api: metrics.apiCost,
                 period: 'daily',
                 currency: 'USD'
               },
-              agentEfficiency: [],
+              agentEfficiency: dashboardMetrics.agents.map(agent => ({
+                agentId: agent.agentId,
+                agentName: agent.agentName,
+                tasksCompleted: agent.tasksCompleted,
+                successRate: agent.successRate,
+                avgResponseTime: agent.avgResponseTime,
+                resourceUsage: {
+                  cpu: agent.cpuUsage,
+                  memory: agent.memoryUsage
+                },
+                status: agent.status,
+                lastActivity: agent.lastActivity
+              })),
               taskCompletionRates: []
             };
             
+            // Update aggregated metrics from unified service
+            const aggregatedMetrics: AggregatedMetrics = {
+              totalFarms: metrics.totalFarms,
+              activeFarms: metrics.activeFarms,
+              totalAgents: metrics.uniqueAgents,
+              activeAgents: metrics.activeAgents,
+              totalTasks: metrics.totalTasks,
+              completedTasks: metrics.completedTasks,
+              failedTasks: metrics.failedTasks,
+              successRate: metrics.successRate,
+              errorRate: metrics.errorRate,
+              avgResponseTime: metrics.avgResponseTime,
+              throughput: metrics.throughput,
+              resourceUtilization: {
+                cpu: metrics.cpuUsage,
+                memory: metrics.memoryUsage,
+                storage: metrics.diskUsage,
+                network: metrics.networkUsage,
+                timestamp: new Date()
+              },
+              totalCost: {
+                total: metrics.totalCost,
+                compute: metrics.computeCost,
+                storage: metrics.storageCost,
+                network: 0,
+                api: metrics.apiCost,
+                period: 'hourly' as const,
+                currency: 'USD'
+              },
+              predictions: [],
+              anomalies: []
+            };
+            
             set({ 
-              overview: mockOverview,
+              overview,
+              metrics: aggregatedMetrics,
               isLoading: false,
               lastUpdated: new Date()
             });
@@ -285,14 +352,54 @@ export const useAnalyticsStore = create<AnalyticsStore>()(
         updateFromWebSocket: (data) => {
           const state = get();
           
+          // Handle unified metrics update event
+          if (data.type === 'metrics:update' || data.metrics) {
+            // Let unified metrics service handle the update
+            unifiedMetricsService.handleWebSocketUpdate(data as MetricUpdateEvent);
+            
+            // Fetch updated metrics from unified service
+            const metrics = unifiedMetricsService.getMetrics();
+            const dashboardMetrics = unifiedMetricsService.getDashboardMetrics();
+            
+            // Update aggregated metrics
+            const aggregatedMetrics: AggregatedMetrics = {
+              totalFarms: metrics.totalFarms,
+              activeFarms: metrics.activeFarms,
+              totalAgents: metrics.uniqueAgents,
+              activeAgents: metrics.activeAgents,
+              totalTasks: metrics.totalTasks,
+              completedTasks: metrics.completedTasks,
+              failedTasks: metrics.failedTasks,
+              successRate: metrics.successRate,
+              errorRate: metrics.errorRate,
+              avgResponseTime: metrics.avgResponseTime,
+              throughput: metrics.throughput,
+              resourceUtilization: {
+                cpu: metrics.cpuUsage,
+                memory: metrics.memoryUsage,
+                storage: metrics.diskUsage,
+                network: metrics.networkUsage,
+                timestamp: new Date()
+              },
+              totalCost: {
+                total: metrics.totalCost,
+                compute: metrics.computeCost,
+                storage: metrics.storageCost,
+                network: 0,
+                api: metrics.apiCost,
+                period: 'hourly' as const,
+                currency: 'USD'
+              },
+              predictions: state.predictions || [],
+              anomalies: state.anomalies || []
+            };
+            
+            set({ metrics: aggregatedMetrics, lastUpdated: new Date() });
+          }
+          
           // Update overview if provided
           if (data.overview) {
             set({ overview: data.overview, lastUpdated: new Date() });
-          }
-          
-          // Update specific metrics
-          if (data.metrics) {
-            set({ metrics: data.metrics });
           }
           
           // Update time series data

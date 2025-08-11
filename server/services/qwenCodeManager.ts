@@ -5,6 +5,8 @@ import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { getActiveProvider, isProviderAvailable } from '../config/aiProviders';
 import { ollamaService } from './ollamaService';
+import { pathConfig } from '../config/paths';
+import { fileManager } from './fileManagerService';
 
 interface QwenCodeAgentConfig {
   id: string;
@@ -35,9 +37,11 @@ export class QwenCodeManager extends EventEmitter {
   private agents: Map<string, QwenCodeAgentConfig> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
   private coordinationPath: string = '/tmp/claude_coordination'; // Keep same coordination path for compatibility
-  private qwenExecutable: string = 'qwen-code'; // Will be installed via npm
+  private qwenExecutable: string = 'qwen-code'; // Will be installed via npm or use proxy
   private useLocalOllama: boolean = false;
   private localModelName: string | undefined;
+  private useLLMProxy: boolean = false;
+  private llmProxyUrl: string = 'http://localhost:8001';
 
   constructor() {
     super();
@@ -54,15 +58,44 @@ export class QwenCodeManager extends EventEmitter {
       console.error('Failed to create coordination directory:', error);
     }
 
-    // Check for local Ollama Qwen model first
-    const localQwen = await this.checkLocalQwenModel();
-    if (localQwen.available) {
-      this.useLocalOllama = true;
-      this.localModelName = localQwen.modelName;
-      console.log(`Using local Qwen model via Ollama: ${this.localModelName}`);
-    } else if (!isProviderAvailable('qwen')) {
-      console.warn('Neither local Qwen model nor Qwen API is configured. Please install a local model or set QWEN_API_KEY.');
+    // Check if LLM proxy is configured
+    this.useLLMProxy = process.env.USE_LLM_PROXY === 'true';
+    if (process.env.LLM_PROXY_URL) {
+      this.llmProxyUrl = process.env.LLM_PROXY_URL;
     }
+
+    if (this.useLLMProxy) {
+      console.log(`Using LLM Proxy for Qwen3-Coder at ${this.llmProxyUrl}`);
+      // Check if proxy is running
+      await this.checkLLMProxyHealth();
+    } else {
+      // Check for local Ollama Qwen model first
+      const localQwen = await this.checkLocalQwenModel();
+      if (localQwen.available) {
+        this.useLocalOllama = true;
+        this.localModelName = localQwen.modelName;
+        console.log(`Using local Qwen model via Ollama: ${this.localModelName}`);
+      } else if (!isProviderAvailable('qwen')) {
+        console.warn('Neither local Qwen model nor Qwen API is configured. Please install a local model or set QWEN_API_KEY.');
+      }
+    }
+  }
+
+  /**
+   * Check if LLM proxy is running and healthy
+   */
+  private async checkLLMProxyHealth(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.llmProxyUrl}/providers`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('LLM Proxy available with providers:', data.providers);
+        return true;
+      }
+    } catch (error) {
+      console.error('LLM Proxy not reachable:', error);
+    }
+    return false;
   }
 
   /**
@@ -145,7 +178,7 @@ export class QwenCodeManager extends EventEmitter {
       steps: config.steps,
       collaborative: config.collaborative || false,
       sessionName,
-      projectPath: config.projectPath || process.cwd(),
+      projectPath: pathConfig.getFarmWorkspacePath(farmId, false),
       status: 'creating',
       provider: 'qwen'
     };
@@ -156,10 +189,9 @@ export class QwenCodeManager extends EventEmitter {
       // Create prompt file for Qwen integration
       const promptFile = await this.createPromptFile(farm);
 
-      // For now, we'll use the multi_claude.py script with a proxy
-      // In a full implementation, we'd have a separate qwen_multi.py
+      // Use the orchestrator.py script with a proxy for Qwen provider
       const args = [
-        path.join(process.cwd(), 'multi_claude.py'),
+        path.join(process.cwd(), 'orchestrator.py'),
         '-n', farm.agents.toString(),
         '--prompt-file', promptFile,
         '-s', sessionName,
@@ -198,18 +230,41 @@ export class QwenCodeManager extends EventEmitter {
 
     const promptFile = path.join(promptDir, 'prompt.txt');
     
-    // Add Qwen-specific instructions to leverage its capabilities
-    const qwenPrompt = `[Using Qwen3-Coder with ${farm.agents} agents]
+    // Add Qwen3-Coder 480B specific instructions to leverage its capabilities
+    const qwenPrompt = `[Using Qwen3-Coder 480B with ${farm.agents} agents]
 
 ${farm.prompt}
 
-Note: This task is being executed using Qwen3-Coder, which has:
-- 480B parameters (35B active)
-- Support for up to 256K tokens context
-- Enhanced chain-of-thought reasoning
-- Free API access
+System Context:
+- Model: Qwen3-Coder 480B (Mixture of Experts with 35B active parameters)
+- Context Window: Up to 256K tokens (can extend to 1M tokens)
+- Capabilities: Enhanced code generation, multi-language support, chain-of-thought reasoning
+- Architecture: MoE optimized for coding tasks with specialized experts
 
-Please leverage these capabilities for optimal results.`;
+Instructions for optimal performance:
+1. Use chain-of-thought reasoning for complex problems
+2. Leverage the large context window for comprehensive code analysis
+3. Apply structured problem decomposition when handling multi-file tasks
+4. Utilize the model's strengths in:
+   - Code generation and refactoring
+   - Bug detection and fixing
+   - API design and implementation
+   - Test case generation
+   - Documentation writing
+
+${farm.collaborative ? `
+Collaborative Mode: Agents should coordinate through the shared workspace at ${this.coordinationPath}
+- Check work_claims directory for task assignments
+- Update progress in active_agents.json
+- Share results in the harvests directory
+` : ''}
+
+${farm.steps && farm.steps.length > 0 ? `
+Task Steps:
+${farm.steps.map((step, i) => `${i + 1}. ${step}`).join('\n')}
+` : ''}
+
+Please proceed with the task using your advanced capabilities.`;
 
     await fs.writeFile(promptFile, qwenPrompt, 'utf-8');
     return promptFile;
@@ -219,12 +274,18 @@ Please leverage these capabilities for optimal results.`;
    * Launch farm using Qwen through the proxy
    */
   private async launchFarmWithQwen(farm: QwenCodeFarmConfig, args: string[]): Promise<void> {
+    // Ensure workspace exists
+    await fileManager.ensureDirectory(farm.projectPath);
+    
     return new Promise((resolve, reject) => {
       // Set environment variables for Qwen usage
+      
       const env = {
         ...process.env,
         AI_PROVIDER: 'qwen',
-        QWEN_FARM_ID: farm.id
+        QWEN_FARM_ID: farm.id,
+        MAIFARM_WORKSPACE: farm.projectPath,
+        MAIBARN_ROOT: pathConfig.getPath('MAIBARN_ROOT')
       };
 
       const proc = spawn('python3', args, {

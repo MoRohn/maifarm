@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
   FileText, 
@@ -184,18 +184,30 @@ export const QuickActions: React.FC = () => {
       </div>
 
       {/* Modals */}
-      {showFarmCreator && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-900 rounded-apple-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <FarmCreator
-              onClose={() => {
-                setShowFarmCreator(false);
-                setShowAIYAML(false);
-              }}
-            />
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showFarmCreator && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-gray-900 rounded-apple-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            >
+              <FarmCreator
+                onClose={() => {
+                  setShowFarmCreator(false);
+                  setShowAIYAML(false);
+                }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <GoWildModal
         isOpen={showGoWild}

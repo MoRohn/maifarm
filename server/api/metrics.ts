@@ -5,6 +5,11 @@ import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
 import { register, collectDefaultMetrics } from 'prom-client';
 import os from 'os';
+import { taskCountService } from '../services/taskCountService';
+import { 
+  validateMetricsRequest, 
+  sanitizeMetricsMiddleware 
+} from '../middleware/metricsValidation';
 
 const router = Router();
 
@@ -45,42 +50,25 @@ const resourceUtilization = new Gauge({
   labelNames: ['resource_type', 'farm_id']
 });
 
+// Import metrics synchronizer
+import { metricsSynchronizer } from '../services/metricsSynchronizer';
+
 // GET /api/metrics/dashboard - Dashboard metrics endpoint
 router.get('/dashboard', apiRateLimits.read, async (req, res) => {
   try {
-    // Get metrics from database or in-memory stats
-    const activeFarmsResult = await db.query(
-      "SELECT COUNT(*) FROM farms WHERE status IN ('running', 'active')"
-    );
-    const totalAgentsResult = await db.query(
-      "SELECT COUNT(*) FROM agents WHERE status IN ('running', 'active')"
-    );
-    const tasksResult = await db.query(
-      "SELECT COUNT(*) as completed, (SELECT COUNT(*) FROM tasks WHERE status = 'failed') as failed FROM tasks WHERE status = 'completed'"
-    );
+    // Get metrics from the synchronizer (already deduplicated and aggregated)
+    const dashboardMetrics = metricsSynchronizer.getDashboardMetrics();
     
-    const activeFarms = parseInt(activeFarmsResult.rows[0]?.count || '0');
-    const totalAgents = parseInt(totalAgentsResult.rows[0]?.count || '0');
-    const tasksCompleted = parseInt(tasksResult.rows[0]?.completed || '0');
-    const tasksFailed = parseInt(tasksResult.rows[0]?.failed || '0');
-    const totalTasks = tasksCompleted + tasksFailed;
-    const successRate = totalTasks > 0 ? Math.round((tasksCompleted / totalTasks) * 100) : 100;
-
     const response: ApiResponse = {
       success: true,
-      data: {
-        activeFarms,
-        totalAgents,
-        tasksCompleted,
-        successRate
-      }
+      data: dashboardMetrics
     };
 
     res.json(response);
   } catch (error) {
     console.error('Error fetching dashboard metrics:', error);
     
-    // Return default metrics if database is not available
+    // Return default metrics if synchronizer is not available
     const response: ApiResponse = {
       success: true,
       data: {
@@ -92,6 +80,34 @@ router.get('/dashboard', apiRateLimits.read, async (req, res) => {
     };
     
     res.json(response);
+  }
+});
+
+// GET /api/metrics/unified - Get full unified metrics
+router.get('/unified', apiRateLimits.read, async (req, res) => {
+  try {
+    const metrics = metricsSynchronizer.getMetrics();
+    
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        metrics,
+        uniqueAgentCount: metricsSynchronizer.getUniqueAgentCount(),
+        timestamp: new Date(),
+        version: Date.now()
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error fetching unified metrics:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to fetch unified metrics'
+      }
+    });
   }
 });
 
@@ -186,7 +202,7 @@ router.get('/realtime', authenticateToken, apiRateLimits.read, async (req, res) 
 });
 
 // POST /api/metrics - Record custom metrics
-router.post('/', authenticateToken, apiRateLimits.write, async (req, res) => {
+router.post('/', authenticateToken, apiRateLimits.write, sanitizeMetricsMiddleware, validateMetricsRequest, async (req, res) => {
   try {
     const metrics = Array.isArray(req.body) ? req.body : [req.body];
     

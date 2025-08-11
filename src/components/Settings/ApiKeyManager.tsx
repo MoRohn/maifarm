@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   KeyIcon,
@@ -7,7 +7,9 @@ import {
   EyeIcon,
   EyeSlashIcon,
   ClipboardDocumentIcon,
-  CheckIcon
+  CheckIcon,
+  CheckCircleIcon,
+  XCircleIcon
 } from '@heroicons/react/24/outline';
 import { useUserStore } from '../../store/userStore';
 
@@ -27,14 +29,62 @@ export const ApiKeyManager: React.FC = () => {
   const [showNewKeyModal, setShowNewKeyModal] = useState(false);
   const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [claudeKeyStatus, setClaudeKeyStatus] = useState<'checking' | 'configured' | 'not-configured'>('checking');
   
   const [newKey, setNewKey] = useState({
     name: '',
     service: '',
-    permissions: [] as string[]
+    permissions: [] as string[],
+    customKey: '' // For entering existing API keys
   });
 
+  // Check if Claude API key is configured on the server
+  useEffect(() => {
+    checkClaudeKeyStatus();
+    // Load any stored API keys from localStorage/server
+    loadStoredApiKeys();
+  }, []);
+
+  const checkClaudeKeyStatus = async () => {
+    try {
+      const response = await fetch('/api/apikeys/claude/status');
+      if (response.ok) {
+        const data = await response.json();
+        setClaudeKeyStatus(data.configured ? 'configured' : 'not-configured');
+      } else {
+        setClaudeKeyStatus('not-configured');
+      }
+    } catch (error) {
+      console.error('Error checking Claude API key status:', error);
+      setClaudeKeyStatus('not-configured');
+    }
+  };
+
+  const loadStoredApiKeys = () => {
+    // Load from localStorage for persistence
+    const storedKeys = localStorage.getItem('maifarm_api_keys');
+    if (storedKeys) {
+      try {
+        const parsed = JSON.parse(storedKeys);
+        setApiKeys(parsed);
+        // Send Claude keys to server if found
+        const claudeKey = parsed.find((k: ApiKey) => k.service === 'Claude');
+        if (claudeKey) {
+          // Re-configure on server in case it restarted
+          fetch('/api/apikeys/claude', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey: claudeKey.key, name: claudeKey.name })
+          }).catch(console.error);
+        }
+      } catch (error) {
+        console.error('Error loading stored API keys:', error);
+      }
+    }
+  };
+
   const services = [
+    'Claude',
     'OpenAI',
     'GitHub',
     'GitLab',
@@ -56,27 +106,67 @@ export const ApiKeyManager: React.FC = () => {
     ).join('');
   };
 
-  const handleCreateKey = () => {
+  const handleCreateKey = async () => {
+    // Use custom key if provided, otherwise generate one
+    const apiKeyValue = newKey.customKey || generateApiKey();
+    
     const key: ApiKey = {
       id: Date.now().toString(),
       name: newKey.name,
-      key: generateApiKey(),
+      key: apiKeyValue,
       service: newKey.service,
       permissions: newKey.permissions,
       createdAt: new Date()
     };
 
+    // If it's a Claude API key, send it to the server
+    if (newKey.service === 'Claude') {
+      try {
+        const response = await fetch('/api/apikeys/claude', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ apiKey: key.key, name: key.name })
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to configure Claude API key on server');
+        }
+      } catch (error) {
+        console.error('Error configuring Claude API key:', error);
+      }
+    }
+
     const updated = [...apiKeys, key];
     setApiKeys(updated);
     updatePreferences({ apiKeys: updated });
+    
+    // Save to localStorage for persistence
+    localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
+    
+    // Refresh Claude key status if we just added one
+    if (newKey.service === 'Claude') {
+      setTimeout(checkClaudeKeyStatus, 500);
+    }
+    
     setShowNewKeyModal(false);
-    setNewKey({ name: '', service: '', permissions: [] });
+    setNewKey({ name: '', service: '', permissions: [], customKey: '' });
   };
 
   const handleDeleteKey = (id: string) => {
+    const keyToDelete = apiKeys.find(k => k.id === id);
     const updated = apiKeys.filter(key => key.id !== id);
     setApiKeys(updated);
     updatePreferences({ apiKeys: updated });
+    
+    // Update localStorage
+    localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
+    
+    // If deleting Claude key, refresh status
+    if (keyToDelete?.service === 'Claude') {
+      setTimeout(checkClaudeKeyStatus, 500);
+    }
   };
 
   const toggleShowKey = (id: string) => {
@@ -114,6 +204,39 @@ export const ApiKeyManager: React.FC = () => {
         </button>
       </div>
 
+      {/* Claude API Key Status */}
+      <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center space-x-2">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Claude API Status:
+          </span>
+          {claudeKeyStatus === 'checking' ? (
+            <span className="text-sm text-gray-500">Checking...</span>
+          ) : claudeKeyStatus === 'configured' ? (
+            <div className="flex items-center space-x-1">
+              <CheckCircleIcon className="w-4 h-4 text-green-500" />
+              <span className="text-sm text-green-600 dark:text-green-400">Configured</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1">
+              <XCircleIcon className="w-4 h-4 text-red-500" />
+              <span className="text-sm text-red-600 dark:text-red-400">Not Configured</span>
+            </div>
+          )}
+        </div>
+        {claudeKeyStatus === 'not-configured' && (
+          <button
+            onClick={() => {
+              setNewKey({ ...newKey, service: 'Claude' });
+              setShowNewKeyModal(true);
+            }}
+            className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 font-medium"
+          >
+            Add Claude Key
+          </button>
+        )}
+      </div>
+
       {/* API Keys List */}
       <div className="space-y-3">
         {apiKeys.length === 0 ? (
@@ -130,7 +253,7 @@ export const ApiKeyManager: React.FC = () => {
               key={apiKey.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors duration-200"
+              className="p-5 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors duration-200 bg-white dark:bg-gray-800/50"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -143,41 +266,50 @@ export const ApiKeyManager: React.FC = () => {
                     </span>
                   </div>
                   
-                  <div className="mt-2 flex items-center space-x-4">
-                    <div className="flex items-center space-x-2">
-                      <code className="text-sm font-mono text-gray-600 dark:text-gray-400">
+                  <div className="mt-3">
+                    <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
+                      <code className="flex-1 text-sm font-mono text-gray-600 dark:text-gray-400">
                         {showKeys[apiKey.id] ? apiKey.key : maskApiKey(apiKey.key)}
                       </code>
-                      <button
-                        onClick={() => toggleShowKey(apiKey.id)}
-                        className="text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
-                      >
-                        {showKeys[apiKey.id] ? (
-                          <EyeSlashIcon className="w-4 h-4" />
-                        ) : (
-                          <EyeIcon className="w-4 h-4" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => copyToClipboard(apiKey.key, apiKey.id)}
-                        className="text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
-                      >
-                        {copiedKey === apiKey.id ? (
-                          <CheckIcon className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <ClipboardDocumentIcon className="w-4 h-4" />
-                        )}
-                      </button>
+                      <div className="flex items-center space-x-2 ml-3">
+                        <button
+                          onClick={() => toggleShowKey(apiKey.id)}
+                          className="p-1 text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                          title={showKeys[apiKey.id] ? "Hide key" : "Show key"}
+                        >
+                          {showKeys[apiKey.id] ? (
+                            <EyeSlashIcon className="w-4 h-4" />
+                          ) : (
+                            <EyeIcon className="w-4 h-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => copyToClipboard(apiKey.key, apiKey.id)}
+                          className="p-1 text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                          title="Copy to clipboard"
+                        >
+                          {copiedKey === apiKey.id ? (
+                            <CheckIcon className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <ClipboardDocumentIcon className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="mt-3 flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
-                    <span>Created: {new Date(apiKey.createdAt).toLocaleDateString()}</span>
-                    {apiKey.lastUsed && (
-                      <span>Last used: {new Date(apiKey.lastUsed).toLocaleDateString()}</span>
-                    )}
-                    <div className="flex items-center space-x-1">
-                      <span>Permissions:</span>
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
+                      <span>Created: {new Date(apiKey.createdAt).toLocaleDateString()}</span>
+                      {apiKey.lastUsed && (
+                        <>
+                          <span className="text-gray-300 dark:text-gray-600">•</span>
+                          <span>Last used: {new Date(apiKey.lastUsed).toLocaleDateString()}</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center flex-wrap gap-2">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Permissions:</span>
                       {apiKey.permissions.map((perm) => (
                         <span
                           key={perm}
@@ -256,6 +388,24 @@ export const ApiKeyManager: React.FC = () => {
                   </select>
                 </div>
 
+                {newKey.service === 'Claude' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      API Key (Enter your Anthropic API key)
+                    </label>
+                    <input
+                      type="password"
+                      value={newKey.customKey}
+                      onChange={(e) => setNewKey({ ...newKey, customKey: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                      placeholder="sk-ant-api03-..."
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300">console.anthropic.com</a>
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Permissions
@@ -299,7 +449,7 @@ export const ApiKeyManager: React.FC = () => {
                 </button>
                 <button
                   onClick={handleCreateKey}
-                  disabled={!newKey.name || !newKey.service || newKey.permissions.length === 0}
+                  disabled={!newKey.name || !newKey.service || newKey.permissions.length === 0 || (newKey.service === 'Claude' && !newKey.customKey)}
                   className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors duration-200 font-medium"
                 >
                   Create Key

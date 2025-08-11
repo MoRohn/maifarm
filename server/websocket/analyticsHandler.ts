@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import { pathConfig } from '../config/paths';
 
 interface AnalyticsUpdate {
   cpu: number;
@@ -137,7 +138,7 @@ export class AnalyticsWebSocketHandler {
   }
 
   private watchClaudeCoordination() {
-    const claudeCoordPath = '/tmp/claude_coordination/active_agents.json';
+    const claudeCoordPath = pathConfig.getPath('ACTIVE_AGENTS_FILE');
     const dir = path.dirname(claudeCoordPath);
     
     // Create directory if it doesn't exist

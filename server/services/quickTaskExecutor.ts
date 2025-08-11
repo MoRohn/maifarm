@@ -3,6 +3,11 @@ import { EventEmitter } from 'events';
 import { quickTaskService } from './quickTaskService';
 import { WebSocketManager } from '../websocket/websocketManager';
 import { logger } from '../utils/logger';
+import { Task } from '../types/api';
+import { db } from '../database/connection';
+import { v4 as uuidv4 } from 'uuid';
+import { thinkingStrategyService } from './thinkingStrategyService';
+import { ThinkingLevel, ThinkingConfig } from '../types/thinking';
 
 interface QuickTaskExecutionConfig {
   taskId: string;
@@ -24,6 +29,126 @@ interface ExecutionResult {
 export class QuickTaskExecutor extends EventEmitter {
   private activeSessions: Map<string, string> = new Map(); // taskId -> sessionName
   private executionTimers: Map<string, NodeJS.Timeout> = new Map();
+  private inMemoryQueue: Task[] = []; // Fallback queue when Redis unavailable
+  private isProcessing: boolean = false;
+  private virtualAgents: Map<string, string> = new Map(); // taskId -> agentId
+
+  /**
+   * Create a virtual agent record for the quick task
+   */
+  private async createVirtualAgent(config: QuickTaskExecutionConfig, provider: string): Promise<string> {
+    const agentId = uuidv4();
+    const agentName = `Quick Task Agent (${provider})`;
+    
+    try {
+      await db.query(
+        `INSERT INTO agents (id, farm_id, name, type, status, capabilities, resources, metrics, config, last_heartbeat, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          agentId,
+          config.farmId,
+          agentName,
+          'quick-task',
+          'launching',
+          JSON.stringify(['text-generation', 'code-execution', 'file-operations']),
+          JSON.stringify({ cpu: 1, memory: 1024 }),
+          JSON.stringify({ tasksCompleted: 0, avgResponseTime: 0 }),
+          JSON.stringify({ 
+            provider,
+            isVirtual: true,
+            taskId: config.taskId,
+            sessionName: this.generateSessionName(config.taskId)
+          }),
+          new Date(),
+          new Date(),
+          new Date()
+        ]
+      );
+      
+      this.virtualAgents.set(config.taskId, agentId);
+      
+      // Emit agent created event
+      WebSocketManager.broadcast('agent:created', {
+        agent: {
+          id: agentId,
+          farmId: config.farmId,
+          name: agentName,
+          type: 'quick-task',
+          status: 'launching',
+          isVirtual: true,
+          provider
+        }
+      });
+      
+      logger.info(`[QuickTaskExecutor] Created virtual agent ${agentId} for task ${config.taskId}`);
+      return agentId;
+    } catch (error) {
+      logger.error(`[QuickTaskExecutor] Failed to create virtual agent for task ${config.taskId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update virtual agent status
+   */
+  private async updateVirtualAgentStatus(taskId: string, status: string, metadata?: any): Promise<void> {
+    const agentId = this.virtualAgents.get(taskId);
+    if (!agentId) return;
+    
+    try {
+      await db.query(
+        `UPDATE agents 
+         SET status = $1, last_heartbeat = $2, updated_at = $3, metrics = $4
+         WHERE id = $5`,
+        [
+          status,
+          new Date(),
+          new Date(),
+          JSON.stringify({
+            tasksCompleted: status === 'completed' ? 1 : 0,
+            avgResponseTime: 0,
+            ...metadata
+          }),
+          agentId
+        ]
+      );
+      
+      // Emit agent status update event
+      WebSocketManager.broadcast('agent:status', {
+        agentId,
+        status,
+        timestamp: new Date(),
+        metadata
+      });
+      
+      logger.info(`[QuickTaskExecutor] Updated virtual agent ${agentId} status to ${status}`);
+    } catch (error) {
+      logger.error(`[QuickTaskExecutor] Failed to update virtual agent status:`, error);
+    }
+  }
+
+  /**
+   * Remove virtual agent record
+   */
+  private async removeVirtualAgent(taskId: string): Promise<void> {
+    const agentId = this.virtualAgents.get(taskId);
+    if (!agentId) return;
+    
+    try {
+      await db.query('DELETE FROM agents WHERE id = $1', [agentId]);
+      this.virtualAgents.delete(taskId);
+      
+      // Emit agent removed event
+      WebSocketManager.broadcast('agent:removed', {
+        agentId,
+        timestamp: new Date()
+      });
+      
+      logger.info(`[QuickTaskExecutor] Removed virtual agent ${agentId} for task ${taskId}`);
+    } catch (error) {
+      logger.error(`[QuickTaskExecutor] Failed to remove virtual agent:`, error);
+    }
+  }
 
   /**
    * Execute a quick task in a tmux session
@@ -32,36 +157,51 @@ export class QuickTaskExecutor extends EventEmitter {
     const startTime = Date.now();
     const sessionName = this.generateSessionName(config.taskId);
     
+    // Determine provider from metadata or default
+    const provider = config.metadata?.provider || process.env.AI_PROVIDER || 'claude';
+    
     try {
-      logger.info(`[QuickTaskExecutor] Starting execution for task ${config.taskId}`);
+      logger.info(`[QuickTaskExecutor] Starting execution for task ${config.taskId} with provider ${provider}`);
+      
+      // Create virtual agent record
+      await this.createVirtualAgent(config, provider);
       
       // Emit starting event
       WebSocketManager.broadcast('quicktask:starting', {
         taskId: config.taskId,
         farmId: config.farmId,
         sessionName,
+        provider,
         timestamp: new Date()
       });
 
       // Create tmux session
       const sessionCreated = await this.createTmuxSession(sessionName, config);
       if (!sessionCreated) {
+        await this.updateVirtualAgentStatus(config.taskId, 'failed');
         throw new Error('Failed to create tmux session');
       }
 
       this.activeSessions.set(config.taskId, sessionName);
+      await this.updateVirtualAgentStatus(config.taskId, 'initializing');
 
       // Update task status to processing
       await quickTaskService.updateTaskProgress(config.taskId, 10, 'Task started');
       
       // Run the task in the session
       await this.runTaskInSession(sessionName, config);
+      await this.updateVirtualAgentStatus(config.taskId, 'running');
       
       // Monitor execution with timeout
       const result = await this.monitorExecution(config);
       
       // Capture final output
       const output = await this.captureOutput(sessionName);
+      
+      // Mark agent as completed
+      await this.updateVirtualAgentStatus(config.taskId, 'completed', {
+        executionTime: Date.now() - startTime
+      });
       
       return {
         success: true,
@@ -72,6 +212,12 @@ export class QuickTaskExecutor extends EventEmitter {
       
     } catch (error) {
       logger.error(`[QuickTaskExecutor] Task ${config.taskId} failed:`, error);
+      
+      // Mark agent as failed
+      await this.updateVirtualAgentStatus(config.taskId, 'failed', {
+        error: error.message,
+        executionTime: Date.now() - startTime
+      });
       
       return {
         success: false,
@@ -145,13 +291,16 @@ export class QuickTaskExecutor extends EventEmitter {
     // Update progress
     await quickTaskService.updateTaskProgress(config.taskId, 25, 'Initializing task environment');
     
-    // Determine AI provider from metadata or use default
+    // Determine AI provider from settings, metadata, or environment
     const provider = config.metadata?.provider || process.env.AI_PROVIDER || 'claude';
     
-    // Launch actual AI agent instead of simulating
+    logger.info(`[QuickTaskExecutor] Using AI provider: ${provider}`);
+    
+    // Launch actual AI agent based on provider setting
     if (provider === 'qwen') {
       await this.launchQwenAgent(sessionName, config);
     } else {
+      // Default to Claude for any other value including 'claude'
       await this.launchClaudeAgent(sessionName, config);
     }
   }
@@ -162,10 +311,40 @@ export class QuickTaskExecutor extends EventEmitter {
   private async launchClaudeAgent(sessionName: string, config: QuickTaskExecutionConfig): Promise<void> {
     logger.info(`[QuickTaskExecutor] Launching Claude agent for task ${config.taskId}`);
     
-    // Build the task prompt from metadata if available, otherwise use title and description
-    const taskPrompt = config.metadata?.prompt || config.description || config.title;
+    // Build the base task prompt
+    const basePrompt = config.description || config.title || 'Please help with this task';
     
-    // Launch Claude Code
+    // Analyze prompt to determine if thinking strategy should be applied
+    const recommendation = thinkingStrategyService.recommendThinkingLevel(basePrompt);
+    
+    // Apply thinking strategy for quick tasks
+    let taskPrompt = basePrompt;
+    if (recommendation.level !== ThinkingLevel.NONE) {
+      const thinkingConfig: ThinkingConfig = {
+        level: recommendation.level,
+        context: 'This is a quick task that should be completed efficiently.',
+        autoEscalate: false, // Don't auto-escalate for quick tasks
+        maxLevel: ThinkingLevel.MODERATE // Cap at moderate for quick tasks to maintain speed
+      };
+      
+      const enhancedResult = thinkingStrategyService.enhancePrompt(basePrompt, thinkingConfig);
+      taskPrompt = enhancedResult.enhancedPrompt;
+      
+      logger.info(`[QuickTaskExecutor] Applied thinking level ${enhancedResult.appliedLevel} to quick task`, {
+        taskId: config.taskId,
+        complexityScore: recommendation.complexityScore,
+        reasoning: recommendation.reasoning
+      });
+      
+      // Update progress with thinking strategy info
+      await quickTaskService.updateTaskProgress(
+        config.taskId, 
+        35, 
+        `Applying ${enhancedResult.appliedLevel} thinking strategy...`
+      );
+    }
+    
+    // Launch Claude Code directly without echo
     await this.sendToSession(sessionName, `claude --dangerously-skip-permissions`, false);
     
     // Wait for Claude to initialize
@@ -204,24 +383,35 @@ export class QuickTaskExecutor extends EventEmitter {
   private async launchQwenAgent(sessionName: string, config: QuickTaskExecutionConfig): Promise<void> {
     logger.info(`[QuickTaskExecutor] Launching Qwen agent for task ${config.taskId}`);
     
-    // Launch Qwen Code with the task prompt
-    const prompt = `${config.title}: ${config.description}`;
+    // Build the task prompt
+    const taskPrompt = config.description || config.title;
     
     // Check if we should use local Qwen via Ollama or API
     const useLocal = config.metadata?.useLocalQwen || process.env.QWEN_USE_LOCAL === 'true';
     
     if (useLocal) {
       // Launch local Qwen via Ollama
+      logger.info(`[QuickTaskExecutor] Using local Qwen via Ollama`);
       await this.sendToSession(sessionName, `ollama run qwen2.5-coder:32b`, false);
+      
+      // Wait for Ollama to initialize
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      await quickTaskService.updateTaskProgress(config.taskId, 40, 'Qwen agent starting...');
+      
+      // Send the task prompt
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await this.sendToSession(sessionName, taskPrompt, false);
+      await quickTaskService.updateTaskProgress(config.taskId, 60, 'Task sent to Qwen agent');
     } else {
-      // Use Qwen API via custom command (would need implementation)
-      await this.sendToSession(sessionName, `echo "Qwen API integration pending..."`, false);
-      await this.sendToSession(sessionName, `claude --dangerously-skip-permissions`, false); // Fallback to Claude
+      // Qwen API mode not yet implemented, use Claude as fallback
+      logger.warn(`[QuickTaskExecutor] Qwen API mode not implemented, falling back to Claude`);
+      await this.launchClaudeAgent(sessionName, config);
+      return;
     }
     
     // Wait for agent to initialize
     await new Promise(resolve => setTimeout(resolve, 3000));
-    await quickTaskService.updateTaskProgress(config.taskId, 40, 'Qwen agent starting...');
+    await quickTaskService.updateTaskProgress(config.taskId, 40, 'AI agent starting...');
     
     // Send the task prompt
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -258,17 +448,37 @@ export class QuickTaskExecutor extends EventEmitter {
       const timeout = config.timeout || 300000; // Default 5 minutes
       const checkInterval = 5000; // Check every 5 seconds
       let elapsed = 0;
+      let monitor: NodeJS.Timeout;
       
       // Set timeout
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         logger.warn(`[QuickTaskExecutor] Task ${config.taskId} timed out after ${timeout}ms`);
+        
+        // Clear the monitor interval
+        if (monitor) clearInterval(monitor);
+        this.executionTimers.delete(config.taskId);
+        
+        // Update task status to timeout/failed in database
+        try {
+          await quickTaskService.failTask(config.taskId, 'Task execution timed out');
+          await this.updateVirtualAgentStatus(config.taskId, 'timeout', { reason: 'Task execution timed out' });
+        } catch (error) {
+          logger.error(`[QuickTaskExecutor] Failed to update task status on timeout:`, error);
+        }
+        
+        // Kill tmux session and cleanup resources
+        const sessionName = this.activeSessions.get(config.taskId);
+        if (sessionName) {
+          await this.cleanup(config.taskId, sessionName);
+        }
+        
         reject(new Error('Task execution timed out'));
       }, timeout);
       
       this.executionTimers.set(config.taskId, timer);
       
       // Monitor the session for completion
-      const monitor = setInterval(async () => {
+      monitor = setInterval(async () => {
         elapsed += checkInterval;
         
         // Check if task is still active
@@ -365,6 +575,9 @@ export class QuickTaskExecutor extends EventEmitter {
         this.executionTimers.delete(taskId);
       }
       
+      // Remove virtual agent record
+      await this.removeVirtualAgent(taskId);
+      
       // Kill tmux session
       const killProcess = spawn('tmux', ['kill-session', '-t', sessionName]);
       killProcess.on('exit', (code) => {
@@ -389,7 +602,7 @@ export class QuickTaskExecutor extends EventEmitter {
    * Generate session name for quick task
    */
   private generateSessionName(taskId: string): string {
-    return `quick-${taskId.substring(0, 8)}`;
+    return `quick_${taskId.substring(0, 8)}`;
   }
 
   /**
@@ -414,9 +627,93 @@ export class QuickTaskExecutor extends EventEmitter {
    */
   async stopTask(taskId: string): Promise<void> {
     const sessionName = this.activeSessions.get(taskId);
+    
+    // Mark virtual agent as stopped before cleanup
+    await this.updateVirtualAgentStatus(taskId, 'stopped');
+    
     if (sessionName) {
       await this.cleanup(taskId, sessionName);
     }
+  }
+
+  /**
+   * Queue a task for execution (Redis fallback support)
+   */
+  async queueTask(task: any): Promise<void> {
+    this.inMemoryQueue.push(task);
+    logger.info(`[QuickTaskExecutor] Task ${task.id} queued in-memory. Queue size: ${this.inMemoryQueue.length}`);
+    
+    // Emit queue event
+    WebSocketManager.broadcast('quicktask:queued', {
+      taskId: task.id,
+      farmId: task.farmId,
+      queueSize: this.inMemoryQueue.length,
+      timestamp: new Date()
+    });
+    
+    // Start processing if not already running
+    if (!this.isProcessing) {
+      this.processQueue();
+    }
+  }
+
+  /**
+   * Process tasks from the in-memory queue
+   */
+  private async processQueue(): Promise<void> {
+    if (this.isProcessing || this.inMemoryQueue.length === 0) {
+      return;
+    }
+    
+    this.isProcessing = true;
+    
+    while (this.inMemoryQueue.length > 0) {
+      const task = this.inMemoryQueue.shift();
+      if (!task) continue;
+      
+      try {
+        logger.info(`[QuickTaskExecutor] Processing task ${task.id} from in-memory queue`);
+        
+        // Execute the task
+        const config: QuickTaskExecutionConfig = {
+          taskId: task.id,
+          farmId: task.farmId,
+          title: task.payload?.title || 'Quick Task',
+          description: task.payload?.description || '',
+          timeout: task.timeout || 300000,
+          metadata: task.metadata
+        };
+        
+        await this.executeTask(config);
+        
+      } catch (error) {
+        logger.error(`[QuickTaskExecutor] Failed to process task ${task.id}:`, error);
+        
+        // Notify failure
+        WebSocketManager.broadcast('quicktask:failed', {
+          taskId: task.id,
+          farmId: task.farmId,
+          error: error.message,
+          timestamp: new Date()
+        });
+      }
+      
+      // Small delay between tasks
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    this.isProcessing = false;
+  }
+
+  /**
+   * Get queue statistics
+   */
+  getQueueStats(): any {
+    return {
+      queueSize: this.inMemoryQueue.length,
+      activeSessions: this.activeSessions.size,
+      isProcessing: this.isProcessing
+    };
   }
 }
 

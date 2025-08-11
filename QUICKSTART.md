@@ -103,8 +103,8 @@ agents:
 
 ### 3. Launch Multi-Agent Session
 ```bash
-# Using the multi_claude.py script
-python multi_claude.py -n 3 -p "Review and improve the codebase"
+# Using the orchestrator.py script
+python orchestrator.py -n 3 -p "Review and improve the codebase"
 ```
 
 ## 🛠️ Essential Commands
