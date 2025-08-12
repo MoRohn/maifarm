@@ -8,7 +8,6 @@ import { useTabVisibility } from '../../hooks/useTabVisibility';
 import { Tooltip } from '../common/Tooltip';
 import { AgentBar } from './AgentBar';
 import { HtmlPreview } from './HtmlPreview';
-import { useSettingsStore } from '../../store/settingsStore';
 
 // Lazy load HarvestTerminalPro for better performance
 const HarvestTerminalPro = lazy(() => import('./HarvestTerminalPro'));
@@ -58,10 +57,44 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
 
   // Get farm data for agent name mapping
   const farms = useFarmStore(state => state.farms);
-  const currentFarm = farmId ? farms.find(f => f.id === farmId) : null;
+  const [currentFarm, setCurrentFarm] = useState<any>(null);
+  const [agentNameMapping, setAgentNameMapping] = useState<any>(null);
   
-  // Create agent name mapping
-  const agentNameMapping = currentFarm ? createAgentNameMapping(currentFarm) : null;
+  // Fetch farm data with agents for name mapping
+  useEffect(() => {
+    const fetchFarmWithAgents = async () => {
+      if (!farmId || farmId.startsWith('quick-task-')) return;
+      
+      try {
+        const response = await fetch(`/api/farms/${farmId}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.data) {
+            const farmData = data.data;
+            setCurrentFarm(farmData);
+            // Create agent name mapping from fetched farm data
+            if (farmData.agents && farmData.agents.length > 0) {
+              const mapping = createAgentNameMapping(farmData);
+              setAgentNameMapping(mapping);
+              console.log('[HarvestTerminal] Created agent name mapping with', farmData.agents.length, 'agents');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[HarvestTerminal] Error fetching farm with agents:', error);
+        // Fallback to store data if fetch fails
+        const storeFarm = farms.find(f => f.id === farmId);
+        if (storeFarm) {
+          setCurrentFarm(storeFarm);
+          if (storeFarm.agents && storeFarm.agents.length > 0) {
+            setAgentNameMapping(createAgentNameMapping(storeFarm));
+          }
+        }
+      }
+    };
+    
+    fetchFarmWithAgents();
+  }, [farmId, farms]);
   
   // Helper function to get agent display name
   const getAgentDisplayName = useCallback((agentIndex: number): string => {
@@ -112,7 +145,7 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
       if (forceCleanup || source === 'initial' || source === 'manual-refresh') {
         console.log('[HarvestTerminal] Triggering session cleanup');
         try {
-          await fetch('/api/harvest/terminal/cleanup', { method: 'POST' });
+          await fetch('/api/terminal/cleanup', { method: 'POST' });
         } catch (cleanupErr) {
           console.error('[HarvestTerminal] Cleanup failed:', cleanupErr);
         }
@@ -120,8 +153,8 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
       
       // Build URL with farmId if provided
       const url = farmId 
-        ? `/api/harvest/terminal/sessions?farmId=${encodeURIComponent(farmId)}`
-        : '/api/harvest/terminal/sessions';
+        ? `/api/terminal/sessions?farmId=${encodeURIComponent(farmId)}`
+        : '/api/terminal/sessions';
       
       console.log(`[HarvestTerminal] Fetching sessions from: ${url} (source: ${source})`);
       
@@ -234,7 +267,7 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
         
         // Then shorten any IDs in the prompt (farm IDs, session IDs, etc.)
         // Look for patterns like farm-xxxxxxxx, quick_xxxxxxxx, or any UUID-like strings
-        line = line.replace(/\b(farm[-_]|quick[-_]|session[-_])?([a-f0-9]{8})([a-f0-9-]*)\b/gi, (match, prefix, firstPart) => {
+        line = line.replace(/\b(farm[-_]|quick[-_]|session[-_])?([a-f0-9]{8})([a-f0-9-]*)\b/gi, (match: string, prefix: string, firstPart: string) => {
           // If it has a prefix (farm-, quick-, etc.), keep prefix and first 5 chars of ID
           if (prefix) {
             return prefix + firstPart.substring(0, 5);
@@ -396,7 +429,7 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
       for (let i = 0; i < currentSession.paneCount; i++) {
         try {
           // Capture more lines to show the full launch process
-          const response = await fetch(`/api/harvest/terminal/${selectedSession}/${i}?lines=500`);
+          const response = await fetch(`/api/terminal/${selectedSession}/${i}?lines=500`);
           if (response.ok) {
             const data = await response.json();
             const rawOutput = data.data.terminal || [];
@@ -427,7 +460,7 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
         [agentId]: [...(prev[agentId] || []), `$ ${commandToSend}`]
       }));
       
-      const response = await fetch(`/api/harvest/terminal/${selectedSession}/${agentId}/command`, {
+      const response = await fetch(`/api/terminal/${selectedSession}/${agentId}/command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: commandToSend })
@@ -789,7 +822,7 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
       const eventShortFarmId = eventFarmId?.substring(0, 8);
       
       if ((eventFarmId === farmId || eventShortFarmId === shortFarmId) &&
-          (data.status === 'running' || data.status === 'active')) {
+          (data.status === 'active' || data.status === 'active')) {
         console.log('[HarvestTerminal] Farm status update for our farm:', data.status);
         debouncedFetchSessions('farm:status');
       }
@@ -848,10 +881,56 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
     };
 
     socket.on('harvest:terminal:update', handleTerminalUpdate);
+    // Handle session prepared event for immediate UI update
+    const handleSessionPrepared = (data: any) => {
+      console.log('[HarvestTerminal] Session prepared event:', data);
+      if (data.farmId === farmId || data.sessionName?.includes(farmId?.substring(0, 8))) {
+        // Add the session immediately to the UI
+        const preparedSession: TerminalSession = {
+          sessionName: data.sessionName,
+          paneCount: data.agentCount || 5,
+          windowName: 'agents',
+          active: true,
+          farmId: data.farmId
+        };
+        setSessions(prev => {
+          if (!prev.some(s => s.sessionName === data.sessionName)) {
+            return [preparedSession, ...prev];
+          }
+          return prev;
+        });
+        setSelectedSession(data.sessionName);
+        setIsSessionsLoading(false);
+      }
+    };
+    
+    // Handle real-time terminal output streaming
+    const handleStreamingOutput = (data: any) => {
+      if (data.sessionName === selectedSession && data.lines && data.lines.length > 0) {
+        setTerminalOutputs(prev => ({
+          ...prev,
+          [data.agentId]: [...(prev[data.agentId] || []), ...data.lines].slice(-1000)
+        }));
+      }
+    };
+    
+    // Handle streaming ready event
+    const handleStreamingReady = (data: any) => {
+      console.log('[HarvestTerminal] Terminal streaming ready:', data);
+      if (data.sessionName === selectedSession) {
+        // Join the terminal room for targeted updates
+        socket.emit('terminal:join', { room: `terminal:${data.sessionName}` });
+        // Stop polling if streaming is active
+        setAutoRefresh(false);
+      }
+    };
+
+    socket.on('session:prepared', handleSessionPrepared);
+    socket.on('terminal:output', handleStreamingOutput); // Real-time streaming output
+    socket.on('terminal:streaming:ready', handleStreamingReady);
     socket.on('harvest:terminal:command', handleTerminalUpdate);
     socket.on('agent:terminal', handleTerminalUpdate); // Listen for agent terminal updates
     socket.on('terminal:update', handleTerminalUpdate); // Listen for general terminal updates
-    socket.on('terminal:output', handleTerminalOutput); // Listen for terminal output events
     socket.on('terminal:event', handleTerminalOutput); // Listen for terminal events
     socket.on('farm:launched', handleFarmLaunched);
     socket.on('farm:agents:launching', handleFarmLaunched); // Also listen to agents launching
@@ -862,11 +941,13 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
     socket.on('farm:deleted', handleFarmCleanup);
 
     return () => {
+      socket.off('session:prepared', handleSessionPrepared);
+      socket.off('terminal:output', handleStreamingOutput);
+      socket.off('terminal:streaming:ready', handleStreamingReady);
       socket.off('harvest:terminal:update', handleTerminalUpdate);
       socket.off('harvest:terminal:command', handleTerminalUpdate);
       socket.off('agent:terminal', handleTerminalUpdate);
       socket.off('terminal:update', handleTerminalUpdate);
-      socket.off('terminal:output', handleTerminalOutput);
       socket.off('terminal:event', handleTerminalOutput);
       socket.off('farm:launched', handleFarmLaunched);
       socket.off('farm:agents:launching', handleFarmLaunched);
@@ -915,19 +996,12 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
                   Checking for sessions... (attempt #{sessionCheckCount})
                 </span>
               ) : sessions.length > 0 ? (
-                <select
-                  value={selectedSession || ''}
-                  onChange={(e) => setSelectedSession(e.target.value)}
-                  className="bg-gray-700 text-white px-3 py-1 rounded text-sm"
-                >
-                  <option value="">Select Session</option>
-                  {sessions.map(session => (
-                    <option key={session.sessionName} value={session.sessionName}>
-                      {session.sessionName} ({session.paneCount} agents)
-                      {session.farmId && ` - Farm: ${session.farmId.slice(0, 8)}`}
-                    </option>
-                  ))}
-                </select>
+                // Show the single session info without dropdown
+                <div className="flex items-center space-x-2">
+                  <Terminal className="w-4 h-4 text-green-400" />
+                  <span className="text-sm text-gray-300">{sessions[0].sessionName}</span>
+                  <span className="text-sm text-gray-400">({sessions[0].paneCount} agents)</span>
+                </div>
               ) : (
                 <div className="flex items-center space-x-2">
                   <span className="text-gray-400 text-sm">
@@ -1407,33 +1481,23 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
   );
 };
 
-// Main HarvestTerminal component with feature flag support
+// Main HarvestTerminal component - Always use Pro mode
 export const HarvestTerminal: React.FC<HarvestTerminalProps> = (props) => {
-  const { legacyMode = false, forceProMode = false, ...restProps } = props;
-  const settings = useSettingsStore();
+  const { legacyMode, forceProMode, ...restProps } = props;
   
-  // Check feature flags
-  const useProMode = forceProMode || settings.settings?.harvestTerminalPro || false;
-  const shouldUseLegacy = legacyMode || (!useProMode && !forceProMode);
-  
-  // Show loading spinner while Pro mode loads
-  if (!shouldUseLegacy) {
-    return (
-      <Suspense fallback={
-        <div className="flex items-center justify-center h-full bg-gray-900 rounded-lg">
-          <div className="text-center">
-            <Terminal className="w-12 h-12 text-green-400 mx-auto mb-4 animate-pulse" />
-            <p className="text-gray-400">Loading Harvest Terminal Pro...</p>
-          </div>
+  // Always use Pro mode - it's the new default
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full bg-gray-900 rounded-lg">
+        <div className="text-center">
+          <Terminal className="w-12 h-12 text-green-400 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-400">Loading Harvest Terminal Pro...</p>
         </div>
-      }>
-        <HarvestTerminalPro {...restProps} />
-      </Suspense>
-    );
-  }
-  
-  // Use legacy mode
-  return <LegacyHarvestTerminal {...restProps} />;
+      </div>
+    }>
+      <HarvestTerminalPro {...restProps} />
+    </Suspense>
+  );
 };
 
 export default HarvestTerminal;
