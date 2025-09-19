@@ -16,8 +16,8 @@ import {
   Cpu
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useSettingsStore, calculateMaxAgents } from '../../store/settingsStore';
-import { settingsPersistence } from '../../utils/settingsPersistence';
+import { useSettingsStore, calculateMaxAgents } from '@/store/settingsStore';
+import { settingsPersistence } from '@/utils/settingsPersistence';
 
 export interface AgentConfiguration {
   maxAgents: number;
@@ -100,16 +100,16 @@ export const AgentSettings: React.FC<AgentSettingsProps> = ({
     setHasChanges(JSON.stringify(localConfig) !== JSON.stringify(agentConfig));
   }, [localConfig, agentConfig]);
 
-  const handleChange = (key: keyof AgentConfiguration, value: any) => {
+  const handleChange = (_key: keyof AgentConfiguration, _value: any) => {
     setLocalConfig(prev => {
       const updated = {
         ...prev,
-        [key]: value
+        [_key]: _value
       };
       
       // Automatically update maxAgents when agentMode changes
-      if (key === 'agentMode') {
-        updated.maxAgents = calculateMaxAgents(value);
+      if (_key === 'agentMode') {
+        updated.maxAgents = calculateMaxAgents(_value);
       }
       
       return updated;

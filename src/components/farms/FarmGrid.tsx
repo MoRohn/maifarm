@@ -37,7 +37,7 @@ export function FarmGrid({
       case 'name':
         return a.name.localeCompare(b.name);
       case 'efficiency':
-        return b.metrics.efficiency - a.metrics.efficiency;
+        return (b.metrics?.efficiency || 0) - (a.metrics?.efficiency || 0);
       case 'recent':
       default:
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();

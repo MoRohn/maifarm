@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import * as d3 from 'd3';
-import { useThemeStore } from '../../../store/themeStore';
+import { useThemeStore } from '@/store/themeStore';
 import { Cpu, HardDrive, Activity } from 'lucide-react';
 
 interface ResourceData {

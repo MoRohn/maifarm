@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Plus, Minus, Activity, Cpu, AlertCircle, CheckCircle, Pause } from 'lucide-react';
-import { Farm, Agent } from '../../types';
-import { useFarmOrchestration } from '../../hooks/useFarmOrchestration';
+import { Farm, Agent } from '@/types';
+import { getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
+import { useFarmOrchestration } from '@/hooks/useFarmOrchestration';
 
 interface AgentPoolManagerProps {
   farm: Farm;
@@ -13,21 +14,19 @@ const AgentPoolManager: React.FC<AgentPoolManagerProps> = ({ farm }) => {
 
   const groupAgentsByType = () => {
     const groups: { [key: string]: Agent[] } = {};
-    // Add defensive null check to prevent TypeError
-    if (farm?.agents && Array.isArray(farm.agents)) {
-      farm.agents.forEach(agent => {
-        if (!groups[agent.type]) {
-          groups[agent.type] = [];
-        }
-        groups[agent.type].push(agent);
-      });
-    }
+    const agents = getAgentsFromFarm(farm);
+    agents.forEach(agent => {
+      if (!groups[agent.type]) {
+        groups[agent.type] = [];
+      }
+      groups[agent.type].push(agent);
+    });
     return groups;
   };
 
   const getAgentStatusIcon = (status: string) => {
     switch (status) {
-      case 'running':
+      case 'active':
       case 'idle':
         return <CheckCircle className="h-4 w-4 text-green-500" />;
       case 'busy':
@@ -125,15 +124,15 @@ const AgentPoolManager: React.FC<AgentPoolManagerProps> = ({ farm }) => {
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-500">CPU:</span>
-                      <span>{((agent.resources?.cpu?.usage || 0) * 100).toFixed(1)}%</span>
+                      <span>{(agent.resources?.cpu || 0).toFixed(1)}%</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Memory:</span>
-                      <span>{(agent.resources?.memory?.usage || 0).toFixed(1)}%</span>
+                      <span>{(agent.resources?.memory || 0).toFixed(1)}%</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Tasks:</span>
-                      <span>{agent.tasks?.length || 0} queued</span>
+                      <span>{agent.currentTask ? '1' : '0'} active</span>
                     </div>
                   </div>
 
@@ -161,7 +160,7 @@ const AgentPoolManager: React.FC<AgentPoolManagerProps> = ({ farm }) => {
                 <div>
                   <span className="text-gray-500">Avg CPU:</span>
                   <span className="ml-2 font-medium">
-                    {(agents.reduce((sum, a) => sum + (a.resources?.cpu?.usage || 0), 0) / agents.length * 100).toFixed(1)}%
+                    {(agents.reduce((sum, a) => sum + (a.resources?.cpu || 0), 0) / agents.length).toFixed(1)}%
                   </span>
                 </div>
                 <div>
@@ -193,24 +192,24 @@ const AgentPoolManager: React.FC<AgentPoolManagerProps> = ({ farm }) => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-gray-500">Total Agents:</span>
-            <span className="ml-2 font-medium">{farm.agents.length}</span>
+            <span className="ml-2 font-medium">{getAgentCount(farm)}</span>
           </div>
           <div>
             <span className="text-gray-500">Active:</span>
             <span className="ml-2 font-medium text-green-600">
-              {farm.agents.filter(a => ['running', 'busy'].includes(a.status)).length}
+              {getAgentsFromFarm(farm).filter(a => ['active', 'busy'].includes(a.status)).length}
             </span>
           </div>
           <div>
             <span className="text-gray-500">Idle:</span>
             <span className="ml-2 font-medium text-blue-600">
-              {farm.agents.filter(a => a.status === 'idle').length}
+              {getAgentsFromFarm(farm).filter(a => a.status === 'idle').length}
             </span>
           </div>
           <div>
             <span className="text-gray-500">Failed:</span>
             <span className="ml-2 font-medium text-red-600">
-              {farm.agents.filter(a => a.status === 'error').length}
+              {getAgentsFromFarm(farm).filter(a => a.status === 'error').length}
             </span>
           </div>
         </div>

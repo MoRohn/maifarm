@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
-import { Agent, Farm } from '../types';
-import type { AgentStatus } from '../types';
+import { Agent, Farm } from '@/types';
+import type { AgentStatus } from '@/types';
 
 interface FailoverConfig {
   enabled: boolean;
@@ -236,7 +236,7 @@ export class FailoverService extends EventEmitter {
   private selectReplacementAgent(failedAgent: Agent, farm: Farm): Agent | null {
     const healthyAgents = (farm.agents || []).filter(agent => 
       agent.id !== failedAgent.id &&
-      (agent.status === 'idle' || agent.status === 'running') &&
+      (agent.status === 'idle' || agent.status === 'active') &&
       agent.lifecycle?.health?.status === 'healthy' &&
       this.hasCapacity(agent)
     );
@@ -291,7 +291,7 @@ export class FailoverService extends EventEmitter {
   private async migrateTasks(fromAgent: Agent, toAgent: Agent): Promise<void> {
     // Get all pending and running tasks
     const tasksToMigrate = (fromAgent.tasks || []).filter(task => 
-      ['pending', 'running'].includes(task.status)
+      ['pending', 'active'].includes(task.status)
     );
 
     for (const task of tasksToMigrate) {

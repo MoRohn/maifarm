@@ -3,7 +3,7 @@ import {
   TimeSeriesData,
   ResourceUtilization,
   TaskCompletion 
-} from '../types/analytics';
+} from '@/types/analytics';
 import { groupBy, mean, sum, max, min } from 'lodash';
 import { 
   startOfHour, 

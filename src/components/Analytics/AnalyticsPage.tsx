@@ -1,40 +1,20 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Activity,
-  TrendingUp,
-  DollarSign,
-  Clock,
-  Cpu,
-  HardDrive,
-  Users,
-  Package,
-  Zap,
-  BarChart3,
-  PieChart as PieChartIcon,
-  LineChart as LineChartIcon,
-  RefreshCw,
-  Download,
-  Filter,
-  Server,
-  MemoryStick
-} from 'lucide-react';
+import {motion} from 'framer-motion';
+import {Activity, BarChart3, CheckCircle, Cpu, DollarSign, Download, Filter, HardDrive, LineChart, MemoryStick, PieChart, RefreshCw, Server, Zap} from 'lucide-react';
 import { clsx } from 'clsx';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { useFarmStore } from '../../store/farmStore';
-import { useThemeStore } from '../../store/themeStore';
-import { useUserStore } from '../../store/userStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
-import { useRobustMetrics } from '../../hooks/useRobustMetrics';
-import { analyticsService } from '../../services/analyticsService';
-import { ThemedLayout } from '../common/ThemedLayout';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useFarmStore } from '@/store/farmStore';
+import { useThemeStore } from '@/store/themeStore';
+import { useUserStore } from '@/store/userStore';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { useRobustMetrics } from '@/hooks/useRobustMetrics';
+import { analyticsService } from '@/services/analyticsService';
+import { getAllAgentsFromFarms, getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
 import { StatsCard } from '../Dashboard/StatsCard';
-import { MetricsOverview } from './MetricsOverview';
 import { RealTimeChart } from './Charts/RealTimeChart';
 import { HarvestChart } from './Charts/HarvestChart';
 import { CostBreakdown } from './Charts/CostBreakdown';
 import { AgentEfficiencyChart } from './Charts/AgentEfficiencyChart';
-import { DynamicLogoIcon } from '../common/DynamicLogoIcon';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -75,15 +55,16 @@ export const AnalyticsPage: React.FC = () => {
   } = useAnalyticsStore();
 
   // Use robust metrics system
-  const { metrics: robustMetrics, loading: metricsLoading, error: metricsError } = useRobustMetrics();
+  const { metrics: robustMetrics, loading: _metricsLoading, error: _metricsError } = useRobustMetrics();
 
   // Calculate real-time metrics with robust fallback
   const realtimeMetrics = useMemo(() => {
     // Use robust metrics as primary source, with local calculation as fallback
-    const totalAgents = robustMetrics.totalAgents || farms.reduce((acc, farm) => acc + (farm.agents?.length || 0), 0);
-    const activeAgents = farms.reduce((acc, farm) => 
-      acc + (farm.agents?.filter(a => a.status === 'running')?.length || 0), 0
-    );
+    const totalAgents = robustMetrics.totalAgents || farms.reduce((acc, farm) => acc + getAgentCount(farm), 0);
+    const activeAgents = farms.reduce((acc, farm) => {
+      const agents = getAgentsFromFarm(farm);
+      return acc + agents.filter(a => a.status === 'active').length;
+    }, 0);
     const completedTasks = taskCompletions.filter(t => t.status === 'completed').length;
     const totalTasks = taskCompletions.length;
     const successRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
@@ -117,7 +98,7 @@ export const AnalyticsPage: React.FC = () => {
       setStoreLoading(true);
       
       try {
-        const allAgents = farms.flatMap(farm => farm.agents || []);
+        const allAgents = getAllAgentsFromFarms(farms);
         
         // Load aggregated metrics
         const aggregatedMetrics = await analyticsService.calculateAggregatedMetrics(
@@ -266,7 +247,7 @@ export const AnalyticsPage: React.FC = () => {
           setLastUpdate(new Date());
           if (lastMessage.payload) {
             // Handle comprehensive analytics update
-            const { metrics, efficiency, tasks, costs } = lastMessage.payload;
+            const { metrics, efficiency, tasks, _costs } = lastMessage.payload;
             if (metrics) setMetrics(metrics);
             if (efficiency) useAnalyticsStore.getState().updateAgentPerformance(efficiency);
             if (tasks) useAnalyticsStore.getState().setTaskCompletions(tasks);
@@ -275,7 +256,7 @@ export const AnalyticsPage: React.FC = () => {
         case 'claude:metrics':
           // Handle Claude Code specific metrics
           if (lastMessage.payload) {
-            const claudeData = lastMessage.payload;
+            // const claudeData = lastMessage.payload;
             // Update relevant metrics from Claude Code
             setLastUpdate(new Date());
           }
@@ -479,7 +460,7 @@ export const AnalyticsPage: React.FC = () => {
             <StatsCard
               title="Active Farms"
               value={isLoading ? '—' : realtimeMetrics.activeFarmCount}
-              icon={Package}
+              icon={Cpu}
               trend={`+${Math.round(Math.random() * 20)}%`}
               color="primary"
               loading={isLoading}
@@ -487,7 +468,7 @@ export const AnalyticsPage: React.FC = () => {
             <StatsCard
               title="Active Agents"
               value={isLoading ? '—' : realtimeMetrics.activeAgents}
-              icon={Users}
+              icon={Activity}
               trend={`+${Math.round(Math.random() * 15)}%`}
               color="blue"
               loading={isLoading}
@@ -495,7 +476,7 @@ export const AnalyticsPage: React.FC = () => {
             <StatsCard
               title="Success Rate"
               value={isLoading ? '—' : `${realtimeMetrics.successRate.toFixed(1)}%`}
-              icon={TrendingUp}
+              icon={CheckCircle}
               trend={`+${Math.round(Math.random() * 10)}%`}
               color="green"
               loading={isLoading}
@@ -529,7 +510,7 @@ export const AnalyticsPage: React.FC = () => {
             >
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                  <LineChartIcon className="w-5 h-5 text-blue-500" />
+                  <LineChart className="w-5 h-5 text-blue-500" />
                   Farm Performance
                 </h4>
                 <Filter className="w-4 h-4 text-gray-400 cursor-pointer hover:text-gray-600" />
@@ -593,17 +574,27 @@ export const AnalyticsPage: React.FC = () => {
                   <div className="relative h-20">
                     <div className="absolute inset-0 flex flex-col justify-center">
                       <div className="text-2xl font-bold" style={{ color: accentColor }}>
-                        {systemInfo.memory.percentage || 0}%
+                        {(() => {
+                          const used = systemInfo.memory.used || 0;
+                          const total = systemInfo.memory.total || 1; // Prevent division by zero
+                          const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
+                          return Math.min(100, Math.max(0, percentage));
+                        })()}%
                       </div>
                       <div className="text-xs opacity-75" style={{ color: accentColor }}>
-                        {systemInfo.memory.used || 0}/{systemInfo.memory.total || 0} GB
+                        {(systemInfo.memory.used || 0).toFixed(1)}/{(systemInfo.memory.total || 0).toFixed(1)} GB
                       </div>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 h-1 rounded-full overflow-hidden" style={getThemedBackground(theme === 'dark', 0.2)}>
                       <div 
                         className="h-full transition-all duration-500"
                         style={{ 
-                          width: `${systemInfo.memory.percentage || 0}%`,
+                          width: `${(() => {
+                            const used = systemInfo.memory.used || 0;
+                            const total = systemInfo.memory.total || 1; // Prevent division by zero
+                            const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
+                            return Math.min(100, Math.max(0, percentage));
+                          })()}%`,
                           background: `linear-gradient(90deg, ${accentColor}, ${primaryColor})`
                         }}
                       />
@@ -694,7 +685,7 @@ export const AnalyticsPage: React.FC = () => {
             >
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                  <PieChartIcon className="w-5 h-5 text-green-500" />
+                  <PieChart className="w-5 h-5 text-green-500" />
                   Harvest Analytics
                 </h4>
               </div>

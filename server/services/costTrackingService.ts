@@ -412,8 +412,10 @@ class CostTrackingService extends EventEmitter {
    */
   private async getCurrentSessionMetrics() {
     const sessionStart = new Date(Date.now() - 60 * 60 * 1000); // Last hour
+
+    // Try with full columns first, fallback to basic query if columns don't exist
     const result = await db.query(`
-      SELECT 
+      SELECT
         COUNT(*) as api_calls,
         SUM(input_tokens) as input_tokens,
         SUM(output_tokens) as output_tokens,
@@ -425,7 +427,30 @@ class CostTrackingService extends EventEmitter {
       GROUP BY provider, model
       ORDER BY total_cost DESC
       LIMIT 1
-    `, [sessionStart]).catch(() => ({ rows: [] }));
+    `, [sessionStart]).catch(async (error: any) => {
+      // If columns don't exist, try simpler query
+      if (error.code === '42703') {
+        return db.query(`
+          SELECT
+            COUNT(*) as api_calls,
+            0 as input_tokens,
+            0 as output_tokens,
+            COALESCE(SUM(total_cost), 0) as total_cost,
+            provider,
+            model
+          FROM token_usage
+          WHERE timestamp >= $1
+          GROUP BY provider, model
+          ORDER BY total_cost DESC
+          LIMIT 1
+        `, [sessionStart]).catch(() => ({ rows: [] }));
+      }
+      // If table doesn't exist at all
+      if (error.code === '42P01') {
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
 
     const row = result.rows[0];
     if (!row) {
@@ -474,7 +499,17 @@ class CostTrackingService extends EventEmitter {
       SELECT COUNT(DISTINCT task_id) as count
       FROM token_usage
       WHERE timestamp >= $1 AND task_id IS NOT NULL
-    `, [since]).catch(() => ({ rows: [{ count: 0 }] }));
+    `, [since]).catch((error: any) => {
+      // If column doesn't exist, try with farm_id
+      if (error.code === '42703') {
+        return db.query(`
+          SELECT COUNT(DISTINCT farm_id) as count
+          FROM token_usage
+          WHERE timestamp >= $1 AND farm_id IS NOT NULL
+        `, [since]).catch(() => ({ rows: [{ count: 0 }] }));
+      }
+      return { rows: [{ count: 0 }] };
+    });
 
     return parseInt(result.rows[0]?.count || 0);
   }
@@ -528,7 +563,17 @@ class CostTrackingService extends EventEmitter {
       SELECT input_tokens, output_tokens, model
       FROM token_usage
       WHERE timestamp >= $1 AND provider = $2
-    `, [since, currentProvider]).catch(() => ({ rows: [] }));
+    `, [since, currentProvider]).catch(async (error: any) => {
+      // If columns don't exist, return empty result
+      if (error.code === '42703') {
+        return { rows: [] };
+      }
+      // If table doesn't exist
+      if (error.code === '42P01') {
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
 
     if (result.rows.length === 0) {
       return undefined;
@@ -577,15 +622,18 @@ class CostTrackingService extends EventEmitter {
     try {
       await db.query(`
         INSERT INTO token_usage (
-          input_tokens, output_tokens, total_tokens, model, provider,
-          timestamp, task_id, farm_id, agent_id, input_cost, output_cost,
-          total_cost, currency
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          prompt_tokens, completion_tokens, total_tokens, model, provider,
+          timestamp, task_id, farm_id, agent_id, prompt_cost, completion_cost,
+          total_cost, input_tokens, output_tokens, input_cost, output_cost,
+          currency, estimated_local_cost
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       `, [
         usage.inputTokens, usage.outputTokens, usage.totalTokens,
         usage.model, usage.provider, usage.timestamp,
         usage.taskId, usage.farmId, usage.agentId,
-        cost.inputCost, cost.outputCost, cost.totalCost, cost.currency
+        cost.inputCost, cost.outputCost, cost.totalCost,
+        usage.inputTokens, usage.outputTokens, cost.inputCost, cost.outputCost,
+        cost.currency, 0
       ]).catch(() => {
         // If table doesn't exist, create it
         this.createTokenUsageTable();

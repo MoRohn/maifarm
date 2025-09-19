@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { useThemeStore } from '../../../store/themeStore';
-import { AgentPerformanceMetric } from '../../../types/analytics';
+import { useThemeStore } from '@/store/themeStore';
+import { AgentPerformanceMetric } from '@/types/analytics';
 import { Zap, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 
 interface AgentEfficiencyChartProps {

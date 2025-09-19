@@ -3,9 +3,9 @@ import { Sparkles, Wand2, AlertCircle, Copy, Download, Save } from 'lucide-react
 import { YamlEditor } from './YamlEditor';
 import { PromptInput } from './PromptInput';
 import { YamlTemplates } from './YamlTemplates';
-import yamlGeneratorService from '../../services/yamlGeneratorService';
-import { YamlGenerationRequest, YamlGenerationResponse, YamlValidationResult } from '../../types/yaml';
-import { YAMLTemplate } from '../../types';
+import yamlGeneratorService from '@/services/yamlGeneratorService';
+import { YamlGenerationRequest, YamlGenerationResponse, YamlValidationResult } from '@/types/yaml';
+import { YAMLTemplate } from '@/types';
 import toast from 'react-hot-toast';
 
 export const YamlGenerator: React.FC = () => {
@@ -19,9 +19,13 @@ export const YamlGenerator: React.FC = () => {
     setIsGenerating(true);
     try {
       const response = await yamlGeneratorService.generateYaml(request);
-      setGeneratedYaml(response.yaml);
-      setGenerationResponse(response);
-      setValidationResult(response.validation);
+      setGeneratedYaml(response.yaml || '');
+      setGenerationResponse({
+        ...response,
+        metadata: response.metadata || {},
+        validation: response.validation || { valid: true, errors: [], warnings: [] }
+      });
+      setValidationResult(response.validation || { valid: true, errors: [], warnings: [] });
       toast.success('YAML configuration generated successfully!');
     } catch (error) {
       toast.error(`Generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

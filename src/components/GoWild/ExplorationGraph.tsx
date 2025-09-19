@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { ExplorationPath, ExplorationNode } from '../../types/goWild';
+import { ExplorationPath, ExplorationNode } from '@/types/goWild';
 
 interface ExplorationGraphProps {
   path: ExplorationPath;
@@ -122,8 +122,8 @@ const ExplorationGraph: React.FC<ExplorationGraphProps> = ({ path, onNodeClick }
       .data(nodes)
       .join('g')
       .attr('cursor', 'pointer')
-      .on('click', (event, d) => onNodeClick?.(d as ExplorationNode))
-      .on('mouseenter', (event, d) => setHoveredNode(d.id))
+      .on('click', (_event, d) => onNodeClick?.(d as ExplorationNode))
+      .on('mouseenter', (_event, d) => setHoveredNode(d.id))
       .on('mouseleave', () => setHoveredNode(null));
 
     // Add circles for nodes

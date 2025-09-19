@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { alertService, Alert } from '../services/alertService';
+import { alertService, Alert } from '@/services/alertService';
 
 interface AlertStore {
   alerts: Alert[];

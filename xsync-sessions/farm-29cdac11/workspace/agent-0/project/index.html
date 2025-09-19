@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Pepper Infused Recipes - Culinary Collection</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <h1 class="main-title">🌶️ Green Pepper Infused Recipes</h1>
+            <p class="tagline">Discover the versatility of green peppers in these delicious recipes</p>
+        </div>
+    </header>
+
+    <nav class="filters-nav">
+        <div class="container">
+            <div class="filter-controls">
+                <input type="text" id="searchInput" placeholder="Search recipes..." class="search-box">
+                
+                <select id="categoryFilter" class="filter-select">
+                    <option value="">All Categories</option>
+                    <option value="Main Course">Main Course</option>
+                    <option value="Soup">Soup</option>
+                    <option value="Salad">Salad</option>
+                    <option value="Breakfast">Breakfast</option>
+                </select>
+                
+                <select id="difficultyFilter" class="filter-select">
+                    <option value="">All Difficulties</option>
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                </select>
+                
+                <button id="quickRecipesBtn" class="filter-btn">Quick Recipes (&lt;30 min)</button>
+                <button id="featuredBtn" class="filter-btn">Featured Only</button>
+                <button id="resetFiltersBtn" class="filter-btn reset">Reset Filters</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="container">
+            <div class="stats-bar">
+                <span id="recipeCount">Showing all recipes</span>
+            </div>
+            
+            <div id="recipesGrid" class="recipes-grid">
+                <!-- Recipes will be dynamically loaded here -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Recipe Detail Modal -->
+    <div id="recipeModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="modalBody">
+                <!-- Recipe details will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 Green Pepper Culinary Collection. All recipes are original creations.</p>
+            <p>Created with love for green pepper enthusiasts everywhere 💚</p>
+        </div>
+    </footer>
+
+    <script type="module" src="src/app.js"></script>
+</body>
+</html>

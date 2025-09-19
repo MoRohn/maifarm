@@ -1,8 +1,8 @@
 import React from 'react';
 import { Moon, Sun, Monitor, Palette, Type, Sliders } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useThemeStore } from '../../store/themeStore';
-import { useSettingsStore } from '../../store/settingsStore';
+import { useThemeStore } from '@/store/themeStore';
+import { useSettingsStore } from '@/store/settingsStore';
 
 const colors = [
   { name: 'Blue', value: '#3B82F6', class: 'bg-blue-500' },

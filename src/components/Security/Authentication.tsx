@@ -12,8 +12,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { AuthCredentials, AuthResponse } from '../../types/security';
-import { useAuthentication } from '../../hooks/useAuthentication';
+import { AuthCredentials, AuthResponse } from '@/types/security';
+import { useAuthentication } from '@/hooks/useAuthentication';
 
 interface AuthenticationProps {
   onSuccess?: (response: AuthResponse) => void;

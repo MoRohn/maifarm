@@ -11,6 +11,26 @@ export class Orchestrator extends EventEmitter {
   private inMemoryTaskQueue: any[] = [];
 
   /**
+   * Check if a table exists in the database
+   */
+  private async checkTableExists(tableName: string): Promise<boolean> {
+    try {
+      const result = await db.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = $1
+        )`,
+        [tableName]
+      );
+      return result.rows[0]?.exists || false;
+    } catch (error) {
+      // If we can't check, assume it doesn't exist
+      return false;
+    }
+  }
+
+  /**
    * Start the orchestrator
    */
   async start(): Promise<void> {
@@ -115,6 +135,13 @@ export class Orchestrator extends EventEmitter {
    */
   private async executeAssignedTasks(): Promise<void> {
     try {
+      // Check if tasks table exists first
+      const tableExists = await this.checkTableExists('tasks');
+      if (!tableExists) {
+        // Table doesn't exist yet, skip this cycle
+        return;
+      }
+
       // First, process queued Quick Tasks (they don't need agent assignment)
       const quickTaskResult = await db.query(
         `SELECT * FROM tasks
@@ -146,6 +173,13 @@ export class Orchestrator extends EventEmitter {
         this.processQuickTask(quickTask).catch(error => {
           console.error(`Failed to process quick task ${quickTask.id}:`, error);
         });
+      }
+
+      // Check if agents table exists too
+      const agentsTableExists = await this.checkTableExists('agents');
+      if (!agentsTableExists) {
+        // Agents table doesn't exist yet, skip regular tasks
+        return;
       }
 
       // Then get assigned tasks (regular tasks)
@@ -397,8 +431,8 @@ export class Orchestrator extends EventEmitter {
   async processQuickTask(task: any): Promise<void> {
     try {
       // Import the quick task executor
-      const { quickTaskExecutor } = await import('../services/quickTaskExecutor');
-      const { quickTaskService } = await import('../services/quickTaskService');
+      const { quickTaskExecutor } = await import('../services/unified/quickTaskService');
+      const { quickTaskService } = await import('../services/unified/quickTaskService');
       
       // Create execution config
       const executionConfig = {
@@ -438,19 +472,18 @@ export class Orchestrator extends EventEmitter {
       const result = await quickTaskExecutor.executeTask(executionConfig);
       
       if (result.success) {
-        // Task completed successfully
-        await quickTaskService.completeTask(task.id, {
-          success: true,
-          output: result.output,
-          executionTime: result.executionTime,
-          sessionName: result.sessionName,
-          timestamp: new Date()
-        });
+        // Task has been launched successfully and is running in the background
+        // Don't call completeTask here - it will be called when the task actually completes
+        // via the monitoring system or timeout handler
+        console.log(`[Orchestrator] Quick task ${task.id} launched successfully`);
         
-        this.emit('quicktask:completed', { task, result });
+        this.emit('quicktask:launched', { task, result });
       } else {
-        // Task failed
-        await quickTaskService.failTask(task.id, result.error || 'Task execution failed');
+        // Task failed to launch - ensure error is a string
+        const errorMessage = typeof result.error === 'string' 
+          ? result.error 
+          : (result.error?.message || JSON.stringify(result.error) || 'Task launch failed');
+        await quickTaskService.failTask(task.id, errorMessage);
         
         this.emit('quicktask:failed', { task, error: result.error });
       }

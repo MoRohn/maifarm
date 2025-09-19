@@ -17,8 +17,8 @@ import {
   SilenceStatus,
   EscalationPolicy,
   AlertMetrics
-} from '../types/alerts';
-import { Metric, MetricThreshold, ThresholdCondition } from '../types/metrics';
+} from '@/types/alerts';
+import { Metric, MetricThreshold, ThresholdCondition } from '@/types/metrics';
 import { metricsCollector } from './metricsCollector';
 
 interface AlertState {

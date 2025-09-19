@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, Download, Archive, Trash2, Clock, TrendingUp } from 'lucide-react';
-import { HistoricalFarm, HistoricalFilters, BulkAction } from '../../types/historical';
+import { HistoricalFarm, HistoricalFilters, BulkAction } from '@/types/historical';
 // TODO: Implement these components
 // import FarmTimeline from './FarmTimeline';
 // import FarmInsights from './FarmInsights';
-import { useHistoricalData } from '../../hooks/useHistoricalData';
+import { useHistoricalData } from '@/hooks/useHistoricalData';
 import { format } from 'date-fns';
 
 interface HistoricalFarmsProps {

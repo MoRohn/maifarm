@@ -7,7 +7,7 @@ import {
   AuditLog,
   EncryptedData,
   ApiKey
-} from '../types/security';
+} from '@/types/security';
 import { websocketService } from './websocket';
 import * as bcrypt from 'bcryptjs';
 

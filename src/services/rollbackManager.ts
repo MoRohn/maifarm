@@ -3,7 +3,7 @@ import {
   RollbackResult, 
   ExplorationSnapshot,
   ExplorationEvent
-} from '../types/safety';
+} from '@/types/safety';
 import { snapshotService } from './explorationSnapshot';
 import { goWildService } from './goWildService';
 import { auditService } from './audit';

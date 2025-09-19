@@ -12,8 +12,8 @@ import {
   WorkflowValidation,
   ValidationError,
   NodeErrorHandling
-} from '../types/workflow';
-import { AgentInstance } from '../types/agent';
+} from '@/types/workflow';
+import { AgentInstance } from '@/types/agent';
 import { agentLifecycle } from './agentLifecycle';
 import { websocketService } from './websocket';
 import { metricsCollector } from './metricsCollector';
@@ -101,7 +101,7 @@ class WorkflowEngine {
 
   async suspendExecution(executionId: string): Promise<void> {
     const execution = this.executions.get(executionId);
-    if (!execution || execution.status !== 'running') {
+    if (!execution || execution.status !== 'active') {
       return;
     }
 
@@ -119,7 +119,7 @@ class WorkflowEngine {
     // Pause all active executions
     for (const executionId of this.activeExecutions) {
       const execution = this.executions.get(executionId);
-      if (execution && execution.status === 'running') {
+      if (execution && execution.status === 'active') {
         execution.status = 'suspended';
         this.activeExecutions.delete(executionId);
       }
@@ -130,7 +130,7 @@ class WorkflowEngine {
     // Resume all suspended executions
     for (const [executionId, execution] of this.executions) {
       if (execution.status === 'suspended') {
-        execution.status = 'running';
+        execution.status = 'active';
         this.activeExecutions.add(executionId);
         // Resume execution
         this.executeWorkflowAsync(executionId);
@@ -144,7 +144,7 @@ class WorkflowEngine {
       return;
     }
 
-    execution.status = 'running';
+    execution.status = 'active';
     this.activeExecutions.add(executionId);
 
     // Resume execution
@@ -168,7 +168,7 @@ class WorkflowEngine {
     this.activeExecutions.delete(executionId);
 
     // Cancel any running node executions
-    const runningNodes = execution.nodeExecutions.filter(n => n.status === 'running');
+    const runningNodes = execution.nodeExecutions.filter(n => n.status === 'active');
     for (const node of runningNodes) {
       node.status = 'failed';
       node.endTime = new Date();
@@ -244,7 +244,7 @@ class WorkflowEngine {
     if (!workflow) return;
 
     try {
-      execution.status = 'running';
+      execution.status = 'active';
       
       // Find start nodes
       const startNodes = workflow.nodes.filter(n => n.type === 'start');
@@ -324,7 +324,7 @@ class WorkflowEngine {
   ): Promise<void> {
     const nodeExecution: NodeExecution = {
       nodeId: node.id,
-      status: 'running',
+      status: 'active',
       startTime: new Date(),
     };
 

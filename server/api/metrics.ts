@@ -50,30 +50,42 @@ const resourceUtilization = new Gauge({
   labelNames: ['resource_type', 'farm_id']
 });
 
-// Import metrics synchronizer
+// Import metrics synchronizer and aggregator
 import { metricsSynchronizer } from '../services/metricsSynchronizer';
+import { metricsAggregator } from '../services/metricsAggregator';
 
 // GET /api/metrics/dashboard - Dashboard metrics endpoint
 router.get('/dashboard', apiRateLimits.read, async (req, res) => {
   try {
-    // Get metrics from the synchronizer (already deduplicated and aggregated)
-    const dashboardMetrics = metricsSynchronizer.getDashboardMetrics();
+    // Use the new metrics aggregator for accurate metrics
+    const dashboardMetrics = await metricsAggregator.getDashboardMetrics();
     
+    // Map to expected format for backward compatibility
     const response: ApiResponse = {
       success: true,
-      data: dashboardMetrics
+      data: {
+        activeFarms: dashboardMetrics.liveFarms,
+        totalAgents: dashboardMetrics.agentsWorking,
+        harvestsCompleted: dashboardMetrics.harvestsCompleted,
+        yieldedItems: dashboardMetrics.yieldedItems,
+        // Legacy fields for backward compatibility
+        tasksCompleted: dashboardMetrics.harvestsCompleted,
+        successRate: 100
+      }
     };
 
     res.json(response);
   } catch (error) {
     console.error('Error fetching dashboard metrics:', error);
     
-    // Return default metrics if synchronizer is not available
+    // Return default metrics if aggregator is not available
     const response: ApiResponse = {
       success: true,
       data: {
         activeFarms: 0,
         totalAgents: 0,
+        harvestsCompleted: 0,
+        yieldedItems: 0,
         tasksCompleted: 0,
         successRate: 100
       }
@@ -372,7 +384,7 @@ router.get('/summary', authenticateToken, apiRateLimits.read, async (req, res) =
   }
 });
 
-import { metricsCollector } from '../services/metricsCollector';
+import { metricsCollector } from '../services/unified/stateCoordinator';
 
 // GET /api/metrics/system - Get system resource information
 router.get('/system', apiRateLimits.read, async (req, res) => {

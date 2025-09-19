@@ -1,4 +1,4 @@
-import { redis } from '../database/connection';
+import { redis, redisPub } from '../database/connection';
 import { Task } from '../types/api';
 import { EventEmitter } from 'events';
 

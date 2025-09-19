@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import { ExternalIntegration } from '../types/orchestration';
+import { ExternalIntegration } from '@/types/orchestration';
 import { faultTolerance } from './faultTolerance';
 import { websocketService } from './websocket';
 

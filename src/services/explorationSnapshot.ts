@@ -5,10 +5,10 @@ import {
   TaskSnapshot, 
   ResourceSnapshot,
   MetricsSnapshot
-} from '../types/safety';
-import { GoWildSession } from '../types/goWild';
-import { Agent } from '../types';
-import { indexedDB } from '../utils/indexedDB';
+} from '@/types/safety';
+import { GoWildSession } from '@/types/goWild';
+import { Agent } from '@/types';
+import { indexedDB } from '@/utils/indexedDB';
 
 export class ExplorationSnapshotService {
   private static instance: ExplorationSnapshotService;

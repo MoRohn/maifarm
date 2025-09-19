@@ -112,6 +112,13 @@ export const apiRateLimits = {
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10,
     message: 'This operation is resource-intensive. Please wait before trying again.'
+  }),
+  
+  // Relaxed limit for quick tasks
+  quickTask: rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 200, // Allow more quick tasks since they're lightweight
+    message: 'Too many quick tasks, please try again later'
   })
 };
 

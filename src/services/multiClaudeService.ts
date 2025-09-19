@@ -3,7 +3,7 @@ import {
   MultiClaudeCommand, 
   CoordinationData,
   TmuxPaneInfo 
-} from '../types/multiClaude';
+} from '@/types/multiClaude';
 
 class MultiClaudeService {
   private config: MultiClaudeConfig;

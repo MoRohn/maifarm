@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { CacheService } from '../../services/cacheService';
+import { CacheService } from '../../services/unified/stateCoordinator';
 import { Redis } from 'ioredis';
 import { logger } from '../../utils/logger';
 

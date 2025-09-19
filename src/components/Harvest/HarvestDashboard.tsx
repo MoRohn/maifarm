@@ -11,7 +11,7 @@ import {
   Save
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest } from '../../types/harvest';
+import { Harvest } from '@/types/harvest';
 import { Tooltip } from '../common/Tooltip';
 import { YieldCard } from './YieldCard';
 import { InsightsPanel } from './InsightsPanel';
@@ -22,10 +22,10 @@ import { HarvestCompletionAnimation } from './HarvestCompletionAnimation';
 import { SaveSeedModal } from './SaveSeedModal';
 import { SeedQuickAction } from '../Seeds/SeedQuickAction';
 import { YieldPreviewModal } from './YieldPreviewModal';
-import { harvestService } from '../../services/harvestService';
-import { farmService } from '../../services/farmService';
-import { mapAgentNamesInHarvest } from '../../utils/agentNameMapper';
-import { useActivityStore } from '../../store/activityStore';
+import { harvestService } from '@/services/harvestService';
+import { farmService } from '@/services/farmService';
+import { mapAgentNamesInHarvest } from '@/utils/agentNameMapper';
+import { useActivityStore } from '@/store/activityStore';
 import { format } from 'date-fns';
 
 interface HarvestDashboardProps {

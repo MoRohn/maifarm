@@ -1,8 +1,8 @@
 import React, { useEffect, useReducer, useCallback, createContext, useContext } from 'react';
-import { authService } from '../services/auth';
-import { AuthState, AuthContextType, LoginCredentials, User, AuthActions, Permission } from '../types/auth';
-import { auditService } from '../services/audit';
-import { permissionsService } from '../services/permissions';
+import { authService } from '@/services/auth';
+import { AuthState, AuthContextType, LoginCredentials, User, AuthActions, Permission } from '@/types/auth';
+import { auditService } from '@/services/audit';
+import { permissionsService } from '@/services/permissions';
 
 const initialState: AuthState = {
   user: null,
@@ -61,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; onNavigate?: (p
         if (bypassAuth) {
           // Create a mock user for development
           const mockUser = {
-            id: 'dev-user',
+            id: 'maifarm-user',
             email: 'dev@maifarm.local',
             name: 'Developer',
             roles: [{

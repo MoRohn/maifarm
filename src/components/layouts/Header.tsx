@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { User, Settings, Menu, X } from 'lucide-react';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 import { GlassPanel } from '../common/GlassPanel';
 import { StatusIndicator } from '../common/StatusIndicator';
-import { useResponsive } from '../../hooks/useResponsive';
-import { useAuth } from '../../hooks/useAuth';
-import { useThemeStore } from '../../store/themeStore';
+import { useResponsive } from '@/hooks/useResponsive';
+import { useAuth } from '@/hooks/useAuth';
+import { useThemeStore } from '@/store/themeStore';
 
 interface HeaderProps {
   onMenuClick?: () => void;

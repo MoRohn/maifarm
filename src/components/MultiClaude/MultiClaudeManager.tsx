@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AgentGrid } from './AgentGrid';
 import { AgentControls } from './AgentControls';
-import { useMultiClaude } from '../../hooks/useMultiClaude';
-import { useToast } from '../../hooks/useToast';
+import { useMultiClaude } from '@/hooks/useMultiClaude';
+import { useToast } from '@/hooks/useToast';
 import { 
   Settings, 
   Zap, 

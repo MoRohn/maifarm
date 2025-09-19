@@ -24,9 +24,9 @@ export const useDragDrop = () => {
 
 interface DragDropProviderProps {
   children: React.ReactNode;
-  onReorderFarms?: (startIndex: number, endIndex: number) => void;
-  onReorderAgents?: (farmId: string, startIndex: number, endIndex: number) => void;
-  onMoveAgentBetweenFarms?: (agentId: string, sourceFarmId: string, destinationFarmId: string, destinationIndex: number) => void;
+  onReorderFarms?: (_startIndex: number, _endIndex: number) => void;
+  onReorderAgents?: (_farmId: string, _startIndex: number, endIndex: number) => void;
+  onMoveAgentBetweenFarms?: (_agentId: string, _sourceFarmId: string, destinationFarmId: string, destinationIndex: number) => void;
 }
 
 export const DragDropProvider: React.FC<DragDropProviderProps> = ({

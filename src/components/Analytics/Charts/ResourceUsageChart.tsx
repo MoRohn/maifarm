@@ -12,8 +12,8 @@ import {
   ChartOptions
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
-import { useThemeStore } from '../../../store/themeStore';
-import type { ResourceUtilization } from '../../../types/analytics';
+import { useThemeStore } from '@/store/themeStore';
+import type { ResourceUtilization } from '@/types/analytics';
 
 ChartJS.register(
   CategoryScale,

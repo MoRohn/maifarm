@@ -6,8 +6,8 @@ import {
   ErrorPrediction,
   MonitoringControl,
   MonitoringAlert
-} from '../types/monitoring';
-import { monitoringService } from '../services/monitoringService';
+} from '@/types/monitoring';
+import { monitoringService } from '@/services/monitoringService';
 import { toast } from 'react-hot-toast';
 
 export function useMonitoring(farmId: string) {

@@ -14,7 +14,7 @@ import {
   Cpu,
   MessageSquare
 } from 'lucide-react';
-import { MultiClaudeAgent } from '../../types/multiClaude';
+import { MultiClaudeAgent } from '@/types/multiClaude';
 import { AgentTerminalOutput } from './AgentTerminalOutput';
 
 interface AgentCardProps {

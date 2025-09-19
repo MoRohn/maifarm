@@ -1,11 +1,11 @@
 import { api } from './apiClient';
-import { Farm, FarmConfig } from '../types';
+import { Farm, FarmConfig } from '@/types';
 
 export interface CreateFarmData {
   name: string;
   description?: string;
   type?: 'sequential' | 'collaborative' | 'autonomous';
-  provider?: 'claude' | 'qwen';
+  provider?: 'claude' | 'openai';
   config?: Partial<FarmConfig>;
   tags?: string[];
 }
@@ -157,10 +157,13 @@ class FarmService {
           throw new Error(errorMessage);
         }
       } catch (error: any) {
+        console.error('[FarmService] Farm creation failed:', error);
+        console.error('[FarmService] Error response:', error.response?.data);
+        
         // Enhanced error handling with specific messages
         if (error.response?.data?.error) {
           const apiError = error.response.data.error;
-          console.error('API Error:', apiError);
+          console.error('[FarmService] API Error details:', apiError);
           
           // Provide user-friendly error messages
           switch (apiError.code) {
@@ -170,6 +173,11 @@ class FarmService {
               throw new Error('A farm with this name already exists');
             case 'PERMISSION_DENIED':
               throw new Error('You do not have permission to create farms');
+            case 'DATABASE_ERROR':
+              throw new Error('Database connection failed. Please try again later.');
+            case 'FARM_CREATION_ERROR':
+            case 'FARM_MANAGER_ERROR':
+              throw new Error(apiError.message || 'Failed to create farm');
             case 'RATE_LIMIT_EXCEEDED':
               throw new Error('Too many requests. Please wait a moment and try again');
             default:
@@ -250,11 +258,13 @@ class FarmService {
       const response = await api.farms.get(id);
       
       if (response.data.success && response.data.data) {
-        return response.data.data.farm;
+        // Fix: response.data.data is the farm object, not response.data.data.farm
+        return response.data.data;
       } else {
         throw new Error(response.data.error?.message || 'Farm not found');
       }
     } catch (error: any) {
+      console.error('[FarmService] Error fetching farm:', error);
       if (error.response?.data?.error) {
         throw new Error(error.response.data.error.message);
       }
@@ -285,6 +295,30 @@ class FarmService {
       
       if (!response.data.success) {
         throw new Error(response.data.error?.message || 'Failed to delete farm');
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error.message);
+      }
+      throw error;
+    }
+  }
+
+  async launchFarm(id: string, config: {
+    numberOfAgents?: number;
+    yamlContent?: string;
+    prompt?: string;
+    provider?: string;
+    collaborative?: boolean;
+    goWildMode?: boolean;
+  }): Promise<any> {
+    try {
+      const response = await api.farms.launch(id, config);
+      
+      if (response.data.success) {
+        return response.data.data;
+      } else {
+        throw new Error(response.data.error?.message || 'Failed to launch farm');
       }
     } catch (error: any) {
       if (error.response?.data?.error) {
@@ -387,4 +421,273 @@ class FarmService {
   }
 }
 
+// Workflow service functionality
+export interface WorkflowStatus {
+  id: string;
+  farmId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  progress: number;
+  message?: string;
+  result?: any;
+  error?: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface WorkflowOptions {
+  timeout?: number;
+  retryOnFailure?: boolean;
+  maxRetries?: number;
+}
+
+export interface WorkflowResult {
+  success: boolean;
+  data?: any;
+  error?: any;
+}
+
+// Extended WorkflowStatus interface for seed workflows
+export interface ExtendedWorkflowStatus extends WorkflowStatus {
+  currentStep?: string;
+  workflowId?: string;
+  completedAt?: Date;
+}
+
+class WorkflowService {
+  private subscribers: Map<string, ((status: ExtendedWorkflowStatus) => void)[]> = new Map();
+
+  async createWorkflow(farmId: string, options?: WorkflowOptions): Promise<WorkflowStatus> {
+    try {
+      const response = await api.post(`/api/workflows`, {
+        farmId,
+        ...options
+      });
+      return response.data.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to create workflow');
+    }
+  }
+
+  async getWorkflowStatus(workflowId: string): Promise<WorkflowStatus> {
+    try {
+      const response = await api.get(`/api/workflows/${workflowId}`);
+      return response.data.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to get workflow status');
+    }
+  }
+
+  async runWorkflow(farmId: string, workflowConfig: any): Promise<WorkflowResult> {
+    try {
+      const response = await api.post(`/api/workflows/run`, {
+        farmId,
+        config: workflowConfig
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to run workflow');
+    }
+  }
+
+  async createFarmFromSeedWithWorkflow(
+    seedId: string,
+    farmName: string,
+    options: {
+      description?: string;
+      autoHarvest?: boolean;
+      autoStore?: boolean;
+      autoPauseOnClose?: boolean;
+    }
+  ): Promise<{ farm: any; workflowId: string }> {
+    try {
+      const response = await api.post('/api/farms/from-seed-workflow', {
+        seedId,
+        name: farmName,
+        ...options
+      });
+      return response.data.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to create farm from seed');
+    }
+  }
+
+  subscribeToWorkflowProgress(workflowId: string, callback: (status: ExtendedWorkflowStatus) => void): () => void {
+    // Add subscriber
+    const subscribers = this.subscribers.get(workflowId) || [];
+    subscribers.push(callback);
+    this.subscribers.set(workflowId, subscribers);
+
+    // Start polling for updates
+    const interval = setInterval(async () => {
+      try {
+        const status = await this.getWorkflowStatus(workflowId);
+        const extendedStatus: ExtendedWorkflowStatus = {
+          ...status,
+          workflowId,
+          currentStep: this.determineCurrentStep(status)
+        };
+
+        // Notify subscribers
+        subscribers.forEach(cb => cb(extendedStatus));
+
+        // Stop polling if completed or failed
+        if (status.status === 'completed' || status.status === 'failed') {
+          clearInterval(interval);
+          this.subscribers.delete(workflowId);
+        }
+      } catch (error) {
+        console.error('Failed to poll workflow status:', error);
+      }
+    }, 2000);
+
+    // Return unsubscribe function
+    return () => {
+      clearInterval(interval);
+      const subs = this.subscribers.get(workflowId) || [];
+      const index = subs.indexOf(callback);
+      if (index >= 0) subs.splice(index, 1);
+    };
+  }
+
+  private determineCurrentStep(status: WorkflowStatus): string {
+    // Determine the current step based on progress
+    if (status.progress < 20) return 'initializing';
+    if (status.progress < 40) return 'planting';
+    if (status.progress < 60) return 'growing';
+    if (status.progress < 80) return 'harvesting';
+    if (status.progress < 100) return 'storing';
+    return 'completed';
+  }
+}
+
+// Harvest service functionality
+class HarvestService {
+  private eventHandlers: Map<string, Function[]> = new Map();
+  private rooms: Set<string> = new Set();
+
+  async collectHarvest(farmId: string): Promise<any> {
+    try {
+      const response = await api.post(`/api/farms/${farmId}/harvest`);
+      return response.data.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to collect harvest');
+    }
+  }
+
+  async getHarvest(harvestId: string): Promise<any> {
+    try {
+      const response = await api.get(`/api/harvests/${harvestId}`);
+      return response.data.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to get harvest');
+    }
+  }
+
+  async listHarvests(params?: { farmId?: string; limit?: number; offset?: number }): Promise<any[]> {
+    try {
+      const response = await api.get(`/api/harvests`, { params });
+      return response.data.data || [];
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to list harvests');
+    }
+  }
+
+  async saveAsSeed(harvestId: string, seedData: any): Promise<any> {
+    try {
+      const response = await api.post(`/api/harvests/${harvestId}/save-as-seed`, seedData);
+      return response.data.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to save harvest as seed');
+    }
+  }
+
+  // WebSocket room management
+  joinHarvestRoom(roomId: string): void {
+    this.rooms.add(roomId);
+    // In a real implementation, this would join a WebSocket room
+    console.log(`Joined harvest room: ${roomId}`);
+  }
+
+  leaveHarvestRoom(roomId: string): void {
+    this.rooms.delete(roomId);
+    // In a real implementation, this would leave a WebSocket room
+    console.log(`Left harvest room: ${roomId}`);
+  }
+
+  // Event handling
+  onHarvestUpdate(callback: (update: any) => void): () => void {
+    const handlers = this.eventHandlers.get('harvest:update') || [];
+    handlers.push(callback);
+    this.eventHandlers.set('harvest:update', handlers);
+
+    // Return unsubscribe function
+    return () => {
+      const index = handlers.indexOf(callback);
+      if (index >= 0) handlers.splice(index, 1);
+    };
+  }
+
+  onAgentsUpdate(callback: (agents: any) => void): () => void {
+    const handlers = this.eventHandlers.get('agents:update') || [];
+    handlers.push(callback);
+    this.eventHandlers.set('agents:update', handlers);
+
+    return () => {
+      const index = handlers.indexOf(callback);
+      if (index >= 0) handlers.splice(index, 1);
+    };
+  }
+
+  onWorkCompleted(callback: (completed: any) => void): () => void {
+    const handlers = this.eventHandlers.get('work:completed') || [];
+    handlers.push(callback);
+    this.eventHandlers.set('work:completed', handlers);
+
+    return () => {
+      const index = handlers.indexOf(callback);
+      if (index >= 0) handlers.splice(index, 1);
+    };
+  }
+
+  // Trigger events (used internally or by WebSocket handlers)
+  triggerEvent(event: string, data: any): void {
+    const handlers = this.eventHandlers.get(event) || [];
+    handlers.forEach(handler => handler(data));
+  }
+}
+
+// Barn service functionality
+class BarnService {
+  async getItems(folderId?: string): Promise<any[]> {
+    try {
+      const response = await api.get(`/api/barn/items`, {
+        params: { folderId }
+      });
+      return response.data.data || [];
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to get barn items');
+    }
+  }
+
+  async uploadItem(formData: FormData): Promise<any> {
+    try {
+      const response = await api.post(`/api/barn/upload`, formData);
+      return response.data.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to upload barn item');
+    }
+  }
+
+  async deleteItem(itemId: string): Promise<void> {
+    try {
+      await api.delete(`/api/barn/items/${itemId}`);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || 'Failed to delete barn item');
+    }
+  }
+}
+
 export const farmService = new FarmService();
+export const workflowService = new WorkflowService();
+export const harvestService = new HarvestService();
+export const barnService = new BarnService();

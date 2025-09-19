@@ -8,9 +8,9 @@ import {
   ApprovalWorkflow, 
   ApprovalRecord,
   ApprovalRule 
-} from '../types/yamlPipeline';
-import { YamlConfig } from '../types/yamlGenerator';
-import { DiffChange } from '../types/yamlPipeline';
+} from '@/types/yamlPipeline';
+import { YamlConfig } from '@/types/yamlGenerator';
+import { DiffChange } from '@/types/yamlPipeline';
 
 class YamlAuditService {
   private dbName = 'maifarm-yaml-audit';

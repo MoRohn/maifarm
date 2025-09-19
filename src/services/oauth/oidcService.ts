@@ -5,7 +5,7 @@ import {
   JWKS,
   JWK,
   UserInfo,
-} from '../../types/oauth';
+} from '@/types/oauth';
 
 class OIDCService {
   private jwksCache: Map<string, { jwks: JWKS; fetchedAt: number }> = new Map();

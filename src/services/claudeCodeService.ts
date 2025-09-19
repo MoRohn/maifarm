@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Farm } from '../types';
+import { Farm } from '@/types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4567/api';
 

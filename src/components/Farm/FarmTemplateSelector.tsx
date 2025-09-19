@@ -1,6 +1,6 @@
 import React from 'react';
 import { Server, Zap, Shield, Eye } from 'lucide-react';
-import { FarmTemplate } from '../../types/orchestration';
+import { FarmTemplate } from '@/types/orchestration';
 
 interface FarmTemplateSelectorProps {
   templates: FarmTemplate[];

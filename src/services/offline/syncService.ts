@@ -1,5 +1,5 @@
-import { offlineStorage, STORES } from '../../utils/offlineStorage';
-import { Farm, Agent } from '../../types';
+import { offlineStorage, STORES } from '@/utils/offlineStorage';
+import { Farm, Agent } from '@/types';
 
 export interface SyncConflict {
   id: string;

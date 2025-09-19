@@ -15,8 +15,8 @@ import {
   FileDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { backupService, BackupMetadata } from '../../services/backupService';
-import { formatBytes } from '../../utils/format';
+import { backupService, BackupMetadata } from '@/services/backupService';
+import { formatBytes } from '@/utils/format';
 
 interface BackupManagerProps {
   className?: string;

@@ -1,5 +1,5 @@
-import { Agent, Farm, FarmMetrics, ResourceUsage } from '../../types';
-import { MonitoringAlert, TimeSeriesData } from '../../types/monitoring';
+import { Agent, Farm, FarmMetrics, ResourceUsage } from '@/types';
+import { MonitoringAlert, TimeSeriesData } from '@/types/monitoring';
 
 interface PrometheusMetric {
   name: string;

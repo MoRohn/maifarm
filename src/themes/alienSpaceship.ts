@@ -235,7 +235,7 @@ export const applyAlienTheme = () => {
   
   // Set CSS variables
   Object.entries(alienSpaceshipTheme.colors).forEach(([category, values]) => {
-    if (typeof values === 'object' && !values.includes('gradient')) {
+    if (typeof values === 'object' && values !== null && !Array.isArray(values)) {
       Object.entries(values).forEach(([key, value]) => {
         root.style.setProperty(`--alien-${category}-${key}`, value as string);
       });

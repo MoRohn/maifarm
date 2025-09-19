@@ -1,5 +1,5 @@
-import { Agent } from '../types';
-import { AgentInstance, AgentState, AgentHealth } from '../types/agent';
+import { Agent } from '@/types';
+import { AgentInstance, AgentState, AgentHealth } from '@/types/agent';
 
 export interface CreateAgentParams {
   name: string;

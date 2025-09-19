@@ -1,6 +1,6 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, Minus, Clock, CheckCircle, XCircle } from 'lucide-react';
-import { AgentPerformanceMetric, TimeRange } from '../../types/analytics';
+import { AgentPerformanceMetric, TimeRange } from '@/types/analytics';
 
 interface PerformanceMetricsProps {
   agents: AgentPerformanceMetric[];

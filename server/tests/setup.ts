@@ -40,7 +40,7 @@ jest.mock('../database/connection', () => ({
 }));
 
 // Mock external services
-jest.mock('../services/claudeCodeCoordinator');
+jest.mock('../services/agentCoordinatorV2');
 jest.mock('../services/coordinationService');
 jest.mock('../websocket/socketServer', () => ({
   getSocketServer: jest.fn(() => ({

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { farmersService } from '../services/farmersService';
-import { orchestratorService } from '../services/OrchestratorService';
+import { orchestratorService } from '../services/unified/orchestratorService';
 import { yamlGenerator } from '../services/yamlGenerator';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -267,9 +267,9 @@ router.post('/:id/launch', async (req: Request, res: Response) => {
       }
     }
 
-    // First, create the farm record in the database using farmManager
-    const farmManager = await import('../services/farmManager');
-    const farm = await farmManager.farmManager.createFarm({
+    // First, create the farm record in the database using farmService
+    const { farmService } = await import('../services/unified/farmService');
+    const farm = await farmService.createFarm({
       name: farmName || `${template.title} Farm`,
       description: description || `Farm created from ${template.title} farmer template`,
       type: template.config?.coordination === 'collaborative' ? 'collaborative' : 'sequential',
@@ -279,8 +279,8 @@ router.post('/:id/launch', async (req: Request, res: Response) => {
         timeout: template.config?.timeout || 3600,
         yaml: customizedYaml
       },
-      userId: 'dev-user', // TODO: get from auth middleware
-      createdBy: 'dev-user',
+      userId: 'maifarm-user', // TODO: get from auth middleware
+      createdBy: 'maifarm-user',
       farmerTemplateId: id,
       farmerTemplateName: template.title
     });
@@ -319,7 +319,7 @@ router.post('/:id/launch', async (req: Request, res: Response) => {
       success: true,
       data: {
         farmId,
-        template: result.template,
+        template: template,
         yaml: customizedYaml,
         launchOptions: {
           name: launchOptions.name,

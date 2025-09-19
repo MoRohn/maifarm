@@ -1,4 +1,4 @@
-import { UserActivity, UserPreferences } from '../types/settings';
+import { UserActivity, UserPreferences } from '@/types/settings';
 
 interface AIPreferenceSuggestion {
   id: string;

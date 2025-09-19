@@ -20,7 +20,7 @@ export interface AgentTask {
   prompt: string;
   startTime: Date;
   endTime?: Date;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'active' | 'completed' | 'failed';
   output?: string[];
   error?: string;
 }

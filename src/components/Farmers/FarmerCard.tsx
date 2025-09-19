@@ -4,7 +4,7 @@ import {
   Users, 
   Zap
 } from 'lucide-react';
-import { FarmerTemplate } from '../../types/farmers';
+import { FarmerTemplate } from '@/types/farmers';
 
 interface FarmerCardProps {
   farmer: FarmerTemplate;
@@ -108,62 +108,61 @@ export const FarmerCard: React.FC<FarmerCardProps> = ({ farmer, onClick, onUse }
         {farmer.description}
       </p>
 
-      {/* Agent Team Info */}
-      <div className="mb-6 relative z-10">
-        <div className="flex items-center space-x-2 mb-3">
-          <Users className="w-4 h-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Agent Team ({farmer.agents.length})
+        {/* Agent Team Info */}
+        <div className="mb-6 relative z-10">
+          <div className="flex items-center space-x-2 mb-3">
+            <Users className="w-4 h-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Agent Team ({farmer.agents.length})
+            </span>
+          </div>
+          
+          {/* Display all agents */}
+          <div className="space-y-3">
+            {farmer.agents.map((agent, index) => (
+              <div key={index} className="flex items-start space-x-3">
+                <div className="text-lg flex-shrink-0">{agent.emoji || '🤖'}</div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {agent.name}
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-1">
+                    {agent.role}
+                  </p>
+                  
+                  {/* Show capabilities for the main agent or if only one agent */}
+                  {(index === 0 || farmer.agents.length === 1) && agent.capabilities && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {agent.capabilities.slice(0, 3).map((capability, capIndex) => (
+                        <span
+                          key={capIndex}
+                          className="px-2 py-1 bg-white/60 dark:bg-gray-800/60 text-xs rounded-full text-gray-700 dark:text-gray-300"
+                        >
+                          {capability}
+                        </span>
+                      ))}
+                      {agent.capabilities.length > 3 && (
+                        <span className="px-2 py-1 bg-white/60 dark:bg-gray-800/60 text-xs rounded-full text-gray-500">
+                          +{agent.capabilities.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Spacer to push actions to bottom */}
+        <div className="flex-grow"></div>
+
+        {/* View Profile text in center */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-5">
+          <span className="text-gray-600 dark:text-gray-400 text-sm font-medium opacity-30">
+            View Profile
           </span>
         </div>
-        
-        {/* Display all agents */}
-        <div className="space-y-3">
-          {farmer.agents.map((agent, index) => (
-            <div key={index} className="flex items-start space-x-3">
-              <div className="text-lg flex-shrink-0">{agent.emoji || '🤖'}</div>
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                  {agent.name}
-                </h4>
-                <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-1">
-                  {agent.role}
-                </p>
-                
-                {/* Show capabilities for the main agent or if only one agent */}
-                {(index === 0 || farmer.agents.length === 1) && agent.capabilities && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {agent.capabilities.slice(0, 3).map((capability, capIndex) => (
-                      <span
-                        key={capIndex}
-                        className="px-2 py-1 bg-white/60 dark:bg-gray-800/60 text-xs rounded-full text-gray-700 dark:text-gray-300"
-                      >
-                        {capability}
-                      </span>
-                    ))}
-                    {agent.capabilities.length > 3 && (
-                      <span className="px-2 py-1 bg-white/60 dark:bg-gray-800/60 text-xs rounded-full text-gray-500">
-                        +{agent.capabilities.length - 3} more
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-
-      {/* Spacer to push actions to bottom */}
-      <div className="flex-grow"></div>
-
-      {/* View Profile text in center */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-5">
-        <span className="text-gray-600 dark:text-gray-400 text-sm font-medium opacity-30">
-          View Profile
-        </span>
-      </div>
 
       {/* Actions */}
       <div className="flex items-center justify-end relative z-10">

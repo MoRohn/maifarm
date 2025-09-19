@@ -5,7 +5,7 @@ import {
   WorkflowExecution,
   WorkflowNode,
   WorkflowEdge
-} from '../types/orchestration'
+} from '@/types/orchestration'
 
 interface WorkflowBuilderState {
   // Canvas state

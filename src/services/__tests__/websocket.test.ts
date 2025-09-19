@@ -194,7 +194,7 @@ describe('WebSocketService', () => {
       const farmData = {
         id: 'farm-1',
         name: 'Test Farm',
-        status: 'running',
+        status: 'active',
       };
 
       eventHandlers['farm_update'](farmData);

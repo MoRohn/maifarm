@@ -13,6 +13,12 @@ class SingletonWebSocketManager {
   private url: string = '';
   private referenceCount = 0;
   private disconnectTimer: NodeJS.Timeout | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 10;
+  private reconnectDelay = 1000;
+  private lastConnectionAttempt = 0;
+  private connectionDebounceDelay = 500; // Minimum delay between connection attempts
 
   private constructor() {}
 
@@ -41,9 +47,18 @@ class SingletonWebSocketManager {
       wsDebugger.log('connect', `Reusing existing connection (connected: ${this.socket.connected})`, this.referenceCount);
       
       // Only manually reconnect if truly disconnected and not already trying
-      if (!this.socket.connected && !this.socket.connecting) {
-        wsDebugger.log('reconnect', `Manually reconnecting socket`, this.referenceCount);
-        this.socket.connect();
+      // Debounce connection attempts to prevent rapid reconnections
+      const now = Date.now();
+      const timeSinceLastAttempt = now - this.lastConnectionAttempt;
+      
+      if (!this.socket.connected && !this.socket.connecting && timeSinceLastAttempt > this.connectionDebounceDelay) {
+        this.lastConnectionAttempt = now;
+        setTimeout(() => {
+          if (this.socket && !this.socket.connected && !this.socket.connecting) {
+            wsDebugger.log('reconnect', `Manually reconnecting socket after debounce`, this.referenceCount);
+            this.socket.connect();
+          }
+        }, 200); // Slightly longer delay for stability
       }
       return this.socket;
     }
@@ -82,6 +97,11 @@ class SingletonWebSocketManager {
       // Enhance socket with reliability features
       reliabilityEnhancer.enhanceSocket(this.socket);
       
+      // Set socket in terminal subscription manager
+      import('@/utils/terminalSubscriptionManager').then(m => {
+        m.terminalSubscriptionManager.setSocket(this.socket!);
+      });
+      
       this.setupGlobalHandlers();
       this.initialized = true;
     }
@@ -89,8 +109,99 @@ class SingletonWebSocketManager {
     return this.socket!;
   }
 
+  private startHeartbeat() {
+    // Clear any existing heartbeat
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+    
+    // Set up heartbeat every 30 seconds (reduced frequency for stability)
+    this.heartbeatInterval = setInterval(() => {
+      if (this.socket && this.socket.connected) {
+        this.socket.emit('ping', { timestamp: Date.now() });
+      } else if (this.socket && !this.socket.connecting) {
+        // If disconnected and not already reconnecting, try to reconnect
+        // Only log if we haven't logged recently
+        if (this.reconnectAttempts === 0) {
+          console.log('[WebSocket] Heartbeat detected disconnection, attempting reconnect...');
+        }
+        this.attemptReconnect();
+      }
+    }, 30000); // Increased to 30 seconds for stability
+  }
+  
+  private attemptReconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('[WebSocket] Max reconnection attempts reached');
+      return;
+    }
+    
+    this.reconnectAttempts++;
+    const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+    
+    console.log(`[WebSocket] Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+    
+    setTimeout(() => {
+      if (this.socket && !this.socket.connected && !this.socket.connecting) {
+        this.socket.connect();
+      }
+    }, delay);
+  }
+
   private setupGlobalHandlers() {
     if (!this.socket) return;
+    
+    // Start heartbeat monitoring
+    this.startHeartbeat();
+    
+    // Reset reconnect attempts on successful connection
+    this.socket.on('connect', () => {
+      this.reconnectAttempts = 0;
+      console.log('[WebSocket] Connected successfully');
+      
+      // Re-set socket in terminal subscription manager on reconnect
+      import('@/utils/terminalSubscriptionManager').then(m => {
+        m.terminalSubscriptionManager.setSocket(this.socket!);
+      });
+    });
+    
+    // Handle disconnection
+    this.socket.on('disconnect', (reason) => {
+      console.log('[WebSocket] Disconnected:', reason);
+      if (reason === 'io server disconnect') {
+        // Server initiated disconnect, try to reconnect
+        this.attemptReconnect();
+      }
+    });
+    
+    // Handle connection errors
+    this.socket.on('connect_error', (error) => {
+      // Handle parse errors specifically
+      if (error.message && error.message.includes('parse')) {
+        console.warn('[WebSocket] Parse error detected, attempting recovery');
+        // Don't increment reconnect attempts for parse errors
+        // Instead, try to reconnect with a fresh connection
+        setTimeout(() => {
+          if (this.socket) {
+            this.socket.disconnect();
+            this.socket.connect();
+          }
+        }, 1000);
+      } else {
+        console.error('[WebSocket] Connection error:', error.message);
+        this.attemptReconnect();
+      }
+    });
+
+    // Handle recovery signals from server
+    this.socket.on('connection:recover', (data) => {
+      console.log('[WebSocket] Server requested recovery:', data);
+      // Reconnect with fresh state
+      this.socket?.disconnect();
+      setTimeout(() => {
+        this.socket?.connect();
+      }, 500);
+    });
 
     // Create a generic event forwarder
     const forwardEvent = (eventName: string) => {
@@ -108,15 +219,37 @@ class SingletonWebSocketManager {
             const farmStore = useFarmStore.getState();
             const farmId = data.farmId || data.payload?.farmId;
             const status = data.status || data.payload?.status;
+            const farm = data.farm || data.payload?.farm;
+            
             if (farmId && status) {
-              farmStore.updateFarm(farmId, { status });
+              // If farm data is provided, add the farm if it doesn't exist
+              const existingFarm = farmStore.farms.find(f => f.id === farmId);
+              if (farm && !existingFarm) {
+                farmStore.addFarm({
+                  id: farmId,
+                  name: farm.name || 'Quick Task',
+                  description: farm.description || '',
+                  status: status,
+                  type: farm.type || 'sequential',
+                  config: farm.config || {},
+                  metadata: farm.metadata || {},
+                  metrics: farm.metrics || {},
+                  tags: farm.tags || [],
+                  agents: farm.agents || [],
+                  createdAt: farm.createdAt || new Date(),
+                  updatedAt: farm.updatedAt || new Date()
+                });
+              } else {
+                // Otherwise just update the status
+                farmStore.updateFarm(farmId, { status });
+              }
             }
           } else if (eventName === 'farm:launched') {
             // Farm launched means it's running
             const farmStore = useFarmStore.getState();
             const farmId = data.farmId || data.payload?.farmId;
             if (farmId) {
-              farmStore.updateFarm(farmId, { status: 'running' });
+              farmStore.updateFarm(farmId, { status: 'active' });
             }
           }
         } else if (eventName.startsWith('agent:')) {
@@ -144,8 +277,38 @@ class SingletonWebSocketManager {
       'agents:updated',
       'agent:output',
       'task:progress',
+      // Harvest events
       'harvest:ready',
       'harvest:created',
+      'harvest:started',
+      'harvest:completed',
+      'harvest:status',
+      'harvest:update',
+      'harvest:terminal:update',
+      'harvest:terminal:command',
+      'harvest:keepalive',
+      // Terminal events
+      'terminal:output',
+      'terminal:update',
+      'terminal:streaming:ready',
+      'terminal:join_session',
+      'terminal:leave_session',
+      'terminal:send_command',
+      'session:prepared',
+      'agent:terminal',
+      // Terminal events for HarvestTerminalPro
+      'terminal:output',
+      'terminal:attached',
+      'terminal:detached',
+      'terminal:streaming:ready',
+      'harvest:terminal:update',
+      'session:prepared',
+      'harvest:completed',
+      'harvest:status',
+      'harvest:updated',
+      'harvest:progress',
+      'harvest:yield:updated',
+      'harvest:item:updated',
       'goWild:status-changed',
       'quicktask:created',
       'quicktask:starting',
@@ -355,11 +518,11 @@ class SingletonWebSocketManager {
       const store = useWebSocketStore.getState();
       const farmStore = useFarmStore.getState();
       
-      // Remove farm from store
+      // Remove farm from WebSocket store
       const farms = new Map(store.farms);
       farms.delete(data.farmId);
       
-      // Remove all agents associated with this farm
+      // Remove all agents associated with this farm from WebSocket store
       const agents = new Map(store.agents);
       agents.forEach((agent, agentId) => {
         if (agent.farmId === data.farmId) {
@@ -367,9 +530,12 @@ class SingletonWebSocketManager {
         }
       });
       
-      // Update store
+      // Update WebSocket store
       store.farms = farms;
       store.agents = agents;
+      
+      // CRITICAL FIX: Also remove farm from the Farm store used by sidebar navigation
+      farmStore.removeFarm(data.farmId);
       
       // Update total agent count after farm deletion
       const totalAgents = farmStore.farms.reduce((sum, f) => sum + (f.agents?.length || 0), 0);
@@ -441,9 +607,16 @@ class SingletonWebSocketManager {
 
   private forceDisconnect() {
     console.log('[WebSocket] Force disconnecting singleton connection');
+    
+    // Clear timers
     if (this.disconnectTimer) {
       clearTimeout(this.disconnectTimer);
       this.disconnectTimer = null;
+    }
+    
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
     }
     
     // Clean up reliability enhancer
@@ -455,6 +628,7 @@ class SingletonWebSocketManager {
     this.initialized = false;
     this.url = '';
     this.referenceCount = 0;
+    this.reconnectAttempts = 0;
   }
 
   disconnect() {
@@ -463,6 +637,25 @@ class SingletonWebSocketManager {
   }
 
   reconnect() {
+    // Clear any pending disconnect timer
+    if (this.disconnectTimer) {
+      clearTimeout(this.disconnectTimer);
+      this.disconnectTimer = null;
+    }
+    
+    if (this.socket && this.socket.connected) {
+      console.log('[WebSocket] Already connected, skipping reconnect');
+      return;
+    }
+    
+    console.log('[WebSocket] Attempting to reconnect...');
+    
+    // If we have a socket, try to connect it directly first
+    if (this.socket && !this.socket.connecting) {
+      this.socket.connect();
+    }
+    
+    // Also use manager's reconnect for retry logic
     if (this.manager) {
       this.manager.resetConnection();
     } else if (this.url) {

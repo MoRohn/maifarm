@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { aiProviderManager, AIProvider, AIProviderConfig } from '../config/aiProviders';
 import { aiProxy } from './aiProxy';
 import { websocketManager } from '../websocket/websocketManager';
-import { farmManager } from './farmManager';
+import { farmService as farmManager } from './unified/farmService';
 import { costTrackingService } from './costTrackingService';
 
 /**

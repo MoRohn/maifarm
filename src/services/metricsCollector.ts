@@ -7,11 +7,11 @@ import {
   MetricAggregation,
   AggregationType,
   TimeRange
-} from '../types/metrics';
-import { FarmMetrics } from '../types';
+} from '@/types/metrics';
+import { FarmMetrics } from '@/types';
 import { prometheusService } from './prometheus';
-import { useWebSocketStore } from '../store/websocketStore';
-import { useFarmStore } from '../store/farmStore';
+import { useWebSocketStore } from '@/store/websocketStore';
+import { useFarmStore } from '@/store/farmStore';
 
 interface MetricBuffer {
   metrics: Metric[];
@@ -157,7 +157,7 @@ export class MetricsCollector extends EventEmitter {
       const farmMetrics: FarmMetrics & { farmId: string } = {
         farmId: farm.id,
         totalAgents: farm.agents.length,
-        activeAgents: farm.agents.filter(a => a.status === 'running' || a.status === 'working').length,
+        activeAgents: farm.agents.filter(a => a.status === 'active' || a.status === 'working').length,
         resourceUtilization: {
           cpu: farm.agents.reduce((sum, a) => sum + (typeof a.resources?.cpu === 'number' ? a.resources.cpu : (a.resources?.cpu?.usage ?? 0)), 0) / farm.agents.length,
           memory: farm.agents.reduce((sum, a) => sum + (typeof a.resources?.memory === 'number' ? a.resources.memory : (a.resources?.memory?.usage ?? 0)), 0) / farm.agents.length,

@@ -1,5 +1,4 @@
 import { EventEmitter } from 'events';
-import { enhancePromptForProvider, getProviderOptimizations, getRecommendedTemplate } from '../templates/qwen-prompts';
 
 interface EnhancementRequest {
   prompt: string;
@@ -7,7 +6,7 @@ interface EnhancementRequest {
   purpose?: 'farm' | 'task' | 'agent' | 'workflow';
   style?: 'technical' | 'creative' | 'balanced';
   maxLength?: number;
-  provider?: 'claude' | 'qwen';
+  provider?: 'claude' | 'openai';
 }
 
 interface EnhancementResponse {
@@ -136,19 +135,13 @@ Output a structured plan that maximizes efficiency and minimizes conflicts.
       let enhanced = await this.generateEnhancement(request, analysis, strategy);
       
       // Apply provider-specific enhancements
-      if (request.provider) {
-        enhanced = enhancePromptForProvider(enhanced, request.provider, {
-          useChainOfThought: request.purpose === 'workflow' || request.purpose === 'task',
-          contextSize: request.maxLength && request.maxLength > 50000 ? 'large' : 'standard',
-          taskType: request.purpose
-        });
-        
-        // Get recommended template if available
-        const template = getRecommendedTemplate(request.purpose || 'general', request.provider);
-        if (template && request.purpose) {
-          // Add template suggestions to the enhanced prompt
-          enhanced = `${enhanced}\n\n[Provider-Optimized Template Available: ${template.name}]`;
-        }
+      // Note: Provider-specific optimizations removed after Qwen/GPT-OSS deprecation
+      if (request.provider === 'claude') {
+        // Claude-specific enhancements could be added here
+        // For now, Claude works well with the standard enhancement
+      } else if (request.provider === 'openai') {
+        // OpenAI-specific enhancements could be added here
+        // For now, OpenAI works well with the standard enhancement
       }
       
       // Create suggestions based on analysis

@@ -208,18 +208,19 @@ export class WebSocketConnectionManager {
 
     this.clearRetryTimer();
     
-    // Exponential backoff with jitter
+    // Gentler exponential backoff with jitter for better stability
     const baseDelay = Math.min(
-      this.options.initialDelay * Math.pow(2, this.retryCount),
+      this.options.initialDelay * Math.pow(1.5, this.retryCount), // Gentler growth factor
       this.options.maxDelay
     );
     const jitter = Math.random() * 0.3 * baseDelay;
-    const delay = baseDelay + jitter;
+    const delay = Math.floor(baseDelay + jitter);
 
     this.retryCount++;
     
     // Only log reconnection attempts after we've had a successful connection
-    if (this.connectionEstablished) {
+    // and reduce logging frequency for multiple attempts
+    if (this.connectionEstablished && (this.retryCount <= 3 || this.retryCount % 5 === 0)) {
       this.log('log', `Reconnecting in ${Math.round(delay / 1000)}s (attempt ${this.retryCount}/${this.options.maxRetries})`);
     }
     

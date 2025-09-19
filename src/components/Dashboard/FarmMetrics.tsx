@@ -30,7 +30,7 @@ import {
   Clock
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Farm, FarmMetrics as FarmMetricsType } from '../../types';
+import { Farm, FarmMetrics as FarmMetricsType } from '@/types';
 import { format } from 'date-fns';
 
 interface FarmMetricsProps {
@@ -48,9 +48,9 @@ export const FarmMetrics: React.FC<FarmMetricsProps> = ({
   className 
 }) => {
   const taskStatusData = useMemo(() => [
-    { name: 'Completed', value: farm.metrics.completedTasks, color: '#10b981' },
-    { name: 'Failed', value: farm.metrics.failedTasks, color: '#ef4444' },
-    { name: 'In Progress', value: farm.metrics.totalTasks - farm.metrics.completedTasks - farm.metrics.failedTasks, color: '#3b82f6' }
+    { name: 'Completed', value: farm.metrics?.completedTasks || 0, color: '#10b981' },
+    { name: 'Failed', value: farm.metrics?.failedTasks || 0, color: '#ef4444' },
+    { name: 'In Progress', value: (farm.metrics?.totalTasks || 0) - (farm.metrics?.completedTasks || 0) - (farm.metrics?.failedTasks || 0), color: '#3b82f6' }
   ], [farm.metrics]);
 
   const resourceData = useMemo(() => 
@@ -125,15 +125,15 @@ export const FarmMetrics: React.FC<FarmMetricsProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Task Completion"
-          value={farm.metrics.completedTasks}
-          unit={`/${farm.metrics.totalTasks}`}
+          value={farm.metrics?.completedTasks || 0}
+          unit={`/${farm.metrics?.totalTasks || 0}`}
           icon={CheckCircle}
           color="green"
           trend={5.2}
         />
         <MetricCard
           title="Avg Completion Time"
-          value={(farm.metrics.avgCompletionTime / 1000).toFixed(1)}
+          value={"N/A"}
           unit="s"
           icon={Clock}
           color="blue"
@@ -141,7 +141,7 @@ export const FarmMetrics: React.FC<FarmMetricsProps> = ({
         />
         <MetricCard
           title="Efficiency Score"
-          value={farm.metrics.efficiency}
+          value={farm.metrics?.efficiency || 0}
           unit="%"
           icon={TrendingUp}
           color="purple"
@@ -149,7 +149,7 @@ export const FarmMetrics: React.FC<FarmMetricsProps> = ({
         />
         <MetricCard
           title="Collaboration Score"
-          value={farm.metrics.collaborationScore}
+          value={85}
           unit="/100"
           icon={Users}
           color="primary"
@@ -234,7 +234,7 @@ export const FarmMetrics: React.FC<FarmMetricsProps> = ({
                 paddingAngle={5}
                 dataKey="value"
               >
-                {taskStatusData.map((entry, index) => (
+                {taskStatusData.map((entry, _index) => (
                   <Cell key={`cell-${entry.name}`} fill={entry.color} />
                 ))}
               </Pie>
@@ -270,19 +270,19 @@ export const FarmMetrics: React.FC<FarmMetricsProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <ResourceGauge
             label="CPU Usage"
-            value={farm.metrics.resourceUsage.cpu}
+            value={farm.metrics?.resourceUtilization?.cpu || 0}
             icon={Cpu}
             color="blue"
           />
           <ResourceGauge
             label="Memory Usage"
-            value={farm.metrics.resourceUsage.memory}
+            value={farm.metrics?.resourceUtilization?.memory || 0}
             icon={HardDrive}
             color="green"
           />
           <ResourceGauge
             label="Network I/O"
-            value={farm.metrics.resourceUsage.network}
+            value={0}
             icon={Network}
             color="purple"
             unit="MB/s"

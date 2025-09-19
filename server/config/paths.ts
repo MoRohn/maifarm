@@ -62,7 +62,7 @@ class PathConfiguration {
   private initializePaths(): PathConfig {
     // Determine root paths based on environment
     const maifarmRoot = process.env.MAIFARM_ROOT || path.resolve(process.cwd());
-    const maibarnRoot = process.env.MAIBARN_ROOT || path.join(maifarmRoot, 'maibarn');
+    const maibarnRoot = process.env.MAIBARN_ROOT || path.join(maifarmRoot, 'data', 'storage', 'maibarn');
     
     // Build comprehensive path configuration
     const config: PathConfig = {
@@ -81,10 +81,10 @@ class PathConfiguration {
       HARVEST_STORAGE_COMPLETED: path.join(maibarnRoot, 'harvests', 'completed'),
       
       // Barn storage
-      BARN_STORAGE: path.join(maibarnRoot, 'barn'),
-      BARN_ITEMS: path.join(maibarnRoot, 'barn', 'items'),
-      BARN_TEMPLATES: path.join(maibarnRoot, 'barn', 'templates'),
-      BARN_CATALOG: path.join(maibarnRoot, 'barn', 'catalog.json'),
+      BARN_STORAGE: path.join(maifarmRoot, 'data', 'storage', 'barn'),
+      BARN_ITEMS: path.join(maifarmRoot, 'data', 'storage', 'barn', 'items'),
+      BARN_TEMPLATES: path.join(maifarmRoot, 'data', 'storage', 'barn', 'templates'),
+      BARN_CATALOG: path.join(maifarmRoot, 'data', 'storage', 'barn', 'catalog.json'),
       
       // Coordination
       COORDINATION_DIR: path.join(maibarnRoot, 'coordination'),
@@ -132,6 +132,13 @@ class PathConfiguration {
   }
 
   /**
+   * Get workspace path (alias for getFarmWorkspacePath for compatibility)
+   */
+  getWorkspacePath(farmId: string): string {
+    return this.getFarmWorkspacePath(farmId, false);
+  }
+
+  /**
    * Get harvest storage path for a specific harvest
    */
   getHarvestPath(harvestId: string, completed: boolean = false): string {
@@ -161,12 +168,15 @@ class PathConfiguration {
   }
 
   /**
-   * Validate that a path is within the maibarn directory
+   * Validate that a path is within the maibarn directory or barn storage
    */
   isPathSafe(checkPath: string): boolean {
     const resolvedPath = path.resolve(checkPath);
     const normalizedBarnPath = path.resolve(this.config.MAIBARN_ROOT);
-    return resolvedPath.startsWith(normalizedBarnPath);
+    const normalizedBarnStorage = path.resolve(this.config.BARN_STORAGE);
+    // Allow paths within either maibarn or barn storage directories
+    return resolvedPath.startsWith(normalizedBarnPath) || 
+           resolvedPath.startsWith(normalizedBarnStorage);
   }
 
   /**
@@ -174,10 +184,21 @@ class PathConfiguration {
    */
   validatePath(inputPath: string): string {
     // Prevent path traversal attacks
-    if (inputPath.includes('..') || path.isAbsolute(inputPath)) {
-      throw new Error(`Invalid path: ${inputPath}. Path traversal or absolute paths not allowed.`);
+    if (inputPath.includes('..')) {
+      throw new Error(`Invalid path: ${inputPath}. Path traversal not allowed.`);
     }
     
+    // If it's an absolute path, check if it's already within the barn
+    if (path.isAbsolute(inputPath)) {
+      if (this.isPathSafe(inputPath)) {
+        // Already a safe absolute path within barn
+        return inputPath;
+      } else {
+        throw new Error(`Invalid path: ${inputPath}. Absolute paths must be within the barn directory.`);
+      }
+    }
+    
+    // Relative path - join with barn root
     const fullPath = path.join(this.config.MAIBARN_ROOT, inputPath);
     
     if (!this.isPathSafe(fullPath)) {
@@ -220,6 +241,44 @@ class PathConfiguration {
     
     // Update all dependent paths
     this.config = this.initializePaths();
+  }
+
+  /**
+   * Ensure all required directories exist
+   */
+  async ensureDirectoriesExist(): Promise<void> {
+    const fs = await import('fs/promises');
+    const dirsToCreate = [
+      this.config.MAIBARN_ROOT,
+      this.config.FARM_WORKSPACES,
+      this.config.FARM_WORKSPACES_ACTIVE,
+      this.config.FARM_WORKSPACES_ARCHIVED,
+      this.config.HARVEST_STORAGE,
+      this.config.HARVEST_STORAGE_ACTIVE,
+      this.config.HARVEST_STORAGE_COMPLETED,
+      this.config.BARN_STORAGE,
+      this.config.BARN_ITEMS,
+      this.config.BARN_TEMPLATES,
+      this.config.COORDINATION_DIR,
+      this.config.COORDINATION_FARMS,
+      this.config.COORDINATION_LOCKS,
+      this.config.TEMP_DIR,
+      this.config.LOGS_DIR
+    ];
+
+    for (const dir of dirsToCreate) {
+      if (!dir) {
+        console.warn('Skipping undefined directory in ensureDirectoriesExist');
+        continue;
+      }
+      try {
+        await fs.mkdir(dir, { recursive: true });
+      } catch (error: any) {
+        if (error.code !== 'EEXIST') {
+          console.error(`Failed to create directory ${dir}:`, error);
+        }
+      }
+    }
   }
 
   /**

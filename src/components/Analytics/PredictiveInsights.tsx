@@ -9,7 +9,7 @@ import {
   AlertCircle,
   Info
 } from 'lucide-react';
-import { PredictiveInsight } from '../../types/reporting';
+import { PredictiveInsight } from '@/types/reporting';
 
 interface PredictiveInsightsProps {
   insights: PredictiveInsight[];

@@ -3,10 +3,10 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AnalyticsPage } from '../AnalyticsPage';
-import { useFarmStore } from '../../../store/farmStore';
-import { useAnalyticsStore } from '../../../store/analyticsStore';
-import { useWebSocket } from '../../../hooks/useWebSocket';
-import { analyticsService } from '../../../services/analyticsService';
+import { useFarmStore } from '@/store/farmStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { analyticsService } from '@/services/analyticsService';
 
 // Mock stores and hooks
 vi.mock('../../../store/farmStore');
@@ -52,7 +52,7 @@ const mockFarms = [
     name: 'Test Farm 1',
     status: 'active',
     agents: [
-      { id: 'a1', name: 'Agent 1', status: 'running' },
+      { id: 'a1', name: 'Agent 1', status: 'active' },
       { id: 'a2', name: 'Agent 2', status: 'idle' }
     ]
   },
@@ -61,7 +61,7 @@ const mockFarms = [
     name: 'Test Farm 2',
     status: 'active',
     agents: [
-      { id: 'a3', name: 'Agent 3', status: 'running' }
+      { id: 'a3', name: 'Agent 3', status: 'active' }
     ]
   }
 ];

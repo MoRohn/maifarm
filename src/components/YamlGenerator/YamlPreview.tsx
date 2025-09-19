@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { FileCode, Clock, Tag, GitBranch, Layers, Users, Cpu } from 'lucide-react';
-import { YamlConfig } from '../../types/yamlGenerator';
+import { YamlConfig } from '@/types/yamlGenerator';
 
 interface YamlPreviewProps {
   yaml: YamlConfig | undefined;

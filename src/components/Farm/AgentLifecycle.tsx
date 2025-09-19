@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Minus, RefreshCw, Activity, AlertCircle, CheckCircle } from 'lucide-react';
-import { Farm, Agent } from '../../types';
+import { Farm, Agent } from '@/types';
+import { getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
 
 interface AgentLifecycleProps {
   farm: Farm;
@@ -10,16 +11,16 @@ interface AgentLifecycleProps {
 
 export function AgentLifecycle({ farm, onScaleAgents, onRefresh }: AgentLifecycleProps) {
   const [isScaling, setIsScaling] = useState(false);
-  const [targetCount, setTargetCount] = useState(farm.agents.length);
+  const [targetCount, setTargetCount] = useState(getAgentCount(farm));
 
   // Helper to safely get autoScaling config
   const getAutoScalingConfig = () => {
-    const { autoScaling } = farm.config;
-    if (typeof autoScaling === 'object' && autoScaling !== null) {
-      return autoScaling;
+    const { autoScale } = farm.config;
+    if (typeof autoScale === 'object' && autoScale !== null) {
+      return autoScale;
     }
     return {
-      enabled: !!autoScaling,
+      enabled: !!autoScale,
       minAgents: 1,
       maxAgents: 10
     };
@@ -59,21 +60,23 @@ export function AgentLifecycle({ farm, onScaleAgents, onRefresh }: AgentLifecycl
       case 'idle':
         return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
       case 'busy':
-      case 'running':
+      case 'active':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400';
       case 'failed':
+      case 'error':
         return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
-      case 'provisioning':
-      case 'starting':
-      case 'stopping':
-      case 'stopped':
+      case 'initializing':
+      case 'paused':
+      case 'terminating':
+      case 'terminated':
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
     }
   };
 
-  const agentsByStatus = farm.agents.reduce((acc, agent) => {
+  const agents = getAgentsFromFarm(farm);
+  const agentsByStatus = agents.reduce((acc, agent) => {
     acc[agent.status] = (acc[agent.status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -148,7 +151,7 @@ export function AgentLifecycle({ farm, onScaleAgents, onRefresh }: AgentLifecycl
         </div>
         
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
-          {farm.agents.map((agent) => (
+          {agents.map((agent) => (
             <div key={agent.id} className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -173,7 +176,7 @@ export function AgentLifecycle({ farm, onScaleAgents, onRefresh }: AgentLifecycl
                     </div>
                     <div>
                       <div className="text-sm text-gray-500 dark:text-gray-400">Success Rate</div>
-                      <div className="font-medium">{agent.metrics?.successRate || 0}%</div>
+                      <div className="font-medium">{agent.metrics ? Math.round((agent.metrics.tasksCompleted / (agent.metrics.tasksCompleted + agent.metrics.tasksFailed || 1)) * 100) : 0}%</div>
                     </div>
                   </div>
                   
@@ -183,36 +186,36 @@ export function AgentLifecycle({ farm, onScaleAgents, onRefresh }: AgentLifecycl
                       <div>
                         <div className="flex justify-between mb-1">
                           <span className="text-xs text-gray-500 dark:text-gray-400">CPU</span>
-                          <span className="text-xs font-medium">{agent.resources?.cpuUsage || agent.resources?.cpu?.usage || 0}%</span>
+                          <span className="text-xs font-medium">{agent.resources?.cpu || 0}%</span>
                         </div>
                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                           <div 
                             className="bg-emerald-500 h-1.5 rounded-full"
-                            style={{ width: `${agent.resources?.cpuUsage || agent.resources?.cpu?.usage || 0}%` }}
+                            style={{ width: `${agent.resources?.cpu || 0}%` }}
                           />
                         </div>
                       </div>
                       <div>
                         <div className="flex justify-between mb-1">
                           <span className="text-xs text-gray-500 dark:text-gray-400">Memory</span>
-                          <span className="text-xs font-medium">{agent.resources?.memoryUsage || agent.resources?.memory?.usage || 0}%</span>
+                          <span className="text-xs font-medium">{agent.resources?.memory || 0}%</span>
                         </div>
                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                           <div 
                             className="bg-emerald-500 h-1.5 rounded-full"
-                            style={{ width: `${agent.resources?.memoryUsage || agent.resources?.memory?.usage || 0}%` }}
+                            style={{ width: `${agent.resources?.memory || 0}%` }}
                           />
                         </div>
                       </div>
                       <div>
                         <div className="flex justify-between mb-1">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">Task Queue</span>
-                          <span className="text-xs font-medium">{agent.tasks?.length || 0}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Current Task</span>
+                          <span className="text-xs font-medium">{agent.currentTask ? '1' : '0'}</span>
                         </div>
                         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                           <div 
                             className="bg-emerald-500 h-1.5 rounded-full"
-                            style={{ width: `${Math.min(100, (agent.tasks?.length || 0) * 20)}%` }}
+                            style={{ width: agent.currentTask ? '100%' : '0%' }}
                           />
                         </div>
                       </div>
@@ -220,16 +223,11 @@ export function AgentLifecycle({ farm, onScaleAgents, onRefresh }: AgentLifecycl
                   </div>
                   
                   <div className="mt-4">
-                    <div className="text-sm text-gray-500 dark:text-gray-400">Capabilities</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">Agent Type</div>
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {agent.capabilities.map((capability, idx) => (
-                        <span 
-                          key={idx}
-                          className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                        >
-                          {capability}
-                        </span>
-                      ))}
+                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                        {agent.type}
+                      </span>
                     </div>
                   </div>
                 </div>

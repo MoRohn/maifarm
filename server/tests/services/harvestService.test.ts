@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { HarvestService } from '../../services/harvestService';
+import { HarvestService } from '../../services/unified/farmService';
 import { websocketManager } from '../../websocket/websocketManager';
-import { harvestFileCollector } from '../../services/harvestFileCollector';
+import { harvestService as harvestFileCollector } from '../services/unified/harvestService';
 import { db } from '../../database/client';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';

@@ -13,8 +13,8 @@ import {
   AgentDefinition,
   PromptEnhancementRequest,
   PromptEnhancementResponse
-} from '../types/yamlGenerator';
-import { getFarmAgentNames, formatFarmAgentName, formatFarmAgentNameNoEmoji, generateFarmTeamName } from '../utils/farmAgentNames';
+} from '@/types/yamlGenerator';
+import { getFarmAgentNames, formatFarmAgentName, formatFarmAgentNameNoEmoji, generateFarmTeamName } from '@/utils/farmAgentNames';
 import { yamlSanitizer } from './yamlSanitizer';
 
 class YamlGeneratorService {

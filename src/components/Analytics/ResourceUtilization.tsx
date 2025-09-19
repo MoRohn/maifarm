@@ -1,6 +1,6 @@
 import React from 'react';
 import { Cpu, HardDrive, Network, Database, AlertTriangle } from 'lucide-react';
-import { ResourceUtilization as ResourceUtilizationType, AgentPerformanceMetric } from '../../types/analytics';
+import { ResourceUtilization as ResourceUtilizationType, AgentPerformanceMetric } from '@/types/analytics';
 
 interface ResourceUtilizationProps {
   utilization?: ResourceUtilizationType;

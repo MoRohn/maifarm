@@ -312,6 +312,13 @@ export class FileManagerService {
   }
 
   /**
+   * Check if file exists (alias for exists method for compatibility)
+   */
+  async fileExists(targetPath: string): Promise<boolean> {
+    return this.exists(targetPath);
+  }
+
+  /**
    * Create directory structure
    */
   async createDirectoryStructure(structure: DirectoryStructure): Promise<void> {
@@ -619,4 +626,5 @@ export const deleteFile = (path: string) => fileManager.delete(path);
 export const moveFile = (source: string, dest: string) => fileManager.moveFile(source, dest);
 export const copyFile = (source: string, dest: string) => fileManager.copyFile(source, dest);
 export const exists = (path: string) => fileManager.exists(path);
+export const fileExists = (path: string) => fileManager.fileExists(path);
 export const getStorageStats = (path?: string) => fileManager.getStorageStats(path);

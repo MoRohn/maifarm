@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Agent, AgentStatus, AgentLifecycle, Task } from '../types/orchestration';
-import { AgentInstance, AgentHealth } from '../types/agent';
-import { agentLifecycle } from '../services/agentLifecycle';
-import { websocketService } from '../services/websocket';
-import { useAgentStore } from '../store/agentStore';
+import { Agent, AgentStatus, AgentLifecycle, Task } from '@/types/orchestration';
+import { AgentInstance, AgentHealth } from '@/types/agent';
+import { agentLifecycle } from '@/services/agentLifecycle';
+import { websocketService } from '@/services/websocket';
+import { useAgentStore } from '@/store/agentStore';
 
 interface UseAgentLifecycleReturn {
   agents: Agent[];
@@ -40,7 +40,7 @@ export function useAgentLifecycle(): UseAgentLifecycleReturn {
     agents.forEach(agent => {
       if ('farmId' in agent && agent.farmId) {
         const farmAgents = grouped.get(agent.farmId) || [];
-        farmAgents.push(agent);
+        farmAgents.push(agent as Agent);
         grouped.set(agent.farmId, farmAgents);
       }
     });

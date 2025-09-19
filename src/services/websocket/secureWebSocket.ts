@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { e2eEncryptionService } from '../encryption/e2eEncryption';
-import { E2ESession, E2EMessage } from '../../types/encryption';
+import { E2ESession, E2EMessage } from '@/types/encryption';
 import { authService } from '../authService';
 
 interface SecureWebSocketConfig {

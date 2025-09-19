@@ -16,8 +16,9 @@ class ConnectionDebugger {
   private debugMode = false;
 
   constructor() {
-    // Enable debug mode in development
-    this.debugMode = import.meta.env.DEV;
+    // Enable debug mode only when explicitly requested via localStorage or in dev with debug flag
+    this.debugMode = localStorage.getItem('ws-debug') === 'true' || 
+                     (import.meta.env.DEV && localStorage.getItem('ws-debug') !== 'false');
   }
 
   log(type: ConnectionEvent['type'], details: string, referenceCount?: number) {
@@ -37,19 +38,15 @@ class ConnectionDebugger {
       this.events.shift();
     }
 
-    // Log to console with color coding
-    const colors = {
-      connect: 'color: green',
-      disconnect: 'color: red',
-      error: 'color: orange',
-      reconnect: 'color: blue',
-      reference: 'color: purple'
-    };
-
-    console.log(
-      `%c[WS-Debug] [${type}] ${details}${referenceCount !== undefined ? ` (refs: ${referenceCount})` : ''}`,
-      colors[type]
-    );
+    // Log to console using appropriate method based on type
+    const message = `[WS-Debug] [${type}] ${details}${referenceCount !== undefined ? ` (refs: ${referenceCount})` : ''}`;
+    
+    // Use console.debug for non-error messages to avoid cluttering the error console
+    if (type === 'error' || type === 'disconnect') {
+      console.warn(message);
+    } else {
+      console.debug(message);
+    }
   }
 
   getRecentEvents(count = 20): ConnectionEvent[] {

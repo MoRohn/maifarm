@@ -20,10 +20,10 @@ export interface Translation {
   dashboard: {
     title: string;
     welcome: string;
-    activeFarms: string;
-    totalAgents: string;
-    tasksCompleted: string;
-    successRate: string;
+    liveFarms: string;
+    agentsWorking: string;
+    harvestsCompleted: string;
+    yieldedItems: string;
     createFarm: string;
     viewAllFarms: string;
     recentActivity: string;
@@ -139,10 +139,10 @@ const translations: Record<string, Translation> = {
     dashboard: {
       title: 'Dashboard',
       welcome: 'Welcome back',
-      activeFarms: 'Active Farms',
-      totalAgents: 'Total Agents',
-      tasksCompleted: 'Tasks Completed',
-      successRate: 'Success Rate',
+      liveFarms: 'Live Farms',
+      agentsWorking: 'Agents Working',
+      harvestsCompleted: 'Harvests Completed',
+      yieldedItems: 'Yielded Items',
       createFarm: 'Create New Farm',
       viewAllFarms: 'View All Farms',
       recentActivity: 'Recent Activity',

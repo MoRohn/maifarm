@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Globe, ChevronDown, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { LanguageSettings as ILanguageSettings } from '../../types/settings';
+import { LanguageSettings as ILanguageSettings } from '@/types/settings';
 
 interface Language {
   code: string;

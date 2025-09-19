@@ -144,7 +144,7 @@ export interface NodeErrorHandling {
 export interface WorkflowExecution {
   id: string;
   workflowId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'suspended';
+  status: 'pending' | 'active' | 'completed' | 'failed' | 'cancelled' | 'suspended';
   startTime: Date;
   endTime?: Date;
   context: WorkflowContext;
@@ -162,7 +162,7 @@ export interface WorkflowContext {
 
 export interface NodeExecution {
   nodeId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  status: 'pending' | 'active' | 'completed' | 'failed' | 'skipped';
   startTime?: Date;
   endTime?: Date;
   inputs?: Record<string, any>;

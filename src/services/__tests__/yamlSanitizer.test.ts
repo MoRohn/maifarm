@@ -1,5 +1,5 @@
 import { yamlSanitizer } from '../yamlSanitizer';
-import { YamlConfig } from '../../types/yamlGenerator';
+import { YamlConfig } from '@/types/yamlGenerator';
 
 describe('YamlSanitizer', () => {
   describe('sanitizeYaml', () => {

@@ -291,7 +291,7 @@ export class WebSocketMessageQueue extends EventEmitter {
             const pipeline = this.redis.pipeline();
             
             for (const message of validMessages) {
-              pipeline.rpush(key, JSON.stringify(message));
+              pipeline.rPush(key, JSON.stringify(message));
             }
             
             pipeline.expire(key, 3600); // Expire after 1 hour
@@ -314,7 +314,7 @@ export class WebSocketMessageQueue extends EventEmitter {
     if (!this.redis) return;
 
     const key = `websocket:queue:${message.clientId}`;
-    await this.redis.rpush(key, JSON.stringify(message));
+    await this.redis.rPush(key, JSON.stringify(message));
     await this.redis.expire(key, 3600);
   }
 
@@ -337,7 +337,7 @@ export class WebSocketMessageQueue extends EventEmitter {
 
     await this.redis.del(key);
     if (updated.length > 0) {
-      await this.redis.rpush(key, ...updated);
+      await this.redis.rPush(key, ...updated);
       await this.redis.expire(key, 3600);
     }
   }

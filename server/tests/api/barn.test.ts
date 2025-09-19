@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@je
 import request from 'supertest';
 import { Server } from 'http';
 import app from '../test-app';
-import { barnService } from '../../services/barnService';
-import { harvestService } from '../../services/harvestService';
+import { barnService } from '../services/unified/barnService';
+import { harvestService } from '../services/unified/harvestService';
 import { BarnItem, BarnFolder, BarnStats } from '../../../src/types/barn';
 import { HarvestStatus } from '../../../src/types/harvest';
 

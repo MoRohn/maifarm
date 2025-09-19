@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { Agent } from '../types';
-import { AgentInstance } from '../types/agent';
-import { agentService, CreateAgentParams, UpdateAgentParams, AgentMetrics } from '../services/agentService';
+import { Agent } from '@/types';
+import { AgentInstance } from '@/types/agent';
+import { agentService, CreateAgentParams, UpdateAgentParams, AgentMetrics } from '@/services/agentService';
 
 interface AgentStore {
   agents: AgentInstance[];

@@ -1,4 +1,4 @@
-import { Report, ReportSection, ReportFormat, AggregatedMetrics, AgentPerformanceMetric, TimeSeriesData } from '../types/analytics';
+import { Report, ReportSection, ReportFormat, AggregatedMetrics, AgentPerformanceMetric, TimeSeriesData } from '@/types/analytics';
 import jsPDF from 'jspdf';
 // import * as XLSX from 'xlsx'; // Temporarily disabled due to security vulnerability
 import { format } from 'date-fns';

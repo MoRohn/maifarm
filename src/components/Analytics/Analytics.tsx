@@ -1,33 +1,13 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Activity, 
-  DollarSign, 
-  AlertTriangle,
-  Download,
-  RefreshCw,
-  Sparkles,
-  ChevronRight,
-  Target,
-  Shield,
-  BarChart3,
-  LineChart as LineChartIcon,
-  PieChart as PieChartIcon,
-  Grid3x3,
-  ArrowUp,
-  ArrowDown,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Brain,
-  Gauge
-} from 'lucide-react';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { useThemeStore } from '../../store/themeStore';
-import { useFarmStore } from '../../store/farmStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
-import { analyticsService } from '../../services/analyticsService';
-import { unifiedMetricsService } from '../../services/unifiedMetricsService';
+import {Activity, AlertCircle, AlertTriangle, ArrowDown, ArrowUp, BarChart3, Brain, CheckCircle2, ChevronRight, DollarSign, Download, Gauge, Grid3x3, RefreshCw, Shield, Sparkles, Target, XCircle} from 'lucide-react';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useThemeStore } from '@/store/themeStore';
+import { useFarmStore } from '@/store/farmStore';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { analyticsService } from '@/services/analyticsService';
+import { unifiedMetricsService } from '@/services/unifiedMetricsService';
+import { getAllAgentsFromFarms } from '@/utils/farmHelpers';
 import { LineChart } from './Charts/LineChart';
 import { BarChart } from './Charts/BarChart';
 import { PieChart } from './Charts/PieChart';
@@ -35,7 +15,7 @@ import { FarmYieldChart } from './Charts/FarmYieldChart';
 import { PerformanceMetrics } from './PerformanceMetrics';
 import { PredictiveInsights } from './PredictiveInsights';
 import { InsightsSummary } from './InsightsSummary';
-import { TimeRange, ClaudeCodeMetrics, FarmYieldMetrics } from '../../types/analytics';
+import { TimeRange, ClaudeCodeMetrics, FarmYieldMetrics } from '@/types/analytics';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -263,7 +243,7 @@ export const Analytics: React.FC = () => {
       const aggregatedMetrics = await analyticsService.calculateAggregatedMetrics(
         selectedTimeRange,
         farms,
-        farms.flatMap(farm => farm.agents || [])
+        getAllAgentsFromFarms(farms)
       );
       
       // Override with unified metrics for consistency
@@ -310,7 +290,7 @@ export const Analytics: React.FC = () => {
         tasksInProgress: 0, // Required property
         tasksFailed: agent.tasksFailed || 0, // Required property
         averageResponseTime: agent.avgResponseTime,
-        successRate: agent.successRate,
+        successRate: agent.successRate ?? 0, // Default to 0 if undefined
         lastActive: agent.lastActivity,
         resourceUsage: {
           cpu: agent.cpuUsage,
@@ -606,7 +586,7 @@ export const Analytics: React.FC = () => {
             <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <LineChartIcon className="w-5 h-5" style={{ color: primaryColor }} />
+                  <BarChart3 className="w-5 h-5" style={{ color: primaryColor }} />
                   Farm Performance Trends
                 </h3>
                 <div className="flex gap-2">
@@ -822,7 +802,7 @@ export const Analytics: React.FC = () => {
             {/* Cost Breakdown */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
               <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <PieChartIcon className="w-5 h-5 text-purple-500" />
+                <Target className="w-5 h-5 text-purple-500" />
                 Cost Breakdown
               </h3>
               <PieChart

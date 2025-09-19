@@ -2,8 +2,8 @@ import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Package, TrendingUp, TrendingDown, Award, FileStack, BarChart3 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { FarmYieldMetrics } from '../../../types/analytics';
-import { useThemeStore } from '../../../store/themeStore';
+import { FarmYieldMetrics } from '@/types/analytics';
+import { useThemeStore } from '@/store/themeStore';
 
 interface FarmYieldChartProps {
   metrics: FarmYieldMetrics | null;

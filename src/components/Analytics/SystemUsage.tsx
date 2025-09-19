@@ -124,7 +124,7 @@ export const SystemUsage: React.FC<SystemUsageProps> = ({
   ];
 
   const cpuCoresData = {
-    labels: data?.cpu?.cores?.map((_: any, i: number) => `Core ${i + 1}`) || 
+    labels: data?.cpu?.cores?.map((__: any, i: number) => `Core ${i + 1}`) || 
              ['Core 1', 'Core 2', 'Core 3', 'Core 4', 'Core 5', 'Core 6', 'Core 7', 'Core 8'],
     datasets: [
       {

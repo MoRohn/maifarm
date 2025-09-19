@@ -48,24 +48,15 @@ export class TaskCountService {
 
   /**
    * Count files created by a specific agent in a farm
-   * Agents typically work in their own subdirectories
+   * ALL agents share the same workspace, so we look for agent markers
    */
   async countTasksForAgent(farmId: string, agentId: string | number): Promise<number> {
     try {
       const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
-      const agentPath = path.join(workspacePath, `agent_${agentId}`);
       
-      // Check if agent directory exists
-      try {
-        await fs.access(agentPath);
-      } catch {
-        // Agent directory doesn't exist, try counting in the main workspace
-        // Some agents might create files directly in the workspace
-        return this.countFilesWithAgentMarker(workspacePath, agentId);
-      }
-
-      // Count files in agent's directory
-      const count = await this.countFilesRecursively(agentPath);
+      // In the shared workspace model, all agents work in the same directory
+      // Count files with agent markers in their name or content
+      const count = await this.countFilesWithAgentMarker(workspacePath, agentId);
       
       logger.debug(`[TaskCountService] Agent ${agentId} in farm ${farmId} has ${count} files (tasks completed)`);
       return count;

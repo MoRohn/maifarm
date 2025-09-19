@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { DollarSign, TrendingUp, TrendingDown, Activity, PieChart } from 'lucide-react';
-import { claudeCodeService, ClaudeCodeCosts } from '../../services/claudeCodeService';
+import { claudeCodeService, ClaudeCodeCosts } from '@/services/claudeCodeService';
 import { LineChart } from './Charts/LineChart';
 import { PieChart as PieChartComponent } from './Charts/PieChart';
-import { formatMetricValue } from '../../utils/dataAggregation';
+import { formatMetricValue } from '@/utils/dataAggregation';
 
 interface FarmingCostsProps {
   timeRange?: string;

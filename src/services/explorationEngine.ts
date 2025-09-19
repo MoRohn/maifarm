@@ -1,4 +1,4 @@
-import { ExplorationBoundaries } from '../components/GoWild/BoundaryControls';
+import { ExplorationBoundaries } from '@/components/GoWild/BoundaryControls';
 import { WebSocketService } from './websocket';
 
 export interface ExplorationTask {

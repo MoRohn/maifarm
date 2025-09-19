@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { TerminalSession, TerminalAgent } from '../../../types/terminal';
-import { useWebSocket } from '../../../hooks/useWebSocket';
+import { TerminalSession, TerminalAgent } from '@/types/terminal';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface UseTerminalSessionProps {
   farmId?: string;
@@ -71,7 +71,7 @@ export const useTerminalSession = ({ farmId, autoConnect = true }: UseTerminalSe
             paneCount: session.paneCount,
             windowName: session.windowName || 'agents',
             active: session.active,
-            status: session.status || 'running',
+            status: session.status || 'active',
             createdAt: new Date(session.createdAt || Date.now()),
             agents: Array.from({ length: session.paneCount }, (_, i) => ({
               id: i,

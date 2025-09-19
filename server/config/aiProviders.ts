@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
 import path from 'path';
+import { logger } from '../utils/logger';
 
 // Load environment variables
 const envFile = process.env.NODE_ENV === 'production' ? '.env' : `.env.${process.env.NODE_ENV || 'development'}`;
@@ -7,8 +8,7 @@ config({ path: path.resolve(process.cwd(), envFile) });
 
 export enum AIProvider {
   CLAUDE = 'claude',
-  QWEN = 'qwen',
-  QWEN_LOCAL = 'qwen_local'
+  OPENAI = 'openai'
 }
 
 export interface AIProviderConfig {
@@ -40,72 +40,197 @@ class AIProviderConfigManager implements AIProviderManager {
 
   constructor() {
     this.providers = new Map();
-    this.initializeProviders();
+    // Initialize with default values synchronously
+    this.initializeProvidersSync();
     this.defaultProvider = this.determineDefaultProvider();
+    // Then update with database values asynchronously
+    this.refreshApiKeys();
   }
-
-  private initializeProviders(): void {
-    // Claude configuration
-    const claudeConfig: AIProviderConfig = {
+  
+  async refreshApiKeys(): Promise<void> {
+    await this.initializeProviders();
+  }
+  
+  private initializeProvidersSync(): void {
+    // Initialize with environment variables only for immediate availability
+    // Check both ANTHROPIC_API_KEY and CLAUDE_API_KEY (ANTHROPIC_API_KEY is the standard)
+    const claudeApiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || '';
+    
+    this.providers.set(AIProvider.CLAUDE, {
       provider: AIProvider.CLAUDE,
-      apiKey: process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '',
+      apiKey: claudeApiKey,
       apiEndpoint: process.env.CLAUDE_API_ENDPOINT || 'https://api.anthropic.com/v1',
       model: process.env.CLAUDE_MODEL || 'claude-3-sonnet-20240229',
-      enabled: true, // Claude is always enabled as the primary provider
+      enabled: true,
+      maxTokens: 4096,
+      temperature: 0.7,
+      contextWindow: 200000,
+      cliCommand: 'claude'
+    });
+    
+    this.providers.set(AIProvider.OPENAI, {
+      provider: AIProvider.OPENAI,
+      apiKey: process.env.OPENAI_API_KEY || '',
+      apiEndpoint: process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1',
+      model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
+      enabled: process.env.OPENAI_ENABLED === 'true',
+      maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS || '8192'),
+      temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.7'),
+      contextWindow: 128000,
+      cliCommand: 'openai-cli'
+    });
+    
+  }
+
+  private async loadApiKeyFromDatabase(provider: string): Promise<string | null> {
+    try {
+      const { db } = await import('../database/connection');
+      const crypto = await import('crypto');
+      
+      // Match the service name as stored in api_keys table
+      // Handle both 'claude' and 'anthropic' service names for Claude API keys
+      let query = `SELECT key_encrypted FROM api_keys WHERE is_active = true AND `;
+      let params: string[] = [];
+      
+      if (provider === 'claude') {
+        query += `(service = 'claude' OR service = 'Claude' OR service = 'anthropic') 
+                  ORDER BY created_at DESC LIMIT 1`;
+        params = [];
+      } else {
+        query += `service = $1 ORDER BY created_at DESC LIMIT 1`;
+        params = [provider];
+      }
+      
+      const result = await db.query(query, params);
+      
+      if (!result.rows[0]?.key_encrypted) {
+        return null;
+      }
+      
+      // Decrypt the key (matching the encryption used in apikeys.ts)
+      const ENCRYPTION_KEY = process.env.API_KEY_ENCRYPTION_KEY || 'default-encryption-key-change-in-production';
+      try {
+        const encrypted = result.rows[0].key_encrypted;
+        // New format includes IV prepended with colon separator
+        const parts = encrypted.split(':');
+        if (parts.length !== 2) {
+          console.error('Invalid encrypted format in database');
+          return null;
+        }
+        
+        const iv = Buffer.from(parts[0], 'hex');
+        const encryptedText = parts[1];
+        
+        // Create a 32-byte key from the string (matching apikeys.ts)
+        const key = crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+        
+        let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return decrypted;
+      } catch (decryptError) {
+        console.error(`Failed to decrypt API key for ${provider}:`, decryptError);
+        return null;
+      }
+    } catch (error) {
+      console.error(`Failed to load API key for ${provider} from database:`, error);
+      return null;
+    }
+  }
+
+  private async initializeProviders(): Promise<void> {
+    // Load API keys from database first
+    const [claudeDbKey, openaiDbKey] = await Promise.all([
+      this.loadApiKeyFromDatabase('claude'),
+      this.loadApiKeyFromDatabase('openai')
+    ]);
+    
+    // Check if database keys are test/placeholder values and fall back to env if so
+    const isTestKey = (key: string | null) => {
+      return key && (
+        key.startsWith('test-') || 
+        key.startsWith('sk-test-') || 
+        key === 'your-api-key-here' ||
+        key.length < 30 // Real API keys are typically longer
+      );
+    };
+    
+    // Use database keys if valid, otherwise fall back to environment variables
+    const claudeKey = (!isTestKey(claudeDbKey) ? claudeDbKey : null) || 
+                      process.env.ANTHROPIC_API_KEY || 
+                      process.env.CLAUDE_API_KEY || '';
+    const openaiKey = (!isTestKey(openaiDbKey) ? openaiDbKey : null) || 
+                      process.env.OPENAI_API_KEY || '';
+    
+    // Log key sources for debugging
+    if (claudeKey && !isTestKey(claudeKey)) {
+      logger.debug('[AIProviderManager] Claude API key loaded from:', 
+        claudeDbKey && !isTestKey(claudeDbKey) ? 'database' : 'environment');
+      process.env.ANTHROPIC_API_KEY = claudeKey;
+      process.env.CLAUDE_API_KEY = claudeKey;
+    } else {
+      logger.warn('[AIProviderManager] No valid Claude API key found in database or environment');
+    }
+    
+    if (openaiKey && !isTestKey(openaiKey)) {
+      logger.debug('[AIProviderManager] OpenAI API key loaded from:', 
+        openaiDbKey && !isTestKey(openaiDbKey) ? 'database' : 'environment');
+      process.env.OPENAI_API_KEY = openaiKey;
+    }
+    
+    
+    // Log API key status for debugging (database only)
+    logger.debug('[AIProviders] Claude API key from DB:', claudeDbKey ? 'Found (length: ' + claudeDbKey.length + ')' : 'Not found');
+    logger.debug('[AIProviders] OpenAI API key from DB:', openaiDbKey ? 'Found (length: ' + openaiDbKey.length + ')' : 'Not found');
+    
+    // Claude configuration - Use valid keys only
+    const claudeConfig: AIProviderConfig = {
+      provider: AIProvider.CLAUDE,
+      apiKey: claudeKey || '',  // Use the validated key (database or env)
+      apiEndpoint: process.env.CLAUDE_API_ENDPOINT || 'https://api.anthropic.com/v1',
+      model: process.env.CLAUDE_MODEL || 'claude-3-sonnet-20240229',
+      enabled: !!claudeKey && !isTestKey(claudeKey), // Only enabled if valid key exists
       maxTokens: 4096,
       temperature: 0.7,
       contextWindow: 200000,
       cliCommand: 'claude'
     };
 
-    // Qwen API configuration
-    const qwenConfig: AIProviderConfig = {
-      provider: AIProvider.QWEN,
-      apiKey: process.env.QWEN_API_KEY || '',
-      apiEndpoint: process.env.QWEN_API_ENDPOINT || 'https://dashscope.aliyuncs.com/api/v1',
-      model: process.env.QWEN_MODEL || 'qwen-coder-480b',
-      enabled: process.env.QWEN_ENABLED === 'true',
-      maxTokens: 8192,
-      temperature: 0.7,
-      contextWindow: 256000, // Can extend to 1M
-      cliCommand: 'qwen-code',
-      proxyEnabled: process.env.QWEN_PROXY_ENABLED === 'true'
+
+    // OpenAI GPT-4 configuration - Use valid keys only
+    const openaiConfig: AIProviderConfig = {
+      provider: AIProvider.OPENAI,
+      apiKey: openaiKey || '',  // Use the validated key (database or env)
+      apiEndpoint: process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1',
+      model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
+      enabled: !!openaiKey && !isTestKey(openaiKey) && process.env.OPENAI_ENABLED === 'true',
+      maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS || '8192'),
+      temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.7'),
+      contextWindow: 128000, // GPT-4 Turbo has 128K context window
+      cliCommand: 'openai-cli' // Will need to configure OpenAI CLI tool
     };
 
-    // Qwen Local (Ollama) configuration
-    const qwenLocalConfig: AIProviderConfig = {
-      provider: AIProvider.QWEN_LOCAL,
-      apiKey: '', // Not needed for local
-      apiEndpoint: process.env.OLLAMA_API_URL || 'http://localhost:11434',
-      model: process.env.QWEN_LOCAL_MODEL || 'qwen2.5-coder:7b',
-      enabled: process.env.QWEN_LOCAL_ENABLED === 'true',
-      maxTokens: 8192,
-      temperature: 0.7,
-      contextWindow: 32768, // Depends on model
-      cliCommand: 'ollama',
-      isLocal: true,
-      ollamaModel: process.env.QWEN_LOCAL_MODEL || 'qwen2.5-coder:7b'
-    };
 
     this.providers.set(AIProvider.CLAUDE, claudeConfig);
-    this.providers.set(AIProvider.QWEN, qwenConfig);
-    this.providers.set(AIProvider.QWEN_LOCAL, qwenLocalConfig);
+    this.providers.set(AIProvider.OPENAI, openaiConfig);
   }
 
   private determineDefaultProvider(): AIProvider {
     const envProvider = process.env.AI_PROVIDER?.toLowerCase();
     
-    if (envProvider === 'qwen_local' && this.isProviderEnabled(AIProvider.QWEN_LOCAL)) {
-      return AIProvider.QWEN_LOCAL;
-    }
-    
-    if (envProvider === AIProvider.QWEN && this.isProviderEnabled(AIProvider.QWEN)) {
-      return AIProvider.QWEN;
+    if (envProvider === AIProvider.OPENAI && this.isProviderEnabled(AIProvider.OPENAI)) {
+      return AIProvider.OPENAI;
     }
     
     return AIProvider.CLAUDE;
   }
 
+  async getProviderWithRefresh(provider?: AIProvider): Promise<AIProviderConfig> {
+    // Refresh API keys from database before returning
+    await this.refreshApiKeys();
+    return this.getProvider(provider);
+  }
+  
   getProvider(provider?: AIProvider): AIProviderConfig {
     const targetProvider = provider || this.defaultProvider;
     const config = this.providers.get(targetProvider);
@@ -132,14 +257,9 @@ class AIProviderConfigManager implements AIProviderManager {
     // Claude is always enabled
     if (provider === AIProvider.CLAUDE) return true;
     
-    // Check if Qwen has necessary configuration
-    if (provider === AIProvider.QWEN) {
-      return config.enabled && (config.apiKey !== '' || config.proxyEnabled === true);
-    }
-    
-    // Check if Qwen Local is enabled and available
-    if (provider === AIProvider.QWEN_LOCAL) {
-      return config.enabled;
+    // Check if OpenAI has necessary configuration
+    if (provider === AIProvider.OPENAI) {
+      return config.enabled && config.apiKey !== '';
     }
     
     return false;
@@ -154,11 +274,6 @@ class AIProviderConfigManager implements AIProviderManager {
   getProviderCommand(provider: AIProvider): string {
     const config = this.getProvider(provider);
     
-    // If using Qwen with proxy, still use 'claude' command
-    if (provider === AIProvider.QWEN && config.proxyEnabled) {
-      return 'claude';
-    }
-    
     return config.cliCommand || 'claude';
   }
 
@@ -172,19 +287,39 @@ class AIProviderConfigManager implements AIProviderManager {
       AI_PROVIDER: provider
     };
 
-    if (provider === AIProvider.QWEN) {
-      env.QWEN_API_KEY = config.apiKey;
-      env.QWEN_API_ENDPOINT = config.apiEndpoint;
-      env.QWEN_MODEL = config.model;
-      
-      if (config.proxyEnabled) {
-        env.CLAUDE_CODE_ROUTER = 'qwen';
-        env.DASHSCOPE_API_KEY = config.apiKey;
+    // CRITICAL FIX: Add ANTHROPIC_API_KEY for Claude provider
+    if (provider === AIProvider.CLAUDE) {
+      if (config.apiKey) {
+        env.ANTHROPIC_API_KEY = config.apiKey;
+        env.CLAUDE_API_KEY = config.apiKey;
       }
-    } else {
-      env.ANTHROPIC_API_KEY = config.apiKey;
       env.CLAUDE_API_ENDPOINT = config.apiEndpoint;
       env.CLAUDE_MODEL = config.model;
+      
+      // Log for debugging
+      logger.debug('[AIProviderManager] Setting Claude environment - API Key:', 
+        config.apiKey ? `Present (${config.apiKey.length} chars)` : 'MISSING');
+    } else if (provider === AIProvider.OPENAI) {
+      env.OPENAI_API_KEY = config.apiKey;
+      env.OPENAI_API_ENDPOINT = config.apiEndpoint;
+      env.OPENAI_MODEL = config.model;
+      env.OPENAI_MAX_TOKENS = String(config.maxTokens);
+      env.OPENAI_TEMPERATURE = String(config.temperature);
+      
+      if (process.env.USE_LLM_PROXY === 'true') {
+        env.CLAUDE_CODE_ROUTER = 'openai';
+        env.USE_LLM_PROXY = 'true';
+        env.LLM_PROXY_URL = process.env.LLM_PROXY_URL || 'http://localhost:8001';
+      }
+    } else {
+      // Claude provider - set both API key environment variables
+      env.ANTHROPIC_API_KEY = config.apiKey;
+      env.CLAUDE_API_KEY = config.apiKey;
+      env.CLAUDE_API_ENDPOINT = config.apiEndpoint;
+      env.CLAUDE_MODEL = config.model;
+      
+      // Log for debugging
+      logger.debug('[AIProviders] Setting Claude environment - API key:', config.apiKey ? `Configured (length: ${config.apiKey.length})` : 'NOT CONFIGURED');
     }
 
     return env;
@@ -193,3 +328,12 @@ class AIProviderConfigManager implements AIProviderManager {
 
 // Export singleton instance
 export const aiProviderManager = new AIProviderConfigManager();
+
+// Helper functions for backward compatibility
+export function getActiveProvider(): AIProvider {
+  return aiProviderManager.getDefaultProvider();
+}
+
+export function isProviderAvailable(provider: AIProvider): boolean {
+  return aiProviderManager.isProviderEnabled(provider);
+}

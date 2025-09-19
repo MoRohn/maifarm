@@ -1,14 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { TerminalPane } from './TerminalPane';
-import { TerminalSession, TerminalAgent } from '../../types/terminal';
+import { TerminalSession, TerminalAgent } from '@/types/terminal';
 
 interface TerminalGridProps {
   session: TerminalSession;
   agents: TerminalAgent[];
-  getOutput: (sessionId: string, agentId: number) => string[];
+  getOutput: (_sessionId: string, _agentId: number) => string[];
   onSendCommand: (command: string, agentId?: number) => Promise<any>;
-  registerTerminalRef: (sessionId: string, agentId: number, element: HTMLDivElement | null) => void;
+  registerTerminalRef: (_sessionId: string, _agentId: number, element: HTMLDivElement | null) => void;
   className?: string;
 }
 
@@ -23,19 +23,20 @@ export const TerminalGrid: React.FC<TerminalGridProps> = ({
   // Calculate grid layout based on number of agents
   const getGridLayout = (agentCount: number) => {
     if (agentCount <= 1) return 'grid-cols-1';
-    if (agentCount <= 2) return 'grid-cols-1 lg:grid-cols-2';
-    if (agentCount <= 4) return 'grid-cols-2';
-    if (agentCount <= 6) return 'grid-cols-2 lg:grid-cols-3';
-    if (agentCount <= 9) return 'grid-cols-3';
-    return 'grid-cols-3 xl:grid-cols-4';
+    if (agentCount <= 2) return 'grid-cols-1 md:grid-cols-2';
+    if (agentCount <= 4) return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-2';
+    if (agentCount <= 6) return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3';
+    if (agentCount <= 9) return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
+    return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
   };
 
   // Calculate optimal height based on grid size
   const getItemHeight = (agentCount: number) => {
-    if (agentCount <= 2) return 'min-h-[20rem]';
-    if (agentCount <= 4) return 'min-h-[18rem]';
-    if (agentCount <= 6) return 'min-h-[16rem]';
-    return 'min-h-[14rem]';
+    // Use responsive heights that adapt to available space
+    if (agentCount <= 2) return 'h-[calc(50vh-8rem)] min-h-[300px] max-h-[500px]';
+    if (agentCount <= 4) return 'h-[calc(40vh-6rem)] min-h-[250px] max-h-[400px]';
+    if (agentCount <= 6) return 'h-[calc(35vh-5rem)] min-h-[200px] max-h-[350px]';
+    return 'h-[calc(30vh-4rem)] min-h-[180px] max-h-[300px]';
   };
 
   const gridLayout = getGridLayout(agents.length);
@@ -52,9 +53,9 @@ export const TerminalGrid: React.FC<TerminalGridProps> = ({
   }
 
   return (
-    <div className={`flex flex-col ${className}`}>
-      <div className="flex-1 p-4 overflow-auto">
-        <div className={`grid gap-4 ${gridLayout}`}>
+    <div className={`flex flex-col h-full ${className}`}>
+      <div className="flex-1 p-2 sm:p-3 md:p-4 overflow-auto min-h-0">
+        <div className={`grid gap-2 sm:gap-3 md:gap-4 ${gridLayout} auto-rows-fr`}>
         {agents.map((agent, index) => (
           <motion.div
             key={agent.id}
@@ -65,7 +66,7 @@ export const TerminalGrid: React.FC<TerminalGridProps> = ({
               delay: index * 0.1,
               ease: "easeOut"
             }}
-            className={itemHeight}
+            className={`${itemHeight} flex`}
           >
             <TerminalPane
               session={session}
@@ -73,7 +74,7 @@ export const TerminalGrid: React.FC<TerminalGridProps> = ({
               output={getOutput(session.id, agent.id)}
               onSendCommand={(command) => onSendCommand(command, agent.id)}
               registerTerminalRef={(element) => registerTerminalRef(session.id, agent.id, element)}
-              className="h-full"
+              className="flex-1 w-full"
               showCommandInput={true}
               expanded={false}
             />

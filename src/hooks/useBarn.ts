@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from './useWebSocket';
-import { barnService } from '../services/barnService';
-import { BarnItem, BarnFolder, BarnStats } from '../types/barn';
+import { barnService } from '@/services/barnService';
+import { BarnItem, BarnFolder, BarnStats } from '@/types/barn';
 
 interface BarnItemFilter {
   type?: BarnItem['type'];

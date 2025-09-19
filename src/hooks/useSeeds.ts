@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from './useWebSocket';
-import { seedService } from '../services/seedService';
-import { Seed, SeedFilter, SeedCreateInput, SeedUpdateInput } from '../types/seed';
+import { seedService } from '@/services/seedService';
+import { Seed, SeedFilter, SeedCreateInput, SeedUpdateInput } from '@/types/seed';
 
 export function useSeeds(filter?: SeedFilter) {
   const [seeds, setSeeds] = useState<Seed[]>([]);

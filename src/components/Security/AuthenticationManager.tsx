@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from '../../store/authStore';
-import { AuthCredentials } from '../../types/security';
-import { securityService } from '../../services/securityService';
-import { useThemeStore } from '../../store/themeStore';
+import { useAuthStore } from '@/store/authStore';
+import { AuthCredentials } from '@/types/security';
+import { securityService } from '@/services/securityService';
+import { useThemeStore } from '@/store/themeStore';
 
 interface AuthenticationManagerProps {
   onAuthSuccess?: () => void;

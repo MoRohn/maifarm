@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { oauthService } from '../../services/oauth/oauthService';
-import { OAuthProvider } from '../../types/oauth';
+import { oauthService } from '@/services/oauth/oauthService';
+import { OAuthProvider } from '@/types/oauth';
 
 interface OAuthLoginProps {
   providers?: string[];

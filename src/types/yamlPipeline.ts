@@ -176,7 +176,7 @@ export interface DeploymentStatus {
   id: string;
   yamlId: string;
   version: string;
-  status: 'pending' | 'running' | 'success' | 'failed' | 'rolled_back';
+  status: 'pending' | 'active' | 'success' | 'failed' | 'rolled_back';
   environment: string;
   startTime: string;
   endTime?: string;

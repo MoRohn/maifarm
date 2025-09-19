@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Folder, FolderOpen } from 'lucide-react';
 import { clsx } from 'clsx';
-import { BarnFolder } from '../../types/barn';
+import { BarnFolder } from '@/types/barn';
 
 interface FolderViewProps {
   folder: BarnFolder;

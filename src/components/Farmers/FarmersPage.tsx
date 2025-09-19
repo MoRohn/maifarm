@@ -12,13 +12,16 @@ import {
   Sparkles,
   TrendingUp,
   Award,
-  Zap
+  Zap,
+  Settings
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { FarmerTemplate, FarmerCategory } from '../../types/farmers';
-import { api } from '../../services/apiClient';
+import { FarmerTemplate, FarmerCategory } from '@/types/farmers';
+import { api } from '@/services/apiClient';
 import { FarmerCard } from './FarmerCard';
 import { FarmerProfile } from './FarmerProfile';
+import { FarmerChatWizard } from './FarmerChatWizard';
+import { AIEngineSetupHub } from '../Settings/AIEngineSetup';
 
 export const FarmersPage: React.FC = () => {
   const navigate = useNavigate();
@@ -30,6 +33,9 @@ export const FarmersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showProfile, setShowProfile] = useState(false);
+  const [showFarmerWizard, setShowFarmerWizard] = useState(false);
+  const [farmerForWizard, setFarmerForWizard] = useState<FarmerTemplate | null>(null);
+  const [showAIEngineSetup, setShowAIEngineSetup] = useState(false);
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -42,9 +48,10 @@ export const FarmersPage: React.FC = () => {
     setLoading(true);
     try {
       const response = await api.farmers.list();
-      if (response.data.success) {
-        setFarmers(response.data.data);
-        setCategories(response.data.categories);
+      // Response is an axios response, access data property
+      if (response.data && response.data.success) {
+        setFarmers(response.data.data || []);
+        setCategories(response.data.categories || []);
       }
     } catch (error) {
       console.error('Failed to load farmers:', error);
@@ -71,15 +78,13 @@ export const FarmersPage: React.FC = () => {
   };
 
   const handleUseFarmer = async (farmer: FarmerTemplate) => {
-    // Navigate to the farmer-specific farm creation page
-    navigate('/farms/create-from-farmer', {
-      state: {
-        farmerTemplate: farmer,
-        suggestedName: `${farmer.title} Farm`,
-        suggestedDescription: `Farm created using the ${farmer.title} farmer template`,
-        maxAgents: Math.min(farmer.config.maxAgents || 8, 8)
-      }
-    });
+    // Open the farmer chat wizard modal instead of navigating
+    setFarmerForWizard(farmer);
+    setShowFarmerWizard(true);
+    // Close profile modal if open
+    if (showProfile) {
+      setShowProfile(false);
+    }
   };
 
   const updateScrollButtons = (container: HTMLDivElement) => {
@@ -136,7 +141,7 @@ export const FarmersPage: React.FC = () => {
               animate={{ scale: 1, opacity: 1 }}
               className="flex items-center space-x-3"
             >
-              <div className="p-2 bg-gradient-to-br from-green-400 to-green-700 rounded-apple">
+              <div className="p-2 bg-gradient-to-br from-blue-400 to-blue-700 rounded-apple">
                 <Users className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -192,64 +197,6 @@ export const FarmersPage: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Featured Banner */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8 p-6 bg-gradient-to-r from-green-500 to-emerald-600 rounded-apple-lg text-white"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="flex items-center space-x-2 mb-2">
-                <Sparkles className="w-5 h-5" />
-                <span className="text-sm font-medium">Featured Farmer</span>
-              </div>
-              <h2 className="text-2xl font-bold mb-2">The Visionary Rooster 🐓</h2>
-              <p className="text-white/90 mb-4">
-                Former Stanford dropout turned serial entrepreneur. Helps you build AI-first startups that reach $10M revenue in 12 months.
-              </p>
-              <div className="flex items-center space-x-6">
-                <div className="flex items-center space-x-2">
-                  <TrendingUp className="w-4 h-4" />
-                  <span className="text-sm">95% Success Rate</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Award className="w-4 h-4" />
-                  <span className="text-sm">YC Graduate</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Zap className="w-4 h-4" />
-                  <span className="text-sm">Expert Level</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  const visionaryRooster = farmers.find(f => f.id === 'vision-rooster');
-                  if (visionaryRooster) handleUseFarmer(visionaryRooster);
-                }}
-                className="px-6 py-3 bg-emerald-500 text-white font-medium rounded-apple hover:bg-emerald-600 transition-colors"
-              >
-                Use Farmer
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => {
-                  const visionaryRooster = farmers.find(f => f.id === 'vision-rooster');
-                  if (visionaryRooster) handleFarmerClick(visionaryRooster);
-                }}
-                className="px-6 py-3 bg-white text-green-600 font-medium rounded-apple hover:bg-gray-100 transition-colors"
-              >
-                View Profile
-              </motion.button>
-            </div>
-          </div>
-        </motion.div>
-
         {/* Category Filter - Wrapping flex layout */}
         <div className="flex flex-wrap gap-2 mb-6">
           <button
@@ -417,6 +364,21 @@ export const FarmersPage: React.FC = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* Farmer Chat Wizard Modal */}
+      <AnimatePresence>
+        {showFarmerWizard && farmerForWizard && (
+          <FarmerChatWizard
+            isOpen={showFarmerWizard}
+            onClose={() => {
+              setShowFarmerWizard(false);
+              setFarmerForWizard(null);
+            }}
+            farmer={farmerForWizard}
+          />
+        )}
+      </AnimatePresence>
+
     </div>
   );
 };
@@ -427,58 +389,166 @@ const FarmerListItem: React.FC<{
   onClick: () => void;
   onUse: () => void;
 }> = ({ farmer, onClick, onUse }) => {
-  const getCategoryIcon = (category: string) => {
-    const icons = {
-      startup: '🚀',
-      technical: '💻',
-      creative: '🎨',
-      research: '🔬',
-      operations: '⚙️'
+  const getCategoryInfo = (category: string) => {
+    const categoryData = {
+      startup: { 
+        icon: '🚀', 
+        color: 'from-purple-400 to-purple-600',
+        bgColor: 'from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20'
+      },
+      technical: { 
+        icon: '💻', 
+        color: 'from-blue-400 to-blue-600',
+        bgColor: 'from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20'
+      },
+      creative: { 
+        icon: '🎨', 
+        color: 'from-pink-400 to-pink-600',
+        bgColor: 'from-pink-50 to-pink-100 dark:from-pink-900/20 dark:to-pink-800/20'
+      },
+      research: { 
+        icon: '🔬', 
+        color: 'from-green-400 to-green-600',
+        bgColor: 'from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20'
+      },
+      operations: { 
+        icon: '⚙️', 
+        color: 'from-gray-400 to-gray-600',
+        bgColor: 'from-gray-50 to-gray-100 dark:from-gray-900/20 dark:to-gray-800/20'
+      }
     };
-    return icons[category as keyof typeof icons] || '🌾';
+    return categoryData[category as keyof typeof categoryData] || categoryData.operations;
   };
+
+  const getFarmersIcon = (name: string) => {
+    const icons = {
+      'buzz-bee': '🐝',
+      'daisy-donkey': '🫏',
+      'harvest-hound': '🐕',
+      'owlbert-barnowl': '🦉',
+      'sage-fox': '🦊',
+      'sparkle-unicorn': '🦄',
+      'vision-rooster': '🐓',
+      'barter-bull': '🐂',
+      'blueprint-beaver': '🦫',
+      'harvest-hen': '🐔',
+      'ledger-llama': '🦙',
+      'maverick-mustang': '🐴',
+      'oracle-owl': '🦉',
+    };
+    return icons[name as keyof typeof icons] || '🌾';
+  };
+  
+  // Get the actual farmer icon from the first agent or use category default
+  const getFarmerIcon = () => {
+    if (farmer.agents && farmer.agents.length > 0 && farmer.agents[0].emoji) {
+      return farmer.agents[0].emoji;
+    }
+    return getFarmersIcon(farmer.name);
+  };
+
+  const categoryInfo = getCategoryInfo(farmer.category);
 
   return (
     <motion.div
-      whileHover={{ scale: 1.01 }}
-      className="bg-white dark:bg-gray-900 rounded-apple-lg p-4 border border-gray-200 dark:border-gray-800 cursor-pointer"
+      whileHover={{ scale: 1.01, y: -2 }}
+      whileTap={{ scale: 0.99 }}
+      className="relative group"
       onClick={onClick}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div className="p-3 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900 dark:to-emerald-900 rounded-apple">
-            <span className="text-2xl">{getCategoryIcon(farmer.category)}</span>
-          </div>
-          <div>
-            <h3 className="font-medium text-gray-900 dark:text-white">
-              {farmer.title}
-            </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              {farmer.description}
-            </p>
-            <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500">
-              <span>{farmer.metadata.num_agents} agents</span>
-              <span>•</span>
-              <span className="capitalize">{farmer.metadata.complexity} level</span>
-              <span>•</span>
-              <span>{farmer.agents.length} specialized roles</span>
+      {/* Glass morphism card with category-specific gradient background */}
+      <div className={`relative bg-gradient-to-r ${categoryInfo.bgColor} backdrop-blur-xl rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer overflow-hidden`}>
+        {/* Gradient overlay on hover using category colors */}
+        <div className={`absolute inset-0 bg-gradient-to-r ${categoryInfo.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
+        
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center space-x-5">
+            {/* Enhanced farmer icon with gradient background using category colors */}
+            <motion.div 
+              className="relative"
+              whileHover={{ rotate: [0, -5, 5, 0] }}
+              transition={{ duration: 0.5 }}
+            >
+              <div className={`absolute inset-0 bg-gradient-to-br ${categoryInfo.color} rounded-2xl blur-lg opacity-60 group-hover:opacity-80 transition-opacity`} />
+              <div className={`relative w-16 h-16 bg-gradient-to-br ${categoryInfo.color} rounded-2xl flex items-center justify-center shadow-xl`}>
+                <span className="text-3xl filter drop-shadow-md">{getFarmersIcon(farmer.name)}</span>
+              </div>
+            </motion.div>
+            
+            {/* Farmer details */}
+            <div className="flex-1">
+              <div className="flex items-center space-x-2 mb-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {farmer.title}
+                </h3>
+                {farmer.featured && (
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  >
+                    <Sparkles className="w-4 h-4 text-yellow-500" />
+                  </motion.div>
+                )}
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
+                {farmer.description}
+              </p>
+              
+              {/* Enhanced metadata badges */}
+              <div className="flex items-center flex-wrap gap-2">
+                <div className="flex items-center space-x-1 px-2.5 py-1 bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur rounded-full">
+                  <Users className="w-3.5 h-3.5 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {farmer.metadata.num_agents} agents
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1 px-2.5 py-1 bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur rounded-full">
+                  <TrendingUp className="w-3.5 h-3.5 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 capitalize">
+                    {farmer.metadata.complexity} Level
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1 px-2.5 py-1 bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur rounded-full">
+                  <Award className="w-3.5 h-3.5 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {farmer.agents.length} specialized roles
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onUse();
-            }}
-            className="px-4 py-2 bg-primary-600 text-white rounded-apple hover:bg-primary-700 transition-colors"
-          >
-            Use Farmer
-          </motion.button>
-          <ChevronRight className="w-5 h-5 text-gray-400" />
+          
+          {/* Enhanced Use Farmer button */}
+          <div className="flex items-center space-x-3">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onUse();
+              }}
+              className="relative group/btn px-6 py-3 overflow-hidden rounded-xl font-medium transition-all duration-300"
+            >
+              {/* Gradient background */}
+              <div className="absolute inset-0 bg-gradient-to-r from-primary-500 to-emerald-500 transition-transform duration-300 group-hover/btn:scale-110" />
+              
+              {/* Shimmer effect */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
+              
+              {/* Button content */}
+              <div className="relative flex items-center space-x-2">
+                <Zap className="w-4 h-4 text-white" />
+                <span className="text-white font-medium">Use Farmer</span>
+              </div>
+            </motion.button>
+            
+            <motion.div
+              className="p-2 rounded-lg bg-gray-100/50 dark:bg-gray-800/50 backdrop-blur"
+              whileHover={{ x: 3 }}
+            >
+              <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+            </motion.div>
+          </div>
         </div>
       </div>
     </motion.div>

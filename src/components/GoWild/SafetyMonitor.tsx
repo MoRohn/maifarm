@@ -9,8 +9,8 @@ import {
   AlertCircle,
   TrendingUp
 } from 'lucide-react';
-import { SafetyMonitor as SafetyMonitorType, BoundaryViolation } from '../../types/safety';
-import { goWildSafety } from '../../services/goWildSafety';
+import { SafetyMonitor as SafetyMonitorType, BoundaryViolation } from '@/types/safety';
+import { goWildSafety } from '@/services/goWildSafety';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 

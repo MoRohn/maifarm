@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Terminal, Users, Code, AlertCircle, CheckCircle, RefreshCw, Copy } from 'lucide-react';
-import { Farm } from '../../types';
-import { claudeCodeService, ClaudeCodeFarmStatus } from '../../services/claudeCodeService';
+import { Farm } from '@/types';
+import { claudeCodeService, ClaudeCodeFarmStatus } from '@/services/claudeCodeService';
 import toast from 'react-hot-toast';
 
 interface ClaudeCodeIntegrationProps {

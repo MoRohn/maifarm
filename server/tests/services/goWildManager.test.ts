@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { GoWildManager } from '../../services/goWildManager';
+import { GoWildManager } from '../../services/unified/farmService';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 

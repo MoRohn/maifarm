@@ -1,6 +1,17 @@
 import { Router, Request, Response } from 'express';
-import { ollamaModelDetector } from '../services/ollamaModelDetector';
-import { ollamaService } from '../services/ollamaService';
+import { aiProviderService } from '../services/unified/aiProviderService';
+
+// Create facades for ollama services
+const ollamaModelDetector = {
+  detectInstalledModels: () => aiProviderService.getProviderModels('ollama'),
+  checkModelStatus: (model: string) => aiProviderService.checkProviderModel('ollama', model)
+};
+
+const ollamaService = {
+  getConfig: () => aiProviderService.getProviderConfig('ollama'),
+  validateConnection: () => aiProviderService.validateProvider('ollama'),
+  testAPI: () => aiProviderService.testProvider('ollama')
+};
 import type { OllamaValidationResult, OllamaDownloadInstructions } from '../types/ollama';
 
 const router = Router();

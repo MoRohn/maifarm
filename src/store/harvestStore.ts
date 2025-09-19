@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Harvest, HarvestFilter, HarvestSummary } from '../types/harvest';
-import { BarnStats } from '../types/barn';
-import { harvestService } from '../services/harvestService';
-import { api } from '../services/apiClient';
+import { Harvest, HarvestFilter, HarvestSummary } from '@/types/harvest';
+import { BarnStats } from '@/types/barn';
+import { harvestService } from '@/services/farmService';
+import { api } from '@/services/apiClient';
 
 interface HarvestData {
   yield: any[];

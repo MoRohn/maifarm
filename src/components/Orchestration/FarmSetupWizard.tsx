@@ -12,9 +12,9 @@ import {
   Box,
   Settings
 } from 'lucide-react'
-import { FarmTemplate, FarmSetupRequest, FarmSetupProgress } from '../../types/orchestration'
-import { useOrchestrationStore } from '../../store/orchestrationStore'
-import { farmOrchestrator } from '../../services/orchestration/farmOrchestrator'
+import { FarmTemplate, FarmSetupRequest, FarmSetupProgress } from '@/types/orchestration'
+import { useOrchestrationStore } from '@/store/orchestrationStore'
+import { farmOrchestrator } from '@/services/orchestration/farmOrchestrator'
 import toast from 'react-hot-toast'
 
 interface FarmSetupWizardProps {
@@ -520,11 +520,11 @@ const SetupProgressView: React.FC<{ progress: FarmSetupProgress }> = ({ progress
           {progress.steps.map((step, index) => (
             <div key={index} className="flex items-center">
               {step.status === 'completed' && <Check className="w-5 h-5 text-emerald-600 mr-3" />}
-              {step.status === 'running' && <div className="w-5 h-5 mr-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />}
+              {step.status === 'active' && <div className="w-5 h-5 mr-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />}
               {step.status === 'pending' && <div className="w-5 h-5 mr-3 border-2 border-gray-300 rounded-full" />}
               {step.status === 'failed' && <AlertCircle className="w-5 h-5 text-red-500 mr-3" />}
               
-              <span className={`text-sm ${step.status === 'running' ? 'font-medium' : ''}`}>
+              <span className={`text-sm ${step.status === 'active' ? 'font-medium' : ''}`}>
                 {step.name}
               </span>
             </div>

@@ -1,4 +1,4 @@
-import { CryptoWorkerMessage, CryptoWorkerResponse, CryptoOperation } from '../../types/encryption';
+import { CryptoWorkerMessage, CryptoWorkerResponse, CryptoOperation } from '@/types/encryption';
 
 export class CryptoWorkerService {
   private worker: Worker | null = null;

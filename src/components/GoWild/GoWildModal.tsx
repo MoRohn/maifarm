@@ -1,460 +1,365 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Sparkles, AlertTriangle, Info, Wand2, Rocket } from 'lucide-react';
+import { X, Trees, Rocket, Sparkles, Paperclip, ChevronDown, ChevronRight } from 'lucide-react';
 import { clsx } from 'clsx';
-import { GoWildConfig } from '../../types/goWild';
-import { CreativityControls } from './CreativityControls';
-import { BoundaryControls } from './BoundaryControls';
-import { useFarmStore } from '../../store/farmStore';
-import { api } from '../../services/apiClient';
+import { api } from '@/services/apiClient';
 import { toast } from 'react-hot-toast';
+import { PromptEnhancer } from '../Chat/PromptEnhancer';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useFarmStore } from '@/store/farmStore';
 import FileUpload from '../common/FileUpload';
 
 interface GoWildModalProps {
   isOpen: boolean;
   onClose: () => void;
-  farmId?: string;
 }
 
-export const GoWildModal: React.FC<GoWildModalProps> = ({ isOpen, onClose, farmId }) => {
+export const GoWildModal: React.FC<GoWildModalProps> = ({ 
+  isOpen, 
+  onClose 
+}) => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'config' | 'running'>('config');
-  const [tempFarmId, setTempFarmId] = useState<string>('');
-  const [farmName, setFarmName] = useState<string>('');
-  const [description, setDescription] = useState<string>('');
-  const [isCreating, setIsCreating] = useState(false);
+  const [step, setStep] = useState<'input' | 'enhance' | 'launching'>('input');
+  const [explorationTopic, setExplorationTopic] = useState('');
+  const [enhancedTopic, setEnhancedTopic] = useState('');
+  const [loading, setLoading] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isFileUploadExpanded, setIsFileUploadExpanded] = useState(false);
   const { addFarm, fetchFarms } = useFarmStore();
-  
-  const [config, setConfig] = useState<GoWildConfig>({
-    creativityLevel: 70,
-    explorationDepth: 5,
-    maxDuration: 10, // Default to 10 minutes
-    boundaries: {
-      allowExternalAPIs: true,
-      allowFileSystem: true,
-      allowNetworkRequests: true,
-      restrictedDomains: []
-    },
-    focusAreas: []
-  });
 
-  const handleStart = async () => {
-    // If no farm exists, create a Go Wild-specific farm
-    if (!farmId && !tempFarmId) {
-      if (!farmName.trim()) {
-        toast.error('Please enter a topic');
-        return;
+  // Reset when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setStep('input');
+      setExplorationTopic('');
+      setEnhancedTopic('');
+      setAttachedFiles([]);
+      setIsFileUploadExpanded(false);
+    }
+  }, [isOpen]);
+
+  const handleSubmitTopic = () => {
+    if (!explorationTopic.trim()) {
+      toast.error('Please enter an exploration topic');
+      return;
+    }
+    if (explorationTopic.trim().length < 5) {
+      toast.error('Please provide at least 5 characters to describe your exploration topic', {
+        icon: '⚠️',
+        duration: 3000
+      });
+      return;
+    }
+    setStep('enhance');
+  };
+
+  const handleEnhanced = (enhanced: string, pills: string[]) => {
+    setEnhancedTopic(enhanced);
+    launchExploration(enhanced);
+  };
+
+  const handleSkipEnhancement = () => {
+    setEnhancedTopic(explorationTopic);
+    launchExploration(explorationTopic);
+  };
+
+  const launchExploration = async (prompt: string) => {
+    setLoading(true);
+    setStep('launching');
+    
+    try {
+      console.log('[GoWildModal] Launching exploration with prompt:', prompt);
+      
+      // Add file context to prompt if files are attached
+      let enhancedPrompt = prompt;
+      if (attachedFiles.length > 0) {
+        const fileNames = attachedFiles.map(f => f.name).join(', ');
+        enhancedPrompt = `${prompt}\n\n[Attached files: ${fileNames}]`;
+        console.log('[GoWildModal] Added file context to prompt:', fileNames);
       }
       
-      setIsCreating(true);
-      try {
-        // Prepare farm data
-        const farmData = {
-          name: farmName,
-          description: description || `Go Wild exploration farm - Creativity level ${config.creativityLevel}%`,
-          type: 'autonomous', // Go Wild farms are autonomous
-          config: {
-            autoScale: true,
-            maxAgents: config.explorationDepth || 5,
-            timeout: config.maxDuration * 60, // Convert minutes to seconds
-            retryPolicy: {
-              enabled: true,
-              maxRetries: 3,
-              backoffMultiplier: 2
-            },
-            goWildMode: {
-              enabled: true,
-              creativityLevel: Math.ceil(config.creativityLevel / 20), // Convert 0-100 to 1-5
-              boundaries: Object.keys(config.boundaries)
-                .filter(key => config.boundaries[key as keyof typeof config.boundaries])
-            }
+      let response;
+      
+      // If files are attached, use FormData
+      if (attachedFiles.length > 0) {
+        const formData = new FormData();
+        formData.append('prompt', enhancedPrompt);
+        formData.append('timeout', '1800'); // 30 minutes default for GoWild
+        formData.append('autoScale', 'true');
+        formData.append('maxAgents', '5');
+        
+        // Append each file
+        attachedFiles.forEach((file) => {
+          formData.append('files', file);
+        });
+        
+        response = await api.post('/api/go-wild', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
           }
-        };
-
-        let response;
-        // If files are attached, use FormData
-        if (attachedFiles.length > 0) {
-          const formData = new FormData();
-          formData.append('farmData', JSON.stringify(farmData));
-          
-          // Append each file
-          attachedFiles.forEach((file) => {
-            formData.append('files', file);
-          });
-
-          response = await fetch('/api/farms', {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to create farm: ${response.statusText}`);
-          }
-          
-          response = { data: await response.json() };
-        } else {
-          // Create farm without files
-          response = await api.post('/api/farms', farmData);
+        });
+      } else {
+        // No files, use regular JSON
+        response = await api.post('/api/go-wild', {
+          prompt: enhancedPrompt,
+          timeout: 1800, // 30 minutes default for GoWild
+          autoScale: true,
+          maxAgents: 5
+        });
+      }
+      
+      if (response.data?.farmId) {
+        // Add farm to store
+        if (response.data.farm) {
+          await addFarm(response.data.farm);
+          await fetchFarms();
         }
         
-        // Check the response structure
-        const newFarm = response.data?.data || response.data;
-        console.log('Go Wild farm created:', newFarm);
+        toast.success('🌲 Going wild!');
         
-        if (!newFarm?.id) {
-          console.error('Invalid farm response:', response.data);
-          toast.error('Farm created but missing ID');
-          return;
-        }
+        // Navigate through concept explainer first
+        const transitionUrl = `/farm/${response.data.farmId}/transition/gowild`;
+        console.log('[GoWildModal] Navigating to concept explainer:', transitionUrl);
+        navigate(transitionUrl);
         
-        addFarm(newFarm);
-        await fetchFarms();
-        setTempFarmId(newFarm.id);
-        toast.success('Go Wild farm created successfully!');
-        
-        // Launch the farm with agents
-        console.log('Launching Go Wild farm with agents...');
-        try {
-          const launchResponse = await api.post(`/api/farms/${newFarm.id}/launch`, {
-            numberOfAgents: config.explorationDepth || 5,
-            collaborative: true,
-            prompt: description || `Explore and innovate on: ${farmName}. Be creative and think outside the box!`
-          });
-          console.log('Farm launch response:', launchResponse);
-          toast.success('Agents are starting up...');
-        } catch (launchError) {
-          console.error('Failed to launch farm agents:', launchError);
-          toast.error('Farm created but agents failed to start. Please try launching manually.');
-        }
-        
-        // Navigate directly to harvest page to show progress
-        const harvestPath = `/harvests/${newFarm.id}`;
-        console.log('Navigating to harvest page:', harvestPath);
-        
-        // Close modal first, then navigate
-        onClose();
-        
-        // Small delay to ensure modal closes before navigation
+        // Close modal after navigation
         setTimeout(() => {
-          console.log('Executing navigation to:', harvestPath);
-          navigate(harvestPath);
+          onClose();
         }, 100);
-      } catch (error) {
-        console.error('Failed to create Go Wild farm:', error);
-        toast.error('Failed to create farm. Please try again.');
-      } finally {
-        setIsCreating(false);
       }
-    } else {
-      // Use existing farm - navigate to harvest page
-      const existingFarmId = farmId || tempFarmId;
-      const harvestPath = `/harvests/${existingFarmId}`;
+    } catch (error: any) {
+      console.error('[GoWildModal] Failed to launch exploration:', error);
+      let errorMessage = 'Failed to launch exploration. ';
       
-      toast.success('Starting Go Wild exploration!');
-      console.log('Using existing farm, navigating to:', harvestPath);
+      if (error.response?.data?.error) {
+        if (typeof error.response.data.error === 'object') {
+          errorMessage += error.response.data.error.message || JSON.stringify(error.response.data.error);
+        } else {
+          errorMessage += error.response.data.error;
+        }
+      } else if (error.response?.data?.message) {
+        errorMessage += error.response.data.message;
+      } else if (error.message) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += 'Please try again.';
+      }
       
-      // Close modal first, then navigate
-      onClose();
-      
-      setTimeout(() => {
-        console.log('Executing navigation to:', harvestPath);
-        navigate(harvestPath);
-      }, 100);
+      toast.error(errorMessage);
+      setStep('input');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleClose = () => {
-    setStep('config');
-    setTempFarmId('');
-    setFarmName('');
-    setDescription('');
-    onClose();
-  };
-
-  const modalContent = () => {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="text-center">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl mx-auto mb-4 flex items-center justify-center"
-          >
-            <Sparkles className="w-8 h-8 text-white" />
-          </motion.div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Go Wild Mode
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            Let your AI agents explore and discover new possibilities autonomously
-          </p>
-        </div>
-
-        {/* Farm Creation/Selection */}
-        {!farmId && (
-          <div className="space-y-4 p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-apple-lg border border-purple-200 dark:border-purple-800">
-            <div className="flex items-center space-x-2 mb-3">
-              <Rocket className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-100">
-                Go Wild Farm Setup
-              </h4>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Topic <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., Wild Explorer Alpha"
-                value={farmName}
-                onChange={(e) => setFarmName(e.target.value)}
-                className="w-full px-4 py-2 rounded-apple border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Description (optional)
-              </label>
-              <textarea
-                placeholder="Describe what you want the agents to explore..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-4 py-2 rounded-apple border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 h-20 resize-none"
-              />
-            </div>
-            
-            <div className="flex items-center space-x-2 text-xs text-purple-700 dark:text-purple-300">
-              <Info className="w-4 h-4" />
-              <span>A new autonomous farm will be created with Go Wild mode enabled</span>
-            </div>
-          </div>
-        )}
-
-        {/* Configuration */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Exploration Configuration
-          </h3>
-          
-          <CreativityControls
-            config={config}
-            onUpdate={setConfig}
-            disabled={false}
-          />
-
-          {/* Safety Boundaries */}
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Safety Boundaries
-            </h4>
-            <div className="space-y-3">
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={config.boundaries.allowExternalAPIs}
-                  onChange={(e) => setConfig({
-                    ...config,
-                    boundaries: { ...config.boundaries, allowExternalAPIs: e.target.checked }
-                  })}
-                  className="rounded text-purple-600 focus:ring-purple-500"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Allow External APIs</span>
-              </label>
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={config.boundaries.allowFileSystem}
-                  onChange={(e) => setConfig({
-                    ...config,
-                    boundaries: { ...config.boundaries, allowFileSystem: e.target.checked }
-                  })}
-                  className="rounded text-purple-600 focus:ring-purple-500"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Allow File System Access</span>
-              </label>
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={config.boundaries.allowNetworkRequests}
-                  onChange={(e) => setConfig({
-                    ...config,
-                    boundaries: { ...config.boundaries, allowNetworkRequests: e.target.checked }
-                  })}
-                  className="rounded text-purple-600 focus:ring-purple-500"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Allow Network Requests</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Duration Control */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Max Duration
-            </label>
-            <div className="grid grid-cols-5 gap-2">
-              {[
-                { label: '5m', value: 5 },
-                { label: '10m', value: 10 },
-                { label: '20m', value: 20 },
-                { label: '30m', value: 30 },
-                { label: '1hr', value: 60 },
-                { label: '2hr', value: 120 },
-                { label: '4hr', value: 240 },
-                { label: '6hr', value: 360 },
-                { label: '12hr', value: 720 },
-                { label: '24hr', value: 1440 }
-              ].map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setConfig({ ...config, maxDuration: option.value })}
-                  className={clsx(
-                    'relative px-3 py-2 rounded-apple text-sm font-medium transition-all',
-                    'flex items-center justify-center',
-                    config.maxDuration === option.value
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  )}
-                >
-                  <div className={clsx(
-                    'absolute left-2 w-3 h-3 rounded-full border-2 transition-all',
-                    config.maxDuration === option.value
-                      ? 'border-white bg-white'
-                      : 'border-gray-400 dark:border-gray-500'
-                  )} />
-                  <span className="ml-3">{option.label}</span>
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">
-              {config.maxDuration < 60 
-                ? `${config.maxDuration} minutes`
-                : config.maxDuration === 60
-                ? '1 hour'
-                : `${config.maxDuration / 60} hours`}
-              {config.maxDuration === 10 && ' (Default)'}
-            </p>
-          </div>
-
-          {/* Focus Areas */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Focus Areas (optional)
-            </label>
-            <textarea
-              placeholder="Enter focus areas, one per line"
-              value={config.focusAreas.join('\n')}
-              onChange={(e) => setConfig({ 
-                ...config, 
-                focusAreas: e.target.value.split('\n').filter(a => a.trim()) 
-              })}
-              className="w-full px-4 py-2 rounded-apple border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white h-24 resize-none"
-            />
-          </div>
-
-          {/* File Upload Section */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Context Files (optional)
-            </label>
-            <FileUpload
-              onFilesChange={setAttachedFiles}
-              maxFiles={10}
-              maxSizeInMB={10}
-              acceptedTypes={['*']}
-              className="mt-2"
-            />
-          </div>
-        </div>
-
-        {/* Warning */}
-        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-apple-lg border border-yellow-200 dark:border-yellow-800">
-          <div className="flex items-start space-x-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-            <div className="text-sm text-yellow-700 dark:text-yellow-300">
-              <p className="font-medium mb-1">Important Safety Notice</p>
-              <p>Go Wild mode allows agents to explore autonomously. All actions are monitored and can be rolled back if needed. Resource limits and safety boundaries are enforced.</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-end space-x-4">
-          <button
-            onClick={handleClose}
-            disabled={isCreating}
-            className="px-6 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-apple transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleStart}
-            disabled={(!farmId && !farmName.trim()) || isCreating}
-            className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-apple hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-          >
-            {isCreating ? (
-              <>
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                  className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
-                />
-                <span>Creating Farm...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>Start Exploration</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    );
-  };
+  if (!isOpen) return null;
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={handleClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={onClose}
           />
 
           {/* Modal */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
+            initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden"
           >
-            <div className="bg-white dark:bg-gray-900 rounded-apple-xl shadow-2xl relative flex flex-col w-full max-w-2xl max-h-[90vh]">
-              {/* Close Button */}
-              <button
-                onClick={handleClose}
-                className="absolute top-4 right-4 p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-apple transition-colors z-10"
-              >
-                <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-              </button>
-
-              {/* Content */}
-              <div className="p-8 overflow-y-auto">
-                {modalContent()}
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                  <Trees className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Go Wild
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Autonomous AI exploration
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              {/* Input Step */}
+              {step === 'input' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      What should AI explore?
+                    </label>
+                    <div className="relative">
+                      <textarea
+                        value={explorationTopic}
+                        onChange={(e) => setExplorationTopic(e.target.value)}
+                        placeholder="Give AI agents creative freedom to explore ideas (e.g., 'Build an innovative game', 'Create a unique data visualization')"
+                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                        rows={4}
+                        autoFocus
+                      />
+                      {explorationTopic.trim().length > 0 && (
+                        <div className="absolute bottom-2 right-2 text-xs">
+                          <span className={clsx(
+                            "font-medium",
+                            explorationTopic.trim().length < 5 
+                              ? "text-yellow-600 dark:text-yellow-400" 
+                              : "text-gray-500 dark:text-gray-400"
+                          )}>
+                            {explorationTopic.trim().length}/10
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {explorationTopic.trim().length > 0 && explorationTopic.trim().length < 5 && (
+                      <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                        Please add {10 - explorationTopic.trim().length} more character{10 - explorationTopic.trim().length !== 1 ? 's' : ''} for a better description
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Collapsible File Upload Section */}
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsFileUploadExpanded(!isFileUploadExpanded)}
+                      className="flex items-center space-x-2 w-full text-left p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    >
+                      {isFileUploadExpanded ? (
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                      )}
+                      <Paperclip className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Attach Files {attachedFiles.length > 0 && `(${attachedFiles.length})`}
+                      </span>
+                      {attachedFiles.length > 0 && (
+                        <div className="flex-1 flex justify-end">
+                          <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded-full">
+                            {attachedFiles.length} file{attachedFiles.length > 1 ? 's' : ''} attached
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                    
+                    <AnimatePresence>
+                      {isFileUploadExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="pt-2 pb-1">
+                            <FileUpload
+                              onFilesChange={setAttachedFiles}
+                              maxFiles={10}
+                              maxSizeInMB={10}
+                              acceptedTypes={['image/*', '.pdf', '.txt', '.md', '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.yaml', '.yml', '.json']}
+                              className="mt-2"
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-3">
+                      <p className="text-sm text-emerald-800 dark:text-emerald-200">
+                        🌲 GoWild mode lets AI agents explore autonomously for 30 minutes
+                      </p>
+                    </div>
+                    
+                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3">
+                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                        ⚡ Agents will self-organize and pursue creative solutions
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleSubmitTopic}
+                    disabled={!explorationTopic.trim()}
+                    className={clsx(
+                      "w-full px-6 py-3 rounded-lg font-medium transition-all duration-200",
+                      "flex items-center justify-center space-x-2",
+                      explorationTopic.trim()
+                        ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 shadow-lg hover:shadow-xl transform hover:scale-105"
+                        : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                    )}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Continue</span>
+                    {attachedFiles.length > 0 && (
+                      <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-xs">
+                        {attachedFiles.length} {attachedFiles.length === 1 ? 'file' : 'files'}
+                      </span>
+                    )}
+                  </button>
+                </motion.div>
+              )}
+
+              {/* Enhancement Step */}
+              {step === 'enhance' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <PromptEnhancer
+                    originalPrompt={explorationTopic}
+                    mode="gowild"
+                    onEnhanced={handleEnhanced}
+                    onSkip={handleSkipEnhancement}
+                  />
+                </motion.div>
+              )}
+
+              {/* Launching Step */}
+              {step === 'launching' && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="flex flex-col items-center justify-center py-8 space-y-4"
+                >
+                  <div className="relative">
+                    <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    <Trees className="w-8 h-8 text-emerald-500 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+                  </div>
+                  <p className="text-lg font-medium text-gray-900 dark:text-white">
+                    Launching exploration...
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Unleashing AI creativity
+                  </p>
+                </motion.div>
+              )}
             </div>
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );

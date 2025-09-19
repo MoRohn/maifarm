@@ -1,0 +1,254 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20.x'
+  DEPLOY_USER: deploy
+  DEPLOY_PATH: /var/www/maifarm
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: ${{ secrets.STAGING_API_URL }}
+
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ env.DEPLOY_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd ${{ env.DEPLOY_PATH }}
+            git pull origin main
+            npm ci --production
+            npm run build
+            pm2 reload ecosystem.config.js --env staging
+            npm run migrate:up
+
+      - name: Health check
+        run: |
+          sleep 10
+          curl -f ${{ secrets.STAGING_URL }}/health || exit 1
+
+      - name: Notify Slack
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Staging deployment ${{ job.status }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    environment: production
+    needs: [deploy-staging]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: ${{ secrets.PRODUCTION_API_URL }}
+
+      - name: Create deployment package
+        run: |
+          tar -czf deployment.tar.gz \
+            dist/ \
+            server/ \
+            package.json \
+            package-lock.json \
+            ecosystem.config.js \
+            .env.production.example
+
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-package
+          path: deployment.tar.gz
+
+      - name: Deploy to production servers
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOSTS }}
+          username: ${{ env.DEPLOY_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            # Create backup before deployment
+            cd ${{ env.DEPLOY_PATH }}
+            ./scripts/backup-automation.sh
+
+            # Download and extract deployment package
+            wget -O deployment.tar.gz "${{ secrets.ARTIFACT_URL }}"
+            tar -xzf deployment.tar.gz
+
+            # Install dependencies and build
+            npm ci --production
+            npm run build
+
+            # Run database migrations
+            npm run migrate:up
+
+            # Reload PM2 with zero-downtime
+            pm2 reload ecosystem.config.js --env production
+
+            # Clean up
+            rm deployment.tar.gz
+
+      - name: Verify deployment
+        run: |
+          sleep 15
+          for host in ${{ secrets.PRODUCTION_HOSTS }}; do
+            curl -f https://$host/health || exit 1
+          done
+
+      - name: Create GitHub release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            Production deployment completed successfully
+
+            ## Changes
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+          draft: false
+          prerelease: false
+
+      - name: Notify Slack
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Production deployment ${{ job.status }} for version ${{ github.ref }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    if: failure() && github.ref == 'refs/heads/main'
+    needs: [deploy-production]
+    environment: production
+
+    steps:
+      - name: Rollback deployment
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOSTS }}
+          username: ${{ env.DEPLOY_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            cd ${{ env.DEPLOY_PATH }}
+
+            # Restore from latest backup
+            ./scripts/restore-backup.sh latest
+
+            # Restart services
+            pm2 reload ecosystem.config.js --env production
+
+            echo "Rollback completed"
+
+      - name: Notify Slack - Rollback
+        uses: 8398a7/action-slack@v3
+        with:
+          status: 'warning'
+          text: 'Production deployment rolled back due to failure'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install test dependencies
+        run: |
+          npm install -D @playwright/test
+
+      - name: Run smoke tests
+        run: |
+          npx playwright test tests/smoke/
+        env:
+          BASE_URL: ${{ secrets.PRODUCTION_URL }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: smoke-test-results
+          path: test-results/
+
+  update-documentation:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate API documentation
+        run: |
+          npm install -D typedoc
+          npx typedoc --out docs/api src/
+
+      - name: Update changelog
+        run: |
+          npm install -D conventional-changelog-cli
+          npx conventional-changelog -p angular -i CHANGELOG.md -s
+
+      - name: Deploy documentation
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs

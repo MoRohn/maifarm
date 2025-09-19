@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
-import yamlGeneratorService from '../services/yamlGeneratorService';
+import yamlGeneratorService from '@/services/yamlGeneratorService';
 import {
   GeneratorMode,
   GeneratorState,
   YamlConfig,
   ValidationResult,
   GenerationResponse
-} from '../types/yamlGenerator';
+} from '@/types/yamlGenerator';
 
 export const useYamlGenerator = () => {
   const [state, setState] = useState<GeneratorState>({

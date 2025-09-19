@@ -19,7 +19,7 @@ import {
   Activity,
   FolderTree
 } from 'lucide-react';
-import { Harvest, HarvestYield, HarvestInsight } from '../../types/harvest';
+import { Harvest, HarvestYield, HarvestInsight } from '@/types/harvest';
 import { formatDistanceToNow } from 'date-fns';
 import { HarvestFileTree, FileTreeNode } from './HarvestFileTree';
 
@@ -377,9 +377,9 @@ export const HarvestDisplay: React.FC<HarvestDisplayProps> = ({
                           <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-500">
                             <span>{yieldItem.type}</span>
                             <span>•</span>
-                            <span>{(yieldItem.size / 1024).toFixed(1)} KB</span>
+                            <span>{yieldItem.size ? `${(yieldItem.size / 1024).toFixed(1)} KB` : 'N/A'}</span>
                             <span>•</span>
-                            <span>By {yieldItem.createdBy.agentName}</span>
+                            <span>By {yieldItem.createdBy?.agentName || 'Unknown'}</span>
                           </div>
                         </div>
                       </div>

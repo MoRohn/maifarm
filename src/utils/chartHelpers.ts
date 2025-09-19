@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { TimeSeriesData, MetricDataPoint } from '../types/analytics';
+import { TimeSeriesData, MetricDataPoint } from '@/types/analytics';
 
 export interface ChartTheme {
   background: string;

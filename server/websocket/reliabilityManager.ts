@@ -39,12 +39,16 @@ export class WebSocketReliabilityManager extends EventEmitter {
   private acknowledgmentCallbacks: Map<string, (success: boolean) => void> = new Map();
   private metricsInterval: NodeJS.Timeout | null = null;
   
-  // Conflict detection and coordination state tracking
+  // Conflict detection and coordination state tracking (DISABLED FOR PERFORMANCE)
   private coordinationState: Map<string, any> = new Map();
   private broadcastQueue: Array<{event: string, data: any, timestamp: number}> = [];
   private lastCoordinationUpdate = 0;
-  private conflictDetectionEnabled = true;
+  private conflictDetectionEnabled = false; // DISABLED by default for better performance
   private coordinationHealthInterval: NodeJS.Timeout | null = null;
+  
+  // Priority message handling
+  private priorityChannels = new Set(['goWild:', 'metrics:', 'farm:status', 'agent:status']);
+  private directBroadcastEnabled = true;
 
   constructor(config: ReliabilityConfig = {}) {
     super();
@@ -187,6 +191,11 @@ export class WebSocketReliabilityManager extends EventEmitter {
   ): Promise<number> {
     if (!this.io) return 0;
 
+    // Check if this is a priority message that should bypass queuing
+    if (this.directBroadcastEnabled && this.isPriorityMessage(event)) {
+      return this.broadcastDirect(room, event, data, options);
+    }
+
     const rooms = Array.isArray(room) ? room : [room];
     let successCount = 0;
 
@@ -205,6 +214,54 @@ export class WebSocketReliabilityManager extends EventEmitter {
     }
 
     return successCount;
+  }
+  
+  /**
+   * Direct broadcast for priority messages (bypasses queuing)
+   */
+  private async broadcastDirect(
+    room: string | string[],
+    event: string,
+    data: any,
+    options: MessageOptions = {}
+  ): Promise<number> {
+    if (!this.io) return 0;
+    
+    const rooms = Array.isArray(room) ? room : [room];
+    let successCount = 0;
+    
+    // Direct emit without queuing or conflict detection
+    for (const r of rooms) {
+      if (r) {
+        this.io.to(r).emit(event, data);
+        const sockets = await this.io.in(r).fetchSockets();
+        successCount += sockets.length;
+      } else {
+        // Broadcast to all if no room specified
+        this.io.emit(event, data);
+        successCount = this.io.sockets.sockets.size;
+      }
+    }
+    
+    // Track metrics
+    if (this.healthMonitor) {
+      this.healthMonitor.trackMessage('broadcast', 'sent');
+    }
+    
+    return successCount;
+  }
+  
+  /**
+   * Check if message is priority and should bypass queuing
+   */
+  private isPriorityMessage(event: string): boolean {
+    // Check if event starts with any priority channel prefix
+    for (const channel of this.priorityChannels) {
+      if (event.startsWith(channel)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -450,7 +507,7 @@ export class WebSocketReliabilityManager extends EventEmitter {
   }
 
   /**
-   * Enhanced broadcast with conflict detection
+   * Enhanced broadcast with conflict detection (optimized for performance)
    */
   public async broadcastWithConflictDetection(
     room: string | string[],
@@ -458,20 +515,28 @@ export class WebSocketReliabilityManager extends EventEmitter {
     data: any,
     options: MessageOptions = {}
   ): Promise<{successCount: number, conflictsDetected: boolean}> {
-    // Check for coordination conflicts before broadcasting
-    const conflictDetected = this.detectCoordinationConflict(event, data);
-    
-    if (conflictDetected && this.conflictDetectionEnabled) {
-      console.warn(`[ReliabilityManager] Coordination conflict detected for event ${event}, queuing...`);
-      
-      // Queue the broadcast instead of sending immediately
-      this.queueBroadcast(event, data);
-      
-      return { successCount: 0, conflictsDetected: true };
+    // Priority messages bypass conflict detection entirely
+    if (this.isPriorityMessage(event)) {
+      const successCount = await this.broadcastDirect(room, event, data, options);
+      return { successCount, conflictsDetected: false };
     }
-
-    // Update coordination state before broadcast
-    this.updateCoordinationState(event, data);
+    
+    // Only check conflicts if explicitly enabled (disabled by default)
+    if (this.conflictDetectionEnabled) {
+      const conflictDetected = this.detectCoordinationConflict(event, data);
+      
+      if (conflictDetected) {
+        console.warn(`[ReliabilityManager] Coordination conflict detected for event ${event}, queuing...`);
+        
+        // Queue the broadcast instead of sending immediately
+        this.queueBroadcast(event, data);
+        
+        return { successCount: 0, conflictsDetected: true };
+      }
+      
+      // Update coordination state before broadcast
+      this.updateCoordinationState(event, data);
+    }
     
     // Proceed with normal broadcast
     const successCount = await this.broadcastReliable(room, event, data, options);

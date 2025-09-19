@@ -6,7 +6,7 @@ import {
   SparklesIcon,
   GlobeAltIcon
 } from '@heroicons/react/24/outline';
-import { useUserStore } from '../../store/userStore';
+import { useUserStore } from '@/store/userStore';
 
 interface Language {
   code: string;

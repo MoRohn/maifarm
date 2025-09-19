@@ -1,4 +1,4 @@
-import { WorkflowNode, WorkflowEdge } from '../types/workflow';
+import { WorkflowNode, WorkflowEdge } from '@/types/workflow';
 
 interface DependencyGraph {
   nodes: Map<string, Set<string>>; // nodeId -> set of dependencies

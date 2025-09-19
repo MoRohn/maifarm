@@ -130,6 +130,7 @@ export interface HarvestExport {
   includeResults?: boolean;
   includeInsights?: boolean;
   includeYield?: boolean;
+  includeArtifacts?: boolean; // Legacy support - maps to includeYield
   customTemplate?: string;
 }
 

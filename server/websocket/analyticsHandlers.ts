@@ -1,5 +1,5 @@
 import { Server, Socket } from 'socket.io';
-import { analyticsService } from '../services/analyticsService.js';
+import { analyticsService } from '../services/unified/stateCoordinator.js';
 import { farmService } from '../services/farmService.js';
 import { agentService } from '../services/agentService.js';
 import { logger } from '../utils/logger.js';

@@ -10,8 +10,8 @@ import {
   Filter,
   Settings
 } from 'lucide-react';
-import { reportingService } from '../../services/reportingService';
-import { Report, ReportConfig } from '../../types/reporting';
+import { reportingService } from '@/services/reportingService';
+import { Report, ReportConfig } from '@/types/reporting';
 import { format } from 'date-fns';
 
 export function ReportGenerator() {

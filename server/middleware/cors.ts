@@ -8,12 +8,15 @@ const getAllowedOrigins = () => {
     'http://localhost:3001', 
     'http://localhost:5173',
     'http://localhost:5174',
+    'http://localhost:8080', // Test server
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:5174',
+    'http://127.0.0.1:8080', // Test server
     'http://0.0.0.0:3000',
-    'http://0.0.0.0:5173'
+    'http://0.0.0.0:5173',
+    'http://0.0.0.0:8080' // Test server
   ];
 
   // Add production origins if defined
@@ -52,7 +55,7 @@ export const corsMiddleware = cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID'],
   exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
   maxAge: 86400 // 24 hours
 });

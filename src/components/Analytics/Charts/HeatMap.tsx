@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useThemeStore } from '../../../store/themeStore';
+import { useThemeStore } from '@/store/themeStore';
 
 interface HeatMapProps {
   data: Array<{

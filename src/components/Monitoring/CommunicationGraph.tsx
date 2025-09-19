@@ -6,7 +6,7 @@ import {
   CommunicationGraph as CommunicationGraphType,
   CommunicationNode,
   CommunicationEdge 
-} from '../../types/monitoring';
+} from '@/types/monitoring';
 import { 
   Network, 
   Activity, 

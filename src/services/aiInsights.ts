@@ -7,7 +7,7 @@ import {
   TimeSeriesData,
   Anomaly,
   Prediction
-} from '../types/analytics';
+} from '@/types/analytics';
 
 interface InsightGenerationContext {
   metrics: AggregatedMetrics | null;

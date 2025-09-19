@@ -1,4 +1,4 @@
-import { Farm } from '../types';
+import { Farm } from '@/types';
 
 export const createMockFarm = (status: 'active' | 'launching' | 'paused' | 'completed' | 'failed' = 'active'): Farm => ({
   id: `farm-${Date.now()}`,
@@ -73,7 +73,7 @@ export const createMockFarm = (status: 'active' | 'launching' | 'paused' | 'comp
     },
     collaborationScore: 85
   },
-  tags: ['test', 'development'],
+  owner: 'demo-user',
   createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
   updatedAt: new Date()
 });

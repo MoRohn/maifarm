@@ -15,9 +15,9 @@ import {
   Lightbulb
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest } from '../../types/harvest';
-import { SeedFromHarvestInput } from '../../types/seed';
-import { api } from '../../services/apiClient';
+import { Harvest } from '@/types/harvest';
+import { SeedFromHarvestInput } from '@/types/seed';
+import { api } from '@/services/apiClient';
 import { format } from 'date-fns';
 
 interface SeedQuickActionProps {

@@ -125,7 +125,7 @@ async function runFinalTest() {
   console.log('='.repeat(60));
   
   log('🎉 MAJOR ACHIEVEMENTS:', 'success');
-  log('   ✅ Fixed critical user ID mismatch (quick-task-user → dev-user)', 'success');
+  log('   ✅ Fixed critical user ID mismatch (quick-task-user → maifarm-user)', 'success');
   log('   ✅ Harvest API now returns 200 instead of 404', 'success'); 
   log('   ✅ Harvest data is properly accessible and structured', 'success');
   log('   ✅ Fixed barn API endpoint path (/api/barn → /api/barn/items)', 'success');

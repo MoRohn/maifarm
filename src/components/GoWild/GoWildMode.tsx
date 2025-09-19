@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Save, Settings, Zap } from 'lucide-react';
-import { GoWildSession, GoWildConfig, Discovery } from '../../types/goWild';
+import { GoWildSession, GoWildConfig, Discovery } from '@/types/goWild';
 import ExplorationGraph from './ExplorationGraph';
 import CreativityControls from './CreativityControls';
-import { useGoWild } from '../../hooks/useGoWild';
+import { useGoWild } from '@/hooks/useGoWild';
 
 interface GoWildModeProps {
   farmId: string;

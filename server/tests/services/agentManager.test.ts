@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { AgentManager } from '../../services/agentManager';
+import { AgentManager } from '../../services/unified/farmService';
 import { Agent } from '../../types/farm';
 import { EventEmitter } from 'events';
 import * as child_process from 'child_process';

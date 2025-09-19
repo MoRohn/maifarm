@@ -1,4 +1,4 @@
-import { Farm, Agent } from '../types';
+import { Farm, Agent } from '@/types';
 
 export interface HistoricalMetrics {
   totalFarms: number;
@@ -214,7 +214,7 @@ export class HistoricalAnalyticsService {
 
   private detectParallelTasks(farm: Farm): number {
     // Simplified parallel task detection
-    return farm.agents?.filter(a => a.status === 'working' || a.status === 'running').length || 0;
+    return farm.agents?.filter(a => a.status === 'working' || a.status === 'active').length || 0;
   }
 
   private hasSpecializedAgents(farm: Farm): boolean {

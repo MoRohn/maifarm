@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Star, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Seed } from '../../types/seed';
-import { useSeeds } from '../../hooks/useSeeds';
+import { Seed } from '@/types/seed';
+import { useSeeds } from '@/hooks/useSeeds';
 import { useNavigate } from 'react-router-dom';
 
 interface SeedPillsProps {

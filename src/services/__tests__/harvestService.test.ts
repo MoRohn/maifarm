@@ -6,7 +6,7 @@ import {
   HarvestFilter,
   HarvestExport,
   HarvestSummary 
-} from '../../types/harvest';
+} from '@/types/harvest';
 
 // Mock dependencies
 jest.mock('../apiClient');

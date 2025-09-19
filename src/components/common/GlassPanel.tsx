@@ -1,7 +1,7 @@
 import React, { forwardRef } from 'react';
 import { motion, HTMLMotionProps } from 'framer-motion';
-import { cn } from '../../utils/cn';
-import { glassClasses } from '../../styles/glassmorphism';
+import { cn } from '@/utils/cn';
+import { glassClasses } from '@/styles/glassmorphism';
 
 export type GlassVariant = 'light' | 'dark' | 'subtle' | 'vibrant' | 'card';
 

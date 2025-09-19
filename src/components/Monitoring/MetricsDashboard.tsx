@@ -14,8 +14,8 @@ import {
   Filler
 } from 'chart.js';
 import { Activity, TrendingUp, TrendingDown, AlertCircle, CheckCircle } from 'lucide-react';
-import { useMetrics } from '../../hooks/useMetrics';
-import { MetricType, TimeSeries, AggregationType, FarmMetricsData } from '../../types/metrics';
+import { useMetrics } from '@/hooks/useMetrics';
+import { MetricType, TimeSeries, AggregationType, FarmMetricsData } from '@/types/metrics';
 import { formatDistanceToNow } from 'date-fns';
 
 ChartJS.register(

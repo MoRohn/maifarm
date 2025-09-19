@@ -1,0 +1,15 @@
+{
+  "type": "maifarm",
+  "config": {
+    "type": "xenosync",
+    "xenosync": {
+      "enabled": true,
+      "defaultMode": "collaborative",
+      "minAgents": 2,
+      "maxAgents": 20,
+      "agentMonitorInterval": 30,
+      "messageGracePeriod": 60,
+      "logLevel": "INFO"
+    }
+  }
+}

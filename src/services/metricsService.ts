@@ -1,5 +1,5 @@
 import { api } from './apiClient';
-import { useFarmStore } from '../store/farmStore';
+import { useFarmStore } from '@/store/farmStore';
 
 export interface DashboardMetrics {
   activeFarms: number;

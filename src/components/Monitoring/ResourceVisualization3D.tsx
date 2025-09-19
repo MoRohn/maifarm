@@ -14,7 +14,7 @@ import {
 } from '@react-three/drei';
 import * as THREE from 'three';
 import { motion } from 'framer-motion-3d';
-import { ResourceMetrics, AgentMonitoringData } from '../../types/monitoring';
+import { ResourceMetrics, AgentMonitoringData } from '@/types/monitoring';
 import { clsx } from 'clsx';
 
 interface ResourceVisualization3DProps {
@@ -167,6 +167,7 @@ const AgentNode: React.FC<{ agent: AgentMonitoringData; position: [number, numbe
   const statusColor = {
     idle: '#6B7280',
     working: '#3B82F6',
+    active: '#10B981',
     completed: '#10B981',
     error: '#EF4444',
     paused: '#F59E0B',
@@ -214,13 +215,13 @@ const AgentNode: React.FC<{ agent: AgentMonitoringData; position: [number, numbe
       
       {/* Resource Usage Bars */}
       <ResourceBar
-        value={agent.cpu}
+        value={agent.resources?.cpu || 0}
         position={[-0.6, 0, 0]}
         color="#3B82F6"
         label="CPU"
       />
       <ResourceBar
-        value={agent.memory}
+        value={agent.resources?.memory || 0}
         position={[0, 0, 0]}
         color="#8B5CF6"
         label="MEM"
@@ -297,7 +298,7 @@ const ResourceFlowLines: React.FC<{ agents: AgentMonitoringData[] }> = ({ agents
   
   return (
     <>
-      {activeAgents.map((agent, index) => {
+      {activeAgents.map((agent, _index) => {
         const agentPos = calculateAgentPosition(
           agents.findIndex(a => a.id === agent.id),
           agents.length

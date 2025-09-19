@@ -13,7 +13,7 @@ import {
   Key
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IntegrationConfig } from '../../types/settings';
+import { IntegrationConfig } from '@/types/settings';
 
 interface Integration {
   id: string;

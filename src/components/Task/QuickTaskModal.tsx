@@ -1,359 +1,355 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Zap, Send, Clock, AlertCircle } from 'lucide-react';
+import { X, Zap, Send, Sparkles, Paperclip, ChevronDown, ChevronRight } from 'lucide-react';
 import { clsx } from 'clsx';
-import { api } from '../../services/apiClient';
-import { useWebSocket } from '../../hooks/useWebSocket';
-import { useSettingsStore } from '../../store/settingsStore';
+import { api } from '@/services/apiClient';
 import { toast } from 'react-hot-toast';
+import { PromptEnhancer } from '../Chat/PromptEnhancer';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FarmLaunchService } from '@/services/farmLaunchFix';
+import FileUpload from '../common/FileUpload';
 
 interface QuickTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose }) => {
+export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ 
+  isOpen, 
+  onClose 
+}) => {
   const navigate = useNavigate();
-  const { settings } = useSettingsStore();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
+  const [step, setStep] = useState<'input' | 'enhance' | 'launching'>('input');
+  const [taskDescription, setTaskDescription] = useState('');
+  const [enhancedTask, setEnhancedTask] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [taskStatus, setTaskStatus] = useState<string | null>(null);
-  const [farmId, setFarmId] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isFileUploadExpanded, setIsFileUploadExpanded] = useState(false);
 
-  // Get the user's preferred AI provider from settings
-  const preferredProvider = settings.aiProvider || 'claude';
-
-  const { socket } = useWebSocket({
-    url: import.meta.env.VITE_API_URL || 'http://localhost:4567'
-  });
-
-  React.useEffect(() => {
-    if (taskId && socket) {
-      // Subscribe to task updates
-      const handleProgress = (data: any) => {
-        if (data.taskId === taskId) {
-          console.log('Task progress:', data);
-        }
-      };
-
-      const handleCompleted = (data: any) => {
-        if (data.taskId === taskId) {
-          setTaskStatus('completed');
-          console.log('Task completed:', data);
-        }
-      };
-
-      const handleFailed = (data: any) => {
-        if (data.taskId === taskId) {
-          setTaskStatus('failed');
-          setError(data.error || 'Task failed');
-        }
-      };
-
-      socket.on('task:progress', handleProgress);
-      socket.on('task:completed', handleCompleted);
-      socket.on('task:failed', handleFailed);
-
-      return () => {
-        socket.off('task:progress', handleProgress);
-        socket.off('task:completed', handleCompleted);
-        socket.off('task:failed', handleFailed);
-      };
+  // Reset when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      setStep('input');
+      setTaskDescription('');
+      setEnhancedTask('');
+      setAttachedFiles([]);
+      setIsFileUploadExpanded(false);
     }
-  }, [taskId, socket]);
+  }, [isOpen]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!title.trim() || !description.trim()) {
-      setError('Please provide both title and description');
+  const handleSubmitTask = () => {
+    console.log('[QuickTaskModal] handleSubmitTask called with description:', taskDescription);
+    const trimmed = taskDescription.trim();
+    if (!trimmed) {
+      toast.error('Please describe your task');
       return;
     }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await api.tasks.quick({
-        title,
-        description,
-        priority,
-        provider: preferredProvider,
-        metadata: {
-          source: 'quick-task-modal',
-          timestamp: new Date().toISOString()
-        }
+    if (trimmed.length < 5) {
+      toast.error('Please provide at least 5 characters to describe your task', {
+        icon: '⚠️',
+        duration: 3000
       });
+      return;
+    }
+    console.log('[QuickTaskModal] Moving to enhance step');
+    setStep('enhance');
+  };
 
-      if (response.data.success) {
-        const taskData = response.data.data;
-        setTaskId(taskData.taskId || taskData.id);
-        setTaskStatus('created');
-        
-        // Get the farmId and harvestId from the response
-        const quickFarmId = taskData.farmId || response.data.farmId;
-        const harvestId = taskData.harvestId;
-        
-        if (quickFarmId) {
-          setFarmId(quickFarmId);
-          toast.success('Quick task created successfully!');
-          
-          // Navigate directly to harvest page to show progress
-          const navigationPath = `/harvests/${quickFarmId}`;
-          console.log('Quick task created, navigating to harvest page:', navigationPath);
-          
-          // Store harvestId in sessionStorage for the harvest page to use
-          if (harvestId) {
-            sessionStorage.setItem(`quicktask-harvest-${quickFarmId}`, `/harvest/${harvestId}`);
-          }
-          
-          // Close modal first, then navigate
-          handleClose();
-          
-          setTimeout(() => {
-            console.log('Executing navigation to:', navigationPath);
-            navigate(navigationPath);
-          }, 100);
-        } else {
-          // If no farmId, try to get it from the quick task service
-          try {
-            const farms = await api.farms.list();
-            const quickTaskFarm = farms.data.data?.find((f: any) => 
-              f.name.includes('Quick Task') || f.id.startsWith('quick-task-')
-            );
-            if (quickTaskFarm) {
-              toast.success('Quick task created successfully!');
-              
-              // Try to find harvest for this farm
-              try {
-                const harvests = await api.harvests.list();
-                const quickHarvest = harvests.data.data?.find((h: any) => h.farmId === quickTaskFarm.id);
-                if (quickHarvest) {
-                  sessionStorage.setItem(`quicktask-harvest-${quickTaskFarm.id}`, `/harvest/${quickHarvest.id}`);
-                }
-              } catch (err) {
-                console.warn('Could not fetch harvests:', err);
-              }
-              
-              // Navigate directly to harvest page 
-              const navigationPath = `/harvests/${quickTaskFarm.id}`;
-              console.log('Found quick task farm, navigating to harvest page:', navigationPath);
-              
-              handleClose();
-              
-              setTimeout(() => {
-                console.log('Executing navigation to:', navigationPath);
-                navigate(navigationPath);
-              }, 100);
-            } else {
-              toast('Quick task created but cannot navigate to harvest page', { icon: '⚠️' });
-              console.warn('No quick task farm found for navigation');
-              handleClose();
-            }
-          } catch (err) {
-            console.error('Could not find Quick Task Farm:', err);
-          }
-        }
-      } else {
-        setError(response.data.error?.message || 'Failed to create task');
+  const handleEnhanced = (enhanced: string, pills: string[]) => {
+    setEnhancedTask(enhanced);
+    launchTask(enhanced);
+  };
+
+  const handleSkipEnhancement = () => {
+    setEnhancedTask(taskDescription);
+    launchTask(taskDescription);
+  };
+
+  const launchTask = async (prompt: string) => {
+    setLoading(true);
+    setStep('launching');
+    
+    // Set a timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      console.error('[QuickTaskModal] Task launch timeout after 10 seconds');
+      toast.error('Task launch timeout. Please try again.', {
+        duration: 4000,
+        icon: '⏱️'
+      });
+      setStep('input');
+      setLoading(false);
+    }, 10000); // 10 second timeout
+    
+    try {
+      console.log('[QuickTaskModal] Launching quick task with enhanced service');
+      
+      // Add file context to prompt if files are attached
+      let enhancedPrompt = prompt;
+      if (attachedFiles.length > 0) {
+        const fileNames = attachedFiles.map(f => f.name).join(', ');
+        enhancedPrompt = `${prompt}\n\n[Attached files: ${fileNames}]`;
+        console.log('[QuickTaskModal] Added file context to prompt:', fileNames);
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'Failed to create quick task');
+      
+      // Use Promise.race to implement a proper timeout
+      const launchPromise = FarmLaunchService.createQuickTask(enhancedPrompt, attachedFiles);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Launch timeout')), 9000)
+      );
+      
+      const result = await Promise.race([launchPromise, timeoutPromise]) as any;
+      clearTimeout(timeout); // Clear the UI timeout if successful
+      
+      console.log('[QuickTaskModal] Launch result:', result);
+      
+      const farmId = result?.farmId;
+      const harvestId = result?.harvestId;
+      
+      if (farmId) {
+        toast.success('⚡ Task launched!');
+        console.log('[QuickTaskModal] Successfully got farm ID:', farmId);
+        
+        // Close modal immediately
+        onClose();
+        
+        // Navigate through concept explainer for Quick Tasks
+        const navigationUrl = `/farm/${farmId}/transition/quicktask`;
+        console.log('[QuickTaskModal] Navigating to:', navigationUrl);
+        
+        // Use requestAnimationFrame for smoother transition
+        requestAnimationFrame(() => {
+          navigate(navigationUrl);
+        });
+      } else {
+        console.error('[QuickTaskModal] No farm ID in result:', result);
+        throw new Error('Failed to generate farm ID');
+      }
+    } catch (error: any) {
+      clearTimeout(timeout);
+      console.error('[QuickTaskModal] Critical error:', error);
+      
+      // Provide more specific error messages
+      if (error.message === 'Launch timeout') {
+        toast.error('Server is taking too long to respond. Please try again.', {
+          duration: 4000,
+          icon: '⏱️'
+        });
+      } else if (error.response?.status === 400) {
+        toast.error(error.response?.data?.error?.message || 'Invalid request. Please check your input.');
+      } else if (error.response?.status >= 500) {
+        toast.error('Server error. Please try again in a moment.');
+      } else if (!navigator.onLine) {
+        toast.error('No internet connection. Please check your network.');
+      } else {
+        toast.error('Failed to launch task. Please try again.');
+      }
+      
+      setStep('input');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClose = () => {
-    setTitle('');
-    setDescription('');
-    setPriority('medium');
-    setError(null);
-    setTaskId(null);
-    setTaskStatus(null);
-    onClose();
-  };
+  if (!isOpen) return null;
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) handleClose();
-          }}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
           <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-white dark:bg-gray-900 rounded-apple-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={onClose}
+          />
+
+          {/* Modal */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative w-full max-w-md bg-gray-50 dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden"
           >
             {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-apple">
-                    <Zap className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-                  </div>
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
+                  <Zap className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div>
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                     Quick Task
                   </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    5-minute AI sprint
+                  </p>
                 </div>
-                <button
-                  onClick={handleClose}
-                  className="p-2 rounded-apple hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                >
-                  <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                </button>
               </div>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
             </div>
 
             {/* Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-8rem)]">
-              <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Title */}
+            <div className="p-6">
+              {/* Input Step */}
+              {step === 'input' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-4"
+                >
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Task Title
+                      What do you need help with?
                     </label>
-                    <input
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g., Fix TypeScript errors"
-                      className={clsx(
-                        'w-full px-4 py-2 rounded-apple border transition-colors',
-                        'bg-white dark:bg-gray-800',
-                        'border-gray-300 dark:border-gray-700',
-                        'focus:border-primary-500 dark:focus:border-primary-400',
-                        'focus:outline-none focus:ring-2 focus:ring-primary-500/20'
+                    <div className="relative">
+                      <textarea
+                        value={taskDescription}
+                        onChange={(e) => setTaskDescription(e.target.value)}
+                        placeholder="Describe your task (e.g., 'Fix the login button bug', 'Write unit tests for the API')"
+                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-yellow-500 focus:border-transparent resize-none"
+                        rows={3}
+                        autoFocus
+                      />
+                      {taskDescription.trim().length > 0 && (
+                        <div className="absolute bottom-2 right-2 text-xs">
+                          <span className={clsx(
+                            "font-medium",
+                            taskDescription.trim().length < 5 
+                              ? "text-yellow-600 dark:text-yellow-400" 
+                              : "text-gray-500 dark:text-gray-400"
+                          )}>
+                            {taskDescription.trim().length}/5
+                          </span>
+                        </div>
                       )}
-                    />
-                  </div>
-
-                  {/* Description */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Description
-                    </label>
-                    <textarea
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Describe what needs to be done..."
-                      rows={4}
-                      className={clsx(
-                        'w-full px-4 py-2 rounded-apple border transition-colors',
-                        'bg-white dark:bg-gray-800',
-                        'border-gray-300 dark:border-gray-700',
-                        'focus:border-primary-500 dark:focus:border-primary-400',
-                        'focus:outline-none focus:ring-2 focus:ring-primary-500/20',
-                        'resize-none'
-                      )}
-                    />
-                  </div>
-
-                  {/* Priority */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Priority
-                    </label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {(['low', 'medium', 'high', 'critical'] as const).map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setPriority(p)}
-                          className={clsx(
-                            'px-3 py-2 rounded-apple text-sm font-medium transition-all',
-                            priority === p ? (
-                              p === 'low' ? 'bg-blue-500 text-white' :
-                              p === 'medium' ? 'bg-yellow-500 text-white' :
-                              p === 'high' ? 'bg-orange-500 text-white' :
-                              'bg-red-500 text-white'
-                            ) : (
-                              'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                            )
-                          )}
-                        >
-                          {p.charAt(0).toUpperCase() + p.slice(1)}
-                        </button>
-                      ))}
                     </div>
+                    {taskDescription.trim().length > 0 && taskDescription.trim().length < 5 && (
+                      <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                        Please add {5 - taskDescription.trim().length} more character{5 - taskDescription.trim().length !== 1 ? 's' : ''} for a better description
+                      </p>
+                    )}
                   </div>
 
-                  {/* Info */}
-                  <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-apple border border-blue-200 dark:border-blue-800">
-                    <div className="flex items-start space-x-3">
-                      <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                      <div>
-                        <p className="text-sm text-gray-700 dark:text-gray-300">
-                          Quick tasks run with a single agent and have a default timeout of 5 minutes.
-                          For complex tasks requiring multiple agents, create a full farm instead.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Error */}
-                  {error && (
-                    <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-apple border border-red-200 dark:border-red-800">
-                      <div className="flex items-start space-x-3">
-                        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
-                        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Submit */}
-                  <div className="flex justify-end space-x-3">
+                  {/* Collapsible File Upload Section */}
+                  <div className="space-y-2">
                     <button
                       type="button"
-                      onClick={handleClose}
-                      className={clsx(
-                        'px-4 py-2 rounded-apple text-sm font-medium transition-colors',
-                        'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
-                        'hover:bg-gray-200 dark:hover:bg-gray-700'
-                      )}
+                      onClick={() => setIsFileUploadExpanded(!isFileUploadExpanded)}
+                      className="flex items-center space-x-2 w-full text-left p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
                     >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading || !title.trim() || !description.trim()}
-                      className={clsx(
-                        'px-4 py-2 rounded-apple text-sm font-medium transition-all',
-                        'bg-orange-500 text-white',
-                        'hover:bg-orange-600',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                        'flex items-center space-x-2'
-                      )}
-                    >
-                      {loading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          <span>Creating...</span>
-                        </>
+                      {isFileUploadExpanded ? (
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
                       ) : (
-                        <>
-                          <Send className="w-4 h-4" />
-                          <span>Create Task</span>
-                        </>
+                        <ChevronRight className="w-4 h-4 text-gray-500" />
+                      )}
+                      <Paperclip className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Attach Files {attachedFiles.length > 0 && `(${attachedFiles.length})`}
+                      </span>
+                      {attachedFiles.length > 0 && (
+                        <div className="flex-1 flex justify-end">
+                          <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded-full">
+                            {attachedFiles.length} file{attachedFiles.length > 1 ? 's' : ''} attached
+                          </span>
+                        </div>
                       )}
                     </button>
+                    
+                    <AnimatePresence>
+                      {isFileUploadExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="pt-2 pb-1">
+                            <FileUpload
+                              onFilesChange={setAttachedFiles}
+                              maxFiles={5}
+                              maxSizeInMB={10}
+                              acceptedTypes={['image/*', '.pdf', '.txt', '.md', '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.yaml', '.yml', '.json']}
+                              className="mt-2"
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                </form>
+
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                      ⚡ Quick Tasks run for exactly 5 minutes
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleSubmitTask}
+                    disabled={!taskDescription.trim()}
+                    className={clsx(
+                      "w-full px-6 py-3 rounded-lg font-medium transition-all duration-200",
+                      "flex items-center justify-center space-x-2",
+                      taskDescription.trim()
+                        ? "bg-gradient-to-r from-yellow-500 to-orange-500 text-white hover:from-yellow-600 hover:to-orange-600 shadow-lg hover:shadow-xl transform hover:scale-105"
+                        : "bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                    )}
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Continue</span>
+                    {attachedFiles.length > 0 && (
+                      <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-xs">
+                        {attachedFiles.length} {attachedFiles.length === 1 ? 'file' : 'files'}
+                      </span>
+                    )}
+                  </button>
+                </motion.div>
+              )}
+
+              {/* Enhancement Step */}
+              {step === 'enhance' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <PromptEnhancer
+                    originalPrompt={taskDescription}
+                    mode="quicktask"
+                    onEnhanced={handleEnhanced}
+                    onSkip={handleSkipEnhancement}
+                  />
+                </motion.div>
+              )}
+
+              {/* Launching Step */}
+              {step === 'launching' && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="flex flex-col items-center justify-center py-8 space-y-4"
+                >
+                  <div className="relative">
+                    <div className="w-16 h-16 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+                    <Zap className="w-8 h-8 text-yellow-500 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+                  </div>
+                  <p className="text-lg font-medium text-gray-900 dark:text-white">
+                    Launching your task...
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Setting up your 5-minute sprint
+                  </p>
+                </motion.div>
+              )}
             </div>
           </motion.div>
-        </motion.div>
+        </div>
       )}
     </AnimatePresence>
   );

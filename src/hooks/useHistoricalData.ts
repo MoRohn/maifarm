@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { HistoricalFarm, HistoricalFilters, BulkAction } from '../types/historical';
+import { HistoricalFarm, HistoricalFilters, BulkAction } from '@/types/historical';
 
 interface HistoricalStats {
   totalFarms: number;

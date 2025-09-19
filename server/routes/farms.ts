@@ -2,7 +2,12 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
-import { farmManager } from '../services/farmManager';
+import { exec } from 'child_process';
+import { farmService as farmManager } from '../services/unified/farmService';
+const farmLauncher: any = {}; // Stub for missing service
+import { unifiedOrchestratorService as orchestratorService } from '../services/UnifiedOrchestratorService';
+import { goWildManager } from '../services/goWildManager';
+import { seedManager } from '../services/seedManager';
 import { validateFarmInput } from '../middleware/validation';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { Farm, FarmCreateInput, FarmUpdateInput } from '../types/farm';
@@ -239,7 +244,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
       
       // 1. Try using farmLauncher to stop the farm
       try {
-        const { farmLauncher } = require('../services/farmLauncher');
+        // farmLauncher already imported at top
         // farmLauncher expects the short version of the farmId
         const shortId = id.substring(0, 8);
         const stopResult = await farmLauncher.stopFarm(shortId);
@@ -255,7 +260,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
       // 2. Try to stop tmux session directly (with force option)
       const sessionName = `farm_${id.substring(0, 8)}`;
       try {
-        const { exec } = require('child_process');
+        // exec already imported at top
         
         // First try to kill the session normally
         await new Promise((resolve) => {
@@ -290,7 +295,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
       // 3. Try orchestratorService if processId exists
       if (farm.config?.processId) {
         try {
-          const { orchestratorService } = require('../services/OrchestratorService');
+          // orchestratorService already imported at top
           await orchestratorService.stopFarm(farm.config.processId);
           console.log(`[Delete] Stopped multi-claude process ${farm.config.processId}`);
         } catch (stopError) {
@@ -301,7 +306,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
       // 4. Clean up any uploaded files
       if (farm.config?.contextFiles && Array.isArray(farm.config.contextFiles)) {
         console.log(`[Delete] Found ${farm.config.contextFiles.length} context files to clean up`);
-        const fs = require('fs').promises;
+        // fs already imported at top as fs/promises
         for (const file of farm.config.contextFiles) {
           if (file.path) {
             try {
@@ -378,7 +383,7 @@ router.post('/:id/start', async (req: AuthRequest, res: Response) => {
 router.post('/:id/launch', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { numberOfAgents = 3, collaborative = false, bundleSteps } = req.body;
+    const { numberOfAgents = 3, collaborative = false, bundleSteps, goWildMode = false, prompt, provider } = req.body;
     const userId = req.user?.id || 'default-user';
 
     // Get farm details
@@ -391,17 +396,65 @@ router.post('/:id/launch', async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Check if this is Go Wild mode
+    if (goWildMode) {
+      // Use goWildManager for Go Wild mode
+      // goWildManager already imported at top
+      
+      try {
+        // Start Go Wild exploration
+        const goWildConfig = {
+          creativityLevel: 80, // High creativity for Go Wild
+          explorationDepth: numberOfAgents || 5,
+          maxDuration: 30, // 30 minutes default
+          boundaries: [],
+          focusAreas: [],
+          seedPrompt: prompt || farm.description || farm.name
+        };
+        
+        const session = await goWildManager.startExploration(id, goWildConfig);
+        
+        // Update farm status
+        await farmManager.updateFarm(id, userId, { 
+          status: 'running',
+          config: {
+            ...farm.config,
+            goWildMode: true,
+            goWildSessionId: session.id
+          }
+        });
+        
+        res.json({
+          success: true,
+          message: 'Go Wild exploration started',
+          farmId: id,
+          sessionId: session.id,
+          agents: numberOfAgents
+        });
+        
+        return; // Exit early for Go Wild mode
+      } catch (goWildError) {
+        console.error('Failed to start Go Wild exploration:', goWildError);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to start Go Wild exploration'
+        });
+      }
+    }
+
+    // Regular farm launch (non-Go Wild)
     // Import farmLauncher
-    const { farmLauncher } = require('../services/farmLauncher');
+    const { farmLauncher } = require('../services/unified/farmService');
 
     // Prepare launch options
     const launchOptions = {
       farmId: id,
       numberOfAgents,
-      prompt: farm.description || farm.name,
+      prompt: prompt || farm.description || farm.name,
       contextFiles: farm.config?.contextFilePaths || [],
       collaborative,
-      bundleSteps
+      bundleSteps,
+      provider: provider || 'claude'
     };
 
     // Launch the farm
@@ -482,7 +535,7 @@ router.get('/:id/multi-claude/status', async (req: AuthRequest, res: Response) =
     }
 
     // Get actual status from orchestratorService
-    const { orchestratorService } = require('../services/OrchestratorService');
+    const { orchestratorService } = require('../services/unified/farmService');
     const status = await orchestratorService.getStatus(id);
     
     res.json({
@@ -576,7 +629,7 @@ router.post('/from-seed', async (req: AuthRequest, res: Response) => {
     }
 
     // Get the seed
-    const seedManager = require('../services/seedManager').seedManager;
+    // seedManager already imported at top
     const seed = await seedManager.getSeed(seedId, userId);
     
     if (!seed) {

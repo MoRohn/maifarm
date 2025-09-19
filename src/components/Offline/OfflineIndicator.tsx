@@ -1,5 +1,5 @@
 import React from 'react';
-import { useOfflineSync } from '../../hooks/useOfflineSync';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { WifiOff, Wifi, RefreshCw, AlertCircle } from 'lucide-react';
 
 export const OfflineIndicator: React.FC = () => {

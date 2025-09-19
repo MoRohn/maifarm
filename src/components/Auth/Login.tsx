@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { authService } from '../../services/auth';
-import { LoginCredentials } from '../../types/auth';
+import { authService } from '@/services/auth';
+import { LoginCredentials } from '@/types/auth';
 import toast from 'react-hot-toast';
-import { useThemeStore } from '../../store/themeStore';
+import { useThemeStore } from '@/store/themeStore';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();

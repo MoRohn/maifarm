@@ -1,0 +1,100 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "logs/.c0a21b9368842c73bd61e537016e20070efccdbe-audit.json",
+    "files": [
+        {
+            "date": 1755769163873,
+            "name": "logs/maifarm-error-2025-08-21.log",
+            "hash": "44c19f637fd5ebce106613e7c9bcd23705b08084307b19c6f32b22227f4a9c64"
+        },
+        {
+            "date": 1756122492540,
+            "name": "logs/maifarm-error-2025-08-25.log",
+            "hash": "4f8f0bf89ec347454eec50960dec9ce3a620ddc3b31d5c039303d0e5aa04565f"
+        },
+        {
+            "date": 1756304698257,
+            "name": "logs/maifarm-error-2025-08-27.log",
+            "hash": "14d01318137c7bb0614f71ee570d42395c0fb34f877a39b7cad09a655020bc7e"
+        },
+        {
+            "date": 1756382609294,
+            "name": "logs/maifarm-error-2025-08-28.log",
+            "hash": "d105e4c8cfc828c2ff4e57a442781ef5468ad1674b5a2f98d9af954917199e63"
+        },
+        {
+            "date": 1756466724707,
+            "name": "logs/maifarm-error-2025-08-29.log",
+            "hash": "6b9d6fcb923f2afb051967d5314d4b7a4e0cc09205f56763c0578b58921ca244"
+        },
+        {
+            "date": 1756727063109,
+            "name": "logs/maifarm-error-2025-09-01.log",
+            "hash": "ed6510c82660a09d44eee78cc280127c377a36e8799e65d1ace959d57afa4417"
+        },
+        {
+            "date": 1756810394614,
+            "name": "logs/maifarm-error-2025-09-02.log",
+            "hash": "70497a0db8ff9266cfbf6c716a8911c424760d1db3b1ab35bc088a4669cc893e"
+        },
+        {
+            "date": 1756894337560,
+            "name": "logs/maifarm-error-2025-09-03.log",
+            "hash": "853e36364142c1caed4f89fa81299ce6f56bfe6b58c99560037490be438d3214"
+        },
+        {
+            "date": 1756977939202,
+            "name": "logs/maifarm-error-2025-09-04.log",
+            "hash": "ec5ee7ca0c7c632e8bb66fe440bd4f5a36f8d92c44c4a71fba070dca6d35a1eb"
+        },
+        {
+            "date": 1757064691597,
+            "name": "logs/maifarm-error-2025-09-05.log",
+            "hash": "8aae73b54dce52c0aa07d6a96e8f27e6ab4610d267d5d95c4282e68bba0c0a94"
+        },
+        {
+            "date": 1757159147036,
+            "name": "logs/maifarm-error-2025-09-06.log",
+            "hash": "61ee9305adeb942ad401fc63f01b616a8179909130a7e30a02fef3b087ab38b7"
+        },
+        {
+            "date": 1757597523879,
+            "name": "logs/maifarm-error-2025-09-11.log",
+            "hash": "a3c55c1583ae0f669b0b5bdf20a8077d0798834c7d08bf45f9d61d4779f95fe9"
+        },
+        {
+            "date": 1757676584332,
+            "name": "logs/maifarm-error-2025-09-12.log",
+            "hash": "aec4a815e0c1e25c5ad372bc4b3637d7b9f8834f24d16ac0c7d6d0128eb12f87"
+        },
+        {
+            "date": 1757935439622,
+            "name": "logs/maifarm-error-2025-09-15.log",
+            "hash": "d90823f3de1e05d770c90ba5fd9982d55ef8c6de71dca9b266587258595a0678"
+        },
+        {
+            "date": 1758017928033,
+            "name": "logs/maifarm-error-2025-09-16.log",
+            "hash": "fd2cf032c4f2318aded6486e08b63731fa2e61e9a868529d94909be9c4e80747"
+        },
+        {
+            "date": 1758106648977,
+            "name": "logs/maifarm-error-2025-09-17.log",
+            "hash": "840d64e6c0411b646027eaefe0d2942ddaf0fa61ce06a317074504f1d20f7515"
+        },
+        {
+            "date": 1758187986699,
+            "name": "logs/maifarm-error-2025-09-18.log",
+            "hash": "f3a85eb4d7743c2c33f4aedd2556128501d3cf7630fd09b65661121f1dc0fa47"
+        },
+        {
+            "date": 1758280822352,
+            "name": "logs/maifarm-error-2025-09-19.log",
+            "hash": "f02eb61c1b3670fa8679dd7b553c38fc1567ef4aa623d066b79018df1bb17c01"
+        }
+    ],
+    "hashType": "sha256"
+}

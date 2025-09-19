@@ -3,7 +3,7 @@
  * Professional terminal themes for Harvest Terminal Pro
  */
 
-import type { TerminalProTheme } from '../types/harvestTerminalPro';
+import type { TerminalProTheme } from '@/types/harvestTerminalPro';
 
 // ============================================================================
 // Cyberpunk Orange Theme (Default)

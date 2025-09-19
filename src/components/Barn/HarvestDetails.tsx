@@ -20,7 +20,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest } from '../../types/barn';
+import { Harvest } from '@/types/barn';
 
 interface HarvestDetailsProps {
   harvest: Harvest;
@@ -283,14 +283,16 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
               Tags
             </h3>
             <div className="flex flex-wrap gap-2">
-              {harvest.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm rounded-full"
-                >
-                  {tag}
-                </span>
-              ))}
+              {harvest.tags && Array.isArray(harvest.tags) && harvest.tags
+                .filter(tag => typeof tag === 'string')
+                .map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm rounded-full"
+                  >
+                    {tag}
+                  </span>
+                ))}
             </div>
           </div>
 

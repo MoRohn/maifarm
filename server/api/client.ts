@@ -3,9 +3,9 @@ import { ApiResponse } from '../types/api';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
-import { farmManager } from '../services/farmManager';
-import { harvestService } from '../services/harvestService';
-import { quickTaskService } from '../services/quickTaskService';
+import { farmService as farmManager } from '../services/unified/farmService';
+import { harvestService } from '../services/unified/harvestService';
+import { quickTaskService } from '../services/unified/quickTaskService';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import path from 'path';
@@ -72,7 +72,7 @@ router.use(authenticateToken);
 router.get('/farms', apiRateLimits.read, async (req: AuthRequest, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     const offset = (Number(page) - 1) * Number(limit);
     
@@ -145,7 +145,7 @@ router.post('/quick-task',
   async (req: AuthRequest, res) => {
   try {
     const { prompt, type = 'general' } = req.body;
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     if (!prompt) {
       return res.status(400).json({
@@ -326,7 +326,7 @@ router.post('/upload',
 router.get('/harvests', apiRateLimits.read, async (req: AuthRequest, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     const harvests = await harvestService.getUserHarvests(userId, {
       page: Number(page),
@@ -358,7 +358,7 @@ router.get('/harvests', apiRateLimits.read, async (req: AuthRequest, res) => {
  */
 router.get('/status', apiRateLimits.read, async (req: AuthRequest, res) => {
   try {
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     // Get counts
     const [farmsResult, harvestsResult, tasksResult] = await Promise.all([
@@ -403,7 +403,7 @@ router.get('/status', apiRateLimits.read, async (req: AuthRequest, res) => {
 router.post('/device', apiRateLimits.write, async (req: AuthRequest, res) => {
   try {
     const { deviceToken, platform, deviceId } = req.body;
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     if (!deviceToken || !platform || !deviceId) {
       return res.status(400).json({
@@ -467,7 +467,7 @@ router.post('/farm/launch',
       yamlConfig
     } = req.body;
     
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     if (!name || !prompt) {
       return res.status(400).json({
@@ -505,7 +505,7 @@ router.post('/farm/launch',
       userId
     });
     
-    // Launch the farm
+    // Launch the farm using XenoSync (legacy multiClaudeService wrapper maintained for compatibility)
     const { multiClaudeService } = await import('../services/multiClaudeService');
     const processId = await multiClaudeService.launchFarm({
       farmId: farm.id,
@@ -609,7 +609,7 @@ router.post('/workspace/sync',
   async (req: AuthRequest, res) => {
   try {
     const { farmId, syncDirection = 'upload' } = req.body;
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     if (!farmId) {
       return res.status(400).json({

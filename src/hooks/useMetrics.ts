@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { MetricType, TimeSeries, AggregationResult, SystemMetrics, FarmMetricsData, AgentMetrics } from '../types/metrics';
-import { metricsService } from '../services/metricsService';
+import { MetricType, TimeSeries, AggregationResult, SystemMetrics, FarmMetricsData, AgentMetrics } from '@/types/metrics';
+import { metricsService } from '@/services/metricsService';
 
 interface UseMetricsReturn {
   metrics: TimeSeries[];

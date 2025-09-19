@@ -1,6 +1,7 @@
 import React from 'react';
 import { Activity, Cpu, HardDrive, Users, AlertTriangle, CheckCircle } from 'lucide-react';
-import { Farm } from '../../types';
+import { Farm } from '@/types';
+import { getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
 
 interface FarmStatusMonitorProps {
   farm: Farm;
@@ -9,9 +10,9 @@ interface FarmStatusMonitorProps {
 const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'running':
+      case 'active':
         return 'text-green-500';
-      case 'creating':
+      case 'launching':
       case 'paused':
         return 'text-yellow-500';
       case 'failed':
@@ -24,7 +25,7 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'running':
+      case 'active':
         return <CheckCircle className="h-5 w-5" />;
       case 'failed':
         return <AlertTriangle className="h-5 w-5" />;
@@ -40,9 +41,10 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
   };
 
   const calculateAverageUptime = () => {
-    if (farm.agents.length === 0) return 0;
-    const totalUptime = farm.agents.reduce((sum, agent) => sum + (agent.metrics?.uptime || 0), 0);
-    return totalUptime / farm.agents.length;
+    const agents = getAgentsFromFarm(farm);
+    if (agents.length === 0) return 0;
+    const totalUptime = agents.reduce((sum, agent) => sum + (agent.metrics?.uptime || 0), 0);
+    return totalUptime / agents.length;
   };
 
   return (
@@ -66,9 +68,9 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
             <Users className="h-5 w-5 text-blue-500" />
             <span className="text-sm font-medium text-gray-700">Agents</span>
           </div>
-          <div className="text-2xl font-bold">{farm.agents.length}</div>
+          <div className="text-2xl font-bold">{getAgentCount(farm)}</div>
           <div className="text-sm text-gray-600">
-            {farm.agents.filter(a => a.status === 'running' || a.status === 'busy').length} active
+            {getAgentsFromFarm(farm).filter(a => a.status === 'active' || a.status === 'busy').length} active
           </div>
         </div>
 

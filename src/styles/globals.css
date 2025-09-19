@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import farm theme styles */
+@import './farm-theme.css';
+
 @layer base {
   :root {
     --radius: 0.5rem;

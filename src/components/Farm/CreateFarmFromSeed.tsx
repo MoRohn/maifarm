@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Loader2, Rocket, CheckCircle, AlertCircle, PauseIcon } from 'lucide-react';
-import { seedService } from '../../services/seedService';
-import { workflowService } from '../../services/workflowService';
-import { Seed } from '../../types/seed';
-import { WorkflowStatus } from '../../services/workflowService';
+import { seedService } from '@/services/seedService';
+import { workflowService } from '@/services/farmService';
+import { Seed } from '@/types/seed';
+import { ExtendedWorkflowStatus } from '@/services/farmService';
 import { toast } from 'react-hot-toast';
-import { useSettingsStore } from '../../store/settingsStore';
+import { useSettingsStore } from '@/store/settingsStore';
 
 export const CreateFarmFromSeed: React.FC = () => {
   const navigate = useNavigate();
@@ -23,7 +23,7 @@ export const CreateFarmFromSeed: React.FC = () => {
     settings.system?.behavior?.autoPauseOnClose ?? true
   );
   const [creating, setCreating] = useState(false);
-  const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus | null>(null);
+  const [workflowStatus, setWorkflowStatus] = useState<ExtendedWorkflowStatus | null>(null);
 
   useEffect(() => {
     loadSeeds();
@@ -75,7 +75,7 @@ export const CreateFarmFromSeed: React.FC = () => {
           if (status.status === 'completed') {
             toast.success('Workflow completed successfully!');
             setTimeout(() => {
-              navigate(`/harvests/${result.farm.id}`);
+              navigate(`/farm/${result.farm.id}/transition/farm`);
             }, 2000);
           } else if (status.status === 'failed') {
             toast.error(`Workflow failed: ${status.error}`);
@@ -98,7 +98,7 @@ export const CreateFarmFromSeed: React.FC = () => {
     seed.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const getStatusIcon = (status: WorkflowStatus['status']) => {
+  const getStatusIcon = (status: ExtendedWorkflowStatus['status'] | string) => {
     switch (status) {
       case 'initializing':
       case 'planting':

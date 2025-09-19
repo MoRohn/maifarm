@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Cpu, Sparkles, Info } from 'lucide-react';
+import { Cpu, Sparkles, Info, Brain, Server } from 'lucide-react';
 import { clsx } from 'clsx';
 
-export type AIProvider = 'claude' | 'qwen';
+export type AIProvider = 'claude' | 'openai';
 
 interface ProviderOption {
   id: AIProvider;
@@ -28,17 +28,16 @@ const providers: ProviderOption[] = [
     ]
   },
   {
-    id: 'qwen',
-    name: 'Qwen3-Coder',
-    description: '480B parameter model with 256K context',
-    icon: <Sparkles className="w-8 h-8" />,
+    id: 'openai',
+    name: 'OpenAI GPT-4',
+    description: 'Industry-leading AI with 128K context window',
+    icon: <Brain className="w-8 h-8" />,
     features: [
-      'Free API access',
-      'Up to 256K tokens context',
-      '35B active parameters',
-      'Enhanced reasoning'
-    ],
-    badge: 'New'
+      'GPT-4 Turbo with 128K context',
+      'Function calling capabilities',
+      'Vision & multimodal support',
+      'Advanced reasoning & analysis'
+    ]
   }
 ];
 
@@ -65,13 +64,13 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
           <Info className="w-4 h-4 text-gray-400 cursor-help" />
           <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-10">
             <div className="bg-gray-900 text-white text-sm rounded-lg p-3 w-64">
-              <p>Choose between Claude Code and Qwen3-Coder for your agent farm.</p>
+              <p>Choose between Claude Code and OpenAI GPT-4 for your agent farm.</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
         {providers.map((provider) => (
           <motion.button
             key={provider.id}
@@ -142,15 +141,16 @@ export const ProviderSelector: React.FC<ProviderSelectorProps> = ({
         ))}
       </div>
 
-      {value === 'qwen' && (
+      {value === 'openai' && (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
-          className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800"
+          className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
         >
-          <p className="text-sm text-yellow-800 dark:text-yellow-200">
-            <strong>Note:</strong> Qwen3-Coder requires an API key from Alibaba's Dashscope platform. 
-            Make sure you have configured your QWEN_API_KEY in the environment settings.
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            <strong>Note:</strong> OpenAI GPT-4 requires an API key from OpenAI. 
+            Make sure you have configured your OPENAI_API_KEY in the environment settings.
+            GPT-4 Turbo supports up to 128K tokens context window.
           </p>
         </motion.div>
       )}

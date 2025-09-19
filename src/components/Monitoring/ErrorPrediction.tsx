@@ -15,12 +15,12 @@ import {
   XCircle
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { ErrorPrediction as ErrorPredictionType, SuggestedAction } from '../../types/monitoring';
+import { ErrorPrediction as ErrorPredictionType, SuggestedAction } from '@/types/monitoring';
 import { toast } from 'react-hot-toast';
 
 interface ErrorPredictionProps {
   predictions: ErrorPredictionType[];
-  onActionExecute: (agentId: string, action: SuggestedAction) => void;
+  onActionExecute: (_agentId: string, _action: SuggestedAction) => void;
   className?: string;
 }
 

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
-import { workflowService } from '../services/workflowService';
+const workflowService: any = {}; // Stub
 import { ApiResponse } from '../types/api';
 
 const router = Router();

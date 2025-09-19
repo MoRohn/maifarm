@@ -7,8 +7,8 @@ import {
   DataRetentionPolicy,
   PrivacyImpactAssessment,
   ComplianceStatus,
-} from '../../types/compliance';
-import { User } from '../../types/auth';
+} from '@/types/compliance';
+import { User } from '@/types/auth';
 import { encryptionService } from '../encryptionService';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';

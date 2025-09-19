@@ -3,12 +3,12 @@
  * Provides comprehensive validation with security, performance, and best practice checks
  */
 
-import { YamlConfig } from '../types/yamlGenerator';
+import { YamlConfig } from '@/types/yamlGenerator';
 import { 
   ValidationRule, 
   ValidationIssue, 
   ExtendedValidationResult 
-} from '../types/yamlPipeline';
+} from '@/types/yamlPipeline';
 import * as yaml from 'js-yaml';
 
 class YamlValidationService {

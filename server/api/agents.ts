@@ -4,6 +4,10 @@ import { authenticateToken, requirePermission } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
 import { v4 as uuidv4 } from 'uuid';
+import { agentHandshakeService } from '../services/agentHandshakeService';
+import { taskQueueManager } from '../services/taskQueueManager';
+import { orchestratorService } from '../services/unified/orchestratorService';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -16,7 +20,7 @@ router.get('/', apiRateLimits.read, async (req, res) => {
     const { 
       page = 1, 
       limit = 20, 
-      sort = 'createdAt', 
+      sort = 'created_at', 
       order = 'desc',
       status,
       farmId,
@@ -46,7 +50,10 @@ router.get('/', apiRateLimits.read, async (req, res) => {
     }
 
     // Add sorting and pagination
-    query += ` ORDER BY ${sort} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    // Validate sort column to prevent SQL injection
+    const validSortColumns = ['created_at', 'updated_at', 'name', 'status', 'type'];
+    const sortColumn = validSortColumns.includes(sort as string) ? sort : 'created_at';
+    query += ` ORDER BY ${sortColumn} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
     params.push(limit, offset);
 
     const result = await db.query(query, params);
@@ -406,6 +413,154 @@ router.post('/:id/heartbeat', apiRateLimits.standard, async (req, res) => {
       }
     };
     res.status(500).json(response);
+  }
+});
+
+// GET /api/agents/connected - Get all connected agents (new agent wrapper system)
+router.get('/connected', apiRateLimits.read, async (req, res) => {
+  try {
+    const agents = agentHandshakeService.getConnectedAgents();
+    
+    res.json({
+      success: true,
+      data: agents,
+      count: agents.length
+    });
+  } catch (error) {
+    logger.error('Error fetching connected agents:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to fetch connected agents',
+        code: 'AGENT_FETCH_ERROR'
+      }
+    });
+  }
+});
+
+// GET /api/agents/handshake/:agentId - Get specific agent from handshake service
+router.get('/handshake/:agentId', apiRateLimits.read, async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    
+    // Handle undefined or invalid agent IDs
+    if (!agentId || agentId === 'undefined' || agentId === 'null') {
+      logger.warn(`Invalid agent ID provided to handshake endpoint: ${agentId}`);
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Invalid agent ID provided',
+          code: 'INVALID_AGENT_ID',
+          details: `Received agent ID: ${agentId}`
+        }
+      });
+    }
+    
+    const agent = agentHandshakeService.getAgent(agentId);
+    
+    if (!agent) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          message: 'Agent not found in handshake service',
+          code: 'AGENT_NOT_FOUND',
+          agentId: agentId
+        }
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: agent
+    });
+  } catch (error) {
+    logger.error('Error fetching agent from handshake:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to fetch agent',
+        code: 'AGENT_FETCH_ERROR'
+      }
+    });
+  }
+});
+
+// POST /api/agents/:agentId/prompt - Send prompt to specific agent
+router.post('/:agentId/prompt', requirePermission(['agents:write']), apiRateLimits.write, async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    const { prompt, context } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Prompt is required',
+          code: 'PROMPT_REQUIRED'
+        }
+      });
+    }
+    
+    // Extract farm ID from agent ID (format: farmId_agent_index)
+    const parts = agentId.split('_agent_');
+    if (parts.length !== 2) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Invalid agent ID format',
+          code: 'INVALID_AGENT_ID'
+        }
+      });
+    }
+    
+    const farmId = parts[0];
+    const agentIndex = parseInt(parts[1]);
+    
+    const taskId = await orchestratorService.sendPromptToAgent(
+      farmId,
+      agentIndex,
+      prompt,
+      context
+    );
+    
+    res.json({
+      success: true,
+      data: {
+        taskId,
+        agentId,
+        status: 'submitted'
+      }
+    });
+  } catch (error) {
+    logger.error('Error sending prompt to agent:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: (error as Error).message || 'Failed to send prompt to agent',
+        code: 'PROMPT_SEND_ERROR'
+      }
+    });
+  }
+});
+
+// GET /api/agents/queue/stats - Get task queue statistics
+router.get('/queue/stats', apiRateLimits.read, async (req, res) => {
+  try {
+    const stats = taskQueueManager.getQueueStats();
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    logger.error('Error fetching queue stats:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to fetch queue statistics',
+        code: 'QUEUE_STATS_ERROR'
+      }
+    });
   }
 });
 

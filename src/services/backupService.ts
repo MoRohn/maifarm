@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { indexedDB as indexedDBManager, MaiFarmDB } from '../utils/indexedDB';
+import { indexedDB as indexedDBManager, MaiFarmDB } from '@/utils/indexedDB';
 import { encryptionService } from './encryptionService';
 import { IDBPDatabase } from 'idb';
 

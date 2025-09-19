@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, AlertTriangle, Info, X, CheckCircle } from 'lucide-react';
-import { useWebSocketStore } from '../../store/websocketStore';
+import { useWebSocketStore } from '@/store/websocketStore';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Alert {

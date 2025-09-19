@@ -5,8 +5,8 @@ import {
   AgentMetrics, 
   SystemMetrics,
   MetricExport 
-} from '../types/metrics';
-import { FarmMetrics } from '../types';
+} from '@/types/metrics';
+import { FarmMetrics } from '@/types';
 
 // Initialize default metrics collection
 collectDefaultMetrics({ prefix: 'maifarm_' });

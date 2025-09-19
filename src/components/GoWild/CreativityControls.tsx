@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sliders, Shield, Target, Sparkles, Brain } from 'lucide-react';
-import { GoWildConfig } from '../../types/goWild';
+import { GoWildConfig } from '@/types/goWild';
 
 interface CreativityControlsProps {
   config: GoWildConfig;
@@ -142,8 +142,8 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
               localConfig.thinkingLevel === 'ultra' ? 4 : 1
             }
             onChange={(e) => {
-              const levels = ['none', 'basic', 'moderate', 'deep', 'ultra'];
-              handleUpdate({ thinkingLevel: levels[parseInt(e.target.value)] });
+              const levels = ['none', 'basic', 'moderate', 'deep', 'ultra'] as const;
+              handleUpdate({ thinkingLevel: levels[parseInt(e.target.value)] as typeof levels[number] });
             }}
             disabled={disabled}
             className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"

@@ -7,8 +7,8 @@ import {
   InformationCircleIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { useAlertStore } from '../../store/alertStore';
-import { alertService, AlertType } from '../../services/alertService';
+import { useAlertStore } from '@/store/alertStore';
+import { alertService, AlertType } from '@/services/alertService';
 
 const iconMap: Record<AlertType, React.ComponentType<{ className?: string }>> = {
   success: CheckCircleIcon,

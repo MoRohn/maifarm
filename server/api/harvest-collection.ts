@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { harvestService } from '../services/harvestService';
+import { harvestService } from '../services/unified/harvestService';
 import { harvestAggregationService } from '../services/harvestAggregationService';
 import { harvestComparisonService } from '../services/harvestComparisonService';
 import { logger } from '../utils/logger';
@@ -127,7 +127,7 @@ router.post('/collect/:farmId', async (req, res) => {
     
     // Automatically store completed harvest in barn
     try {
-      const { barnService } = await import('../services/barnService');
+      const { barnService } = await import('../services/unified/farmService');
       const barnItem = await barnService.storeHarvest(harvest.id, {
         name: `${harvest.farmName} - ${new Date().toLocaleDateString()}`,
         description: harvest.summary.description || 'Collected harvest',

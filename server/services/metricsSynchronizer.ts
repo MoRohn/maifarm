@@ -7,7 +7,8 @@ import { EventEmitter } from 'events';
 import { db } from '../database/connection';
 import { redis } from '../database/connection';
 import { websocketManager } from '../websocket/websocketManager';
-import { farmManager } from './farmManager';
+import { farmService as farmManager } from './unified/farmService';
+import { logger, LogCategory } from '../utils/logger';
 import { coordinationService } from './coordinationService';
 import * as os from 'os';
 
@@ -24,12 +25,17 @@ interface CoreMetrics {
   idleAgents: number;
   uniqueAgents: number;
   
-  // Task metrics
+  // Task metrics (legacy)
   totalTasks: number;
   completedTasks: number;
   failedTasks: number;
   pendingTasks: number;
   successRate: number;
+  
+  // Harvest metrics (new)
+  totalHarvests: number;
+  completedHarvests: number;
+  yieldedItems: number;
   
   // Resource metrics
   cpuUsage: number;
@@ -76,7 +82,8 @@ class MetricsSynchronizer extends EventEmitter {
   private constructor() {
     super();
     this.metrics = this.getDefaultMetrics();
-    this.initialize();
+    // Don't auto-initialize - wait for explicit initialization after database is ready
+    // this.initialize();
   }
 
   static getInstance(): MetricsSynchronizer {
@@ -86,10 +93,10 @@ class MetricsSynchronizer extends EventEmitter {
     return MetricsSynchronizer.instance;
   }
 
-  private async initialize(): Promise<void> {
+  public async initialize(): Promise<void> {
     // Load initial metrics from Redis if available
     await this.loadFromRedis();
-    
+
     // Start periodic aggregation
     this.startPeriodicAggregation();
     
@@ -112,6 +119,9 @@ class MetricsSynchronizer extends EventEmitter {
       failedTasks: 0,
       pendingTasks: 0,
       successRate: 100,
+      totalHarvests: 0,
+      completedHarvests: 0,
+      yieldedItems: 0,
       cpuUsage: 0,
       memoryUsage: 0,
       gpuUsage: 0,
@@ -248,11 +258,17 @@ class MetricsSynchronizer extends EventEmitter {
       // 5. Get performance metrics from recent data
       const perfResult = await db.query(`
         SELECT 
-          AVG(response_time) as avg_response_time,
-          COUNT(*) / EXTRACT(EPOCH FROM (MAX(created_at) - MIN(created_at))) as throughput
+          AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) * 1000 as avg_response_time,
+          CASE 
+            WHEN EXTRACT(EPOCH FROM (MAX(created_at) - MIN(created_at))) > 0 
+            THEN COUNT(*) / EXTRACT(EPOCH FROM (MAX(created_at) - MIN(created_at)))
+            ELSE 0
+          END as throughput
         FROM tasks
         WHERE created_at >= NOW() - INTERVAL '5 minutes'
         AND status = 'completed'
+        AND started_at IS NOT NULL
+        AND completed_at IS NOT NULL
       `);
       
       if (perfResult.rows[0]) {
@@ -264,11 +280,11 @@ class MetricsSynchronizer extends EventEmitter {
       const costResult = await db.query(`
         SELECT 
           SUM(total_cost) as total,
-          SUM(api_cost) as api,
-          SUM(compute_cost) as compute,
-          SUM(storage_cost) as storage
+          SUM(COALESCE(input_cost, prompt_cost) + COALESCE(output_cost, completion_cost)) as api,
+          SUM(COALESCE(estimated_local_cost, 0)) as compute,
+          0 as storage
         FROM token_usage
-        WHERE created_at >= NOW() - INTERVAL '24 hours'
+        WHERE timestamp >= NOW() - INTERVAL '24 hours'
       `);
       
       if (costResult.rows[0]) {
@@ -278,13 +294,66 @@ class MetricsSynchronizer extends EventEmitter {
         metrics.storageCost = parseFloat(costResult.rows[0].storage) || 0;
       }
 
-      // 7. Calculate uptime (simplified - based on server start time)
+      // 7. Get harvest metrics
+      const harvestResult = await db.query(`
+        SELECT 
+          COUNT(*) as total_harvests,
+          COUNT(*) FILTER (WHERE status IN ('ready', 'completed')) as completed_harvests
+        FROM harvests
+      `);
+      
+      if (harvestResult.rows[0]) {
+        metrics.totalHarvests = parseInt(harvestResult.rows[0].total_harvests) || 0;
+        metrics.completedHarvests = parseInt(harvestResult.rows[0].completed_harvests) || 0;
+        
+        // Update legacy task metrics for compatibility
+        metrics.totalTasks = metrics.totalHarvests;
+        metrics.completedTasks = metrics.completedHarvests;
+      }
+      
+      // 8. Get yielded items count (with fallback for missing table)
+      try {
+        const yieldResult = await db.query(`
+          SELECT 
+            COUNT(*) as total_yielded_items
+          FROM harvest_yield
+        `);
+        
+        if (yieldResult.rows[0]) {
+          metrics.yieldedItems = parseInt(yieldResult.rows[0].total_yielded_items) || 0;
+        }
+      } catch (yieldError: any) {
+        // If harvest_yield table doesn't exist yet, fall back to counting harvest items
+        if (yieldError.code === '42P01') { // Table doesn't exist error
+          try {
+            const harvestCountResult = await db.query(`
+              SELECT 
+                COUNT(*) as total_items,
+                SUM(CASE WHEN yield IS NOT NULL THEN jsonb_array_length(yield) ELSE 0 END) as yielded_items
+              FROM harvests
+              WHERE status = 'saved'
+            `);
+            
+            if (harvestCountResult.rows[0]) {
+              metrics.yieldedItems = parseInt(harvestCountResult.rows[0].yielded_items) || 
+                                     parseInt(harvestCountResult.rows[0].total_items) || 0;
+            }
+          } catch {
+            metrics.yieldedItems = 0;
+          }
+        } else {
+          logger.error('METRICS', '[MetricsSynchronizer] Error querying harvest_yield:', yieldError);
+          metrics.yieldedItems = 0;
+        }
+      }
+
+      // 9. Calculate uptime (simplified - based on server start time)
       const uptimeSeconds = process.uptime();
       const targetUptime = 24 * 60 * 60; // 24 hours target
       metrics.uptime = Math.min(100, (uptimeSeconds / targetUptime) * 100);
 
     } catch (error) {
-      console.error('[MetricsSynchronizer] Error aggregating metrics:', error);
+      logger.error('METRICS', '[MetricsSynchronizer] Error aggregating metrics:', error);
     }
 
     return metrics;
@@ -365,13 +434,30 @@ class MetricsSynchronizer extends EventEmitter {
     this.pendingBroadcasts = [];
     this.broadcastTimer = null;
     
-    // Broadcast to all connected clients
-    websocketManager.broadcast('metrics:update', mergedEvent);
+    try {
+      // Broadcast to all connected clients with error handling
+      if (websocketManager && typeof websocketManager.broadcast === 'function') {
+        websocketManager.broadcast('metrics:update', mergedEvent);
+      }
+    } catch (error) {
+      // Handle EPIPE and other broadcast errors gracefully
+      if ((error as any).code === 'EPIPE') {
+        logger.warn('METRICS', '[MetricsSynchronizer] Broken pipe during broadcast, client disconnected');
+      } else {
+        logger.error('METRICS', '[MetricsSynchronizer] Error broadcasting metrics:', error);
+      }
+      // Continue execution - don't crash the server
+    }
     
-    // Emit local event
-    this.emit('metrics:updated', mergedEvent);
+    // Emit local event with error handling
+    try {
+      this.emit('metrics:updated', mergedEvent);
+    } catch (error) {
+      logger.error('METRICS', '[MetricsSynchronizer] Error emitting metrics event:', error);
+    }
     
-    console.log('[MetricsSynchronizer] Broadcasted metrics update to all clients');
+    // Use debug level for routine operations
+    logger.debug('METRICS', 'Broadcasted metrics update');
   }
 
   /**
@@ -452,7 +538,7 @@ class MetricsSynchronizer extends EventEmitter {
     // Validate metrics
     const validation = this.validateMetrics(metrics);
     if (!validation.valid) {
-      console.error('[MetricsSynchronizer] Invalid metrics from', source, validation.errors);
+      logger.error('METRICS', '[MetricsSynchronizer] Invalid metrics from ' + source, validation.errors);
       return;
     }
     
@@ -506,7 +592,7 @@ class MetricsSynchronizer extends EventEmitter {
     } catch (error) {
       // Only log error if it's not a connection issue
       if (!error.message.includes('connection') && !error.message.includes('closed')) {
-        console.error('[MetricsSynchronizer] Failed to save to Redis:', error);
+        logger.error('METRICS', '[MetricsSynchronizer] Failed to save to Redis:', error);
       }
     }
   }
@@ -528,12 +614,12 @@ class MetricsSynchronizer extends EventEmitter {
         this.uniqueAgentIds = new Set(parsed.uniqueAgents);
         this.farmAgentMap = new Map(parsed.farmAgentMap.map(([k, v]: [string, string[]]) => [k, new Set(v)]));
         
-        console.log('[MetricsSynchronizer] Loaded metrics from Redis cache');
+        logger.info('METRICS', '[MetricsSynchronizer] Loaded metrics from Redis cache');
       }
     } catch (error) {
       // Only log error if it's not a connection issue
       if (!error.message.includes('connection') && !error.message.includes('closed')) {
-        console.error('[MetricsSynchronizer] Failed to load from Redis:', error);
+        logger.error('METRICS', '[MetricsSynchronizer] Failed to load from Redis:', error);
       }
     }
   }
@@ -550,7 +636,7 @@ class MetricsSynchronizer extends EventEmitter {
       this.updateMetrics('periodic');
     }, this.UPDATE_INTERVAL);
     
-    console.log('[MetricsSynchronizer] Started periodic aggregation');
+    logger.info('METRICS', '[MetricsSynchronizer] Started periodic aggregation');
   }
 
   /**
@@ -581,7 +667,7 @@ class MetricsSynchronizer extends EventEmitter {
     coordinationService.on('task:completed', () => this.updateMetrics('task:completed'));
     coordinationService.on('task:failed', () => this.updateMetrics('task:failed'));
     
-    console.log('[MetricsSynchronizer] Subscribed to metric update events');
+    logger.info('METRICS', '[MetricsSynchronizer] Subscribed to metric update events');
   }
 
   /**
@@ -591,6 +677,9 @@ class MetricsSynchronizer extends EventEmitter {
     return {
       activeFarms: this.metrics.activeFarms,
       totalAgents: this.metrics.uniqueAgents, // Use deduplicated count
+      harvestsCompleted: this.metrics.completedHarvests || this.metrics.completedTasks, // Use harvests, fallback to tasks
+      yieldedItems: this.metrics.yieldedItems || 0,
+      // Legacy fields for backward compatibility
       tasksCompleted: this.metrics.completedTasks,
       successRate: this.metrics.successRate
     };
@@ -603,7 +692,7 @@ class MetricsSynchronizer extends EventEmitter {
     this.stopPeriodicAggregation();
     await this.saveToRedis();
     this.removeAllListeners();
-    console.log('[MetricsSynchronizer] Cleaned up');
+    logger.info('METRICS', '[MetricsSynchronizer] Cleaned up');
   }
 }
 

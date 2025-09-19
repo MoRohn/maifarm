@@ -185,6 +185,15 @@ export function generateFarmTeamName(agents: FarmAgentName[]): string {
   }
 }
 
+/**
+ * Get agent name string directly by index (convenience method)
+ * Returns formatted name WITHOUT emoji for compatibility
+ */
+export function getAgentNameByIndex(index: number): string {
+  const farmAgent = getFarmAgentName('general', index);
+  return formatFarmAgentNameNoEmoji(farmAgent);
+}
+
 export default {
   getFarmAgentName,
   getFarmAgentNames,
@@ -192,5 +201,6 @@ export default {
   formatFarmAgentNameNoEmoji,
   getRandomFarmAgent,
   generateFarmTeamName,
+  getAgentNameByIndex,
   farmCharacters
 };

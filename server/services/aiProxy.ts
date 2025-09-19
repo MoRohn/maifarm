@@ -5,7 +5,7 @@ import axios from 'axios';
 
 /**
  * AI Proxy Service
- * Translates requests between Claude and Qwen formats
+ * Translates requests between Claude and OpenAI formats
  * Enables seamless switching between AI providers
  */
 
@@ -27,7 +27,7 @@ export interface UnifiedAIRequest {
 export interface UnifiedAIResponse {
   content: string;
   model: string;
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'openai';
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -101,7 +101,7 @@ export class AIProxy extends EventEmitter {
       return {
         content: responseData.output?.text || responseData.choices?.[0]?.message.content || '',
         model: provider.model,
-        provider: 'qwen',
+        provider: 'openai',
         usage: responseData.usage ? {
           promptTokens: responseData.usage.prompt_tokens || 0,
           completionTokens: responseData.usage.completion_tokens || 0,
@@ -209,7 +209,7 @@ export class AIProxy extends EventEmitter {
   /**
    * Translate farm creation prompts for different providers
    */
-  translateFarmPrompt(prompt: string, targetProvider: 'claude' | 'qwen'): string {
+  translateFarmPrompt(prompt: string, targetProvider: 'claude' | 'openai'): string {
     if (targetProvider === 'qwen') {
       // Add Qwen-specific optimizations
       return `${prompt}
@@ -228,7 +228,7 @@ export class AIProxy extends EventEmitter {
   /**
    * Get provider-specific configuration hints
    */
-  getProviderHints(provider: 'claude' | 'qwen'): Record<string, any> {
+  getProviderHints(provider: 'claude' | 'openai'): Record<string, any> {
     switch (provider) {
       case 'qwen':
         return {

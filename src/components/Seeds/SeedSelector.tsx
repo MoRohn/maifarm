@@ -16,8 +16,8 @@ import {
   Star
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Seed, SeedFilter } from '../../types/seed';
-import { useSeeds, useSeedCategories } from '../../hooks/useSeeds';
+import { Seed, SeedFilter } from '@/types/seed';
+import { useSeeds, useSeedCategories } from '@/hooks/useSeeds';
 
 interface SeedSelectorProps {
   onSelectSeed: (seed: Seed) => void;
@@ -219,12 +219,12 @@ export const SeedSelector: React.FC<SeedSelectorProps> = ({
 
                             {/* Tags */}
                             <div className="flex flex-wrap gap-1 mt-2">
-                              {seed.tags.slice(0, 3).map((tag, index) => (
+                              {seed.tags.slice(0, 3).map((_tag, _index) => (
                                 <span
-                                  key={`tag-${tag}-${index}`}
+                                  key={`tag-${_tag}-${_index}`}
                                   className="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full"
                                 >
-                                  {tag}
+                                  {_tag}
                                 </span>
                               ))}
                               {seed.tags.length > 3 && (

@@ -14,7 +14,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest } from '../../types/barn';
+import { Harvest } from '@/types/barn';
 
 interface HarvestCardProps {
   harvest: Harvest;
@@ -218,19 +218,22 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({
         </div>
 
         {/* Tags */}
-        {harvest.tags.length > 0 && (
+        {harvest.tags && Array.isArray(harvest.tags) && harvest.tags.filter(tag => typeof tag === 'string').length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {harvest.tags.slice(0, 3).map((tag) => (
-              <span
-                key={tag}
-                className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs rounded-full"
-              >
-                {tag}
-              </span>
-            ))}
-            {harvest.tags.length > 3 && (
+            {harvest.tags
+              .filter(tag => typeof tag === 'string')
+              .slice(0, 3)
+              .map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs rounded-full"
+                >
+                  {tag}
+                </span>
+              ))}
+            {harvest.tags.filter(tag => typeof tag === 'string').length > 3 && (
               <span className="px-2 py-1 text-gray-500 text-xs">
-                +{harvest.tags.length - 3} more
+                +{harvest.tags.filter(tag => typeof tag === 'string').length - 3} more
               </span>
             )}
           </div>

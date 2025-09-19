@@ -1,5 +1,5 @@
 import React from 'react';
-import { WeatherWidget } from '../components/common/WeatherWidget';
+import { WeatherWidget } from '@/components/common/WeatherWidget';
 
 /**
  * Weather Widget Usage Examples

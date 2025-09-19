@@ -12,9 +12,9 @@ import {
   Clock
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest } from '../../types/harvest';
-import { SeedCreateInput } from '../../types/seed';
-import { harvestService } from '../../services/harvestService';
+import { Harvest } from '@/types/harvest';
+import { SeedCreateInput } from '@/types/seed';
+import { harvestService } from '@/services/harvestService';
 
 interface SaveAsSeedModalProps {
   harvest: Harvest;
@@ -48,8 +48,8 @@ export const SaveAsSeedModal: React.FC<SaveAsSeedModalProps> = ({
     
     // Create a simplified YAML structure based on harvest patterns
     const yaml = `# Generated from ${harvest.farmName} harvest
-# Success rate: ${Math.round((harvest.summary.completedTasks / harvest.summary.totalTasks) * 100)}%
-# Duration: ${Math.floor(harvest.summary.duration / 60)}m
+# Success rate: ${harvest.summary.totalTasks > 0 ? Math.round((harvest.summary.completedTasks / harvest.summary.totalTasks) * 100) : 0}%
+# Duration: ${harvest.summary.duration ? Math.floor(harvest.summary.duration / 60) : 0}m
 
 name: "${seedData.name}"
 type: ${seedData.farmType}
@@ -135,7 +135,7 @@ optimization:
     {
       icon: Clock,
       label: 'Duration',
-      value: `${Math.floor(harvest.summary.duration / 60)}m`
+      value: `${harvest.summary.duration ? Math.floor(harvest.summary.duration / 60) : 0}m`
     }
   ];
 

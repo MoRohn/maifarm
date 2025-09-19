@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Droppable, Draggable } from 'react-beautiful-dnd';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { FarmCard } from './FarmCard';
-import { Farm } from '../../types';
+import { FarmTaskModal } from '../Task/FarmTaskModal';
+import { Farm } from '@/types';
 import { Grid3x3, Plus } from 'lucide-react';
 
 interface FarmGridProps {
@@ -13,27 +14,38 @@ interface FarmGridProps {
 }
 
 export const FarmGrid: React.FC<FarmGridProps> = ({ farms, onCreateFarm, className }) => {
+  const [showFarmModal, setShowFarmModal] = useState(false);
+  
+  const handleCreateFarm = () => {
+    if (onCreateFarm) {
+      onCreateFarm();
+    } else {
+      setShowFarmModal(true);
+    }
+  };
+  
   return (
-    <div className={clsx('space-y-6', className)}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Active Farms
-          </h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Drag to reorder your farms or manage agent assignments
-          </p>
+    <>
+      <div className={clsx('space-y-6', className)}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Active Farms
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Drag to reorder your farms or manage agent assignments
+            </p>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleCreateFarm}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-apple hover:bg-primary-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Farm</span>
+          </motion.button>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={onCreateFarm}
-          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-apple hover:bg-primary-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Farm</span>
-        </motion.button>
-      </div>
 
       <Droppable droppableId="farms" type="farm" direction="vertical">
         {(provided, snapshot) => (
@@ -89,7 +101,7 @@ export const FarmGrid: React.FC<FarmGridProps> = ({ farms, onCreateFarm, classNa
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={onCreateFarm}
+                    onClick={handleCreateFarm}
                     className="px-4 py-2 bg-primary-600 text-white rounded-apple hover:bg-primary-700 transition-colors"
                   >
                     Create Your First Farm
@@ -101,5 +113,12 @@ export const FarmGrid: React.FC<FarmGridProps> = ({ farms, onCreateFarm, classNa
         )}
       </Droppable>
     </div>
+    
+    {/* Farm Task Modal */}
+    <FarmTaskModal
+      isOpen={showFarmModal}
+      onClose={() => setShowFarmModal(false)}
+    />
+    </>
   );
 };

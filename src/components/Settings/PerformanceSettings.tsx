@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Zap, Cpu, HardDrive, Wifi, Battery, Monitor, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { PerformanceSettings as IPerformanceSettings, StorageSettings, NetworkSettings } from '../../types/settings';
+import { PerformanceSettings as IPerformanceSettings, StorageSettings, NetworkSettings } from '@/types/settings';
 
 const PerformanceSettings: React.FC = () => {
   const [performance, setPerformance] = useState<IPerformanceSettings>({

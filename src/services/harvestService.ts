@@ -3,7 +3,7 @@ import {
   HarvestFilter, 
   HarvestExport, 
   HarvestSummary 
-} from '../types/harvest';
+} from '@/types/harvest';
 import apiClient from './apiClient';
 import { websocketService } from './websocket/websocketService';
 
@@ -54,13 +54,17 @@ class HarvestService {
     const queryString = params.toString();
     const url = queryString ? `${this.baseUrl}?${queryString}` : this.baseUrl;
     
-    const response = await apiClient.get<Harvest[]>(url);
-    return response.data.map(harvest => this.parseHarvest(harvest));
+    const response = await apiClient.get<any>(url);
+    // Handle both array and wrapped response formats
+    const harvests = Array.isArray(response.data) ? response.data : (response.data.data || []);
+    return harvests.map(harvest => this.parseHarvest(harvest));
   }
 
   async getSummaries(): Promise<HarvestSummary[]> {
-    const response = await apiClient.get<HarvestSummary[]>(`${this.baseUrl}/summaries`);
-    return response.data.map(summary => ({
+    const response = await apiClient.get<any>(`${this.baseUrl}/summaries`);
+    // Handle both array and wrapped response formats
+    const summaries = Array.isArray(response.data) ? response.data : (response.data.data || []);
+    return summaries.map(summary => ({
       ...summary,
       completedAt: new Date(summary.completedAt),
       topInsights: summary.topInsights.map(insight => ({
@@ -75,9 +79,16 @@ class HarvestService {
     return this.parseHarvest(response.data);
   }
 
+  // Alias for getById - some components expect this method name
+  async getHarvest(id: string): Promise<Harvest> {
+    return this.getById(id);
+  }
+
   async getByFarmId(farmId: string): Promise<Harvest[]> {
-    const response = await apiClient.get<Harvest[]>(`${this.baseUrl}/farms/${farmId}`);
-    return response.data.map(harvest => this.parseHarvest(harvest));
+    const response = await apiClient.get<any>(`${this.baseUrl}/farms/${farmId}`);
+    // Handle both array and wrapped response formats
+    const harvests = Array.isArray(response.data) ? response.data : (response.data.data || []);
+    return harvests.map(harvest => this.parseHarvest(harvest));
   }
 
   async startHarvest(farmId: string, farmName: string): Promise<Harvest> {
@@ -107,11 +118,11 @@ class HarvestService {
       ...harvest,
       createdAt: new Date(harvest.createdAt),
       completedAt: harvest.completedAt ? new Date(harvest.completedAt) : undefined,
-      results: harvest.results.map((result: any) => ({
+      results: (harvest.results || []).map((result: any) => ({
         ...result,
         timestamp: new Date(result.timestamp)
       })),
-      insights: harvest.insights.map((insight: any) => ({
+      insights: (harvest.insights || []).map((insight: any) => ({
         ...insight,
         timestamp: new Date(insight.timestamp)
       })),
@@ -130,7 +141,8 @@ class HarvestService {
       format,
       includeResults: true,
       includeInsights: true,
-      includeArtifacts: true
+      includeArtifacts: true,
+      includeYield: true
     };
 
     const blob = await this.exportHarvest(exportConfig);
@@ -209,12 +221,12 @@ class HarvestService {
       `${this.baseUrl}/${harvestId}/yield/${yieldId}/download`,
       { responseType: 'blob' }
     );
-    
+
     // Create download link
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `artifact_${artifactId}`);
+    link.setAttribute('download', `yield_${yieldId}`);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -246,27 +258,39 @@ class HarvestService {
   // ===== Real-time harvest monitoring =====
 
   joinHarvestRoom(farmId: string) {
-    websocketService.emit('harvest:join', { farmId });
+    // Only emit if WebSocket is connected
+    if (websocketService.connected) {
+      websocketService.emit('harvest:join', { farmId });
+    }
   }
 
   leaveHarvestRoom(farmId: string) {
-    websocketService.emit('harvest:leave', { farmId });
+    // Only emit if WebSocket is connected
+    if (websocketService.connected) {
+      websocketService.emit('harvest:leave', { farmId });
+    }
   }
 
   requestTerminalOutput(sessionName: string, agentId: string, lines?: number) {
-    websocketService.emit('harvest:terminal:request', {
-      sessionName,
-      agentId,
-      lines
-    });
+    // Only emit if WebSocket is connected
+    if (websocketService.connected) {
+      websocketService.emit('harvest:terminal:request', {
+        sessionName,
+        agentId,
+        lines
+      });
+    }
   }
 
   sendTerminalCommandRealtime(sessionName: string, agentId: string, command: string) {
-    websocketService.emit('harvest:terminal:command', {
-      sessionName,
-      agentId,
-      command
-    });
+    // Only emit if WebSocket is connected
+    if (websocketService.connected) {
+      websocketService.emit('harvest:terminal:command', {
+        sessionName,
+        agentId,
+        command
+      });
+    }
   }
 
   // Subscribe to harvest updates
@@ -297,3 +321,4 @@ class HarvestService {
 }
 
 export const harvestService = new HarvestService();
+export type { HarvestService };

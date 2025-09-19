@@ -8,9 +8,7 @@ export interface Settings {
   notifications?: NotificationSettings;
   language?: string;
   aiAssistance?: AIAssistantSettings;
-  aiProvider?: 'claude' | 'qwen' | 'qwen_local';
-  qwenLocalModel?: string;
-  qwenLocalEnabled?: boolean;
+  aiProvider?: 'claude' | 'openai';
   agentConfig?: {
     maxAgents: number;
     agentMode: 'default' | 'supercharge' | 'ultrafarmer';

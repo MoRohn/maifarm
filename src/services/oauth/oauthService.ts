@@ -8,7 +8,7 @@ import {
   AuthorizationRequest,
   TokenRequest,
   OAuthSession,
-} from '../../types/oauth';
+} from '@/types/oauth';
 import { encryptionService } from '../encryptionService';
 
 const OAUTH_STATE_KEY = 'maifarm_oauth_state';

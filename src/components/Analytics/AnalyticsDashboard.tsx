@@ -1,46 +1,35 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Activity, 
-  TrendingUp, 
-  DollarSign, 
-  Clock, 
-  AlertTriangle,
-  Users,
-  Cpu,
-  HardDrive,
-  Download,
-  RefreshCw
-} from 'lucide-react';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { useThemeStore } from '../../store/themeStore';
-import { useFarmStore } from '../../store/farmStore';
-import { analyticsService } from '../../services/analyticsService';
+import {Activity, DollarSign, Download, RefreshCw, TrendingUp, Users} from 'lucide-react';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useThemeStore } from '@/store/themeStore';
+import { useFarmStore } from '@/store/farmStore';
+import { analyticsService } from '@/services/analyticsService';
+import { getAllAgentsFromFarms } from '@/utils/farmHelpers';
 import { LineChart } from './Charts/LineChart';
-import { BarChart } from './Charts/BarChart';
 import { PieChart } from './Charts/PieChart';
 import { PerformanceMetrics } from './PerformanceMetrics';
 import { ResourceUtilization } from './ResourceUtilization';
-import { formatMetricValue } from '../../utils/dataAggregation';
-import { TimeRange, TimeSeriesData } from '../../types/analytics';
+import { formatMetricValue } from '@/utils/dataAggregation';
+import {TimeRange} from '@/types/analytics';
 import toast from 'react-hot-toast';
 
 export const AnalyticsDashboard: React.FC = () => {
-  const theme = useThemeStore((state) => state.theme);
+  // const theme = useThemeStore((state) => state.theme); // Currently unused
   const farms = useFarmStore((state) => state.farms);
   const {
     metrics,
     timeSeriesData,
     agentPerformance,
-    taskCompletions,
+    // taskCompletions,  // Currently unused
     errors,
     selectedTimeRange,
     refreshInterval,
-    isLoading,
+    // isLoading,  // Currently unused
     setMetrics,
     updateTimeSeriesData,
     updateAgentPerformance,
     setTimeRange,
-    setRefreshInterval,
+    // setRefreshInterval,  // Currently unused
     setLoading,
     setError,
   } = useAnalyticsStore();
@@ -69,7 +58,7 @@ export const AnalyticsDashboard: React.FC = () => {
       setLoading(true);
 
       // Get all agents from farms
-      const allAgents = farms.flatMap(farm => farm.agents);
+      const allAgents = getAllAgentsFromFarms(farms);
 
       // Load aggregated metrics
       const aggregatedMetrics = await analyticsService.calculateAggregatedMetrics(

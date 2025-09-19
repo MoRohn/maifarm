@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { offlineService } from '../services/offline';
+import { offlineService } from '@/services/offline';
 
 interface OfflineStatus {
   isOnline: boolean;

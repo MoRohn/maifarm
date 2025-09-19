@@ -2,7 +2,7 @@ import express from 'express';
 import { json, urlencoded } from 'express';
 
 // Import only the barn routes for testing
-import barnRoutes from '../api/barn.js';
+import { router as barnRoutes } from '../api/barn';
 
 // Create Express app for testing
 const app = express();

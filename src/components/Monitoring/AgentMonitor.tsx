@@ -15,8 +15,8 @@ import {
   type LucideIcon
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { AgentStatus } from '../../services/websocket';
-import { websocketService } from '../../services/websocket';
+import { AgentStatus } from '@/services/websocket';
+import { websocketService } from '@/services/websocket';
 
 interface AgentMonitorProps {
   agent: AgentStatus;

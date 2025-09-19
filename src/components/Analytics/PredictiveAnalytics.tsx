@@ -10,9 +10,9 @@ import {
   Activity
 } from 'lucide-react';
 import { LineChart } from './Charts/LineChart';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { predictiveAnalyticsService } from '../../services/predictiveAnalytics';
-import { Prediction, TimeRange } from '../../types/analytics';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { predictiveAnalyticsService } from '@/services/predictiveAnalytics';
+import { Prediction, TimeRange } from '@/types/analytics';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 

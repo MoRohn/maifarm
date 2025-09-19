@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Wifi, WifiOff, RefreshCw, AlertCircle } from 'lucide-react';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import clsx from 'clsx';
 
 interface ConnectionStatusProps {

@@ -5,7 +5,7 @@ import {
   AccessRequest,
   AccessContext,
   Principal,
-} from '../../types/rbac';
+} from '@/types/rbac';
 
 export class PolicyEngine {
   private policyCache = new Map<string, Policy>();

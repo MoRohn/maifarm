@@ -103,7 +103,7 @@ interface SyncData {
 
 // Track visibility state
 let isAppVisible = true;
-let activeFarms: Set<string> = new Set();
+const activeFarms: Set<string> = new Set();
 
 const SYNC_QUEUE = 'maifarm-sync-queue';
 
@@ -297,7 +297,7 @@ self.addEventListener('message', async (event) => {
   if (event.data && event.data.type === 'FARM_STATUS_UPDATE') {
     const { farmId, status, autoPauseOnClose } = event.data;
     
-    if (status === 'active' || status === 'running') {
+    if (status === 'active' || status === 'active') {
       activeFarms.add(farmId);
       // Store auto-pause preference for this farm
       await storeFarmPreference(farmId, { autoPauseOnClose });

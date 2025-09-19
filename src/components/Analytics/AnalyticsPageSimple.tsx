@@ -1,40 +1,15 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Activity,
-  TrendingUp,
-  DollarSign,
-  Clock,
-  Cpu,
-  HardDrive,
-  Users,
-  Package,
-  Zap,
-  BarChart3,
-  PieChart as PieChartIcon,
-  LineChart as LineChartIcon,
-  RefreshCw,
-  Download,
-  Server,
-  MemoryStick
-} from 'lucide-react';
+import {BarChart3, DollarSign, Download, Package, RefreshCw, TrendingUp, Users} from 'lucide-react';
 import { clsx } from 'clsx';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { useFarmStore } from '../../store/farmStore';
-import { useThemeStore } from '../../store/themeStore';
-import { useUserStore } from '../../store/userStore';
-import { useWebSocket } from '../../hooks/useWebSocket';
-import { analyticsService } from '../../services/analyticsService';
-import { ThemedLayout } from '../common/ThemedLayout';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useFarmStore } from '@/store/farmStore';
+import { useThemeStore } from '@/store/themeStore';
+import { useUserStore } from '@/store/userStore';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { analyticsService } from '@/services/analyticsService';
+import { getAllAgentsFromFarms } from '@/utils/farmHelpers';
 import { StatsCard } from '../Dashboard/StatsCard';
-import { MetricsOverview } from './MetricsOverview';
-import { RealTimeChart } from './Charts/RealTimeChart';
-import { HarvestChart } from './Charts/HarvestChart';
-import { CostBreakdown } from './Charts/CostBreakdown';
-import { AgentEfficiencyChart } from './Charts/AgentEfficiencyChart';
-import { FarmCreationChart } from './Charts/FarmCreationChart';
-import { GoWildChart } from './Charts/GoWildChart';
-import { QuickTaskChart } from './Charts/QuickTaskChart';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -79,7 +54,7 @@ export const AnalyticsPageSimple: React.FC = () => {
   const realtimeMetrics = useMemo(() => {
     const totalAgents = farms.reduce((acc, farm) => acc + (farm.agents?.length || 0), 0);
     const activeAgents = farms.reduce((acc, farm) => 
-      acc + (farm.agents?.filter(a => a.status === 'running')?.length || 0), 0
+      acc + (farm.agents?.filter((a: any) => a.status === 'active')?.length || 0), 0
     );
     const completedTasks = taskCompletions.filter(t => t.status === 'completed').length;
     const totalTasks = taskCompletions.length;
@@ -126,7 +101,7 @@ export const AnalyticsPageSimple: React.FC = () => {
       setStoreLoading(true);
       
       try {
-        const allAgents = farms.flatMap(farm => farm.agents || []);
+        const allAgents = getAllAgentsFromFarms(farms);
         
         // Load aggregated metrics
         const aggregatedMetrics = await analyticsService.calculateAggregatedMetrics(

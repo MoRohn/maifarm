@@ -41,7 +41,7 @@ export interface MaiFarmDB extends DBSchema {
       agentId: string;
       type: string;
       priority: number;
-      status: 'pending' | 'running' | 'completed' | 'failed';
+      status: 'pending' | 'active' | 'completed' | 'failed';
       data: any;
       result?: any;
       error?: string;

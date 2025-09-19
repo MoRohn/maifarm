@@ -14,9 +14,9 @@ import {
   Minus
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { AgentMonitoringData, TimeSeriesData } from '../../types/monitoring';
-import { AgentStatus } from '../../types';
-import { useMonitoring } from '../../hooks/useMonitoring';
+import { AgentMonitoringData, TimeSeriesData } from '@/types/monitoring';
+import { AgentStatus } from '@/types';
+import { useMonitoring } from '@/hooks/useMonitoring';
 
 interface LiveAgentStatusProps {
   farmId: string;
@@ -75,7 +75,7 @@ export const LiveAgentStatus: React.FC<LiveAgentStatusProps> = ({ farmId, classN
       bgColor: 'bg-blue-100 dark:bg-blue-900/30',
       pulseColor: 'bg-blue-500'
     },
-    running: { 
+    active: { 
       icon: Play, 
       color: 'text-green-600 dark:text-green-400',
       bgColor: 'bg-green-100 dark:bg-green-900/30',
@@ -87,53 +87,23 @@ export const LiveAgentStatus: React.FC<LiveAgentStatusProps> = ({ farmId, classN
       bgColor: 'bg-red-100 dark:bg-red-900/30',
       pulseColor: 'bg-red-500'
     },
-    provisioning: { 
+    initializing: { 
       icon: RotateCw, 
       color: 'text-indigo-600 dark:text-indigo-400',
       bgColor: 'bg-indigo-100 dark:bg-indigo-900/30',
       pulseColor: 'bg-indigo-500'
     },
-    starting: { 
+    terminating: { 
       icon: Zap, 
       color: 'text-purple-600 dark:text-purple-400',
       bgColor: 'bg-purple-100 dark:bg-purple-900/30',
       pulseColor: 'bg-purple-500'
     },
-    stopping: { 
-      icon: RotateCw, 
-      color: 'text-orange-600 dark:text-orange-400',
-      bgColor: 'bg-orange-100 dark:bg-orange-900/30',
-      pulseColor: 'bg-orange-500'
-    },
-    stopped: { 
+    terminated: { 
       icon: XCircle, 
       color: 'text-gray-600 dark:text-gray-400',
       bgColor: 'bg-gray-100 dark:bg-gray-900/30',
       pulseColor: 'bg-gray-500'
-    },
-    initializing: { 
-      icon: RotateCw, 
-      color: 'text-cyan-600 dark:text-cyan-400',
-      bgColor: 'bg-cyan-100 dark:bg-cyan-900/30',
-      pulseColor: 'bg-cyan-500'
-    },
-    draining: { 
-      icon: TrendingDown, 
-      color: 'text-amber-600 dark:text-amber-400',
-      bgColor: 'bg-amber-100 dark:bg-amber-900/30',
-      pulseColor: 'bg-amber-500'
-    },
-    terminating: { 
-      icon: XCircle, 
-      color: 'text-red-700 dark:text-red-300',
-      bgColor: 'bg-red-100 dark:bg-red-900/30',
-      pulseColor: 'bg-red-600'
-    },
-    terminated: { 
-      icon: XCircle, 
-      color: 'text-gray-700 dark:text-gray-300',
-      bgColor: 'bg-gray-100 dark:bg-gray-900/30',
-      pulseColor: 'bg-gray-600'
     }
   };
 
@@ -241,7 +211,7 @@ export const LiveAgentStatus: React.FC<LiveAgentStatusProps> = ({ farmId, classN
                       <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
                         {agent.currentTask}
                       </p>
-                      {agent.progress > 0 && (
+                      {agent.progress && agent.progress > 0 && (
                         <div className="mt-2 h-1 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
                           <motion.div
                             initial={{ width: 0 }}
@@ -258,15 +228,15 @@ export const LiveAgentStatus: React.FC<LiveAgentStatusProps> = ({ farmId, classN
                   <div className="grid grid-cols-3 gap-2">
                     <MetricCard
                       label="CPU"
-                      value={agent.cpu}
+                      value={agent.resources?.cpu || 0}
                       trend={trend}
-                      sparkline={agent.resourceHistory.cpu.slice(-10)}
+                      sparkline={agent.resourceHistory?.cpu?.slice(-10) || []}
                     />
                     <MetricCard
                       label="Memory"
-                      value={agent.memory}
-                      trend={getTrend(agent.resourceHistory.memory)}
-                      sparkline={agent.resourceHistory.memory.slice(-10)}
+                      value={agent.resources?.memory || 0}
+                      trend={getTrend(agent.resourceHistory?.memory || [])}
+                      sparkline={agent.resourceHistory?.memory?.slice(-10) || []}
                     />
                     <MetricCard
                       label="Tasks"
@@ -389,7 +359,7 @@ const Sparkline: React.FC<{ data: TimeSeriesData[]; className?: string }> = ({ d
 interface AgentDetailsModalProps {
   agent: AgentMonitoringData;
   onClose: () => void;
-  onControl: (agentId: string, action: 'pause' | 'resume' | 'restart') => void;
+  onControl: (_agentId: string, _action: 'pause' | 'resume' | 'restart') => void;
 }
 
 const AgentDetailsModal: React.FC<AgentDetailsModalProps> = ({ agent, onClose, onControl }) => {

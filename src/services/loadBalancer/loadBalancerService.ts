@@ -1,4 +1,4 @@
-import { Agent } from '../../types';
+import { Agent } from '@/types';
 import { HANode } from '../highAvailability/haManager';
 
 export interface LoadBalancerConfig {

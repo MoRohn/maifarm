@@ -2,8 +2,8 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Clock, XCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { TaskCompletion } from '../../types/analytics';
-import { formatNumber, formatPercentage } from '../../utils/format';
+import type { TaskCompletion } from '@/types/analytics';
+import { formatNumber, formatPercentage } from '@/utils/format';
 
 interface TaskCompletionRatesProps {
   tasks?: TaskCompletion[];

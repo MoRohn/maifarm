@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useAuth } from './useAuth';
-import { permissionsService, RESOURCES, ACTIONS } from '../services/permissions';
+import { permissionsService, RESOURCES, ACTIONS } from '@/services/permissions';
 
 export const usePermissions = () => {
   const { user, checkPermission, hasRole } = useAuth();

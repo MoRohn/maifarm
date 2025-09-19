@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Prompt Pills - MaiFarm</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+        }
+        .mode-section {
+            margin-bottom: 40px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 2px solid #e9ecef;
+        }
+        .mode-section h2 {
+            color: #495057;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .mode-icon {
+            width: 28px;
+            height: 28px;
+            padding: 6px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .farm-icon { background: #d4edda; }
+        .quick-icon { background: #cce5ff; }
+        .wild-icon { background: #f8d7da; }
+        
+        .pills-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        .pill:hover {
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        /* Category colors */
+        .research {
+            background: #cfe2ff;
+            color: #084298;
+        }
+        .structure {
+            background: #d1e7dd;
+            color: #0f5132;
+        }
+        .clarity {
+            background: #e0cffc;
+            color: #59359a;
+        }
+        .execution {
+            background: #fecba1;
+            color: #842029;
+        }
+        
+        .icon {
+            width: 16px;
+            height: 16px;
+        }
+        
+        .universal-section {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border: 2px solid #667eea30;
+            margin-bottom: 40px;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .feature-card {
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .feature-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+        
+        .feature-card p {
+            color: #666;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .demo-prompt {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .demo-prompt h4 {
+            color: #495057;
+            margin-bottom: 8px;
+        }
+        
+        .demo-prompt p {
+            color: #666;
+            margin: 5px 0;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #28a745;
+            color: white;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 General Prompt Enhancement Pills</h1>
+        <p class="subtitle">Universal prompt improvements that work across all modes</p>
+        
+        <!-- Universal Enhancement Pills -->
+        <div class="mode-section universal-section">
+            <h2>
+                <span class="mode-icon" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">✨</span>
+                Universal Enhancement Options
+            </h2>
+            <p style="color: #666; margin-bottom: 15px;">These general enhancements apply to any prompt:</p>
+            <div class="pills-container">
+                <div class="pill research">
+                    <span class="icon">🌐</span>
+                    <span>Search the internet</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">📄</span>
+                    <span>Standardize formatting</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">🎯</span>
+                    <span>Add clarity & detail</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">💡</span>
+                    <span>Include examples</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">ℹ️</span>
+                    <span>Add context</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">⚡</span>
+                    <span>Better structure</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">🎯</span>
+                    <span>Make more specific</span>
+                </div>
+                <div class="pill research">
+                    <span class="icon">📚</span>
+                    <span>Deep research</span>
+                </div>
+                <div class="pill execution">
+                    <span class="icon">✅</span>
+                    <span>Follow best practices</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">📊</span>
+                    <span>Step-by-step approach</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Farm Mode -->
+        <div class="mode-section">
+            <h2>
+                <span class="mode-icon farm-icon">🌱</span>
+                Farm Mode
+                <span class="badge">8 Pills</span>
+            </h2>
+            <div class="pills-container">
+                <div class="pill research">
+                    <span class="icon">🌐</span>
+                    <span>Search the internet</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">📄</span>
+                    <span>Standardize formatting</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">🎯</span>
+                    <span>Add clarity & detail</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">💡</span>
+                    <span>Include examples</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">⚡</span>
+                    <span>Better structure</span>
+                </div>
+                <div class="pill execution">
+                    <span class="icon">✅</span>
+                    <span>Best practices</span>
+                </div>
+                <div class="pill execution">
+                    <span class="icon">📊</span>
+                    <span>Comprehensive solution</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">🔲</span>
+                    <span>Modular approach</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Task Mode -->
+        <div class="mode-section">
+            <h2>
+                <span class="mode-icon quick-icon">⚡</span>
+                Quick Task Mode
+                <span class="badge">6 Pills</span>
+            </h2>
+            <div class="pills-container">
+                <div class="pill research">
+                    <span class="icon">🌐</span>
+                    <span>Search the internet</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">📄</span>
+                    <span>Standardize formatting</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">🎯</span>
+                    <span>Add clarity & detail</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">🎯</span>
+                    <span>Make more specific</span>
+                </div>
+                <div class="pill execution">
+                    <span class="icon">⚡</span>
+                    <span>Concise & focused</span>
+                </div>
+                <div class="pill execution">
+                    <span class="icon">🎯</span>
+                    <span>Efficient approach</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Go Wild Mode -->
+        <div class="mode-section">
+            <h2>
+                <span class="mode-icon wild-icon">🌳</span>
+                Go Wild Mode
+                <span class="badge">7 Pills</span>
+            </h2>
+            <div class="pills-container">
+                <div class="pill research">
+                    <span class="icon">🌐</span>
+                    <span>Search the internet</span>
+                </div>
+                <div class="pill research">
+                    <span class="icon">📚</span>
+                    <span>Deep research</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">💡</span>
+                    <span>Include examples</span>
+                </div>
+                <div class="pill clarity">
+                    <span class="icon">ℹ️</span>
+                    <span>Add context</span>
+                </div>
+                <div class="pill research">
+                    <span class="icon">✨</span>
+                    <span>Creative exploration</span>
+                </div>
+                <div class="pill research">
+                    <span class="icon">💡</span>
+                    <span>Innovative solutions</span>
+                </div>
+                <div class="pill structure">
+                    <span class="icon">💻</span>
+                    <span>Multiple approaches</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feature Benefits -->
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h3>🎯 General Purpose</h3>
+                <p>Enhancement pills are now focused on universal prompt improvements that work for any type of request, not just technical tasks.</p>
+            </div>
+            <div class="feature-card">
+                <h3>🌐 Internet Search</h3>
+                <p>"Search the internet" is now a primary enhancement option, helping agents find the latest information and best practices.</p>
+            </div>
+            <div class="feature-card">
+                <h3>📄 Better Formatting</h3>
+                <p>"Standardize formatting" ensures consistent structure and presentation across all outputs.</p>
+            </div>
+        </div>
+
+        <!-- Example Enhancement -->
+        <div class="demo-prompt">
+            <h4>Example Enhanced Prompt:</h4>
+            <p><strong>Original:</strong> "Build a todo app"</p>
+            <p><strong>Selected Pills:</strong> Search the internet, Add clarity & detail, Include examples, Best practices</p>
+            <p><strong>Enhanced:</strong></p>
+            <p style="background: white; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                Build a todo app<br><br>
+                Please ensure the following:<br>
+                1. Search the internet for the latest information and best practices.<br>
+                2. Provide clear explanations and detailed implementation steps.<br>
+                3. Include practical examples and use cases.<br>
+                4. Follow industry best practices and conventions.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

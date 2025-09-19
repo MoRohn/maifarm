@@ -1,49 +1,13 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import path from 'path'
-import { VitePWA } from 'vite-plugin-pwa'
-import { pwaConfig } from './vite-pwa-config'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    // VitePWA(pwaConfig) // Temporarily disabled to fix reload loop
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-      '@components': path.resolve(__dirname, 'src/components'),
-      '@services': path.resolve(__dirname, 'src/services'),
-      '@hooks': path.resolve(__dirname, 'src/hooks'),
-      '@types': path.resolve(__dirname, 'src/types'),
-      '@utils': path.resolve(__dirname, 'src/utils'),
-      '@store': path.resolve(__dirname, 'src/store'),
-    },
-    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json'],
-  },
-  define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
-    'process.env': {},
-    global: 'globalThis',
-  },
-  optimizeDeps: {
-    exclude: ['zlib'],
-  },
-  build: {
-    rollupOptions: {
-      external: ['zlib'],
-    },
-  },
+  plugins: [react()],
   server: {
-    host: '0.0.0.0',
     port: 3000,
     proxy: {
-      '/ws': {
-        target: 'ws://localhost:4567',
-        ws: true,
-        changeOrigin: true,
-      },
       '/api': {
         target: 'http://localhost:4567',
         changeOrigin: true,
@@ -55,4 +19,85 @@ export default defineConfig({
       },
     },
   },
-})
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@components': path.resolve(__dirname, './src/components'),
+      '@services': path.resolve(__dirname, './src/services'),
+      '@hooks': path.resolve(__dirname, './src/hooks'),
+      '@types': path.resolve(__dirname, './src/types'),
+      '@utils': path.resolve(__dirname, './src/utils'),
+      '@store': path.resolve(__dirname, './src/store'),
+      '@api': path.resolve(__dirname, './src/api'),
+      '@assets': path.resolve(__dirname, './src/assets'),
+      '@contexts': path.resolve(__dirname, './src/contexts'),
+      '@styles': path.resolve(__dirname, './src/styles'),
+      '@config': path.resolve(__dirname, './src/config'),
+    },
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // Vendor chunking strategy
+          if (id.includes('node_modules')) {
+            // React ecosystem
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+              return 'react-vendor';
+            }
+            // UI libraries
+            if (id.includes('framer-motion') || id.includes('lucide-react') || id.includes('@radix-ui')) {
+              return 'ui-vendor';
+            }
+            // Chart/visualization libraries
+            if (id.includes('recharts') || id.includes('d3') || id.includes('visx')) {
+              return 'chart-vendor';
+            }
+            // Socket.io
+            if (id.includes('socket.io')) {
+              return 'socket-vendor';
+            }
+            // Utility libraries
+            if (id.includes('lodash') || id.includes('date-fns') || id.includes('clsx')) {
+              return 'utils-vendor';
+            }
+            // All other vendor code
+            return 'vendor';
+          }
+          // Application code splitting
+          if (id.includes('/src/components/Analytics')) {
+            return 'analytics';
+          }
+          if (id.includes('/src/components/Farm')) {
+            return 'farm';
+          }
+          if (id.includes('/src/components/Harvest')) {
+            return 'harvest';
+          }
+          if (id.includes('/src/components/Settings')) {
+            return 'settings';
+          }
+        },
+        // Optimize chunk size
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+      },
+    },
+    // Increase chunk size warning limit slightly
+    chunkSizeWarningLimit: 600,
+    // Enable minification
+    minify: 'esbuild',
+    target: 'es2020',
+  },
+  optimizeDeps: {
+    include: ['lucide-react'],
+    esbuildOptions: {
+      target: 'esnext',
+      jsx: 'automatic'
+    },
+    force: true
+  },
+});

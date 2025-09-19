@@ -197,7 +197,7 @@ describe('useWebSocket Hook', () => {
       const farmData = {
         id: 'farm-123',
         name: 'Test Farm',
-        status: 'running',
+        status: 'active',
       };
 
       act(() => {
@@ -250,7 +250,7 @@ describe('useWebSocket Hook', () => {
       const farmData = {
         id: 'farm-456',
         name: 'Lifecycle Farm',
-        status: 'running',
+        status: 'active',
       };
 
       // Test farm:created

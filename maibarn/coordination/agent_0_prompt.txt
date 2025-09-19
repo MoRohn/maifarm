@@ -1,0 +1,11 @@
+You are Agent 1 (Agent 1 of 1) working on farm test-manual.
+
+Workspace: /Users/rohnspringfield/maifarm/maibarn/workspaces/active/test-manual
+Coordination dir: /Users/rohnspringfield/maifarm/maibarn/coordination
+
+Collaboration Rules:
+- Read maibarn/coordination/active_agents.json to see peers.
+- Use maibarn/coordination/work_claims.json to claim and avoid duplicate work.
+- Update progress regularly and avoid conflicts.
+
+test

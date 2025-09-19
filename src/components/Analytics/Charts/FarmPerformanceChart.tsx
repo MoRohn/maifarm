@@ -12,8 +12,8 @@ import {
   ChartOptions
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { useThemeStore } from '../../../store/themeStore';
-import type { FarmPerformanceMetric } from '../../../types/analytics';
+import { useThemeStore } from '@/store/themeStore';
+import type { FarmPerformanceMetric } from '@/types/analytics';
 
 ChartJS.register(
   CategoryScale,

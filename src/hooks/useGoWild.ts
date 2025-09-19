@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GoWildSession, GoWildConfig, GoWildUpdate } from '../types/goWild';
-import { goWildService } from '../services/goWildService';
+import { GoWildSession, GoWildConfig, GoWildUpdate } from '@/types/goWild';
+import { goWildService } from '@/services/goWildService';
 
 export const useGoWild = (farmId: string) => {
   const [session, setSession] = useState<GoWildSession | null>(null);

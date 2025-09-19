@@ -7,7 +7,7 @@ import {
   MonitoringControl,
   MonitoringAlert,
   TimeSeriesData
-} from '../types/monitoring';
+} from '@/types/monitoring';
 import { websocketService } from './websocket';
 
 class MonitoringService {

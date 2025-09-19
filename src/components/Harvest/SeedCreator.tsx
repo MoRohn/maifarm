@@ -17,7 +17,7 @@ import {
   ChevronDown,
   FileCode
 } from 'lucide-react';
-import { Harvest } from '../../types/harvest';
+import { Harvest } from '@/types/harvest';
 
 interface SeedCreatorProps {
   harvest: Harvest;
@@ -276,7 +276,7 @@ ${seedConfig.tags.length > 0 ? seedConfig.tags.map(tag => `  - ${tag}`).join('\n
                           {yieldItem.name}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-500">
-                          {yieldItem.type} • {(yieldItem.size / 1024).toFixed(1)} KB
+                          {yieldItem.type} • {yieldItem.size ? `${(yieldItem.size / 1024).toFixed(1)} KB` : 'N/A'}
                         </p>
                       </div>
                     </label>

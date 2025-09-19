@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as d3 from 'd3';
-import { useThemeStore } from '../../../store/themeStore';
-import { useFarmStore } from '../../../store/farmStore';
-import { generateChartTheme } from '../../../utils/chartHelpers';
+import { useThemeStore } from '@/store/themeStore';
+import { useFarmStore } from '@/store/farmStore';
+import { generateChartTheme } from '@/utils/chartHelpers';
 import { Package, TrendingUp, Clock, CheckCircle } from 'lucide-react';
 
 interface HarvestData {

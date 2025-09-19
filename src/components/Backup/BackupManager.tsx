@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getBackupService, BackupConfig, BackupMetadata, BackupDestination } from '../../services/backup/backupService';
+import { getBackupService, BackupConfig, BackupMetadata, BackupDestination } from '@/services/backup/backupService';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -44,7 +44,7 @@ export const BackupManager: React.FC = () => {
   const loadBackups = async () => {
     try {
       const backupList = await backupService.listBackups();
-      setBackups(backupList.sort((a, b) => b.timestamp - a.timestamp));
+      setBackups(backupList.sort((_a, _b) => _b.timestamp - _a.timestamp));
     } catch (error) {
       console.error('Failed to load backups:', error);
     }

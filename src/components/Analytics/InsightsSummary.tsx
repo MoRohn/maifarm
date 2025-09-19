@@ -11,16 +11,16 @@ import {
   Filter,
   Brain
 } from 'lucide-react';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { aiInsights } from '../../services/aiInsights';
-import { Insight, InsightCategory, InsightPriority } from '../../types/analytics';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { aiInsights } from '@/services/aiInsights';
+import { Insight, InsightCategory, InsightPriority } from '@/types/analytics';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 
 interface InsightsSummaryProps {
   category?: InsightCategory;
   maxInsights?: number;
-  onActionClick?: (action: string, insightId: string) => void;
+  onActionClick?: (_action: string, _insightId: string) => void;
 }
 
 export const InsightsSummary: React.FC<InsightsSummaryProps> = ({

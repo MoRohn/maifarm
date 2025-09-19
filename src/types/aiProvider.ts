@@ -1,11 +1,11 @@
 /**
  * AI Provider Types for MaiFarm
- * Supports multiple AI models including Claude and Qwen3-Coder
+ * Supports multiple AI models including Claude and OpenAI
  */
 
 export enum AIProvider {
   CLAUDE = 'claude',
-  QWEN = 'qwen'
+  OPENAI = 'openai'
 }
 
 export interface AIProviderConfig {
@@ -23,7 +23,7 @@ export interface AIProviderSettings {
   defaultProvider: AIProvider;
   providers: {
     [AIProvider.CLAUDE]: AIProviderConfig;
-    [AIProvider.QWEN]: AIProviderConfig;
+    [AIProvider.OPENAI]: AIProviderConfig;
   };
 }
 
@@ -68,15 +68,15 @@ export const AI_PROVIDER_CAPABILITIES: Record<AIProvider, AIProviderCapabilities
       output: 15
     }
   },
-  [AIProvider.QWEN]: {
-    maxContextTokens: 256000, // Can extend to 1M
+  [AIProvider.OPENAI]: {
+    maxContextTokens: 128000,
     supportsVision: true,
     supportsStreaming: true,
     supportsFunctionCalling: true,
-    supportsCodeExecution: true,
+    supportsCodeExecution: false,
     costPerMillionTokens: {
-      input: 0, // Free API
-      output: 0
+      input: 5,
+      output: 15
     }
   }
 };

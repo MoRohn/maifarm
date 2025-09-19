@@ -79,7 +79,7 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({
       datasets: [
         {
           label: 'Successful Harvests',
-          data: trend.map(t => t.successful) || generateMockData(labels.length, 20, 50),
+          data: trend.map((t: any) => t.successful) || generateMockData(labels.length, 20, 50),
           borderColor: 'rgb(34, 197, 94)',
           backgroundColor: 'rgba(34, 197, 94, 0.1)',
           tension: 0.4,
@@ -87,7 +87,7 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({
         },
         {
           label: 'Failed Harvests',
-          data: trend.map(t => t.failed) || generateMockData(labels.length, 0, 10),
+          data: trend.map((t: any) => t.failed) || generateMockData(labels.length, 0, 10),
           borderColor: 'rgb(239, 68, 68)',
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           tension: 0.4,

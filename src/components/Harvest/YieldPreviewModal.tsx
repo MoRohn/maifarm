@@ -14,7 +14,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Tooltip } from '../common/Tooltip';
-import { HarvestYield } from '../../types/harvest';
+import { HarvestYield } from '@/types/harvest';
 
 interface YieldPreviewModalProps {
   yieldItem: HarvestYield;
@@ -67,7 +67,7 @@ export const YieldPreviewModal: React.FC<YieldPreviewModalProps> = ({
         setContent(JSON.stringify(yieldItem.data, null, 2));
       } else {
         // Show metadata if no content available
-        setContent(`File: ${yieldItem.name}\nType: ${yieldItem.type}\nLocation: ${yieldItem.location || 'Not available'}\nSize: ${formatFileSize(yieldItem.size)}\n\nContent preview not available. Use download to get the file.`);
+        setContent(`File: ${yieldItem.name}\nType: ${yieldItem.type}\nLocation: ${yieldItem.location || 'Not available'}\nSize: ${yieldItem.size ? formatFileSize(yieldItem.size) : 'N/A'}\n\nContent preview not available. Use download to get the file.`);
       }
     } catch (err) {
       console.error('Error fetching yield content:', err);
@@ -232,7 +232,7 @@ export const YieldPreviewModal: React.FC<YieldPreviewModalProps> = ({
                       {yieldItem.name}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {yieldItem.type} • {formatFileSize(yieldItem.size)}
+                      {yieldItem.type} • {yieldItem.size ? formatFileSize(yieldItem.size) : 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -327,9 +327,9 @@ export const YieldPreviewModal: React.FC<YieldPreviewModalProps> = ({
                 </div>
                 <div className="flex items-center space-x-4 text-gray-600 dark:text-gray-400">
                   {yieldItem.createdBy?.agentName && (
-                    <span>Created by {yieldItem.createdBy.agentName}</span>
+                    <span>Created by {yieldItem.createdBy?.agentName || 'Unknown'}</span>
                   )}
-                  <span>{formatFileSize(yieldItem.size)}</span>
+                  <span>{yieldItem.size ? formatFileSize(yieldItem.size) : 'N/A'}</span>
                 </div>
               </div>
             </div>

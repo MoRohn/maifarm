@@ -31,7 +31,7 @@ interface WorkflowNode extends Node {
   data: {
     label: string;
     type: 'start' | 'agent' | 'decision' | 'end';
-    status: 'idle' | 'running' | 'completed' | 'error';
+    status: 'idle' | 'active' | 'completed' | 'error';
     agent?: string;
     duration?: number;
     progress?: number;
@@ -42,6 +42,7 @@ const nodeTypes = {
   customNode: ({ data, selected }: { data: WorkflowNode['data']; selected: boolean }) => {
     const statusColors = {
       idle: 'border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800',
+      active: 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20',
       running: 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20',
       completed: 'border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20',
       error: 'border-red-400 bg-red-50 dark:border-red-600 dark:bg-red-900/20',
@@ -49,6 +50,7 @@ const nodeTypes = {
 
     const statusIcons = {
       idle: Clock,
+      active: Zap,
       running: Zap,
       completed: CheckCircle,
       error: AlertCircle,
@@ -81,7 +83,7 @@ const nodeTypes = {
           </p>
         )}
 
-        {data.status === 'running' && data.progress !== undefined && (
+        {data.status === 'active' && data.progress !== undefined && (
           <div className="mt-2">
             <div className="h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
               <motion.div
@@ -115,7 +117,7 @@ const nodeTypes = {
 interface WorkflowVisualizationProps {
   initialNodes?: WorkflowNode[];
   initialEdges?: Edge[];
-  onWorkflowChange?: (nodes: Node[], edges: Edge[]) => void;
+  onWorkflowChange?: (_nodes: Node[], _edges: Edge[]) => void;
   className?: string;
 }
 
@@ -147,7 +149,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({
     [setEdges]
   );
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNode(node.id);
   }, []);
 
@@ -183,7 +185,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({
       data: {
         label: 'Data Collection',
         type: 'agent',
-        status: 'running',
+        status: 'active',
         agent: 'Collector Agent',
         progress: 65,
       },
@@ -349,6 +351,7 @@ export const WorkflowVisualization: React.FC<WorkflowVisualizationProps> = ({
               const data = node.data as WorkflowNode['data'];
               const colors = {
                 idle: '#9ca3af',
+                active: '#34d399',
                 running: '#34d399',
                 completed: '#60a5fa',
                 error: '#f87171',

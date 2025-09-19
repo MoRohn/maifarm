@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Activity, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { BarChart } from './Charts/BarChart';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface AgentMetrics {
   agentId: string;

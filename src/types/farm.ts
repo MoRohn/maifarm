@@ -72,7 +72,7 @@ export interface ProvisioningStep {
 
 export interface AgentLifecycleState {
   agentId: string;
-  state: 'provisioning' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
+  state: 'provisioning' | 'starting' | 'active' | 'stopping' | 'stopped' | 'failed';
   health: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
   lastHealthCheck: Date;
   restartCount: number;
@@ -135,7 +135,7 @@ export interface FarmExecution {
   id: string;
   farmId: string;
   workflowId: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'active' | 'completed' | 'failed' | 'cancelled';
   startTime: Date;
   endTime?: Date;
   taskExecutions: TaskExecution[];
@@ -146,7 +146,7 @@ export interface FarmExecution {
 export interface TaskExecution {
   taskId: string;
   agentId?: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  status: 'pending' | 'active' | 'completed' | 'failed' | 'skipped';
   startTime?: Date;
   endTime?: Date;
   result?: any;

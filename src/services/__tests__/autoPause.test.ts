@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FarmOrchestrationService } from '../farmOrchestrationService';
 import { websocketService } from '../websocket';
-import { useSettingsStore } from '../../store/settingsStore';
+import { useSettingsStore } from '@/store/settingsStore';
 
 // Mock dependencies
 vi.mock('../websocket', () => ({

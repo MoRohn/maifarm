@@ -214,7 +214,9 @@ export class AnalyticsWebSocketHandler {
           a.name as agent_name,
           COUNT(CASE WHEN t.status = 'completed' THEN 1 END) as tasks_completed,
           COUNT(t.id) as tasks_total,
-          AVG(CASE WHEN t.status = 'completed' THEN t.response_time END) as avg_response_time,
+          AVG(CASE WHEN t.status = 'completed' AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL 
+            THEN EXTRACT(EPOCH FROM (t.completed_at - t.started_at)) * 1000 
+            ELSE t.response_time END) as avg_response_time,
           COUNT(CASE WHEN t.status = 'failed' THEN 1 END) as errors
         FROM agents a
         LEFT JOIN tasks t ON a.id = t.agent_id
@@ -262,7 +264,9 @@ export class AnalyticsWebSocketHandler {
           COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
           COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
           COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-          AVG(CASE WHEN status = 'completed' THEN response_time END) as avg_completion_time
+          AVG(CASE WHEN status = 'completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL 
+            THEN EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000 
+            ELSE response_time END) as avg_completion_time
         FROM tasks
         WHERE created_at >= NOW() - INTERVAL '${timeRange}'
       `);

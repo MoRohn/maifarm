@@ -39,6 +39,7 @@ export interface FarmerTemplate {
   metadata: FarmerMetadata;
   yaml_path: string;
   yaml_content?: string;
+  featured?: boolean; // Whether this farmer is featured/promoted
 }
 
 export interface FarmerProfile {

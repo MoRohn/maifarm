@@ -4,8 +4,8 @@ import {
   AgentMetrics, 
   SystemMetrics,
   MetricExport 
-} from '../types/metrics';
-import { FarmMetrics } from '../types';
+} from '@/types/metrics';
+import { FarmMetrics } from '@/types';
 
 // Browser-compatible Prometheus metrics client
 export class PrometheusClient {

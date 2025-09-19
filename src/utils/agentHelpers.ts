@@ -2,7 +2,7 @@
  * Agent utility functions for safe property access
  */
 
-import { Agent, AgentInstance, AgentResources } from '../types/agent';
+import { Agent, AgentInstance, AgentResources } from '@/types/agent';
 
 /**
  * Get CPU usage from agent resources safely
@@ -10,7 +10,12 @@ import { Agent, AgentInstance, AgentResources } from '../types/agent';
  * @returns CPU usage percentage or 0 if not available
  */
 export function getAgentCpuUsage(agent: Agent | AgentInstance | undefined): number {
-  return agent?.resources?.cpu?.usage ?? 0;
+  if (!agent?.resources) return 0;
+  // Handle both flat number and nested object
+  if (typeof agent.resources.cpu === 'number') {
+    return agent.resources.cpu;
+  }
+  return (agent.resources.cpu as any)?.usage ?? 0;
 }
 
 /**
@@ -19,7 +24,12 @@ export function getAgentCpuUsage(agent: Agent | AgentInstance | undefined): numb
  * @returns Memory usage percentage or 0 if not available
  */
 export function getAgentMemoryUsage(agent: Agent | AgentInstance | undefined): number {
-  return agent?.resources?.memory?.usage ?? 0;
+  if (!agent?.resources) return 0;
+  // Handle both flat number and nested object
+  if (typeof agent.resources.memory === 'number') {
+    return agent.resources.memory;
+  }
+  return (agent.resources.memory as any)?.usage ?? 0;
 }
 
 /**
@@ -30,7 +40,11 @@ export function getAgentMemoryUsage(agent: Agent | AgentInstance | undefined): n
 export function getAgentHealthStatus(agent: Agent | AgentInstance | undefined): string {
   if (!agent) return 'unknown';
   if ('health' in agent && agent.health) {
-    return agent.health.status;
+    // Handle both string and object health
+    if (typeof agent.health === 'string') {
+      return agent.health;
+    }
+    return (agent.health as any).status ?? 'unknown';
   }
   return agent?.lifecycle?.health?.status ?? 'unknown';
 }

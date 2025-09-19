@@ -10,8 +10,8 @@ import {
   TrashIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
-import { useUserStore } from '../../store/userStore';
-import { FarmTemplate } from '../../types/settings';
+import { useUserStore } from '@/store/userStore';
+import { FarmTemplate } from '@/types/settings';
 
 const defaultTemplates: FarmTemplate[] = [
   {

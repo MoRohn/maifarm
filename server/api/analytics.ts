@@ -3,9 +3,15 @@ import { ApiResponse } from '../types/api';
 import { authenticateToken } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
-import { claudeCodeCoordinator } from '../services/claudeCodeCoordinator';
-import { metricsCollector } from '../services/metricsCollector';
-import { analyticsService } from '../services/analyticsService.js';
+import { aiProviderService } from '../services/unified/aiProviderService';
+
+// Create claudeCodeCoordinator facade
+const claudeCodeCoordinator = {
+  coordinateAgents: async (farmId: string) => aiProviderService.coordinateFarmAgents(farmId),
+  getAgentStatus: (farmId: string, agentId: string) => aiProviderService.getAgentStatus(farmId, agentId)
+};
+import { metricsCollector } from '../monitoring/metricsCollector';
+import { analyticsService } from '../gateway/services/AnalyticsService';
 import { taskCountService } from '../services/taskCountService';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -232,7 +238,9 @@ router.get('/metrics', apiRateLimits.read, async (req, res) => {
         a.name as agent_name,
         COUNT(CASE WHEN t.status = 'completed' THEN 1 END) as tasks_completed,
         COUNT(t.id) as tasks_total,
-        AVG(CASE WHEN t.status = 'completed' THEN t.response_time END) as avg_response_time,
+        AVG(CASE WHEN t.status = 'completed' AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL 
+          THEN EXTRACT(EPOCH FROM (t.completed_at - t.started_at)) * 1000 
+          ELSE t.response_time END) as avg_response_time,
         COUNT(CASE WHEN t.status = 'failed' THEN 1 END) as errors,
         MAX(t.updated_at) as last_active
       FROM agents a
@@ -279,7 +287,9 @@ router.get('/metrics', apiRateLimits.read, async (req, res) => {
         COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
         COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
         COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-        AVG(CASE WHEN status = 'completed' THEN response_time END) as avg_completion_time
+        AVG(CASE WHEN status = 'completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL 
+          THEN EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000 
+          ELSE response_time END) as avg_completion_time
       FROM tasks
       WHERE created_at >= NOW() - INTERVAL '${timeRange}'
     `).catch(() => ({ rows: [{}] }));

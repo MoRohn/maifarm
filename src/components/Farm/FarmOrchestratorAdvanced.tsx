@@ -15,16 +15,17 @@ import {
   Clock,
   Zap,
   Layers,
-  GitBranch
+  GitBranch,
+  Activity
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Farm, FarmConfig } from '../../types';
+import { Farm, FarmConfig } from '@/types';
 import { format } from 'date-fns';
 
 interface FarmOrchestratorAdvancedProps {
   farms: Farm[];
   onCreateFarm: (config: FarmConfig) => void;
-  onUpdateFarm: (farmId: string, config: Partial<FarmConfig>) => void;
+  onUpdateFarm: (_farmId: string, _config: Partial<FarmConfig>) => void;
   onDeleteFarm: (farmId: string) => void;
   onStartFarm: (farmId: string) => void;
   onPauseFarm: (farmId: string) => void;
@@ -167,7 +168,7 @@ const FarmOrchestratorCard: React.FC<{
     autonomous: Zap,
   };
 
-  const TypeIcon = typeIcons[farm.type];
+  const TypeIcon = farm.type ? typeIcons[farm.type] : Activity;
 
   return (
     <motion.div
@@ -313,9 +314,9 @@ const FarmOrchestratorCard: React.FC<{
                   <dd className="text-sm text-gray-900 dark:text-white capitalize">{farm.type}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-sm text-gray-600 dark:text-gray-400">Retry Policy</dt>
+                  <dt className="text-sm text-gray-600 dark:text-gray-400">Auto Scale</dt>
                   <dd className="text-sm text-gray-900 dark:text-white">
-                    {farm.config.retryPolicy.enabled ? 'Enabled' : 'Disabled'}
+                    {farm.config.autoScale ? 'Enabled' : 'Disabled'}
                   </dd>
                 </div>
                 <div className="flex justify-between">

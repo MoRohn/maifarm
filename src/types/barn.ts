@@ -5,6 +5,7 @@ export interface BarnItem {
   farmName: string;
   name: string;
   description: string;
+  summary?: string; // Optional summary property for NewHarvestSpotlight
   type: 'app' | 'tool' | 'script' | 'workflow' | 'other';
   category: string;
   tags: string[];

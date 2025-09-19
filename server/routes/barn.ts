@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { barnService } from '../services/barnService';
+import { barnService } from '../services/unified/barnService';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { BarnFilter, BarnExportOptions } from '../types/barn';
 

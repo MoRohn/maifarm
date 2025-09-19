@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Sparkles, Info, Settings2, Wand2, X, CheckCircle } from 'lucide-react';
-import { GeneratorMode } from '../../types/yamlGenerator';
-import yamlGeneratorService from '../../services/yamlGeneratorService';
+import { GeneratorMode } from '@/types/yamlGenerator';
+import yamlGeneratorService from '@/services/yamlGeneratorService';
 
 interface PromptInputProps {
   value: string;

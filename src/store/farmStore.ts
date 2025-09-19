@@ -1,13 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Farm, Agent, FarmMetrics } from '../types'
-import { farmService } from '../services/farmService'
+import { Farm, Agent, FarmMetrics } from '@/types'
+import { farmService } from '@/services/farmService'
 
 interface FarmStats {
   activeFarms: number
   totalAgents: number
-  tasksCompleted: number
-  successRate: number
+  harvestsCompleted: number
+  yieldedItems: number
 }
 
 interface FarmState {
@@ -43,8 +43,8 @@ export const useFarmStore = create<FarmState>()(
       stats: {
         activeFarms: 0,
         totalAgents: 0,
-        tasksCompleted: 0,
-        successRate: 95,
+        harvestsCompleted: 0,
+        yieldedItems: 0,
       },
       metrics: {
         totalAgents: 0,
@@ -59,7 +59,7 @@ export const useFarmStore = create<FarmState>()(
         const normalizedFarm = { ...farm, agents: farm.agents || [] };
         return {
           farms: [...state.farms, normalizedFarm],
-          activeFarms: (normalizedFarm.status === 'active' || normalizedFarm.status === 'running')
+          activeFarms: normalizedFarm.status === 'active'
             ? [...state.activeFarms, normalizedFarm]
             : state.activeFarms,
           recentFarms: [normalizedFarm, ...state.recentFarms].slice(0, 5),
@@ -73,7 +73,7 @@ export const useFarmStore = create<FarmState>()(
         
         // Rebuild activeFarms based on status
         const activeFarms = updatedFarms.filter(f => 
-          f.status === 'active' || f.status === 'running'
+          f.status === 'active' || f.status === 'active'
         );
         
         return {
@@ -99,7 +99,7 @@ export const useFarmStore = create<FarmState>()(
           const { farms } = await farmService.fetchFarms();
           // Ensure all farms have agents arrays
           const normalizedFarms = farms.map(f => ({ ...f, agents: f.agents || [] }));
-          const activeFarms = normalizedFarms.filter(f => f.status === 'active' || f.status === 'running');
+          const activeFarms = normalizedFarms.filter(f => f.status === 'active');
           set({ 
             farms: normalizedFarms, 
             activeFarms,
@@ -116,10 +116,8 @@ export const useFarmStore = create<FarmState>()(
                 });
                 return uniqueAgents.size || activeFarms.reduce((sum, f) => sum + (f.agents?.length || 0), 0);
               })(),
-              tasksCompleted: farms.reduce((sum, f) => sum + (f.metrics?.completedTasks || 0), 0),
-              successRate: farms.length > 0 
-                ? Math.round(farms.reduce((sum, f) => sum + ((f.metrics?.completedTasks || 0) / (f.metrics?.totalTasks || 1) * 100), 0) / farms.length)
-                : 0
+              harvestsCompleted: farms.reduce((sum, f) => sum + (f.metrics?.completedTasks || 0), 0),
+              yieldedItems: 0 // Will be populated from harvest data
             },
             loading: false 
           });

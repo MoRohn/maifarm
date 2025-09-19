@@ -24,15 +24,16 @@ import {
   X
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest, HarvestInsight } from '../../types/harvest';
+import { Harvest, HarvestInsight } from '@/types/harvest';
 import { format, formatDuration, intervalToDuration } from 'date-fns';
 import { HarvestCompletionAnimation } from './HarvestCompletionAnimation';
+import { HarvestCompletionEpic } from './HarvestCompletionEpic';
 import { HarvestAnalytics } from './HarvestAnalytics';
 // import { HarvestArtifactOrganizer } from './HarvestArtifactOrganizer'; // Component does not exist
 import { SaveAsSeedModal } from './SaveAsSeedModal';
 import { HarvestHeadlineSummary } from './HarvestHeadlineSummary';
-import { seedService } from '../../services/seedService';
-import { SeedCreateInput } from '../../types/seed';
+import { seedService } from '@/services/seedService';
+import { SeedCreateInput } from '@/types/seed';
 import { Tooltip } from '../common/Tooltip';
 
 interface HarvestViewProps {
@@ -54,6 +55,7 @@ export const HarvestView: React.FC<HarvestViewProps> = memo(({
   const [filterType, setFilterType] = useState<string>('all');
   const [showCompletionAnimation, setShowCompletionAnimation] = useState(false);
   const [showSaveAsSeedModal, setShowSaveAsSeedModal] = useState(false);
+  const [useEpicAnimation, setUseEpicAnimation] = useState(true); // Default to epic animation
 
   // Show completion animation if harvest just completed
   useEffect(() => {
@@ -170,8 +172,19 @@ export const HarvestView: React.FC<HarvestViewProps> = memo(({
 
   return (
     <>
-      {/* Completion Animation - Inline Mode */}
-      {showCompletionAnimation && (
+      {/* Completion Animation - Choose between Epic or Standard */}
+      {showCompletionAnimation && useEpicAnimation ? (
+        <HarvestCompletionEpic
+          harvest={harvest}
+          onComplete={() => setShowCompletionAnimation(false)}
+          onViewInBarn={() => {
+            setShowCompletionAnimation(false);
+            // Navigate to barn or trigger barn view
+            window.location.href = '/barn';
+          }}
+          enableSound={true}
+        />
+      ) : showCompletionAnimation ? (
         <div className="fixed top-4 right-4 z-40 max-w-md">
           <HarvestCompletionAnimation
             harvest={harvest}
@@ -179,7 +192,7 @@ export const HarvestView: React.FC<HarvestViewProps> = memo(({
             inline={true}
           />
         </div>
-      )}
+      ) : null}
 
       {/* Save as Seed Modal */}
       <SaveAsSeedModal
@@ -850,7 +863,7 @@ export const HarvestView: React.FC<HarvestViewProps> = memo(({
                           {yieldItem.name}
                         </h4>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                          {yieldItem.description} • {(yieldItem.size / 1024).toFixed(2)} KB
+                          {yieldItem.description} • {yieldItem.size ? `${(yieldItem.size / 1024).toFixed(2)} KB` : 'N/A'}
                         </p>
                       </div>
                     </div>

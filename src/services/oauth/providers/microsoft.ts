@@ -1,4 +1,4 @@
-import { OAuthProvider } from '../../../types/oauth';
+import { OAuthProvider } from '@/types/oauth';
 
 export const microsoftProvider: OAuthProvider = {
   id: 'microsoft',

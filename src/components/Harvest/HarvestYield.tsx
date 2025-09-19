@@ -14,7 +14,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest, HarvestYield as HarvestYieldType } from '../../types/harvest';
+import { Harvest, HarvestYield as HarvestYieldType } from '@/types/harvest';
 import { format } from 'date-fns';
 
 interface HarvestYieldProps {
@@ -58,7 +58,7 @@ export const HarvestYield: React.FC<HarvestYieldProps> = ({ harvest, view }) => 
 
   const handleCopyPath = async (yieldItem: HarvestYieldType) => {
     try {
-      await navigator.clipboard.writeText(yieldItem.location);
+      await navigator.clipboard.writeText(yieldItem.location || '');
       setCopiedIds(new Set([...copiedIds, yieldItem.id]));
       setTimeout(() => {
         setCopiedIds(prev => {
@@ -122,11 +122,11 @@ export const HarvestYield: React.FC<HarvestYieldProps> = ({ harvest, view }) => 
             </p>
             
             <div className="flex items-center space-x-4 mt-3 text-xs text-gray-500">
-              <span>{formatFileSize(yieldItem.size)}</span>
+              <span>{yieldItem.size ? formatFileSize(yieldItem.size) : 'N/A'}</span>
               <span>•</span>
-              <span>{yieldItem.createdBy.agentName}</span>
+              <span>{yieldItem.createdBy?.agentName || 'Unknown'}</span>
               <span>•</span>
-              <span>{format(new Date(yieldItem.createdAt), 'MMM d')}</span>
+              <span>{yieldItem.createdAt ? format(new Date(yieldItem.createdAt), 'MMM d') : 'N/A'}</span>
             </div>
           </div>
         </div>

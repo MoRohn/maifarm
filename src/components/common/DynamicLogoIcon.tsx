@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useThemeStore } from '../../store/themeStore';
+import { useThemeStore } from '@/store/themeStore';
 import maifarmIconDark from '../../assets/logos/maifarm-icon-dark-bkgd.svg';
 import maifarmIconLight from '../../assets/logos/maifarm-icon-light-bkgd.svg';
 

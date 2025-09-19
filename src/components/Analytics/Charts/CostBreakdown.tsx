@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as d3 from 'd3';
-import { useThemeStore } from '../../../store/themeStore';
-import { generateChartTheme } from '../../../utils/chartHelpers';
+import { useThemeStore } from '@/store/themeStore';
+import { generateChartTheme } from '@/utils/chartHelpers';
 import { DollarSign, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface CostData {

@@ -3,7 +3,8 @@
  * Maps agent IDs/UIDs to human-readable farm agent names
  */
 
-import { Farm, Agent } from '../types/index';
+import { Farm, Agent } from '@/types/index';
+import { getAgentsFromFarm } from './farmHelpers';
 
 export interface AgentNameMapping {
   agentId: string;
@@ -19,7 +20,8 @@ export function createAgentNameMapping(farm: Farm): Map<string, AgentNameMapping
   const mapping = new Map<string, AgentNameMapping>();
   
   // Map each agent in the farm configuration
-  farm.agents.forEach((agent: Agent, index: number) => {
+  const agents = getAgentsFromFarm(farm);
+  agents.forEach((agent: Agent, index: number) => {
     // Map by agent ID
     mapping.set(agent.id, {
       agentId: agent.id,
@@ -83,14 +85,32 @@ export function getAgentName(
   fallback?: string
 ): string {
   if (!mapping) {
-    return fallback || `Agent-${agentId}`;
+    return fallback || `Agent ${typeof agentId === 'number' ? agentId + 1 : agentId}`;
   }
   
   const agentIdStr = agentId.toString();
-  const mapped = mapping.get(agentIdStr);
   
+  // First try direct lookup by index or ID
+  const mapped = mapping.get(agentIdStr);
   if (mapped) {
     return mapped.agentName;
+  }
+  
+  // For numeric indices, also try as array index
+  if (typeof agentId === 'number') {
+    // Try to get from mapping entries by order (for index-based lookups)
+    const entries = Array.from(mapping.entries());
+    if (entries.length > agentId) {
+      // Get the entry at this index position
+      const entryAtIndex = entries.find(([key]) => {
+        // Look for numeric keys that match the index
+        const numKey = parseInt(key);
+        return !isNaN(numKey) && numKey === agentId;
+      });
+      if (entryAtIndex) {
+        return entryAtIndex[1].agentName;
+      }
+    }
   }
   
   // If not found directly, try to extract numeric ID from coordination UID
@@ -113,7 +133,9 @@ export function getAgentName(
     }
   }
   
-  return fallback || `Agent-${agentId}`;
+  // Better fallback with proper Agent numbering (starting from 1)
+  const agentNumber = typeof agentId === 'number' ? agentId + 1 : agentId;
+  return fallback || `Agent ${agentNumber}`;
 }
 
 /**

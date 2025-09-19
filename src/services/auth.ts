@@ -1,5 +1,5 @@
-import { AuthTokens, LoginCredentials, User } from '../types/auth';
-import { SecurityEvent, SecurityEventType } from '../types/security';
+import { AuthTokens, LoginCredentials, User } from '@/types/auth';
+import { SecurityEvent, SecurityEventType } from '@/types/security';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4567/api';
 

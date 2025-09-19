@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getHAManager, HACluster, HANode, HAConfig } from '../services/highAvailability/haManager';
-import { getLoadBalancer, LoadMetrics } from '../services/loadBalancer/loadBalancerService';
+import { getHAManager, HACluster, HANode, HAConfig } from '@/services/highAvailability/haManager';
+import { getLoadBalancer, LoadMetrics } from '@/services/loadBalancer/loadBalancerService';
 
 interface HANodeInfo {
   id: string;

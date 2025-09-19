@@ -11,14 +11,14 @@ import {
   GitCommit,
   FileText
 } from 'lucide-react';
-import { YamlVersion, YamlDiff } from '../../types/yamlPipeline';
-import useYamlStore from '../../store/yamlStore';
+import { YamlVersion, YamlDiff } from '@/types/yamlPipeline';
+import useYamlStore from '@/store/yamlStore';
 import { formatDistanceToNow } from 'date-fns';
 
 interface YamlVersionControlProps {
   currentVersionId?: string;
   onVersionSelect: (version: YamlVersion) => void;
-  onCompare: (fromId: string, toId: string) => void;
+  onCompare: (_fromId: string, _toId: string) => void;
 }
 
 const YamlVersionControl: React.FC<YamlVersionControlProps> = ({

@@ -23,13 +23,15 @@ import {
   Tag
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest, BarnFolder, BarnStats } from '../../types/barn';
-import apiClient, { api } from '../../services/apiClient';
+import { Harvest, BarnFolder, BarnStats } from '@/types/barn';
+import apiClient, { api } from '@/services/apiClient';
 import { HarvestCard } from './HarvestCard';
 import { FolderView } from './FolderView';
 import { HarvestDetails } from './HarvestDetails';
 import { SeedQuickAction } from '../Seeds/SeedQuickAction';
-import { Harvest as HarvestType } from '../../types/harvest';
+import { Harvest as HarvestType } from '@/types/harvest';
+import { BarnRevealAnimation } from './BarnRevealAnimation';
+import { NewHarvestSpotlight } from './NewHarvestSpotlight';
 
 export const BarnPage: React.FC = () => {
   const [view, setView] = useState<'grid' | 'list'>('grid');
@@ -44,6 +46,8 @@ export const BarnPage: React.FC = () => {
   const [filterType, setFilterType] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [breadcrumbs, setBreadcrumbs] = useState<BarnFolder[]>([]);
+  const [newHarvestIds, setNewHarvestIds] = useState<string[]>([]);
+  const [showRevealAnimation, setShowRevealAnimation] = useState(false);
 
   useEffect(() => {
     loadBarnData();
@@ -52,6 +56,9 @@ export const BarnPage: React.FC = () => {
   const loadBarnData = async () => {
     setLoading(true);
     try {
+      // Get previously seen harvest IDs from localStorage
+      const seenHarvests = JSON.parse(localStorage.getItem('seenHarvests') || '[]');
+      
       const [itemsRes, statsRes, foldersRes] = await Promise.all([
         apiClient.get('/api/barn/items'),
         api.barn.stats(),
@@ -60,7 +67,24 @@ export const BarnPage: React.FC = () => {
 
       // Set barn items as harvests (they're aliased as Harvest type)
       if (itemsRes.data) {
-        setHarvests(itemsRes.data);
+        const allHarvests = itemsRes.data;
+        setHarvests(allHarvests);
+        
+        // Identify new harvests
+        const newIds = allHarvests
+          .filter((h: Harvest) => !seenHarvests.includes(h.id))
+          .map((h: Harvest) => h.id);
+        
+        if (newIds.length > 0) {
+          setNewHarvestIds(newIds);
+          setShowRevealAnimation(true);
+          
+          // Update seen harvests after animation
+          setTimeout(() => {
+            const updatedSeen = [...seenHarvests, ...newIds];
+            localStorage.setItem('seenHarvests', JSON.stringify(updatedSeen));
+          }, 3000);
+        }
       }
       
       if (statsRes.data?.success) {
@@ -78,28 +102,20 @@ export const BarnPage: React.FC = () => {
   };
 
   const filteredHarvests = harvests.filter(harvest => {
-    // Exclude graceful-shutdown items and timeout items with no content
-    if (harvest.tags?.some(tag => 
-        tag.includes('graceful-shutdown') || 
-        tag.includes('reason-timeout') ||
-        tag.includes('reason-user_request') ||
-        tag.includes('reason-completion')
-    )) {
-      return false;
+    // Only exclude empty harvests, not ones with valid content
+    const hasValidContent = harvest.yield && harvest.yield.length > 0;
+    const hasMetrics = harvest.metadata?.taskCount > 0 || harvest.metadata?.successRate > 0;
+    
+    // Exclude only if it's a graceful-shutdown item WITH no content
+    if (harvest.tags?.some(tag => tag.includes('graceful-shutdown'))) {
+      // But still include if it has actual yield items
+      if (!hasValidContent && !hasMetrics) {
+        return false;
+      }
     }
     
-    // Also exclude by name patterns
-    if (harvest.name?.toLowerCase().includes('graceful') ||
-        harvest.name?.toLowerCase().includes('shutdown') ||
-        harvest.description?.toLowerCase().includes('gracefully shut down') ||
-        harvest.description?.toLowerCase().includes('timeout')) {
-      return false;
-    }
-    
-    // Exclude items with graceful shutdown metadata
-    if ((harvest as any).metadata?.gracefulShutdown === true) {
-      return false;
-    }
+    // Don't exclude timeout/completion harvests if they have content
+    // These are valid harvests that were stopped for a reason but still have outputs
     
     const matchesSearch = harvest.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          harvest.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -153,8 +169,8 @@ export const BarnPage: React.FC = () => {
       useCount: barnItem.useCount,
       summary: {
         description: barnItem.description,
-        totalFiles: barnItem.metadata?.fileCount || barnItem.metadata?.taskCount || 1,
-        filesGenerated: barnItem.metadata?.filesGenerated || barnItem.metadata?.taskCount || 1,
+        totalFiles: barnItem.metadata?.taskCount || 1,
+        filesGenerated: barnItem.metadata?.taskCount || 1,
         filesFailed: 0,
         totalTasks: barnItem.metadata?.taskCount || 1,  // Legacy compatibility
         completedTasks: barnItem.metadata?.taskCount || 1,  // Legacy compatibility
@@ -168,7 +184,7 @@ export const BarnPage: React.FC = () => {
           image: 0,
           data: 0,
           config: 0,
-          other: barnItem.metadata?.fileCount || 1
+          other: barnItem.metadata?.taskCount || 1
         }
       },
       farmConfig: {
@@ -226,6 +242,14 @@ export const BarnPage: React.FC = () => {
 
   return (
     <div>
+      {/* Barn Reveal Animation */}
+      {showRevealAnimation && (
+        <BarnRevealAnimation
+          newHarvestCount={newHarvestIds.length}
+          onComplete={() => setShowRevealAnimation(false)}
+        />
+      )}
+
       {/* Page Header */}
       <div className="mb-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -438,15 +462,37 @@ export const BarnPage: React.FC = () => {
                   ))}
 
                 {/* Harvests */}
-                {filteredHarvests.map((harvest) => (
-                  <HarvestCard
-                    key={harvest.id}
-                    harvest={harvest}
-                    onClick={() => setSelectedHarvest(harvest)}
-                    onDelete={() => handleDeleteHarvest(harvest.id)}
-                    onCreateSeed={() => handleCreateSeed(harvest)}
-                  />
-                ))}
+                {filteredHarvests.map((harvest) => {
+                  const isNew = newHarvestIds.includes(harvest.id);
+                  
+                  if (isNew) {
+                    return (
+                      <NewHarvestSpotlight
+                        key={harvest.id}
+                        harvest={harvest}
+                        isNew={true}
+                        onClick={() => setSelectedHarvest(harvest)}
+                        onUse={() => {
+                          window.location.href = `/home?useHarvest=${harvest.id}`;
+                        }}
+                        onShare={() => {
+                          // Share functionality
+                          navigator.clipboard.writeText(`Check out my harvest: ${harvest.name}`);
+                        }}
+                      />
+                    );
+                  }
+                  
+                  return (
+                    <HarvestCard
+                      key={harvest.id}
+                      harvest={harvest}
+                      onClick={() => setSelectedHarvest(harvest)}
+                      onDelete={() => handleDeleteHarvest(harvest.id)}
+                      onCreateSeed={() => handleCreateSeed(harvest)}
+                    />
+                  );
+                })}
 
                 {/* Empty State */}
                 {filteredHarvests.length === 0 && folders.length === 0 && (
@@ -582,14 +628,16 @@ const HarvestListItem: React.FC<{
         </div>
         
         <div className="flex items-center space-x-2">
-          {harvest.tags.map((tag) => (
-            <span
-              key={tag}
-              className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs rounded-full"
-            >
-              {tag}
-            </span>
-          ))}
+          {harvest.tags && Array.isArray(harvest.tags) && harvest.tags
+            .filter(tag => typeof tag === 'string')
+            .map((tag) => (
+              <span
+                key={tag}
+                className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs rounded-full"
+              >
+                {tag}
+              </span>
+            ))}
           <button
             onClick={(e) => {
               e.stopPropagation();

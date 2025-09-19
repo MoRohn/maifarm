@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
-import { useThemeStore } from '../../../store/themeStore';
-import { generateChartTheme } from '../../../utils/chartHelpers';
+import { useThemeStore } from '@/store/themeStore';
+import { generateChartTheme } from '@/utils/chartHelpers';
 
 interface PieChartData {
   label: string;

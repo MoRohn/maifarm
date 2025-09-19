@@ -13,7 +13,7 @@ class InMemoryDatabase {
 
   constructor() {
     // Initialize with a dev user
-    const devUserId = 'dev-user';
+    const devUserId = 'maifarm-user';
     this.users.set(devUserId, {
       id: devUserId,
       email: 'dev@maifarm.local',
@@ -340,7 +340,7 @@ class InMemoryDatabase {
         farm.agents = [];
         farm.metrics = {};
         farm.tags = [];
-        farm.created_by = farm.metadata?.createdBy || 'dev-user';
+        farm.created_by = farm.metadata?.createdBy || 'maifarm-user';
         farm.created_at = farm.metadata?.createdAt || new Date();
         farm.updated_at = new Date();
       } else {
@@ -350,7 +350,7 @@ class InMemoryDatabase {
         farm.agents = typeof params?.[5] === 'string' ? JSON.parse(params[5]) : (params?.[5] || []);
         farm.metrics = typeof params?.[6] === 'string' ? JSON.parse(params[6]) : (params?.[6] || {});
         farm.tags = params?.[7] || [];
-        farm.created_by = params?.[8] || 'dev-user';
+        farm.created_by = params?.[8] || 'maifarm-user';
         farm.created_at = params?.[9] || new Date();
         farm.updated_at = params?.[10] || new Date();
         farm.type = 'collaborative'; // Default type
@@ -390,7 +390,7 @@ class InMemoryDatabase {
         config: params?.[5] || {},
         tags: params?.[6] || [],
         is_public: params?.[7] || false,
-        user_id: params?.[8] || 'dev-user',
+        user_id: params?.[8] || 'maifarm-user',
         usage_count: 0,
         created_at: new Date(),
         updated_at: new Date()
@@ -424,7 +424,7 @@ class InMemoryDatabase {
         data: params?.[4],
         metadata: params?.[5] || {},
         tags: params?.[6] || [],
-        user_id: params?.[7] || 'dev-user',
+        user_id: params?.[7] || 'maifarm-user',
         created_at: new Date(),
         updated_at: new Date()
       };

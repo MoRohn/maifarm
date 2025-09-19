@@ -1,5 +1,5 @@
 import { Vector3, Color } from 'three';
-import { ExplorationNode } from '../types/exploration3d';
+import { ExplorationNode } from '@/types/exploration3d';
 
 export const getNodeColor = (node: ExplorationNode, scheme: string): Color => {
   switch (scheme) {

@@ -1,4 +1,4 @@
-import { AuditLog, SecurityEvent, SecurityEventType } from '../types/security';
+import { AuditLog, SecurityEvent, SecurityEventType } from '@/types/security';
 import { offlineService } from './offline';
 
 class AuditService {

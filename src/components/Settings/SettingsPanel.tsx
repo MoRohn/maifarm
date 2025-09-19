@@ -1,21 +1,20 @@
 import React, { useState } from 'react';
-import { X, Palette, Bell, Globe, Key, Shield, Brain, Archive, Cpu } from 'lucide-react';
+import { X, Palette, Bell, Globe, Key, Shield, Brain, Cpu } from 'lucide-react';
 import { ThemeCustomizer } from './ThemeCustomizer';
 import NotificationSettings from './NotificationSettings';
 import ApiKeyManager from './ApiKeyManager';
-import FarmTemplates from './FarmTemplates';
 import LanguageSelector from './LanguageSelector';
 import AIProviderSettings from './AIProviderSettings';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSettingsStore } from '../../store/settingsStore';
-import { useAISettings } from '../../hooks/useAISettings';
+import { useSettingsStore } from '@/store/settingsStore';
+import { useAISettings } from '@/hooks/useAISettings';
 
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type SettingsTab = 'theme' | 'notifications' | 'language' | 'api' | 'templates' | 'security' | 'ai' | 'provider';
+type SettingsTab = 'theme' | 'notifications' | 'language' | 'api' | 'security' | 'ai' | 'provider';
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('theme');
@@ -28,7 +27,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     { id: 'language' as const, label: 'Language', icon: Globe },
     { id: 'provider' as const, label: 'AI Engine', icon: Cpu },
     { id: 'api' as const, label: 'API Keys', icon: Key },
-    { id: 'templates' as const, label: 'Templates', icon: Archive },
     { id: 'security' as const, label: 'Security', icon: Shield },
     { id: 'ai' as const, label: 'AI Assistant', icon: Brain },
   ];
@@ -45,8 +43,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
         return <AIProviderSettings />;
       case 'api':
         return <ApiKeyManager />;
-      case 'templates':
-        return <FarmTemplates />;
       case 'security':
         return <SecuritySettings />;
       case 'ai':

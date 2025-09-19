@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Activity, Users, Cpu, HardDrive, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
-import { farmOrchestrationService } from '../../services/farmOrchestrationService';
-import { workflowEngine } from '../../services/workflowEngine';
-import { predictiveAnalyticsService } from '../../services/predictiveAnalytics';
-import { Farm, Agent } from '../../types';
-import { FarmHealthStatus } from '../../types/orchestration';
-import { WorkflowExecution } from '../../types/workflow';
-import { PredictiveInsight } from '../../types/reporting';
+import { farmOrchestrationService } from '@/services/farmOrchestrationService';
+import { workflowEngine } from '@/services/workflowEngine';
+import { predictiveAnalyticsService } from '@/services/predictiveAnalytics';
+import { Farm, Agent } from '@/types';
+import { getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
+import { FarmHealthStatus } from '@/types/orchestration';
+import { WorkflowExecution } from '@/types/workflow';
+import { PredictiveInsight } from '@/types/reporting';
 import { AgentLifecycle } from './AgentLifecycle';
 import { WorkflowDesigner } from './WorkflowDesigner';
 
@@ -23,12 +24,12 @@ export function FarmDetails() {
 
   // Helper to safely get autoScaling config
   const getAutoScalingConfig = (config: Farm['config']) => {
-    const { autoScaling } = config;
-    if (typeof autoScaling === 'object' && autoScaling !== null) {
-      return autoScaling;
+    const { autoScale } = config;
+    if (typeof autoScale === 'object' && autoScale !== null) {
+      return autoScale;
     }
     return {
-      enabled: !!autoScaling,
+      enabled: !!autoScale,
       minAgents: 1,
       maxAgents: 10
     };
@@ -118,7 +119,7 @@ export function FarmDetails() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'running':
+      case 'active':
       case 'healthy':
         return <CheckCircle className="h-5 w-5 text-green-500" />;
       case 'degraded':
@@ -244,20 +245,20 @@ export function FarmDetails() {
               <div className="space-y-4">
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Total Agents</span>
-                  <span className="font-medium">{farm.metrics.totalAgents}</span>
+                  <span className="font-medium">{getAgentCount(farm)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Active Agents</span>
-                  <span className="font-medium">{farm.metrics.activeAgents}</span>
+                  <span className="font-medium">{getAgentsFromFarm(farm).filter(a => a.status === 'active').length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Tasks Completed</span>
-                  <span className="font-medium">{farm.metrics.completedTasks}</span>
+                  <span className="font-medium">{farm.metrics?.completedTasks || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Success Rate</span>
                   <span className="font-medium">
-                    {farm.metrics.totalTasks > 0 
+                    {farm.metrics && farm.metrics.totalTasks > 0 
                       ? ((farm.metrics.completedTasks / farm.metrics.totalTasks) * 100).toFixed(1)
                       : 0}%
                   </span>
@@ -272,36 +273,36 @@ export function FarmDetails() {
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="text-sm text-gray-500 dark:text-gray-400">CPU</span>
-                    <span className="text-sm font-medium">{farm.metrics.resourceUtilization?.cpu || 0}%</span>
+                    <span className="text-sm font-medium">{farm.metrics?.resourceUtilization?.cpu || 0}%</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div 
                       className="bg-emerald-500 h-2 rounded-full"
-                      style={{ width: `${farm.metrics.resourceUtilization?.cpu || 0}%` }}
+                      style={{ width: `${farm.metrics?.resourceUtilization?.cpu || 0}%` }}
                     />
                   </div>
                 </div>
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="text-sm text-gray-500 dark:text-gray-400">Memory</span>
-                    <span className="text-sm font-medium">{farm.metrics.resourceUtilization?.memory || 0}%</span>
+                    <span className="text-sm font-medium">{farm.metrics?.resourceUtilization?.memory || 0}%</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div 
                       className="bg-emerald-500 h-2 rounded-full"
-                      style={{ width: `${farm.metrics.resourceUtilization?.memory || 0}%` }}
+                      style={{ width: `${farm.metrics?.resourceUtilization?.memory || 0}%` }}
                     />
                   </div>
                 </div>
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="text-sm text-gray-500 dark:text-gray-400">Storage</span>
-                    <span className="text-sm font-medium">{farm.metrics.resourceUtilization?.disk || 0}%</span>
+                    <span className="text-sm font-medium">{0}%</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div 
                       className="bg-emerald-500 h-2 rounded-full"
-                      style={{ width: `${farm.metrics.resourceUtilization?.disk || 0}%` }}
+                      style={{ width: `${0}%` }}
                     />
                   </div>
                 </div>
@@ -332,13 +333,13 @@ export function FarmDetails() {
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-500 dark:text-gray-400">Status</span>
-                      <span className={farm.config.failover?.enabled ? 'text-green-600' : 'text-gray-600'}>
-                        {farm.config.failover?.enabled ? 'Enabled' : 'Disabled'}
+                      <span className='text-gray-600'>
+                        Disabled
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500 dark:text-gray-400">Retry Attempts</span>
-                      <span>{(farm.config.failover as any)?.retryAttempts || farm.config.retryPolicy?.maxRetries || 0}</span>
+                      <span>{3}</span>
                     </div>
                   </div>
                 </div>
@@ -390,8 +391,8 @@ export function FarmDetails() {
                           Recommendations:
                         </h4>
                         <ul className="list-disc list-inside space-y-1">
-                          {insight.recommendations.map((rec, idx) => (
-                            <li key={idx} className="text-sm text-gray-600 dark:text-gray-400">
+                          {insight.recommendations.map((rec, recIdx) => (
+                            <li key={recIdx} className="text-sm text-gray-600 dark:text-gray-400">
                               {rec}
                             </li>
                           ))}

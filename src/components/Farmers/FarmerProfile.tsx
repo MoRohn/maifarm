@@ -15,8 +15,8 @@ import {
   Heart,
   Lightbulb
 } from 'lucide-react';
-import { FarmerTemplate, FarmerProfile as IFarmerProfile, FarmerStats } from '../../types/farmers';
-import { api } from '../../services/apiClient';
+import { FarmerTemplate, FarmerProfile as IFarmerProfile, FarmerStats } from '@/types/farmers';
+import { api } from '@/services/apiClient';
 import { FarmerAvatar } from './FarmerAvatar';
 import { FarmerPersonality } from './FarmerPersonality';
 
@@ -95,9 +95,9 @@ export const FarmerProfile: React.FC<FarmerProfileProps> = ({ farmer, onClose, o
           <div className={`relative bg-gradient-to-br ${getCategoryGradient(farmer.category)} p-8 text-white`}>
             <button
               onClick={onClose}
-              className="absolute top-6 right-6 p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+              className="absolute top-2 right-2 p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-3 h-3" />
             </button>
 
             <div className="flex items-start space-x-6">
@@ -139,9 +139,9 @@ export const FarmerProfile: React.FC<FarmerProfileProps> = ({ farmer, onClose, o
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onUse}
-                className="px-6 py-3 bg-white text-gray-900 rounded-apple font-semibold hover:bg-gray-100 transition-colors flex items-center space-x-2"
+                className="px-4 py-2 bg-white text-gray-900 rounded-apple font-semibold hover:bg-gray-100 transition-colors flex items-center space-x-2"
               >
-                <Zap className="w-5 h-5" />
+                <Zap className="w-4 h-4" />
                 <span>Use This Farmer</span>
               </motion.button>
             </div>

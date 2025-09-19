@@ -11,8 +11,8 @@ import {
   Info
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest } from '../../types/harvest';
-import { seedService } from '../../services/seedService';
+import { Harvest } from '@/types/harvest';
+import { seedService } from '@/services/seedService';
 import { format } from 'date-fns';
 
 interface SaveSeedModalProps {

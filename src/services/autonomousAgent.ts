@@ -4,7 +4,7 @@ import {
   Discovery, 
   GoWildConfig,
   GoWildSession 
-} from '../types/goWild';
+} from '@/types/goWild';
 
 export interface AutonomousTask {
   id: string;

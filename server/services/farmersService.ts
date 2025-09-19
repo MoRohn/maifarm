@@ -13,7 +13,12 @@ export class FarmersService {
 
   constructor() {
     this.templatesPath = path.join(process.cwd(), 'server', 'templates', 'farmers');
-    this.initializationPromise = this.initializeTemplates();
+    console.log('[FarmersService] Initializing with templates path:', this.templatesPath);
+    this.initializationPromise = this.initializeTemplates().catch(error => {
+      console.error('[FarmersService] Failed to initialize:', error);
+      // Don't re-throw here to prevent server crash
+      return Promise.resolve();
+    });
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -22,19 +27,26 @@ export class FarmersService {
 
   private async initializeTemplates() {
     try {
+      console.log('[FarmersService] Creating templates directory...');
       // Create templates directory if it doesn't exist
       await fs.mkdir(this.templatesPath, { recursive: true });
       
+      console.log('[FarmersService] Loading YAML templates...');
       // Load all YAML templates
       await this.loadTemplates();
       
+      console.log('[FarmersService] Generating profiles...');
       // Generate profiles for each template
       this.generateProfiles();
       
+      console.log('[FarmersService] Initializing stats...');
       // Initialize stats
       this.initializeStats();
+      
+      console.log('[FarmersService] Initialization complete. Loaded', this.farmersCache.size, 'farmers');
     } catch (error) {
-      console.error('Failed to initialize farmers templates:', error);
+      console.error('[FarmersService] Failed to initialize farmers templates:', error);
+      throw error;
     }
   }
 
@@ -42,32 +54,40 @@ export class FarmersService {
     try {
       const files = await fs.readdir(this.templatesPath);
       const yamlFiles = files.filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+      console.log(`[FarmersService] Found ${yamlFiles.length} YAML files:`, yamlFiles);
 
       for (const file of yamlFiles) {
-        const filePath = path.join(this.templatesPath, file);
-        const content = await fs.readFile(filePath, 'utf-8');
-        const yamlData = yaml.parse(content);
-        
-        const id = path.basename(file, path.extname(file));
-        const template: FarmerTemplate = {
-          id,
-          name: yamlData.name || id,
-          title: yamlData.title || this.generateTitle(yamlData.name),
-          description: yamlData.description || '',
-          category: this.categorizeTemplate(yamlData),
-          agents: yamlData.agents || [],
-          initial_prompt: yamlData.initial_prompt || '',
-          steps: yamlData.steps || [],
-          config: yamlData.config || {},
-          metadata: yamlData.metadata || {},
-          yaml_path: filePath,
-          yaml_content: content
-        };
+        try {
+          const filePath = path.join(this.templatesPath, file);
+          const content = await fs.readFile(filePath, 'utf-8');
+          const yamlData = yaml.parse(content);
+          
+          const id = path.basename(file, path.extname(file));
+          const template: FarmerTemplate = {
+            id,
+            name: yamlData.name || id,
+            title: yamlData.title || this.generateTitle(yamlData.name || id),
+            description: yamlData.description || '',
+            category: this.categorizeTemplate(yamlData),
+            agents: yamlData.agents || [],
+            initial_prompt: yamlData.initial_prompt || '',
+            steps: yamlData.steps || [],
+            config: yamlData.config || {},
+            metadata: yamlData.metadata || {},
+            yaml_path: filePath,
+            yaml_content: content
+          };
 
-        this.farmersCache.set(id, template);
+          this.farmersCache.set(id, template);
+          console.log(`[FarmersService] Loaded template: ${id} (${template.title})`);
+        } catch (fileError) {
+          console.error(`[FarmersService] Error loading template ${file}:`, fileError);
+        }
       }
+      console.log(`[FarmersService] Successfully loaded ${this.farmersCache.size} templates`);
     } catch (error) {
-      console.error('Error loading templates:', error);
+      console.error('[FarmersService] Error loading templates:', error);
+      throw error;
     }
   }
 
@@ -81,15 +101,24 @@ export class FarmersService {
   private categorizeTemplate(yamlData: any): 'startup' | 'technical' | 'creative' | 'research' | 'operations' {
     const purpose = yamlData.metadata?.purpose;
     const name = yamlData.name?.toLowerCase() || '';
+    const description = yamlData.description?.toLowerCase() || '';
+    const title = yamlData.title?.toLowerCase() || '';
     
-    if (purpose === 'startup' || name.includes('startup') || name.includes('founder')) {
+    if (purpose === 'startup' || name.includes('startup') || name.includes('founder') || 
+        name.includes('vision') || name.includes('rooster') || 
+        description.includes('startup') || title.includes('venture')) {
       return 'startup';
-    } else if (purpose === 'development' || name.includes('code') || name.includes('dev')) {
+    } else if (purpose === 'development' || name.includes('code') || name.includes('dev') ||
+               name.includes('owlbert') || name.includes('sage')) {
       return 'technical';
-    } else if (purpose === 'creative' || name.includes('design') || name.includes('creative')) {
+    } else if (purpose === 'creative' || name.includes('design') || name.includes('creative') ||
+               name.includes('sparkle') || name.includes('unicorn')) {
       return 'creative';
-    } else if (purpose === 'research' || name.includes('research') || name.includes('analysis')) {
+    } else if (purpose === 'research' || name.includes('research') || name.includes('analysis') ||
+               name.includes('harvest') || name.includes('hound')) {
       return 'research';
+    } else if (name.includes('buzz') || name.includes('bee') || name.includes('daisy') || name.includes('donkey')) {
+      return 'operations';
     } else {
       return 'operations';
     }
@@ -169,16 +198,18 @@ export class FarmersService {
         { trait: 'Reliable', level: 90, description: 'Consistent performance' },
         { trait: 'Knowledgeable', level: 88, description: 'Deep domain expertise' }
       ],
-      skills: template.agents[0]?.capabilities?.map((cap, i) => ({
-        name: cap,
-        level: 75 + Math.floor(Math.random() * 20),
-        category: template.category
-      })) || [],
+      skills: (template.agents && template.agents[0] && template.agents[0].capabilities) 
+        ? template.agents[0].capabilities.map((cap: any, i: number) => ({
+            name: cap,
+            level: 75 + Math.floor(Math.random() * 20),
+            category: template.category
+          }))
+        : [],
       achievements: [],
       quotes: [`"Excellence in ${template.category} is my passion."`],
       mood: 'focused',
       specialty_badges: [],
-      fun_facts: [`Specializes in ${template.category} with ${template.metadata.num_agents || 1} agents`]
+      fun_facts: [`Specializes in ${template.category} with ${template.metadata?.num_agents || template.agents?.length || 1} agents`]
     };
   }
 
@@ -229,8 +260,14 @@ export class FarmersService {
   }
 
   async getAllFarmers(): Promise<FarmerTemplate[]> {
-    await this.ensureInitialized();
-    return Array.from(this.farmersCache.values());
+    try {
+      await this.ensureInitialized();
+      return Array.from(this.farmersCache.values());
+    } catch (error) {
+      console.error('[FarmersService] Error getting all farmers:', error);
+      // Return empty array instead of throwing to prevent 500 error
+      return [];
+    }
   }
 
   async getFarmerById(id: string): Promise<FarmerTemplate | null> {
@@ -249,35 +286,51 @@ export class FarmersService {
   }
 
   async getCategories(): Promise<FarmerCategory[]> {
-    await this.ensureInitialized();
-    const categories: Map<string, FarmerCategory> = new Map();
-    
-    const categoryInfo = {
-      startup: { name: 'Startup & Business', icon: '🚀', color: 'purple', description: 'Build and scale ventures' },
-      technical: { name: 'Technical Development', icon: '💻', color: 'blue', description: 'Code, architecture, and engineering' },
-      creative: { name: 'Creative & Design', icon: '🎨', color: 'pink', description: 'Design, content, and innovation' },
-      research: { name: 'Research & Analysis', icon: '🔬', color: 'green', description: 'Data, insights, and discovery' },
-      operations: { name: 'Operations & Management', icon: '⚙️', color: 'gray', description: 'Efficiency and optimization' }
-    };
+    try {
+      await this.ensureInitialized();
+      const categories: Map<string, FarmerCategory> = new Map();
+      
+      const categoryInfo = {
+        startup: { name: 'Startup & Business', icon: '🚀', color: 'purple', description: 'Build and scale ventures' },
+        technical: { name: 'Technical Development', icon: '💻', color: 'blue', description: 'Code, architecture, and engineering' },
+        creative: { name: 'Creative & Design', icon: '🎨', color: 'pink', description: 'Design, content, and innovation' },
+        research: { name: 'Research & Analysis', icon: '🔬', color: 'green', description: 'Data, insights, and discovery' },
+        operations: { name: 'Operations & Management', icon: '⚙️', color: 'gray', description: 'Efficiency and optimization' }
+      };
 
-    for (const template of this.farmersCache.values()) {
-      const cat = template.category;
-      if (!categories.has(cat)) {
-        const info = categoryInfo[cat as keyof typeof categoryInfo];
-        categories.set(cat, {
-          id: cat,
-          name: info.name,
-          description: info.description,
-          icon: info.icon,
-          color: info.color,
-          farmerCount: 0
-        });
+      for (const template of this.farmersCache.values()) {
+        const cat = template.category;
+        if (!categories.has(cat)) {
+          const info = categoryInfo[cat as keyof typeof categoryInfo];
+          if (info) {
+            categories.set(cat, {
+              id: cat,
+              name: info.name,
+              description: info.description,
+              icon: info.icon,
+              color: info.color,
+              farmerCount: 0
+            });
+          }
+        }
+        const category = categories.get(cat);
+        if (category) {
+          category.farmerCount++;
+        }
       }
-      const category = categories.get(cat)!;
-      category.farmerCount++;
-    }
 
-    return Array.from(categories.values());
+      return Array.from(categories.values());
+    } catch (error) {
+      console.error('[FarmersService] Error getting categories:', error);
+      // Return default categories even if no farmers loaded
+      return [
+        { id: 'startup', name: 'Startup & Business', icon: '🚀', color: 'purple', description: 'Build and scale ventures', farmerCount: 0 },
+        { id: 'technical', name: 'Technical Development', icon: '💻', color: 'blue', description: 'Code, architecture, and engineering', farmerCount: 0 },
+        { id: 'creative', name: 'Creative & Design', icon: '🎨', color: 'pink', description: 'Design, content, and innovation', farmerCount: 0 },
+        { id: 'research', name: 'Research & Analysis', icon: '🔬', color: 'green', description: 'Data, insights, and discovery', farmerCount: 0 },
+        { id: 'operations', name: 'Operations & Management', icon: '⚙️', color: 'gray', description: 'Efficiency and optimization', farmerCount: 0 }
+      ];
+    }
   }
 
   async updateFarmerStats(farmerId: string, updates: Partial<FarmerStats>) {

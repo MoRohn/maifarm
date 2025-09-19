@@ -1,5 +1,15 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
-import { logAPIError } from '@/utils/errorLogger';
+
+// Simple error logging function to replace the missing import
+const logAPIError = (error: any, context?: any) => {
+  console.error('[API Error]', {
+    message: error?.message || error,
+    status: error?.response?.status,
+    endpoint: context?.endpoint,
+    operation: context?.operation,
+    metadata: context?.metadata
+  });
+};
 
 // Use relative URL so Vite proxy handles the routing
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
@@ -14,7 +24,7 @@ interface RetryConfig extends AxiosRequestConfig {
 // Create axios instance with default config
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 60000, // Increase timeout to 60 seconds for farm creation
   headers: {
     'Content-Type': 'application/json',
   },
@@ -79,6 +89,19 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
+    // Debug: Catch the problematic handshake request
+    if (config.url?.includes('/agents/handshake/')) {
+      const match = config.url.match(/\/agents\/handshake\/(.+)/);
+      const agentId = match ? match[1] : 'unknown';
+      console.warn('[API Debug] Handshake request for agent:', agentId);
+      if (agentId === 'undefined' || agentId === 'null') {
+        console.error('[API Debug] WARNING: Invalid agent ID in handshake request!');
+        console.error('[API Debug] Stack trace:', new Error().stack);
+        console.error('[API Debug] Full config:', config);
+        // Don't block, but log the issue
+      }
+    }
+    
     // Log request in development (but suppress noisy endpoints)
     if (import.meta.env.DEV) {
       const isNoisyEndpoint = config.url?.includes('/metrics') || 
@@ -101,6 +124,57 @@ apiClient.interceptors.request.use(
   }
 );
 
+// Circuit breaker for API calls
+class CircuitBreaker {
+  private failures = 0;
+  private successCount = 0;
+  private lastFailTime = 0;
+  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
+  private readonly threshold = 5;
+  private readonly timeout = 30000; // 30 seconds
+  private readonly successThreshold = 3;
+
+  isOpen(): boolean {
+    if (this.state === 'OPEN') {
+      const now = Date.now();
+      if (now - this.lastFailTime > this.timeout) {
+        this.state = 'HALF_OPEN';
+        this.successCount = 0;
+        console.log('[Circuit Breaker] Entering HALF_OPEN state');
+      }
+    }
+    return this.state === 'OPEN';
+  }
+
+  recordSuccess(): void {
+    this.failures = 0;
+    if (this.state === 'HALF_OPEN') {
+      this.successCount++;
+      if (this.successCount >= this.successThreshold) {
+        this.state = 'CLOSED';
+        console.log('[Circuit Breaker] Circuit CLOSED - service recovered');
+      }
+    }
+  }
+
+  recordFailure(): void {
+    this.failures++;
+    this.lastFailTime = Date.now();
+    this.successCount = 0;
+    
+    if (this.failures >= this.threshold) {
+      this.state = 'OPEN';
+      console.error('[Circuit Breaker] Circuit OPEN - too many failures');
+    }
+  }
+
+  getState(): string {
+    return this.state;
+  }
+}
+
+const circuitBreaker = new CircuitBreaker();
+
 // Response interceptor with error handling
 apiClient.interceptors.response.use(
   (response) => {
@@ -116,6 +190,9 @@ apiClient.interceptors.response.use(
       }
     }
     
+    // Record success for circuit breaker
+    circuitBreaker.recordSuccess();
+    
     return response;
   },
   async (error: AxiosError) => {
@@ -124,6 +201,17 @@ apiClient.interceptors.response.use(
     if (requestId && requestTimings.has(requestId)) {
       const duration = Date.now() - requestTimings.get(requestId)!;
       requestTimings.delete(requestId);
+    }
+    
+    // Check circuit breaker
+    if (circuitBreaker.isOpen()) {
+      console.error('[Circuit Breaker] Request blocked - circuit is OPEN');
+      return Promise.reject(new Error('Service temporarily unavailable'));
+    }
+    
+    // Record failure for 5xx errors
+    if (error.response && error.response.status >= 500) {
+      circuitBreaker.recordFailure();
     }
     
     // Try to retry the request
@@ -164,6 +252,16 @@ apiClient.interceptors.response.use(
       
       // Return mock data for specific endpoints
       const mockResponses: Record<string, any> = {
+        '/api/harvest/farms': {
+          success: true,
+          data: [],
+          message: 'Mock response - backend unavailable'
+        },
+        '/api/harvests': {
+          success: true,
+          data: [],
+          message: 'Mock response - backend unavailable'
+        },
         '/api/health': {
           status: 'healthy',
           timestamp: new Date().toISOString(),
@@ -199,33 +297,8 @@ apiClient.interceptors.response.use(
         '/api/farms': {
           success: true,
           data: {
-            farms: [
-              {
-                id: 'mock-farm-1',
-                name: 'Mock Development Farm',
-                status: 'running',
-                type: 'claude-code',
-                agents: [
-                  {
-                    id: 'mock-agent-1',
-                    name: 'Frontend Developer',
-                    type: 'claude-code',
-                    status: 'active',
-                    currentTask: 'Implementing UI components'
-                  },
-                  {
-                    id: 'mock-agent-2',
-                    name: 'Backend Developer',
-                    type: 'claude-code',
-                    status: 'idle',
-                    currentTask: null
-                  }
-                ],
-                createdAt: new Date(Date.now() - 3600000).toISOString(),
-                updatedAt: new Date().toISOString()
-              }
-            ],
-            total: 1
+            farms: [],
+            total: 0
           }
         },
         '/api/agents': {
@@ -238,10 +311,10 @@ apiClient.interceptors.response.use(
         '/api/metrics/dashboard': {
           success: true,
           data: {
-            activeFarms: 1,
-            totalAgents: 2,
-            tasksCompleted: 15,
-            successRate: 93
+            activeFarms: 0,
+            totalAgents: 0,
+            tasksCompleted: 0,
+            successRate: 0
           }
         },
         '/api/metrics': {
@@ -332,6 +405,7 @@ export const api = {
     create: (data: any) => apiClient.post('/api/farms', data),
     update: (id: string, data: any) => apiClient.put(`/api/farms/${id}`, data),
     delete: (id: string) => apiClient.delete(`/api/farms/${id}`),
+    launch: (id: string, data: any) => apiClient.post(`/api/farms/${id}/launch`, data),
     start: (id: string) => apiClient.post(`/api/farms/${id}/start`),
     pause: (id: string) => apiClient.post(`/api/farms/${id}/pause`),
     claudeCode: {
@@ -356,17 +430,46 @@ export const api = {
     update: (id: string, data: any) => apiClient.put(`/api/agents/${id}`, data),
     delete: (id: string) => apiClient.delete(`/api/agents/${id}`),
     tasks: (id: string) => apiClient.get(`/api/agents/${id}/tasks`),
+    connected: () => apiClient.get('/api/agents/connected'),
+    handshake: (id: string) => {
+      if (!id || id === 'undefined' || id === 'null') {
+        console.error('[API] Attempted to call handshake with invalid agent ID:', id);
+        return Promise.reject(new Error('Invalid agent ID for handshake'));
+      }
+      return apiClient.get(`/api/agents/handshake/${id}`);
+    },
   },
   
-  // Harvests
+  // Harvests with proper error handling
   harvests: {
-    list: (filter?: any) => apiClient.get('/api/harvests', { params: filter }),
-    get: (id: string) => apiClient.get(`/api/harvests/${id}`),
+    list: (filter?: any) => apiClient.get('/api/harvests', { params: filter }).catch(error => {
+      console.warn('Failed to fetch harvests, returning empty list:', error.message);
+      return { data: { success: true, data: [] } };
+    }),
+    get: (id: string) => apiClient.get(`/api/harvests/${id}`).catch(error => {
+      if (error.response?.status === 404) {
+        return { data: { success: false, data: null } };
+      }
+      console.warn('Failed to fetch harvest, returning null:', error.message);
+      return { data: { success: false, data: null } };
+    }),
     create: (data: any) => apiClient.post('/api/harvests', data),
     update: (id: string, data: any) => apiClient.put(`/api/harvests/${id}`, data),
     delete: (id: string) => apiClient.delete(`/api/harvests/${id}`),
     archive: (id: string) => apiClient.post(`/api/harvests/${id}/archive`),
     export: (options: any) => apiClient.post('/api/harvests/export', options, { responseType: 'blob' }),
+  },
+  
+  // Harvest endpoints with error handling
+  harvest: {
+    byFarmId: (farmId: string) => apiClient.get(`/api/harvest/farms/${farmId}`).catch(error => {
+      console.warn(`Failed to fetch harvests for farm ${farmId}:`, error.message);
+      return { data: { success: true, data: [] } };
+    }),
+    get: (id: string) => apiClient.get(`/api/harvest/${id}`).catch(error => {
+      console.warn(`Failed to fetch harvest ${id}:`, error.message);
+      return { data: { success: false, data: null } };
+    }),
   },
   
   // Seeds
@@ -432,6 +535,13 @@ export const api = {
   
   // Metrics
   metrics: () => apiClient.get('/api/metrics/dashboard'),
+  
+  // MaiBarn
+  maibarn: {
+    info: () => apiClient.get('/api/maibarn/info'),
+    reset: (options: { includeDatabase?: boolean } = {}) => 
+      apiClient.post('/api/maibarn/reset', options),
+  },
   
   // WebSocket info
   wsInfo: () => ({

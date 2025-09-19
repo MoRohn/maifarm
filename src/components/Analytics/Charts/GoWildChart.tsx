@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import * as d3 from 'd3';
-import { useThemeStore } from '../../../store/themeStore';
+import { useThemeStore } from '@/store/themeStore';
 import { Sparkles, TrendingUp, Zap, Target } from 'lucide-react';
 
 interface GoWildMetric {

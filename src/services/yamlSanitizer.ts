@@ -3,7 +3,7 @@
  * Cleans and validates YAML content to prevent invalid structures and error messages
  */
 
-import { YamlConfig, AgentDefinition, BuildStep } from '../types/yamlGenerator';
+import { YamlConfig, AgentDefinition, BuildStep } from '@/types/yamlGenerator';
 
 interface SanitizationResult {
   success: boolean;
@@ -497,7 +497,7 @@ class YamlSanitizer {
    * Fix step issues
    */
   private fixSteps(content: string, issues: ValidationIssue[]): string {
-    let fixed = content;
+    const fixed = content;
 
     // Remove steps with error messages
     const lines = fixed.split('\n');

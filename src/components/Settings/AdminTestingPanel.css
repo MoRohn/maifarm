@@ -1,0 +1,199 @@
+/* Admin Testing Panel - Enhanced Styles */
+
+.admin-testing-panel {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Phase status animations */
+@keyframes phaseSuccess {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes phaseError {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes pulse-glow {
+  0% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+  100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); }
+}
+
+.phase-success {
+  animation: phaseSuccess 0.6s ease-in-out;
+}
+
+.phase-error {
+  animation: phaseError 0.5s ease-in-out;
+}
+
+.phase-running {
+  animation: pulse-glow 2s infinite;
+}
+
+/* Error expansion animations */
+.error-details-enter {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.error-details-enter-active {
+  max-height: 500px;
+  opacity: 1;
+  transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+}
+
+.error-details-exit {
+  max-height: 500px;
+  opacity: 1;
+}
+
+.error-details-exit-active {
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+  overflow: hidden;
+}
+
+/* Configuration panel */
+.config-panel {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.dark .config-panel {
+  background: rgba(17, 24, 39, 0.9);
+}
+
+/* Custom scrollbar for logs */
+.api-logs-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.api-logs-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 2px;
+}
+
+.api-logs-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 2px;
+}
+
+.api-logs-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Status indicators */
+.status-indicator {
+  position: relative;
+}
+
+.status-indicator::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.status-indicator.status-success::before {
+  background: #10b981;
+  animation: statusPulse 2s infinite;
+}
+
+.status-indicator.status-error::before {
+  background: #ef4444;
+  animation: statusPulse 2s infinite;
+}
+
+.status-indicator.status-warning::before {
+  background: #f59e0b;
+  animation: statusPulse 2s infinite;
+}
+
+@keyframes statusPulse {
+  0% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+  100% { opacity: 0.6; transform: scale(1); }
+}
+
+/* Result cards */
+.result-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.result-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dark .result-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Metrics display */
+.metric-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Loading states */
+.loading-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.dark .loading-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  .admin-testing-panel,
+  .phase-success,
+  .phase-error,
+  .phase-running,
+  .status-indicator.status-success::before,
+  .status-indicator.status-error::before,
+  .status-indicator.status-warning::before,
+  .loading-shimmer {
+    animation: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .result-card {
+    border-width: 2px;
+  }
+  
+  .status-indicator::before {
+    border: 1px solid currentColor;
+  }
+}

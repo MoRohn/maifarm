@@ -5,8 +5,8 @@ import {
   SafetyMonitor,
   SafetyRecommendation,
   SafetyConfig
-} from '../types/safety';
-import { GoWildSession, GoWildConfig } from '../types/goWild';
+} from '@/types/safety';
+import { GoWildSession, GoWildConfig } from '@/types/goWild';
 import { snapshotService } from './explorationSnapshot';
 import { rollbackManager } from './rollbackManager';
 import { metricsCollector } from './metricsCollector';

@@ -1,4 +1,4 @@
-import { BarnItem, BarnFolder, BarnStats } from '../types/barn';
+import { BarnItem, BarnFolder, BarnStats } from '@/types/barn';
 import apiClient from './apiClient';
 import { websocketService } from './websocket/websocketService';
 
@@ -173,3 +173,4 @@ class BarnService {
 }
 
 export const barnService = new BarnService();
+export type { BarnService };

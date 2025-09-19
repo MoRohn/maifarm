@@ -1,4 +1,4 @@
-import { LoginCredentials, AuthSession, AuthUser, Role, Permission } from '../types/auth';
+import { LoginCredentials, AuthSession, AuthUser, Role, Permission } from '@/types/auth';
 import { encryptionService } from './encryptionService';
 
 // Default roles and permissions

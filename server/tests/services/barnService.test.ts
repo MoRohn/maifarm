@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { BarnService } from '../../services/barnService';
-import { harvestService } from '../../services/harvestService';
+import { BarnService } from '../../services/unified/farmService';
+import { harvestService } from '../services/unified/harvestService';
 import { fileManager } from '../../services/fileManagerService';
 import { websocketManager } from '../../websocket/websocketManager';
 import { db } from '../../database/client';

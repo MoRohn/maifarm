@@ -13,7 +13,7 @@ import {
   Star
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useHarvestStore } from '../../store/harvestStore';
+import { useHarvestStore } from '@/store/harvestStore';
 
 export const HarvestSection: React.FC = () => {
   const navigate = useNavigate();

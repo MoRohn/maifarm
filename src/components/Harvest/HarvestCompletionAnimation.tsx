@@ -10,7 +10,7 @@ import {
   Zap,
   X
 } from 'lucide-react';
-import { Harvest } from '../../types/harvest';
+import { Harvest } from '@/types/harvest';
 
 interface HarvestCompletionAnimationProps {
   harvest: Harvest;

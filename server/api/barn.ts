@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { barnService } from '../services/barnService';
-import { barnCatalogService } from '../services/barnCatalogService';
+import { barnService } from '../services/unified/barnService';
+import { barnService as barnCatalogService } from '../services/unified/barnService';
 import { logger } from '../utils/logger';
 import { BarnItem } from '../../src/types/barn';
 
@@ -56,13 +56,16 @@ router.get('/items/:id', async (req, res) => {
   }
 });
 
-// Store harvest in barn
+// Store harvest in barn (legacy endpoint for backward compatibility)
 router.post('/store', async (req, res) => {
   try {
     const { harvestId, name, description, type, category, tags, folderId } = req.body;
 
     if (!harvestId) {
-      return res.status(400).json({ error: 'Harvest ID is required' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Harvest ID is required' 
+      });
     }
 
     const item = await barnService.storeHarvest(harvestId, {
@@ -74,15 +77,27 @@ router.post('/store', async (req, res) => {
       folderId
     });
 
-    res.status(201).json(item);
+    res.status(201).json({
+      success: true,
+      data: item
+    });
   } catch (error) {
     logger.error('Failed to store harvest in barn:', error);
     if ((error as Error).message === 'Harvest not found') {
-      res.status(404).json({ error: 'Harvest not found' });
+      res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found' 
+      });
     } else if ((error as Error).message === 'Harvest is not ready for storage') {
-      res.status(400).json({ error: 'Harvest is not ready for storage' });
+      res.status(400).json({ 
+        success: false,
+        error: 'Harvest is not ready for storage' 
+      });
     } else {
-      res.status(500).json({ error: 'Failed to store harvest in barn' });
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to store harvest in barn' 
+      });
     }
   }
 });
@@ -422,6 +437,141 @@ router.get('/items/:id/download-all', async (req, res) => {
   } catch (error) {
     logger.error('Failed to download all yield items:', error);
     res.status(500).json({ error: 'Failed to download yield items' });
+  }
+});
+
+// ============ HARVEST-SPECIFIC ENDPOINTS ============
+
+// Get harvest by ID from barn (harvest lookup endpoint)
+router.get('/harvests/:harvestId', async (req, res) => {
+  try {
+    const { harvestId } = req.params;
+    
+    // Find barn item that contains this harvest
+    const items = await barnService.findAll({ harvestId });
+    
+    if (items.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found in barn' 
+      });
+    }
+    
+    // Return the first matching item (should be unique)
+    const barnItem = items[0];
+    res.json({
+      success: true,
+      data: {
+        barnItem,
+        harvestId,
+        storedAt: barnItem.createdAt,
+        category: barnItem.category,
+        tags: barnItem.tags
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get harvest from barn:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to retrieve harvest from barn' 
+    });
+  }
+});
+
+// Store harvest in barn (POST /api/barn/harvests)
+router.post('/harvests', async (req, res) => {
+  try {
+    const { harvestId, name, description, type, category, tags, folderId } = req.body;
+
+    if (!harvestId) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Harvest ID is required' 
+      });
+    }
+
+    const item = await barnService.storeHarvest(harvestId, {
+      name,
+      description,
+      type,
+      category,
+      tags,
+      folderId
+    });
+
+    res.status(201).json({
+      success: true,
+      data: item
+    });
+  } catch (error) {
+    logger.error('Failed to store harvest in barn:', error);
+    if ((error as Error).message === 'Harvest not found') {
+      res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found' 
+      });
+    } else if ((error as Error).message === 'Harvest is not ready for storage') {
+      res.status(400).json({ 
+        success: false,
+        error: 'Harvest is not ready for storage' 
+      });
+    } else {
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to store harvest in barn' 
+      });
+    }
+  }
+});
+
+// Search barn with query parameters (GET /api/barn/search)
+router.get('/search', async (req, res) => {
+  try {
+    const {
+      q: searchQuery,
+      type,
+      category,
+      tags,
+      farmId,
+      harvestId,
+      folderId,
+      limit = 20,
+      offset = 0
+    } = req.query;
+
+    const filter = {
+      type: type as BarnItem['type'],
+      category: category as string,
+      tags: tags ? (tags as string).split(',') : undefined,
+      farmId: farmId as string,
+      harvestId: harvestId as string,
+      folderId: folderId as string,
+      searchQuery: searchQuery as string
+    };
+
+    const items = await barnService.findAll(filter);
+    
+    // Apply pagination
+    const startIndex = Number(offset);
+    const endIndex = startIndex + Number(limit);
+    const paginatedItems = items.slice(startIndex, endIndex);
+    
+    res.json({
+      success: true,
+      data: paginatedItems,
+      meta: {
+        total: items.length,
+        offset: Number(offset),
+        limit: Number(limit),
+        hasMore: endIndex < items.length
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to search barn:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to search barn' 
+    });
   }
 });
 

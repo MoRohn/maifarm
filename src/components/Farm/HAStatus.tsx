@@ -13,7 +13,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useHighAvailability } from '../../hooks/useHighAvailability';
+import { useHighAvailability } from '@/hooks/useHighAvailability';
 
 interface HAStatusProps {
   farmId: string;
@@ -302,19 +302,19 @@ export const HAStatus: React.FC<HAStatusProps> = ({
                   Recent Failovers
                 </h4>
                 <div className="space-y-2">
-                  {failoverHistory.slice(0, 5).map((event, index) => (
+                  {failoverHistory.slice(0, 5).map((event, histIndex) => (
                     <div
-                      key={index}
+                      key={histIndex}
                       className="flex items-center justify-between text-sm"
                     >
                       <div className="flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-yellow-500" />
                         <span className="text-gray-700 dark:text-gray-300">
-                          {event.fromNode} → {event.toNode}
+                          {event?.fromNode} → {event?.toNode}
                         </span>
                       </div>
                       <span className="text-xs text-gray-500">
-                        {new Date(event.timestamp).toLocaleString()}
+                        {event?.timestamp ? new Date(event.timestamp).toLocaleString() : 'Unknown'}
                       </span>
                     </div>
                   ))}

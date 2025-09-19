@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
-import { TerminalCommand } from '../../../types/terminal';
+import { TerminalCommand } from '@/types/terminal';
 
 interface UseTerminalCommandProps {
   sessionId: string | null;
   agentId: number | null;
   onCommandSent?: (command: string) => void;
-  onCommandComplete?: (command: string, success: boolean) => void;
+  onCommandComplete?: (_command: string, _success: boolean) => void;
 }
 
 export const useTerminalCommand = ({ 

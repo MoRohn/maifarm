@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { PauseIcon, PlayIcon, DevicePhoneMobileIcon } from '@heroicons/react/24/outline';
-import { useSettingsStore } from '../../store/settingsStore';
+import { useSettingsStore } from '@/store/settingsStore';
 
 const BehaviorSettings: React.FC = () => {
   const { settings, updateSettings } = useSettingsStore();

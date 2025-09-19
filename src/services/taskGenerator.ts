@@ -1,4 +1,4 @@
-import { GoWildConfig, ExplorationNode } from '../types/goWild';
+import { GoWildConfig, ExplorationNode } from '@/types/goWild';
 
 export interface GeneratedTask {
   id: string;

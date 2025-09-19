@@ -159,7 +159,7 @@ const LocalModelSetupModal: React.FC<LocalModelSetupModalProps> = ({
       const data = await response.json();
       
       if (data.success) {
-        setCurrentStep(4);
+        // Test completed successfully - stay on step 3
         if (onComplete) {
           setTimeout(() => {
             onComplete();
@@ -419,7 +419,7 @@ const LocalModelSetupModal: React.FC<LocalModelSetupModalProps> = ({
                 <Loader className="w-8 h-8 animate-spin text-purple-600 mb-4" />
                 <p className="text-gray-600">Testing model...</p>
               </div>
-            ) : currentStep === 4 ? (
+            ) : currentStep === 3 && selectedModel ? (
               <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-6">
                 <div className="flex items-start gap-4">
                   <CheckCircle className="w-6 h-6 text-green-600 mt-1" />

@@ -1,7 +1,7 @@
 // Agent lifecycle management service
 
 import { v4 as uuidv4 } from 'uuid';
-import { Agent } from '../types';
+import { Agent } from '@/types';
 import { 
   AgentInstance, 
   AgentState, 
@@ -11,8 +11,8 @@ import {
   AgentLifecycleEvent,
   AgentTask,
   HealthCheck
-} from '../types/agent';
-import { useAgentStore } from '../store/agentStore';
+} from '@/types/agent';
+import { useAgentStore } from '@/store/agentStore';
 import { websocketService } from './websocket';
 import { metricsCollector } from './metricsCollector';
 
@@ -173,7 +173,7 @@ class AgentLifecycle {
 
     while (Date.now() - startTime < timeout) {
       const tasks = this.agentTasks.get(instanceId) || [];
-      const runningTasks = tasks.filter(t => t.status === 'running');
+      const runningTasks = tasks.filter(t => t.status === 'active');
       
       if (runningTasks.length === 0) {
         break;
@@ -450,7 +450,7 @@ class AgentLifecycle {
   private checkTaskProcessing(agent: AgentInstance): HealthCheck {
     const tasks = this.agentTasks.get(agent.instanceId) || [];
     const stuckTasks = tasks.filter(t => 
-      t.status === 'running' && 
+      t.status === 'active' && 
       t.startedAt && 
       Date.now() - t.startedAt.getTime() > 300000 // 5 minutes
     );
@@ -507,7 +507,7 @@ class AgentLifecycle {
     
     try {
       // Update task status
-      task.status = 'running';
+      task.status = 'active';
       task.startedAt = new Date();
 
       // Simulate task execution

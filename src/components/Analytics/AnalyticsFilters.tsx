@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Filter, X, Calendar, Users, BarChart3 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useAnalyticsStore } from '../../store/analyticsStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
 
 export const AnalyticsFilters: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);

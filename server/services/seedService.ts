@@ -5,6 +5,7 @@ import { Seed, SeedCreateInput, SeedUpdateInput, SeedFilter } from '../../src/ty
 import { harvestService } from './harvestService';
 import { yamlGenerator } from './yamlGenerator';
 import * as yaml from 'js-yaml';
+import { SEED_UUID } from '../utils/systemUuids';
 
 export class SeedService {
   private seeds: Map<string, Seed> = new Map();
@@ -42,7 +43,7 @@ export class SeedService {
         metadata: { agentCount: 3, estimatedDuration: 300, requiredCapabilities: ['code-analysis'] },
         createdAt: new Date(),
         updatedAt: new Date(),
-        createdBy: 'system',
+        createdBy: SEED_UUID, // Use seed-specific UUID
         isPublic: true,
         isOfficial: true
       },
@@ -73,7 +74,7 @@ export class SeedService {
         metadata: { agentCount: 3, estimatedDuration: 600, requiredCapabilities: ['data-processing'] },
         createdAt: new Date(),
         updatedAt: new Date(),
-        createdBy: 'system',
+        createdBy: SEED_UUID, // Use seed-specific UUID
         isPublic: true,
         isOfficial: true
       },
@@ -101,7 +102,7 @@ export class SeedService {
         metadata: { agentCount: 3, estimatedDuration: 1200, requiredCapabilities: ['research', 'writing'] },
         createdAt: new Date(),
         updatedAt: new Date(),
-        createdBy: 'system',
+        createdBy: SEED_UUID, // Use seed-specific UUID
         isPublic: true,
         isOfficial: true
       }

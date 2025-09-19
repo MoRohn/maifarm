@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { Agent } from '../../types';
+import { Agent } from '@/types';
 
 export interface HANode {
   id: string;

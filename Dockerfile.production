@@ -1,117 +1,95 @@
-# Production-optimized Dockerfile for MaiFarm Pro
-# Build arguments
-ARG NODE_VERSION=20
-ARG ALPINE_VERSION=3.19
+# Production Dockerfile for MaiFarm
+# Multi-stage build for optimized image size and security
 
-# Stage 1: Dependencies
-FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS deps
-
+# ========================================
+# Stage 1: Dependencies Installation
+# ========================================
+FROM node:20-alpine AS deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
-# Copy dependency files
+# Copy package files
 COPY package*.json ./
+COPY tsconfig*.json ./
 
-# Install production dependencies
+# Install dependencies
 RUN npm ci --only=production && \
     npm cache clean --force
 
-# Stage 2: Builder
-FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS builder
-
-RUN apk add --no-cache libc6-compat python3 make g++
+# ========================================
+# Stage 2: Build Stage
+# ========================================
+FROM node:20-alpine AS builder
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
+# Copy package files and install all dependencies (including dev)
 COPY package*.json ./
-
-# Install all dependencies (including dev)
-RUN npm ci && \
-    npm cache clean --force
+COPY tsconfig*.json ./
+RUN npm ci
 
 # Copy source code
 COPY . .
 
-# Build the application with production optimizations
-ENV NODE_ENV=production
-RUN npm run build && \
-    # Remove dev dependencies
-    npm prune --production && \
-    # Clean up unnecessary files
-    rm -rf tests .git .github scripts *.md *.log
+# Build the application
+RUN npm run build
 
-# Stage 3: Security scanner
-FROM aquasec/trivy:latest AS scanner
-COPY --from=builder /app /app
-RUN trivy fs --no-progress --severity HIGH,CRITICAL --exit-code 0 /app
+# Remove dev dependencies and unnecessary files
+RUN rm -rf node_modules && \
+    npm ci --only=production && \
+    rm -rf src tests scripts/*.test.* .git .github
 
-# Stage 4: Production runtime
-FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS runtime
-
-# Install production runtime dependencies
-RUN apk add --no-cache \
-    dumb-init \
-    curl \
-    tini \
-    ca-certificates \
-    && rm -rf /var/cache/apk/*
-
-# Create non-root user
-RUN addgroup -g 1001 -S maifarm && \
-    adduser -S maifarm -u 1001 -G maifarm
-
-# Set up application directory
+# ========================================
+# Stage 3: Production Image
+# ========================================
+FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Copy only necessary files from builder
-COPY --from=builder --chown=maifarm:maifarm /app/dist ./dist
-COPY --from=builder --chown=maifarm:maifarm /app/node_modules ./node_modules
-COPY --from=builder --chown=maifarm:maifarm /app/package*.json ./
-COPY --from=builder --chown=maifarm:maifarm /app/public ./public
-COPY --from=builder --chown=maifarm:maifarm /app/server ./server
-COPY --from=builder --chown=maifarm:maifarm /app/tsconfig*.json ./
+# Install production dependencies only
+RUN apk add --no-cache \
+    libc6-compat \
+    tmux \
+    git \
+    curl \
+    bash \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Copy built application and dependencies
+COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/server ./server
+COPY --from=builder --chown=nodejs:nodejs /app/shared ./shared
+
+# Copy necessary configuration files
+COPY --chown=nodejs:nodejs tsconfig*.json ./
+COPY --chown=nodejs:nodejs vite.config.ts ./
 
 # Create necessary directories with proper permissions
-RUN mkdir -p /app/logs /app/uploads /app/cache /app/.npm && \
-    chown -R maifarm:maifarm /app && \
-    chmod -R 755 /app
+RUN mkdir -p maibarn/coordination maibarn/harvests maibarn/workspaces maibarn/terminals maibarn/barn/items && \
+    mkdir -p logs/errors && \
+    mkdir -p /tmp/claude_coordination && \
+    chown -R nodejs:nodejs maibarn logs /tmp/claude_coordination
 
-# Security hardening
-RUN chmod -R 644 /app/dist && \
-    find /app/dist -type d -exec chmod 755 {} \; && \
-    chmod -R 644 /app/public && \
-    find /app/public -type d -exec chmod 755 {} \;
-
-# Set security environment variables
+# Set environment variables
 ENV NODE_ENV=production \
-    NODE_OPTIONS="--max-old-space-size=2048 --enable-source-maps" \
-    NPM_CONFIG_LOGLEVEL=error \
-    PORT=3000 \
-    HOST=0.0.0.0
-
-# Metadata
-LABEL maintainer="MaiFarm Team" \
-      version="${VERSION}" \
-      description="MaiFarm Pro - Multi-Agent Claude Code Orchestrator" \
-      org.opencontainers.image.source="https://github.com/maifarm/maifarm-pro" \
-      org.opencontainers.image.vendor="MaiFarm" \
-      org.opencontainers.image.title="MaiFarm Pro" \
-      org.opencontainers.image.description="Production-ready AI orchestration platform"
-
-# Expose ports
-EXPOSE 3000 8080
-
-# Health check with more specific endpoint
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/api/health || exit 1
+    PORT=4567 \
+    HOST=0.0.0.0 \
+    TMUX_TMPDIR=/tmp
 
 # Switch to non-root user
-USER maifarm
+USER nodejs
 
-# Use tini for proper signal handling
-ENTRYPOINT ["/sbin/tini", "--"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:4567/api/health || exit 1
 
-# Start the application with memory limits
-# Use tsx to run TypeScript directly in production
-CMD ["npx", "tsx", "--max-old-space-size=2048", "server/index.ts"]
+# Expose ports
+EXPOSE 4567
+
+# Start the application
+CMD ["node", "--max-old-space-size=4096", "--enable-source-maps", "dist/server/index.js"]

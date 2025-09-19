@@ -11,6 +11,7 @@ import {
   Circle
 } from 'lucide-react';
 import { Tooltip } from '../common/Tooltip';
+import { parseToSegments, stripAnsi, detectOutputType, getOutputColor } from '@/utils/ansiParser';
 
 interface AgentBarProps {
   agentId: number;
@@ -27,7 +28,7 @@ interface AgentBarProps {
   onSendCommand: (command: string) => void;
 }
 
-export const AgentBar: React.FC<AgentBarProps> = ({
+export const AgentBar: React.FC<AgentBarProps> = React.memo(({
   agentId,
   agentName,
   lastLine,
@@ -52,7 +53,7 @@ export const AgentBar: React.FC<AgentBarProps> = ({
   }, [fullOutput, expanded]);
 
   // Extract clean last line (remove ANSI codes)
-  const cleanLastLine = lastLine ? lastLine.replace(/\x1b\[[0-9;]*m/g, '') : 'Waiting for output...';
+  const cleanLastLine = lastLine ? stripAnsi(lastLine) : 'Waiting for output...';
 
   // Get status color
   const getStatusColor = () => {
@@ -159,18 +160,37 @@ export const AgentBar: React.FC<AgentBarProps> = ({
             {/* Terminal Output */}
             <div 
               ref={terminalRef}
-              className="bg-black p-4 h-64 overflow-y-auto font-mono text-xs"
+              className="bg-black p-4 h-48 overflow-y-auto font-mono text-xs"
               style={{ 
                 scrollbarWidth: 'thin',
                 scrollbarColor: '#4B5563 #1F2937'
               }}
             >
               {fullOutput.length > 0 ? (
-                fullOutput.map((line, idx) => (
-                  <div key={idx} className="text-green-400 whitespace-pre-wrap break-all">
-                    {line}
-                  </div>
-                ))
+                fullOutput.map((line, idx) => {
+                  const segments = parseToSegments(line);
+                  const outputType = detectOutputType(line);
+                  const baseColor = getOutputColor(outputType);
+                  
+                  return (
+                    <div key={idx} className="whitespace-pre-wrap break-all">
+                      {segments.map((segment, segIdx) => (
+                        <span 
+                          key={segIdx}
+                          style={{
+                            color: segment.style.color || baseColor,
+                            backgroundColor: segment.style.backgroundColor,
+                            fontWeight: segment.style.bold ? 'bold' : undefined,
+                            fontStyle: segment.style.italic ? 'italic' : undefined,
+                            textDecoration: segment.style.underline ? 'underline' : undefined
+                          }}
+                        >
+                          {segment.text}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })
               ) : (
                 <div className="text-gray-500">No output yet...</div>
               )}
@@ -200,4 +220,4 @@ export const AgentBar: React.FC<AgentBarProps> = ({
       </AnimatePresence>
     </motion.div>
   );
-};
+});

@@ -1,6 +1,6 @@
 // Fault tolerance and retry mechanism service
 
-import { RetryPolicy } from '../types/farm';
+import { RetryPolicy } from '@/types/farm';
 
 interface RetryOptions {
   maxRetries: number;

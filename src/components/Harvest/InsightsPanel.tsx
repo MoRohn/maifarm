@@ -15,7 +15,7 @@ import {
   Target,
   BarChart2
 } from 'lucide-react';
-import { HarvestInsight } from '../../types/harvest';
+import { HarvestInsight } from '@/types/harvest';
 
 interface InsightsPanelProps {
   insights: HarvestInsight[];

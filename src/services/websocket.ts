@@ -30,7 +30,7 @@ export interface AgentStatus {
 export interface FarmStatus {
   id: string;
   name: string;
-  status: 'preparing' | 'running' | 'paused' | 'completed' | 'failed';
+  status: 'preparing' | 'active' | 'paused' | 'completed' | 'failed';
   agents: AgentStatus[];
   startTime: Date;
   endTime?: Date;
@@ -131,14 +131,17 @@ class WebSocketService {
         reconnectionDelayMax: 5000,
         reconnectionAttempts: this.maxRetries,
         path: '/socket.io/',
-        timeout: 20000, // Increased timeout
+        timeout: 45000, // Match server's connectTimeout (45s)
         autoConnect: true,
         withCredentials: true, // Match server CORS configuration
         auth: {
           userId: 'local-user' // Add auth for local development
         },
         upgrade: true, // Allow upgrading from polling to websocket
-        rememberUpgrade: true // Remember the upgrade
+        rememberUpgrade: true, // Remember the upgrade
+        // Match server's ping/pong settings for stability
+        pingTimeout: 60000, // 60s to match server
+        pingInterval: 25000 // 25s to match server
       });
 
       this.setupEventHandlers();
@@ -184,10 +187,10 @@ class WebSocketService {
       }
     });
 
-    // Handle heartbeat ping from server
-    this.socket.on('ping', () => {
-      // Respond with pong
-      this.socket?.emit('pong');
+    // Handle heartbeat ping from server with timestamp
+    this.socket.on('ping', (data?: { timestamp?: number }) => {
+      // Respond with pong including timestamp for latency measurement
+      this.socket?.emit('pong', { timestamp: data?.timestamp || Date.now() });
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -374,12 +377,24 @@ class WebSocketService {
       useWebSocketStore.getState().triggerEvent('harvest:ready', data);
     });
 
+    // Handle terminal output events
+    this.socket.on('terminal:output', (data: any) => {
+      this.handleMessage({
+        type: 'terminal:output',
+        payload: data,
+        timestamp: new Date(),
+      });
+      // Trigger event in websocketStore for components that subscribe to it
+      useWebSocketStore.getState().triggerEvent('terminal:output', data);
+    });
+
     // Generic event handler for any other events
     this.socket.onAny((event: string, data: any) => {
       // Skip events we've already handled specifically
       const handledEvents = ['connect', 'disconnect', 'error', 'connect_error', 'ping', 'message', 
                            'agent_update', 'farm_update', 'farm:paused', 'farm:resumed',
-                           'farm:status', 'agent:output', 'task:progress', 'harvest:ready'];
+                           'farm:status', 'agent:output', 'task:progress', 'harvest:ready', 
+                           'terminal:output'];
       
       if (!handledEvents.includes(event)) {
         this.handleMessage({
@@ -590,7 +605,7 @@ class WebSocketService {
 
   private generateMockFarmUpdates() {
     if (Math.random() > 0.7) {
-      const statuses = ['preparing', 'running', 'paused', 'completed'];
+      const statuses = ['preparing', 'active', 'paused', 'completed'];
       const mockFarmUpdate: WebSocketMessage = {
         type: 'farm_update',
         payload: {

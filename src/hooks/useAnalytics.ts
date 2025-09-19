@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { reportingService } from '../services/reportingService';
-import { predictiveAnalyticsService } from '../services/predictiveAnalytics';
-import { PerformanceMetrics, PredictiveInsight, Report } from '../types/reporting';
-import { Farm } from '../types';
-import { useWebSocketStore } from '../store/websocketStore';
+import { reportingService } from '@/services/reportingService';
+import { predictiveAnalyticsService } from '@/services/predictiveAnalytics';
+import { PerformanceMetrics, PredictiveInsight, Report } from '@/types/reporting';
+import { Farm } from '@/types';
+import { useWebSocketStore } from '@/store/websocketStore';
 
 export function useAnalytics(farmId?: string) {
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);

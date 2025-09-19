@@ -10,9 +10,9 @@ import {
   ChartOptions
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
-import { useThemeStore } from '../../../store/themeStore';
-import { formatCurrency } from '../../../utils/format';
-import type { CostBreakdown } from '../../../types/analytics';
+import { useThemeStore } from '@/store/themeStore';
+import { formatCurrency } from '@/utils/format';
+import type { CostBreakdown } from '@/types/analytics';
 
 ChartJS.register(
   CategoryScale,

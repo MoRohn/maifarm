@@ -104,8 +104,18 @@ export function formatFarmAgentNameNoEmoji(farmAgent: FarmAgentName): string {
   return `${farmAgent.name} the ${farmAgent.animal}`;
 }
 
+/**
+ * Get agent name string directly by index (convenience method)
+ * Returns formatted name WITHOUT emoji for compatibility
+ */
+export function getAgentName(index: number): string {
+  const farmAgent = getFarmAgentName('general', index);
+  return formatFarmAgentNameNoEmoji(farmAgent);
+}
+
 export default {
   getFarmAgentName,
   formatFarmAgentName,
-  formatFarmAgentNameNoEmoji
+  formatFarmAgentNameNoEmoji,
+  getAgentName  // Add the convenience method
 };

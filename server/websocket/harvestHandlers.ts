@@ -1,6 +1,6 @@
 import { Server as SocketServer, Socket } from 'socket.io';
 import { logger } from '../utils/logger';
-import { harvestService } from '../services/harvestService';
+import { harvestService } from '../services/unified/harvestService';
 import { coordinationService } from '../services/coordinationService';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
@@ -39,6 +39,12 @@ class HarvestWebSocketHandler {
   private activeHarvests: Map<string, Set<string>> = new Map(); // farmId -> Set of client IDs
   private terminalPollingIntervals: Map<string, NodeJS.Timeout> = new Map();
   private coordinationWatcher: NodeJS.Timeout | null = null;
+  private sessionRecoveryQueue: Map<string, { farmId: string, attempts: number }> = new Map();
+  private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private eventQueue: Map<string, Array<any>> = new Map(); // Queue events during disconnections
+  private readonly MAX_RECOVERY_ATTEMPTS = 3;
+  private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
+  private readonly SESSION_RECOVERY_DELAY = 2000; // 2 seconds
 
   constructor(io: SocketServer) {
     this.io = io;
@@ -63,11 +69,24 @@ class HarvestWebSocketHandler {
         
         logger.info(`Client ${socket.id} joined harvest room for farm ${farmId}`);
         
-        // Send initial harvest data
-        await this.sendInitialHarvestData(socket, farmId);
+        // Check if we have queued events for this client
+        if (this.eventQueue.has(socket.id)) {
+          const queuedEvents = this.eventQueue.get(socket.id)!;
+          logger.info(`Flushing ${queuedEvents.length} queued events for client ${socket.id}`);
+          for (const event of queuedEvents) {
+            socket.emit(event.type, event.data);
+          }
+          this.eventQueue.delete(socket.id);
+        }
+        
+        // Send initial harvest data with recovery check
+        await this.sendInitialHarvestDataWithRecovery(socket, farmId);
         
         // Start terminal polling if not already running
         this.startTerminalPolling(farmId);
+        
+        // Start heartbeat for this connection
+        this.startHeartbeat(socket, farmId);
       });
 
       // Leave harvest room
@@ -79,11 +98,22 @@ class HarvestWebSocketHandler {
         const clients = this.activeHarvests.get(farmId);
         if (clients) {
           clients.delete(socket.id);
+          // Don't stop polling immediately - keep it running for a grace period
           if (clients.size === 0) {
-            this.activeHarvests.delete(farmId);
-            this.stopTerminalPolling(farmId);
+            // Schedule polling stop after grace period
+            setTimeout(() => {
+              // Re-check if still no clients
+              const currentClients = this.activeHarvests.get(farmId);
+              if (!currentClients || currentClients.size === 0) {
+                this.activeHarvests.delete(farmId);
+                this.stopTerminalPolling(farmId);
+              }
+            }, 10000); // 10 second grace period
           }
         }
+        
+        // Stop heartbeat
+        this.stopHeartbeat(socket.id);
         
         logger.info(`Client ${socket.id} left harvest room for farm ${farmId}`);
       });
@@ -210,13 +240,31 @@ class HarvestWebSocketHandler {
       socket.on('disconnect', () => {
         logger.info(`Harvest WebSocket client disconnected: ${socket.id}`);
         
-        // Clean up from all harvest rooms
+        // Stop heartbeat
+        this.stopHeartbeat(socket.id);
+        
+        // Mark session for recovery instead of immediate cleanup
         this.activeHarvests.forEach((clients, farmId) => {
           if (clients.has(socket.id)) {
+            // Queue for recovery
+            this.sessionRecoveryQueue.set(socket.id, { farmId, attempts: 0 });
+            
+            // Schedule recovery attempt
+            setTimeout(() => {
+              this.attemptSessionRecovery(socket.id, farmId);
+            }, this.SESSION_RECOVERY_DELAY);
+            
             clients.delete(socket.id);
+            // Don't stop polling immediately - wait for recovery or timeout
             if (clients.size === 0) {
-              this.activeHarvests.delete(farmId);
-              this.stopTerminalPolling(farmId);
+              setTimeout(() => {
+                const currentClients = this.activeHarvests.get(farmId);
+                if (!currentClients || currentClients.size === 0) {
+                  this.activeHarvests.delete(farmId);
+                  this.stopTerminalPolling(farmId);
+                  logger.info(`[HarvestWebSocket] Stopped polling for farm ${farmId} after disconnect grace period`);
+                }
+              }, 30000); // 30 second grace period for reconnection
             }
           }
         });
@@ -252,6 +300,86 @@ class HarvestWebSocketHandler {
         error: 'Failed to load initial data',
         details: (error as Error).message
       });
+    }
+  }
+  
+  private async sendInitialHarvestDataWithRecovery(socket: Socket, farmId: string) {
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
+      try {
+        await this.sendInitialHarvestData(socket, farmId);
+        
+        // Remove from recovery queue if successful
+        this.sessionRecoveryQueue.delete(socket.id);
+        return;
+      } catch (error) {
+        attempts++;
+        logger.warn(`[HarvestWebSocket] Failed to send initial data, attempt ${attempts}/${maxAttempts}:`, error);
+        
+        if (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempts)); // Exponential backoff
+        } else {
+          logger.error(`[HarvestWebSocket] Failed to send initial data after ${maxAttempts} attempts`);
+          socket.emit('harvest:error', {
+            error: 'Failed to load initial data after multiple attempts',
+            recoverable: true
+          });
+        }
+      }
+    }
+  }
+  
+  private startHeartbeat(socket: Socket, farmId: string) {
+    // Clear existing heartbeat if any
+    this.stopHeartbeat(socket.id);
+    
+    const interval = setInterval(() => {
+      socket.emit('harvest:heartbeat', {
+        farmId,
+        timestamp: Date.now(),
+        status: 'alive'
+      });
+    }, this.HEARTBEAT_INTERVAL);
+    
+    this.heartbeatIntervals.set(socket.id, interval);
+    logger.debug(`[HarvestWebSocket] Started heartbeat for client ${socket.id}`);
+  }
+  
+  private stopHeartbeat(socketId: string) {
+    const interval = this.heartbeatIntervals.get(socketId);
+    if (interval) {
+      clearInterval(interval);
+      this.heartbeatIntervals.delete(socketId);
+      logger.debug(`[HarvestWebSocket] Stopped heartbeat for client ${socketId}`);
+    }
+  }
+  
+  private async attemptSessionRecovery(socketId: string, farmId: string) {
+    const recovery = this.sessionRecoveryQueue.get(socketId);
+    if (!recovery) return;
+    
+    recovery.attempts++;
+    
+    if (recovery.attempts <= this.MAX_RECOVERY_ATTEMPTS) {
+      logger.info(`[HarvestWebSocket] Attempting recovery for client ${socketId}, attempt ${recovery.attempts}`);
+      
+      // Check if client reconnected
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket && socket.connected) {
+        logger.info(`[HarvestWebSocket] Client ${socketId} reconnected, restoring session`);
+        await this.sendInitialHarvestDataWithRecovery(socket, farmId);
+        this.sessionRecoveryQueue.delete(socketId);
+      } else {
+        // Schedule next recovery attempt
+        setTimeout(() => {
+          this.attemptSessionRecovery(socketId, farmId);
+        }, this.SESSION_RECOVERY_DELAY * recovery.attempts); // Exponential backoff
+      }
+    } else {
+      logger.warn(`[HarvestWebSocket] Max recovery attempts reached for client ${socketId}`);
+      this.sessionRecoveryQueue.delete(socketId);
     }
   }
 

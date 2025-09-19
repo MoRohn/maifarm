@@ -1,4 +1,4 @@
-import { CryptoWorkerMessage, CryptoWorkerResponse } from '../types/encryption';
+import { CryptoWorkerMessage, CryptoWorkerResponse } from '@/types/encryption';
 
 self.addEventListener('message', async (event: MessageEvent<CryptoWorkerMessage>) => {
   const { id, type, data } = event.data;

@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { analyticsService } from '../../services/analyticsService.js';
+import { analyticsService } from '../../services/unified/stateCoordinator.js';
 import { db } from '../../database/connection.js';
 import { Socket } from 'socket.io';
 

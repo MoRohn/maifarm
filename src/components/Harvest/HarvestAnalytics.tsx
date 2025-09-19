@@ -11,7 +11,7 @@ import {
   Award
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest } from '../../types/harvest';
+import { Harvest } from '@/types/harvest';
 
 interface HarvestAnalyticsProps {
   harvest: Harvest;
@@ -72,7 +72,7 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({ harvest }) =
     {
       icon: Target,
       label: 'Success Rate',
-      value: `${Math.round((harvest.summary.completedTasks / harvest.summary.totalTasks) * 100)}%`,
+      value: `${harvest.summary.totalTasks > 0 ? Math.round((harvest.summary.completedTasks / harvest.summary.totalTasks) * 100) : 0}%`,
       trend: harvest.summary.failedTasks === 0 ? 'Perfect' : `${harvest.summary.failedTasks} failed`,
       color: 'text-green-600 dark:text-green-400',
       bgColor: 'bg-green-100 dark:bg-green-900/30'
@@ -242,7 +242,7 @@ export const HarvestAnalytics: React.FC<HarvestAnalyticsProps> = ({ harvest }) =
               <div>
                 <p className="text-xs text-gray-600 dark:text-gray-400">Total Duration</p>
                 <p className="text-lg font-bold text-gray-900 dark:text-white">
-                  {Math.floor(harvest.summary.duration / 60)}m {harvest.summary.duration % 60}s
+                  {harvest.summary.duration ? `${Math.floor(harvest.summary.duration / 60)}m ${harvest.summary.duration % 60}s` : '0m 0s'}
                 </p>
               </div>
               <div className="w-px h-12 bg-gray-300 dark:bg-gray-700" />

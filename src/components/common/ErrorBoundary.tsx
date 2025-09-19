@@ -1,12 +1,12 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { errorHandler } from '../../services/errorHandler';
-import { logger } from '../../services/monitoring/logger';
+import { errorHandler } from '@/services/errorHandler';
+import { logger } from '@/services/monitoring/logger';
 import SafeErrorPage from '../ErrorPage/SafeErrorPage';
 
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
-  onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  onError?: (_error: Error, _errorInfo: ErrorInfo) => void;
 }
 
 interface State {

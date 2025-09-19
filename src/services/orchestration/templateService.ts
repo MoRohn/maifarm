@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { FarmTemplate } from '../../types/orchestration'
+import { FarmTemplate } from '@/types/orchestration'
 import { auditService } from '../audit'
 import { encryptionService } from '../encryptionService'
 

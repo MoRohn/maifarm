@@ -378,7 +378,7 @@ describe('Redis Connectivity and Fallback Tests', () => {
   });
 
   describe('Cache Service Fallback', () => {
-    const { cacheService } = require('../services/cacheService');
+    const { cacheService } = require('../services/unified/stateCoordinator');
 
     it('should use in-memory cache when Redis is unavailable', async () => {
       const key = 'test:key';

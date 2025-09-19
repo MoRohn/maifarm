@@ -1,5 +1,5 @@
-import { Farm, Agent } from '../types';
-import { OfflineCapability } from '../types/security';
+import { Farm, Agent } from '@/types';
+import { OfflineCapability } from '@/types/security';
 
 interface QueuedOperation {
   id: string;

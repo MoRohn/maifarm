@@ -9,7 +9,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest, HarvestInsight } from '../../types/harvest';
+import { Harvest, HarvestInsight } from '@/types/harvest';
 
 interface HarvestHeadlineSummaryProps {
   harvest: Harvest;
@@ -17,11 +17,16 @@ interface HarvestHeadlineSummaryProps {
 
 export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ harvest }) => {
   // Extract key headlines from harvest data - showing only 2 key sections
+  // Calculate success rate safely, avoiding division by zero
+  const successRate = harvest.summary.totalTasks > 0 
+    ? Math.round((harvest.summary.completedTasks / harvest.summary.totalTasks) * 100)
+    : 0;
+
   const headlines = [
     {
       icon: Target,
       category: 'Success Rate',
-      headline: `${Math.round((harvest.summary.completedTasks / harvest.summary.totalTasks) * 100)}% Task Completion`,
+      headline: `${successRate}% Task Completion`,
       subheadline: harvest.summary.failedTasks === 0 
         ? 'Perfect execution with zero failures' 
         : `Only ${harvest.summary.failedTasks} tasks encountered issues`,
@@ -31,12 +36,12 @@ export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ 
     {
       icon: Award,
       category: 'Quality',
-      headline: `${harvest.quality.overallScore}% Quality Score`,
+      headline: `${harvest.quality.overallScore || 0}% Quality Score`,
       subheadline: `Excellence in ${Object.entries(harvest.quality)
-        .filter(([key, value]) => key !== 'overallScore' && value > 90)
+        .filter(([key, value]) => key !== 'overallScore' && typeof value === 'number' && value > 90)
         .map(([key]) => key)
-        .join(', ')}`,
-      impact: harvest.quality.overallScore > 85 ? 'high' : 'medium' as const,
+        .join(', ') || 'multiple areas'}`,
+      impact: (harvest.quality.overallScore || 0) > 85 ? 'high' : 'medium' as const,
       color: 'text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30'
     }
   ];
@@ -182,7 +187,9 @@ export const HarvestHeadlineSummary: React.FC<HarvestHeadlineSummaryProps> = ({ 
           <div className="w-px h-12 bg-primary-300 dark:bg-primary-700" />
           <div>
             <p className="text-3xl font-bold text-primary-600 dark:text-primary-400">
-              {Math.round(harvest.summary.completedTasks / (harvest.summary.duration / 60))}
+              {harvest.summary.duration > 0 
+                ? Math.round(harvest.summary.completedTasks / (harvest.summary.duration / 60))
+                : 0}
             </p>
             <p className="text-xs text-gray-600 dark:text-gray-400 uppercase">
               Tasks/Minute

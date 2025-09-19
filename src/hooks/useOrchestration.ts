@@ -1,9 +1,9 @@
 import { useEffect, useCallback } from 'react'
-import { useOrchestrationStore } from '../store/orchestrationStore'
-import { useWebSocketStore } from '../store/websocketStore'
-import { farmOrchestrator } from '../services/orchestration/farmOrchestrator'
-import { agentLifecycleManager } from '../services/orchestration/agentLifecycleManager'
-import { workflowEngine } from '../services/orchestration/workflowEngine'
+import { useOrchestrationStore } from '@/store/orchestrationStore'
+import { useWebSocketStore } from '@/store/websocketStore'
+import { farmOrchestrator } from '@/services/orchestration/farmOrchestrator'
+import { agentLifecycleManager } from '@/services/orchestration/agentLifecycleManager'
+import { workflowEngine } from '@/services/orchestration/workflowEngine'
 import {
   Farm,
   FarmSetupRequest,
@@ -11,7 +11,7 @@ import {
   Workflow,
   WorkflowExecution,
   OrchestrationEvent
-} from '../types/orchestration'
+} from '@/types/orchestration'
 import toast from 'react-hot-toast'
 
 export const useOrchestration = () => {

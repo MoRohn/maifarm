@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Brain, Sparkles, Check } from 'lucide-react';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 
-export type AIProvider = 'claude' | 'qwen';
+export type AIProvider = 'claude' | 'openai';
 
 export interface AIProviderConfig {
   id: AIProvider;
@@ -28,31 +29,27 @@ const providerConfigs: Record<AIProvider, AIProviderConfig> = {
     id: 'claude',
     name: 'Claude Code',
     description: 'Anthropic\'s Claude AI for collaborative development',
-    icon: <Brain className="w-5 h-5" />,
+    icon: <Brain className="w-5 h-5 text-orange-500" />,
     features: [
       'Advanced code understanding',
-      'Multi-agent orchestration',
-      'Proven reliability',
-      'Premium API'
+      'Multi-agent orchestration'
     ],
     enabled: true,
     contextWindow: '200K tokens',
     apiAvailability: 'Paid API'
   },
-  qwen: {
-    id: 'qwen',
-    name: 'Qwen3-Coder',
-    description: 'Alibaba\'s 480B parameter Mixture-of-Experts model',
-    icon: <Sparkles className="w-5 h-5" />,
+  openai: {
+    id: 'openai',
+    name: 'OpenAI GPT-4',
+    description: 'State-of-the-art language model with function calling',
+    icon: <Brain className="w-5 h-5 text-blue-500" />,
     features: [
-      'Large context windows (256K)',
-      'Free API access',
-      '35B active parameters',
-      'High performance'
+      'Vision capabilities',
+      'Large context window'
     ],
     enabled: true,
-    contextWindow: '256K tokens (extendable to 1M)',
-    apiAvailability: 'Free API'
+    contextWindow: '128K tokens',
+    apiAvailability: 'Paid API'
   }
 };
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { FarmerTemplate, FarmerProfile } from '../../types/farmers';
+import { FarmerTemplate, FarmerProfile } from '@/types/farmers';
 
 interface FarmerAvatarProps {
   farmer: FarmerTemplate;
@@ -52,7 +52,7 @@ export const FarmerAvatar: React.FC<FarmerAvatarProps> = ({
   };
 
   // Get avatar from profile or farmer data
-  const avatar = profile?.avatar || farmer.agents[0]?.emoji || '🌾';
+  const avatar = farmer.agents[0]?.emoji || profile?.avatar || '🌾';
   const mood = profile?.mood || 'focused';
   const moodIndicator = getMoodIndicator(mood);
 

@@ -1,4 +1,4 @@
-import { OrchestrationConfig, OrchestrationError, Task } from '../../types/orchestration'
+import { OrchestrationConfig, OrchestrationError, Task } from '@/types/orchestration'
 import { websocketService } from '../websocket'
 import { monitoringService } from '../monitoringService'
 import { auditService } from '../audit'

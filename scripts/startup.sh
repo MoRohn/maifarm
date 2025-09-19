@@ -174,7 +174,7 @@ SERVER_PID=$!
 # Wait for server to be ready
 log_info "Waiting for server to start..."
 for i in {1..30}; do
-  if curl -s http://localhost:4567/api/health > /dev/null 2>&1; then
+  if curl -s http://localhost:4567/health > /dev/null 2>&1; then
     log_success "Server is ready!"
     break
   fi

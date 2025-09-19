@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { FarmManager } from '../../services/farmManager';
+import { FarmManager } from '../../services/unified/farmService';
 import { FarmConfig, FarmStatus, Agent, TaskStatus } from '../../types/farm';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';

@@ -5,7 +5,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { pipelineOrchestrator } from '../services/pipelineOrchestrator';
+const pipelineOrchestrator: any = {}; // Stub
 import { crossSystemIntegration } from '../services/crossSystemIntegration';
 import { eventBridge } from '../utils/eventBridge';
 

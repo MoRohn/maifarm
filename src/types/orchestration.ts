@@ -124,7 +124,7 @@ export interface FarmSetupProgress {
 
 export interface SetupStep {
   name: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'active' | 'completed' | 'failed'
   progress: number
   startedAt?: Date
   completedAt?: Date
@@ -146,7 +146,7 @@ export interface OrchestrationFarm extends Omit<BaseFarm, 'workflows' | 'resourc
   metadata?: Record<string, any>
 }
 
-export type FarmStatus = 'creating' | 'running' | 'paused' | 'stopping' | 'stopped' | 'failed'
+export type FarmStatus = 'launching' | 'active' | 'completed' | 'stopped'
 
 export interface OrchestrationResourceUsage {
   cpu: {
@@ -180,7 +180,7 @@ export interface OrchestrationAgent extends Omit<BaseAgent, 'lifecycle'> {
   tasks?: Task[]
 }
 
-export type AgentStatus = 'provisioning' | 'starting' | 'running' | 'busy' | 'idle' | 'stopping' | 'stopped' | 'failed'
+export type AgentStatus = 'provisioning' | 'starting' | 'active' | 'busy' | 'idle' | 'stopping' | 'stopped' | 'failed'
 
 export interface AgentLifecycle {
   state: AgentStatus
@@ -254,7 +254,7 @@ export interface Task {
   completedAt?: Date
 }
 
-export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type TaskStatus = 'pending' | 'assigned' | 'active' | 'completed' | 'failed' | 'cancelled'
 
 // FarmConfig and FarmMetrics are imported from ./index
 // No need to redefine them here
@@ -280,7 +280,7 @@ export interface WorkflowInstance {
   id: string;
   farmId: string;
   workflowId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'active' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   startedAt?: Date;
   completedAt?: Date;
@@ -311,7 +311,7 @@ export interface Workflow {
   updatedAt: Date
 }
 
-export type WorkflowStatus = 'draft' | 'ready' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
+export type WorkflowStatus = 'draft' | 'ready' | 'active' | 'paused' | 'completed' | 'failed' | 'cancelled'
 
 export interface WorkflowDefinition {
   version: string

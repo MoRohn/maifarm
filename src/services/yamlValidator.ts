@@ -5,7 +5,7 @@ import {
   ValidationWarning, 
   OptimizationSuggestion,
   FarmConfiguration 
-} from '../types/yaml';
+} from '@/types/yaml';
 import { validateFarmConfiguration } from '../schemas/farmConfig.schema';
 // import { validateAgentConfig } from '../schemas/agentConfig.schema';
 

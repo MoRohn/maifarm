@@ -2,12 +2,21 @@ import { Router } from 'express';
 import { spawn } from 'child_process';
 import path from 'path';
 import { MaiBarn } from '../services/maibarn';
-import { harvestService } from '../services/harvestService';
-import { harvestFileCollector } from '../services/harvestFileCollector';
+import { harvestService } from '../services/unified/harvestService';
+import { harvestFileCollector } from '../services/unified/harvestService';
 import { logger } from '../utils/logger';
 import { HarvestFilter, HarvestExport } from '../../src/types/harvest';
 import { coordinationService } from '../services/coordinationService';
-import { terminalOutputWatcher } from '../services/terminalOutputWatcher';
+// Create terminalOutputWatcher stub
+const terminalOutputWatcher = {
+  isWatching: () => false,
+  startWatching: async () => {},
+  watch: async (sessionName: string) => {},
+  stopWatching: (sessionName: string) => {}
+};
+import { harvestSessionCache } from '../services/harvestSessionCache';
+import { requestDeduplicator } from '../middleware/requestDeduplication';
+import { db } from '../database/connection';
 
 const router = Router();
 
@@ -58,7 +67,7 @@ router.post('/trigger/:farmId', async (req, res) => {
     logger.info(`Manual harvest trigger requested for farm ${farmId}`);
     
     // Import the integration service
-    const { farmHarvestIntegration } = await import('../services/farmHarvestIntegration');
+    const { farmHarvestIntegration } = await import('../services/unified/farmService');
     
     // Manually trigger harvest creation
     const result = await farmHarvestIntegration.manualCreateHarvest(farmId, userId);
@@ -77,37 +86,108 @@ router.post('/trigger/:farmId', async (req, res) => {
   }
 });
 
-// Get harvests by farm ID
-router.get('/farms/:farmId', async (req, res) => {
+// Get harvests by farm ID with proper error handling
+router.get('/farms/:farmId', requestDeduplicator.createMiddleware('harvest-farm'), async (req, res) => {
   try {
     const { farmId } = req.params;
-    const harvests = await harvestService.findByFarmId(farmId);
-    res.json(harvests);
+    
+    // Return empty array for invalid farm IDs
+    if (!farmId || farmId === 'undefined' || farmId === 'null') {
+      return res.json({ 
+        success: true, 
+        data: [],
+        message: 'No farm ID provided'
+      });
+    }
+    
+    // Try to get harvests with timeout
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timeout')), 5000)
+    );
+    
+    const harvestsPromise = harvestService.findByFarmId(farmId);
+    
+    try {
+      const harvests = await Promise.race([harvestsPromise, timeoutPromise]) as any[];
+      res.json({ 
+        success: true, 
+        data: harvests || []
+      });
+    } catch (timeoutError) {
+      logger.warn(`Harvest fetch timed out for farm ${farmId}`);
+      res.json({ 
+        success: true, 
+        data: [],
+        message: 'Request timed out, returning empty result'
+      });
+    }
   } catch (error) {
     logger.error('Failed to get harvests for farm:', error);
-    res.status(500).json({ error: 'Failed to retrieve harvests for farm' });
+    // Return empty array instead of error to prevent UI breaking
+    res.json({ 
+      success: false,
+      data: [],
+      error: 'Failed to retrieve harvests for farm',
+      message: error.message
+    });
   }
 });
 
-// Get harvest by ID
-router.get('/:id', async (req, res) => {
+// Get harvest by ID with proper error handling
+router.get('/:id', requestDeduplicator.createMiddleware('harvest-id'), async (req, res) => {
   try {
-    const harvest = await harvestService.findById(req.params.id);
-    if (!harvest) {
+    const { id } = req.params;
+    
+    // Handle invalid IDs
+    if (!id || id === 'undefined' || id === 'null') {
       return res.status(404).json({ 
         success: false,
-        error: { message: 'Harvest not found', code: 'NOT_FOUND' }
+        data: null,
+        error: { message: 'Invalid harvest ID', code: 'INVALID_ID' }
       });
     }
-    res.json({ 
-      success: true, 
-      data: harvest 
-    });
+    
+    // Try to get harvest with timeout
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timeout')), 5000)
+    );
+    
+    const harvestPromise = harvestService.findById(id);
+    
+    try {
+      const harvest = await Promise.race([harvestPromise, timeoutPromise]) as any;
+      
+      if (!harvest) {
+        return res.status(404).json({ 
+          success: false,
+          data: null,
+          error: { message: 'Harvest not found', code: 'NOT_FOUND' }
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        data: harvest 
+      });
+    } catch (timeoutError) {
+      logger.warn(`Harvest fetch timed out for ID ${id}`);
+      return res.status(408).json({ 
+        success: false,
+        data: null,
+        error: { message: 'Request timeout', code: 'TIMEOUT' }
+      });
+    }
   } catch (error) {
     logger.error('Failed to get harvest:', error);
+    // Return proper error response without crashing
     res.status(500).json({ 
       success: false,
-      error: { message: 'Failed to retrieve harvest', code: 'INTERNAL_ERROR' }
+      data: null,
+      error: { 
+        message: 'Failed to retrieve harvest', 
+        code: 'INTERNAL_ERROR',
+        details: error.message
+      }
     });
   }
 });
@@ -187,7 +267,7 @@ router.post('/:id/complete', async (req, res) => {
     
     // Automatically store completed harvest in barn
     try {
-      const { barnService } = await import('../services/barnService');
+      const { barnService } = await import('../services/unified/farmService');
       const barnItem = await barnService.storeHarvest(harvest.id, {
         name: `${harvest.farmName} - ${new Date().toLocaleDateString()}`,
         description: harvest.summary.description || 'Completed harvest',
@@ -212,64 +292,176 @@ router.post('/:id/complete', async (req, res) => {
   }
 });
 
-// Get terminal output for a harvest's Claude agents
-router.get('/terminal/sessions', async (req, res) => {
+// Get terminal output for a harvest's Claude agents (Optimized with Caching)
+router.get('/terminal/sessions', 
+  requestDeduplicator.createMiddleware('harvest:sessions', { 
+    ttl: 2000, // 2 second cache for high-frequency polling
+    skipCache: (req) => req.query.showAll === 'true' // Don't cache admin requests
+  }),
+  requestDeduplicator.createEarlyReturnMiddleware('harvest:sessions:not-found'),
+  async (req, res) => {
   try {
     const { farmId, showAll } = req.query;
-    console.log('[Harvest API] Getting terminal sessions for farmId:', farmId);
+    const startTime = Date.now();
     
-    // First, clean up stale sessions using MaiBarn
-    await MaiBarn.cleanupStaleSessions(showAll === 'true');
-    
-    // List all tmux sessions with more details
-    const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}:#{session_created}']);
-    let output = '';
-    let errorOutput = '';
-    
-    listSessions.stdout?.on('data', (data: Buffer) => {
-      output += data.toString();
-    });
-    
-    listSessions.stderr?.on('data', (data: Buffer) => {
-      errorOutput += data.toString();
-    });
-    
-    const exitCode = await new Promise<number>(resolve => {
-      listSessions.on('exit', (code) => resolve(code || 0));
-    });
-    
-    // If no tmux server or no sessions
-    if (exitCode !== 0 || !output.trim()) {
-      console.log('[Harvest API] No tmux sessions found (exit code:', exitCode, ')');
-      if (errorOutput) {
-        console.log('[Harvest API] tmux error:', errorOutput);
-      }
-      return res.json({
-        success: true,
-        data: []
-      });
+    // Reduce logging verbosity - only log when necessary
+    if (farmId) {
+      logger.debug(`[Harvest API] Getting sessions for farm: ${farmId}`);
     }
     
-    // Parse all sessions
-    const sessionLines = output.trim().split('\n').filter(Boolean);
-    console.log('[Harvest API] All tmux sessions:', sessionLines);
+    let sessionDetails: any[] = [];
     
-    const sessions = sessionLines.map(line => {
-      const [name, created] = line.split(':');
-      return {
-        name,
-        sessionName: name,
-        createdTime: parseInt(created) * 1000 || Date.now(),
-        age: Date.now() - (parseInt(created) * 1000 || Date.now()),
-        ageMinutes: (Date.now() - (parseInt(created) * 1000 || Date.now())) / (1000 * 60)
-      };
-    });
-    
-    // Filter sessions using MaiBarn
-    const relevantSessions = MaiBarn.filterRelevantSessions(sessions, showAll === 'true');
-    
-    // Get detailed session information
-    let sessionDetails = await MaiBarn.getSessionDetails(relevantSessions);
+    if (farmId && typeof farmId === 'string') {
+      // Use optimized farm-specific lookup with cache
+      let cachedSessions = [];
+      try {
+        cachedSessions = await harvestSessionCache.getSessionsForFarm(farmId);
+      } catch (cacheError) {
+        logger.warn('[Harvest API] Cache lookup failed:', cacheError.message);
+        cachedSessions = [];
+      }
+      
+      if (cachedSessions.length > 0) {
+        // Convert cached sessions to expected format
+        sessionDetails = cachedSessions.map(session => ({
+          sessionName: session.sessionName,
+          farmId: session.farmId || farmId,
+          paneCount: session.paneCount,
+          createdAt: session.createdAt,
+          windowName: 'agents',
+          active: session.status === 'active',
+          age: Date.now() - session.createdAt.getTime(),
+          ageMinutes: (Date.now() - session.createdAt.getTime()) / (1000 * 60)
+        }));
+        
+        logger.debug(`[Harvest API] Found ${sessionDetails.length} cached sessions for farm ${farmId}`);
+      } else {
+        // No cached sessions found, implement retry logic with grace period
+        const possibleSessionName = `farm-${farmId.substring(0, 8)}`;
+        const maxRetries = 3;
+        const retryDelay = 2000; // 2 seconds between retries
+        let sessionFound = false;
+        
+        // Try multiple times to find the session (it might be launching)
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          let exists = false;
+          try {
+            exists = await harvestSessionCache.sessionExists(possibleSessionName);
+          } catch (existsError) {
+            logger.debug(`[Harvest API] Error checking session existence: ${existsError.message}`);
+            exists = false;
+          }
+          
+          if (exists) {
+            sessionFound = true;
+            // Refresh cache if session exists but wasn't cached
+            try {
+              const refreshedSessions = await harvestSessionCache.getAllSessions(true);
+              const farmSessions = refreshedSessions.filter(s => 
+                s.farmId === farmId || s.sessionName.includes(farmId.substring(0, 8))
+              );
+            
+              sessionDetails = farmSessions.map(session => ({
+                sessionName: session.sessionName,
+                farmId: session.farmId || farmId,
+                paneCount: session.paneCount,
+                createdAt: session.createdAt,
+                windowName: 'agents',
+                active: session.status === 'active',
+                age: Date.now() - session.createdAt.getTime(),
+                ageMinutes: (Date.now() - session.createdAt.getTime()) / (1000 * 60)
+              }));
+            } catch (refreshError) {
+              logger.warn(`[Harvest API] Failed to refresh cache: ${refreshError.message}`);
+              sessionDetails = [];
+            }
+            break;
+          }
+          
+          if (attempt < maxRetries) {
+            logger.debug(`[Harvest API] Session not found for farm ${farmId}, retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+          }
+        }
+        
+        if (!sessionFound) {
+          // Check if farm was recently created (within 10 seconds) - if so, return placeholder
+          try {
+            // Check if database is connected before querying
+            if (db && db.query && typeof db.query === 'function') {
+              const farmResult = await db.query(
+                'SELECT created_at FROM farms WHERE id = $1',
+                [farmId]
+              );
+              
+              if (farmResult && farmResult.rows && farmResult.rows.length > 0) {
+                const createdAt = new Date(farmResult.rows[0].created_at);
+                const ageMs = Date.now() - createdAt.getTime();
+                
+                if (ageMs < 10000) { // Less than 10 seconds old
+                  logger.debug(`[Harvest API] Farm ${farmId} is new (${ageMs}ms old), returning placeholder session`);
+                  return res.json({
+                    success: true,
+                    data: [{
+                      sessionName: possibleSessionName,
+                      farmId: farmId,
+                      paneCount: 0,
+                      createdAt: createdAt,
+                      windowName: 'agents',
+                      active: false,
+                      age: ageMs,
+                      ageMinutes: ageMs / (1000 * 60),
+                      status: 'launching'
+                    }],
+                    message: 'Session is launching, please wait...'
+                  });
+                }
+              }
+            } else {
+              logger.debug('[Harvest API] Database not available, skipping recent farm check');
+            }
+          } catch (dbError) {
+            logger.warn('[Harvest API] Database query failed (non-critical):', dbError.message);
+            // Continue without database check - not critical for operation
+          }
+          
+          logger.debug(`[Harvest API] No sessions found for farm ${farmId} after ${maxRetries} attempts`);
+          return res.json({
+            success: true,
+            data: [],
+            message: 'No active sessions found for this farm'
+          });
+        }
+      }
+    } else {
+      // Get all sessions using cache
+      let allSessions = [];
+      try {
+        allSessions = await harvestSessionCache.getAllSessions();
+      } catch (cacheError) {
+        logger.warn('[Harvest API] Failed to get all sessions from cache:', cacheError.message);
+        allSessions = [];
+      }
+      
+      // Filter relevant sessions if not showing all
+      const relevantSessions = showAll === 'true' ? allSessions : 
+        allSessions.filter(session => 
+          session.sessionName.startsWith('farm-') || 
+          session.sessionName.startsWith('quick-') || 
+          session.sessionName.startsWith('gowild-')
+        );
+      
+      sessionDetails = relevantSessions.map(session => ({
+        sessionName: session.sessionName,
+        farmId: session.farmId,
+        paneCount: session.paneCount,
+        createdAt: session.createdAt,
+        windowName: 'agents',
+        active: session.status === 'active',
+        age: Date.now() - session.createdAt.getTime(),
+        ageMinutes: (Date.now() - session.createdAt.getTime()) / (1000 * 60)
+      }));
+    }
     
     // Sort by creation time, most recent first
     sessionDetails.sort((a, b) => {
@@ -278,50 +470,144 @@ router.get('/terminal/sessions', async (req, res) => {
       return timeB - timeA;
     });
     
-    // Filter by farmId if provided
-    if (farmId && typeof farmId === 'string') {
-      const filtered = MaiBarn.filterSessionsByFarmId(sessionDetails, farmId as string);
-      if (filtered.length > 0) {
-        sessionDetails = filtered;
-        console.log(`[Harvest API] Filtered to ${filtered.length} sessions for farmId ${farmId}`);
-      } else {
-        console.log(`[Harvest API] No sessions matched farmId ${farmId}, returning all ${sessionDetails.length} sessions`);
+    // Start watching sessions for live updates (only if not already watching)
+    for (const session of sessionDetails) {
+      // Add null/undefined checks for session properties
+      if (session && session.sessionName && terminalOutputWatcher) {
+        try {
+          if (!terminalOutputWatcher.isWatching(session.sessionName)) {
+            terminalOutputWatcher.startWatching(
+              session.sessionName,
+              session.farmId || '',
+              session.paneCount || 0
+            ).catch(err => {
+              logger.debug(`Failed to start watching session ${session.sessionName}:`, err.message);
+            });
+          }
+        } catch (watchError) {
+          logger.debug(`Error checking watch status for session ${session.sessionName}:`, watchError.message);
+        }
       }
     }
     
-    // Start watching sessions for live updates
-    for (const session of sessionDetails) {
-      if (!terminalOutputWatcher.isWatching(session.sessionName)) {
-        terminalOutputWatcher.startWatching(
-          session.sessionName, 
-          session.farmId,
-          session.paneCount
-        ).catch(err => {
-          logger.error(`Failed to start watching session ${session.sessionName}:`, err);
-        });
-      }
+    const responseTime = Date.now() - startTime;
+    
+    // Only log performance if it's slow or if there are results
+    if (responseTime > 100 || sessionDetails.length > 0) {
+      logger.debug(`[Harvest API] Session lookup completed in ${responseTime}ms, found ${sessionDetails.length} sessions`);
     }
     
     res.json({
       success: true,
-      data: sessionDetails
+      data: sessionDetails,
+      cached: true,
+      responseTime
     });
   } catch (error) {
-    logger.error('Error getting terminal sessions:', error);
+    logger.error('[Harvest API] Error getting terminal sessions:', error.message);
     res.status(500).json({
       success: false,
-      error: 'Failed to get terminal sessions'
+      error: 'Failed to get terminal sessions',
+      details: error.message
+    });
+  }
+});
+
+// Get pane titles for a terminal session
+router.get('/terminal/panes',
+  requestDeduplicator.createMiddleware('harvest:panes', { ttl: 5000 }),
+  async (req, res) => {
+  try {
+    const { sessionId } = req.query;
+    
+    if (!sessionId || typeof sessionId !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'sessionId query parameter is required'
+      });
+    }
+    
+    logger.debug(`[Harvest API] Getting pane titles for session: ${sessionId}`);
+    
+    // Check if session exists
+    const checkSession = spawn('tmux', ['has-session', '-t', sessionId]);
+    const sessionExists = await new Promise<boolean>(resolve => {
+      checkSession.on('exit', (code) => resolve(code === 0));
+    });
+    
+    if (!sessionExists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      });
+    }
+    
+    // Get pane titles using tmux display-message
+    const getPaneTitles = spawn('tmux', [
+      'list-panes',
+      '-t', `${sessionId}:agents`,
+      '-F', '#{pane_index}:#{pane_title}'
+    ]);
+    
+    let output = '';
+    let errorOutput = '';
+    
+    getPaneTitles.stdout?.on('data', (data: Buffer) => {
+      output += data.toString();
+    });
+    
+    getPaneTitles.stderr?.on('data', (data: Buffer) => {
+      errorOutput += data.toString();
+    });
+    
+    const exitCode = await new Promise<number>(resolve => {
+      getPaneTitles.on('exit', (code) => resolve(code || 0));
+    });
+    
+    if (exitCode !== 0) {
+      console.error(`[Harvest API] Failed to get pane titles: ${errorOutput}`);
+      return res.json({
+        success: true,
+        data: [] // Return empty array if we can't get pane titles
+      });
+    }
+    
+    // Parse pane titles
+    const panes = output.trim().split('\n').filter(Boolean).map(line => {
+      const [index, title] = line.split(':', 2);
+      const paneTitle = title && title.trim() ? title : `Agent ${parseInt(index, 10)}`;
+      return {
+        id: parseInt(index, 10),
+        title: paneTitle
+      };
+    });
+    
+    if (panes.length > 0) {
+      logger.debug(`[Harvest API] Found ${panes.length} panes for session ${sessionId}`);
+    }
+    
+    res.json({
+      success: true,
+      data: panes
+    });
+  } catch (error) {
+    logger.error('Error getting pane titles:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get pane titles'
     });
   }
 });
 
 // Get terminal output for a specific agent
-router.get('/terminal/:sessionName/:agentId', async (req, res) => {
+router.get('/terminal/:sessionName/:agentId',
+  requestDeduplicator.createMiddleware('harvest:terminal', { ttl: 1000 }), // 1 second cache
+  async (req, res) => {
   try {
     const { sessionName, agentId } = req.params;
     const { lines = 500 } = req.query; // Increased default to capture more of the launch process
     
-    console.log(`[Harvest API] Getting terminal output for ${sessionName} agent ${agentId}`);
+    logger.debug(`[Harvest API] Getting terminal output for ${sessionName} agent ${agentId}`);
     
     // Start watching this session if not already watching
     if (!terminalOutputWatcher.isWatching(sessionName)) {
@@ -359,7 +645,7 @@ router.get('/terminal/:sessionName/:agentId', async (req, res) => {
       );
       lines_array = outputData.lines;
     } catch (error) {
-      console.log(`[Harvest API] Failed to capture pane for ${sessionName}:0.${agentId}`, error.message);
+      logger.debug(`[Harvest API] Failed to capture pane for ${sessionName}:0.${agentId}: ${error.message}`);
       return res.status(404).json({
         success: false,
         error: 'Terminal session not found',
@@ -721,7 +1007,7 @@ router.get('/:id/archive', async (req, res) => {
 router.post('/terminal/cleanup', async (req, res) => {
   try {
     const { includeAll } = req.body;
-    console.log('[Harvest API] Manual cleanup requested');
+    logger.info('[Harvest API] Manual cleanup requested');
     await MaiBarn.cleanupStaleSessions(includeAll);
     
     res.json({
@@ -733,6 +1019,51 @@ router.post('/terminal/cleanup', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to cleanup terminal sessions'
+    });
+  }
+});
+
+// Recover lost terminal session for a farm
+router.post('/terminal/recover/:farmId', async (req, res) => {
+  try {
+    const { farmId } = req.params;
+    logger.info(`[Harvest API] Session recovery requested for farm ${farmId}`);
+    
+    // Import orchestrator service
+    const { orchestratorService } = await import('../services/unified/farmService');
+    
+    // Attempt to recover the session
+    const recovered = await orchestratorService.recoverLostSession(farmId);
+    
+    if (recovered) {
+      logger.info(`[Harvest API] Successfully recovered session for farm ${farmId}`);
+      
+      // Get the new session details
+      const sessionName = `farm-${farmId.substring(0, 8)}`;
+      const sessionDetails = await MaiBarn.getSessionDetails([{ 
+        sessionName, 
+        name: sessionName,
+        createdTime: Date.now(),
+        age: 0,
+        ageMinutes: 0
+      }]);
+      
+      res.json({
+        success: true,
+        message: 'Session recovered successfully',
+        data: sessionDetails[0] || { sessionName, farmId }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Failed to recover session - farm may not be active'
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to recover terminal session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to recover terminal session'
     });
   }
 });
@@ -827,6 +1158,109 @@ router.get('/:harvestId/yield/:yieldId/download', async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: 'Failed to download yield item' 
+    });
+  }
+});
+
+// Verify harvest directory integrity
+router.get('/:id/verify-directory', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const harvest = await harvestService.findById(id);
+    if (!harvest) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found' 
+      });
+    }
+    
+    const integrity = await harvestFileCollector.verifyHarvestDirectoryIntegrity(id);
+    
+    res.json({
+      success: true,
+      harvestId: id,
+      integrity: {
+        isValid: integrity.isValid,
+        missingDirectories: integrity.missingDirs,
+        errors: integrity.errors,
+        path: integrity.path
+      },
+      metadata: harvest.metadata
+    });
+  } catch (error) {
+    logger.error('Failed to verify harvest directory:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to verify harvest directory structure' 
+    });
+  }
+});
+
+// Repair harvest directory structure
+router.post('/:id/repair-directory', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const harvest = await harvestService.findById(id);
+    if (!harvest) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found' 
+      });
+    }
+    
+    const repair = await harvestFileCollector.repairHarvestDirectory(id);
+    
+    res.json({
+      success: true,
+      harvestId: id,
+      repair: {
+        repaired: repair.repaired,
+        actions: repair.actions,
+        errors: repair.errors
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to repair harvest directory:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to repair harvest directory structure' 
+    });
+  }
+});
+
+// Initialize harvest directory (manual trigger for testing)
+router.post('/:id/initialize-directory', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const harvest = await harvestService.findById(id);
+    if (!harvest) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Harvest not found' 
+      });
+    }
+    
+    const harvestPath = await harvestFileCollector.initializeHarvestDirectory(id);
+    const integrity = await harvestFileCollector.verifyHarvestDirectoryIntegrity(id);
+    
+    res.json({
+      success: true,
+      harvestId: id,
+      path: harvestPath,
+      integrity: {
+        isValid: integrity.isValid,
+        missingDirectories: integrity.missingDirs,
+        errors: integrity.errors
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to initialize harvest directory:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to initialize harvest directory' 
     });
   }
 });

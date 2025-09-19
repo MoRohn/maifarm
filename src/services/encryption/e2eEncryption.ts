@@ -7,7 +7,7 @@ import {
   EncryptionAlgorithm,
   EncryptionConfig,
   SecureChannel,
-} from '../../types/encryption';
+} from '@/types/encryption';
 
 export class E2EEncryptionService {
   private config: EncryptionConfig = {

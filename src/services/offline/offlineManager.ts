@@ -1,5 +1,5 @@
-import { offlineStorage, STORES, SyncQueueItem } from '../../utils/offlineStorage';
-import { Farm, Agent } from '../../types';
+import { offlineStorage, STORES, SyncQueueItem } from '@/utils/offlineStorage';
+import { Farm, Agent } from '@/types';
 
 export interface OfflineState {
   isOnline: boolean;

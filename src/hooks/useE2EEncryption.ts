@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { e2eEncryptionService } from '../services/encryption/e2eEncryption';
-import { cryptoWorkerService } from '../services/encryption/cryptoWorker';
-import { E2ESession, E2EMessage, EncryptionMetrics } from '../types/encryption';
+import { e2eEncryptionService } from '@/services/encryption/e2eEncryption';
+import { cryptoWorkerService } from '@/services/encryption/cryptoWorker';
+import { E2ESession, E2EMessage, EncryptionMetrics } from '@/types/encryption';
 
 interface UseE2EEncryptionReturn {
   sessions: E2ESession[];

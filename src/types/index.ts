@@ -1,13 +1,22 @@
 // Core type definitions for MaiFarm V2
 
-// Import types needed for Agent interface
-import type { AgentState, AgentHealth } from './agent';
+// Re-export unified types
+export * from '../../shared/types/unified';
 
-// Export additional type definitions
+// Keep existing specialized exports
 export * from './security';
 export * from './reporting';
-export * from './harvest';
-export * from './agent';
+// Selectively export harvest types that don't conflict with unified
+export type { 
+  HarvestResult,
+  HarvestInsight,
+  HarvestYield,
+  HarvestFilter,
+  HarvestExport,
+  HarvestSummary
+} from './harvest';
+// Don't re-export agent here to avoid duplicates with unified types
+// export * from './agent';
 
 export interface User {
   id: string;
@@ -36,44 +45,30 @@ export interface User {
   notifications?: Notification[];
 }
 
-// Agent status enum for better type safety
-export type AgentStatus = 
-  | 'idle' 
-  | 'working' 
-  | 'completed' 
-  | 'error' 
-  | 'paused' 
-  | 'busy' 
-  | 'running' 
-  | 'failed' 
-  | 'provisioning' 
-  | 'starting' 
-  | 'stopping' 
-  | 'stopped'
-  | 'initializing'
-  | 'draining'
-  | 'terminating'
-  | 'terminated';
+// Import unified types
+import type { 
+  AgentStatus as UnifiedAgentStatus,
+  Agent as UnifiedAgent,
+  Farm as UnifiedFarm,
+  AgentHealth,
+  AgentState
+} from '../../shared/types/unified';
 
-export interface Agent {
-  id: string;
-  name: string;
-  type: 'builder' | 'reviewer' | 'tester' | 'documenter' | 'custom';
-  status: AgentStatus;
-  progress: number;
-  currentTask?: string;
-  memory: number;
-  cpu: number;
-  lastActive: Date;
-  capabilities: string[];
-  lastHeartbeat?: Date;
+// Re-export for backward compatibility
+export type AgentStatus = UnifiedAgentStatus;
+
+// Use unified Agent interface but extend for backward compatibility
+export interface Agent extends UnifiedAgent {
+  // Keep backward compatibility fields
+  memory?: number;
+  cpu?: number;
+  lastActive?: Date;
   performance?: {
     cpuUsage: number;
     memoryUsage: number;
     responseTime: number;
     throughput: number;
   };
-  // Additional properties for agent lifecycle and resource management
   lifecycle?: {
     state: AgentStatus;
     phase: string;
@@ -84,13 +79,6 @@ export interface Agent {
       lastCheck?: Date;
     };
   };
-  resources?: {
-    cpu: { usage?: number; allocated?: number; limit?: number };
-    memory: { usage?: number; allocated?: number; limit?: number };
-    network?: { inbound?: string; outbound?: string };
-    cpuUsage?: number;
-    memoryUsage?: number;
-  };
   tasks?: Array<{
     id: string;
     type: string;
@@ -98,20 +86,10 @@ export interface Agent {
     priority: string;
     createdAt: Date;
   }>;
-  metrics?: {
-    tasksCompleted: number;
-    filesCreated?: number;  // New: Count of files created by agent
-    successRate: number;
-    averageTaskDuration: number;
-    uptime: number;
-    tasksFailed?: number;
-  };
   // Properties from AgentInstance for compatibility
   instanceId?: string;
   poolId?: string;
-  farmId?: string;
   state?: AgentState;
-  health?: AgentHealth;
   assignedTasks?: string[];
   startTime?: Date;
   lastHealthCheck?: Date;
@@ -119,19 +97,11 @@ export interface Agent {
   metadata?: Record<string, any>;
 }
 
-export interface Farm {
-  id: string;
-  name: string;
-  description: string;
-  type: 'sequential' | 'collaborative' | 'autonomous';
-  status: 'active' | 'paused' | 'completed' | 'failed' | 'running' | 'launching';
-  provider?: 'claude' | 'qwen';
-  agents: Agent[];
-  createdAt: Date;
-  updatedAt: Date;
-  owner: string;
-  config: FarmConfig;
-  metrics: FarmMetrics;
+// Use unified Farm interface but extend for backward compatibility
+export interface Farm extends UnifiedFarm {
+  // Keep backward compatibility fields
+  type?: 'sequential' | 'collaborative' | 'autonomous';
+  owner?: string;
   // Additional properties for workflow and monitoring
   workflows?: Array<{
     id: string;
@@ -163,7 +133,7 @@ export interface Farm {
   tasks?: Array<{
     id: string;
     name: string;
-    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    status: 'pending' | 'active' | 'completed' | 'failed' | 'cancelled';
     assignedTo?: string;
     progress?: number;
     createdAt: Date;
@@ -186,20 +156,20 @@ export interface Farm {
 
 export interface FarmConfig {
   yaml?: string;
-  autoScale: boolean;
-  autoScaling?: boolean | {
-    enabled: boolean;
-    minAgents: number;
-    maxAgents: number;
-    targetUtilization?: number;
-    scaleUpThreshold?: number;
-    scaleDownThreshold?: number;
-  };
-  maxAgents: number;
+  autoScale?: boolean;
+  maxAgents?: number;
   timeout?: number;
+  orchestrationStrategy?: OrchestrationStrategy;
+  resourceLimits?: {
+    totalCpu: number;
+    totalMemory: number;
+    totalGpu?: number;
+  };
   collaborative?: boolean;
   processId?: string;
-  retryPolicy: {
+  orchestratorType?: 'xenosync'; // XenoSync is the only orchestrator
+  quickTask?: boolean;
+  retryPolicy?: {
     enabled: boolean;
     maxRetries: number;
     backoffMultiplier: number;
@@ -209,13 +179,6 @@ export interface FarmConfig {
     creativityLevel: 1 | 2 | 3 | 4 | 5;
     boundaries: string[];
   };
-  failover?: {
-    enabled: boolean;
-    strategy: string;
-    backupRegions?: string[];
-  };
-  autoPauseOnClose?: boolean; // Per-farm setting for auto-pause behavior
-  persistInBackground?: boolean; // Persist farm data in database after completion
 }
 
 export interface FarmMetrics {

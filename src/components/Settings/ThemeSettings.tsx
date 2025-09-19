@@ -10,12 +10,12 @@ import {
   ArrowPathIcon,
   SparklesIcon
 } from '@heroicons/react/24/outline';
-import { useThemeStore } from '../../store/themeStore';
+import { useThemeStore } from '@/store/themeStore';
 import { COLOR_SCHEMES } from '@/types/theme';
 import { cn } from '@/utils/cn';
 
 interface ThemeSettingsProps {
-  onChange?: (key: string, value: any) => void;
+  onChange?: (_key: string, _value: any) => void;
 }
 
 const ThemeSettings: React.FC<ThemeSettingsProps> = ({ onChange }) => {

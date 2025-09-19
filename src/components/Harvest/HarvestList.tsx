@@ -15,8 +15,8 @@ import {
   XCircle,
   Loader2
 } from 'lucide-react';
-import { harvestService } from '../../services/harvestService';
-import { Harvest, HarvestFilter } from '../../types/harvest';
+import { harvestService } from '@/services/harvestService';
+import { Harvest, HarvestFilter } from '@/types/harvest';
 import { HarvestView } from './HarvestView';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';

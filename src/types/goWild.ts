@@ -47,6 +47,7 @@ export interface GoWildConfig {
   creativityLevel: number; // 0-100
   explorationDepth: number; // 1-10
   maxDuration: number; // minutes
+  useXenoSync?: boolean; // Use XenoSync orchestrator for Go Wild
   boundaries: {
     allowExternalAPIs: boolean;
     allowFileSystem: boolean;
@@ -56,6 +57,7 @@ export interface GoWildConfig {
   focusAreas: string[];
   seedPrompt?: string;
   thinkingLevel?: 'none' | 'basic' | 'moderate' | 'deep' | 'ultra'; // Extended thinking strategy
+  contextFiles?: string[]; // Paths to context files for agent reference
 }
 
 export interface GoWildSession {

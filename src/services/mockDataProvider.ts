@@ -62,19 +62,22 @@ export class MockDataProvider {
         name: `Mock Farm ${i + 1}`,
         status: 'active',
         config: {
-          name: `Mock Farm ${i + 1}`,
-          description: 'Auto-generated mock farm for testing',
-          agents: [],
-          seed: {
-            id: `seed-${i}`,
-            name: `Mock Seed ${i + 1}`,
-            config: {},
-            metadata: {
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }
+          yaml: `# Mock Farm ${i + 1}\n# Auto-generated mock farm for testing`,
+          maxAgents: 5,
+          timeout: 3600,
+          autoScale: true,
+          orchestrationStrategy: 'round-robin'
+        },
+        seed: {
+          id: `seed-${i}`,
+          name: `Mock Seed ${i + 1}`,
+          config: {},
+          metadata: {
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
           }
         },
+        agents: [],
         createdAt: new Date(Date.now() - Math.random() * 86400000),
         updatedAt: new Date(),
         owner: 'system',
@@ -89,14 +92,17 @@ export class MockDataProvider {
       const agent: Agent = {
         id: agentId,
         name: `Mock Agent ${i + 1}`,
-        status: ['idle', 'active', 'completed'][Math.floor(Math.random() * 3)] as any,
+        displayName: `Agent ${i + 1}`,
+        agentNumber: i + 1,
+        status: ['idle', 'active', 'completed'][Math.floor(Math.random() * 3)] as AgentStatus,
         farmId: `mock-farm-${Math.floor(i / 2)}`,
-        type: ['explorer', 'builder', 'tester', 'analyzer'][Math.floor(Math.random() * 4)] as any,
+        type: ['builder', 'reviewer', 'tester', 'documenter'][Math.floor(Math.random() * 4)] as AgentType,
         progress: Math.floor(Math.random() * 100),
-        memory: Math.floor(Math.random() * 8) + 1,
-        cpu: Math.floor(Math.random() * 4) + 1,
-        lastActive: new Date(Date.now() - Math.random() * 3600000),
-        capabilities: ['analysis', 'generation', 'testing'],
+        resources: {
+          cpu: Math.floor(Math.random() * 4) + 1,
+          memory: Math.floor(Math.random() * 8) + 1
+        },
+        lastActivity: new Date(Date.now() - Math.random() * 3600000),
         createdAt: new Date(Date.now() - Math.random() * 86400000),
         updatedAt: new Date()
       };
@@ -273,19 +279,22 @@ export class MockDataProvider {
       name,
       status: 'active' as const,
       config: {
-        name,
-        description: 'User-created mock farm',
-        agents: [],
-        seed: {
-          id: `seed-${Date.now()}`,
-          name: `${name} Seed`,
-          config: {},
-          metadata: {
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
+        yaml: `# ${name}\n# User-created mock farm`,
+        maxAgents: 10,
+        timeout: 7200,
+        autoScale: true,
+        orchestrationStrategy: 'round-robin'
+      },
+      seed: {
+        id: `seed-${Date.now()}`,
+        name: `${name} Seed`,
+        config: {},
+        metadata: {
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         }
       },
+      agents: [],
       createdAt: new Date(),
       updatedAt: new Date(),
       owner: 'user',

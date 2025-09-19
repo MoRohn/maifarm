@@ -12,7 +12,7 @@ import {
   Activity
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useWebSocketStore } from '../../store/websocketStore';
+import { useWebSocketStore } from '@/store/websocketStore';
 import { format } from 'date-fns';
 
 interface ResourceData {

@@ -15,7 +15,7 @@ import {
   FileImage,
   Terminal
 } from 'lucide-react';
-import { HarvestYield } from '../../types/harvest';
+import { HarvestYield } from '@/types/harvest';
 
 interface YieldCardProps {
   yieldItem: HarvestYield;
@@ -81,7 +81,7 @@ export const YieldCard: React.FC<YieldCardProps> = ({
 
   const handleCopyPath = async () => {
     try {
-      await navigator.clipboard.writeText(yieldItem.location);
+      await navigator.clipboard.writeText(yieldItem.location || '');
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
@@ -109,7 +109,7 @@ export const YieldCard: React.FC<YieldCardProps> = ({
             <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500">
               <span>{yieldItem.type}</span>
               <span>•</span>
-              <span>{formatFileSize(yieldItem.size)}</span>
+              <span>{yieldItem.size ? formatFileSize(yieldItem.size) : 'N/A'}</span>
             </div>
           </div>
           {hovering && (
@@ -164,7 +164,7 @@ export const YieldCard: React.FC<YieldCardProps> = ({
             </div>
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-500">
-            {formatFileSize(yieldItem.size)}
+            {yieldItem.size ? formatFileSize(yieldItem.size) : 'N/A'}
           </div>
         </div>
 
@@ -180,12 +180,12 @@ export const YieldCard: React.FC<YieldCardProps> = ({
         <div className="space-y-2 mb-4">
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500">
             <Terminal className="w-3 h-3" />
-            <span>Created by {yieldItem.createdBy.agentName}</span>
+            <span>Created by {yieldItem.createdBy?.agentName || 'Unknown'}</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-500">
             <FileCode className="w-3 h-3" />
             <span className="truncate" title={yieldItem.location}>
-              {yieldItem.location}
+              {yieldItem.location || 'N/A'}
             </span>
           </div>
         </div>

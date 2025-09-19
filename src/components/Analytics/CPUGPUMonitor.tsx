@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Cpu, HardDrive, Zap, Server, Activity, AlertTriangle } from 'lucide-react';
 import { LineChart } from './Charts/LineChart';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface ResourceMetrics {
   cpu: {

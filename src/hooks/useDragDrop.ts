@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { DropResult, DragStart } from 'react-beautiful-dnd';
-import { dragDropService } from '../services/dragDropService';
-import { useFarmStore } from '../store/farmStore';
+import { dragDropService } from '@/services/dragDropService';
+import { useFarmStore } from '@/store/farmStore';
 import { toast } from 'react-hot-toast';
 
 interface UseDragDropOptions {

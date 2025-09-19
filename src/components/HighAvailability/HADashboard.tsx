@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useHighAvailability } from '../../hooks/useHighAvailability';
+import { useHighAvailability } from '@/hooks/useHighAvailability';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';

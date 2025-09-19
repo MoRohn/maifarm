@@ -16,9 +16,9 @@ import {
   MetricUnit,
   formatMetricValue,
   getMetricUnit
-} from '../types/metrics';
+} from '@/types/metrics';
 import { apiClient } from './apiClient';
-import { Farm, Agent } from '../types';
+import { Farm, Agent } from '@/types';
 
 class UnifiedMetricsService extends EventEmitter {
   private static instance: UnifiedMetricsService;
@@ -70,7 +70,7 @@ class UnifiedMetricsService extends EventEmitter {
       filesGenerated: 0,
       filesFailed: 0,
       filesPending: 0,
-      successRate: 100, // Percentage of successful farms
+      yieldedItems: 0,
       
       // File categorization
       filesText: 0,
@@ -79,6 +79,12 @@ class UnifiedMetricsService extends EventEmitter {
       filesData: 0,
       filesConfig: 0,
       filesOther: 0,
+      
+      // Harvest metrics
+      totalHarvests: 0,
+      completedHarvests: 0,
+      failedHarvests: 0,
+      pendingHarvests: 0,
       
       // Legacy task metrics for backward compatibility
       totalTasks: 0,
@@ -117,6 +123,12 @@ class UnifiedMetricsService extends EventEmitter {
    * Calculate metrics from farms data with deduplication
    */
   public calculateMetricsFromFarms(farms: Farm[]): CoreMetrics {
+    // Safety check for farms array
+    if (!farms || !Array.isArray(farms)) {
+      console.warn('[UnifiedMetricsService] Invalid farms data provided, returning default metrics');
+      return this.getDefaultMetrics();
+    }
+
     // Reset tracking sets
     this.uniqueAgentIds.clear();
     this.farmMetrics.clear();
@@ -159,7 +171,6 @@ class UnifiedMetricsService extends EventEmitter {
       
       // Categorize farm status and track success
       switch (farm.status) {
-        case 'running':
         case 'active':
         case 'launching':
         case 'harvesting':
@@ -181,6 +192,22 @@ class UnifiedMetricsService extends EventEmitter {
       const farmAgents = farm.agents || [];
       const farmUniqueAgents = new Set<string>();
       
+      // If farm is active and has a configured agent count, ensure we count them
+      const configuredAgentCount = farm.config?.agentCount || farm.config?.numberOfAgents || 0;
+      
+      // For active farms with configured agents but no agent records yet, count them
+      if (farm.status === 'active' && configuredAgentCount > 0 && farmAgents.length === 0) {
+        for (let i = 0; i < configuredAgentCount; i++) {
+          const agentId = `${farm.id}-virtual-agent-${i}`;
+          if (!this.uniqueAgentIds.has(agentId)) {
+            this.uniqueAgentIds.add(agentId);
+            totalAgents++;
+            activeAgents++; // Active farm means agents are working
+            farmUniqueAgents.add(agentId);
+          }
+        }
+      }
+      
       farmAgents.forEach((agent: Agent) => {
         const agentId = agent.id || `${farm.id}-agent-${agent.name || 'unknown'}`;
         
@@ -189,8 +216,8 @@ class UnifiedMetricsService extends EventEmitter {
           this.uniqueAgentIds.add(agentId);
           totalAgents++;
           
-          // Count agent status only once
-          if (['running', 'active', 'working'].includes(agent.status)) {
+          // For active farms, consider all agents as active
+          if (farm.status === 'active' || ['active', 'running', 'working', 'busy'].includes(agent.status)) {
             activeAgents++;
           } else if (agent.status === 'idle') {
             idleAgents++;
@@ -204,7 +231,7 @@ class UnifiedMetricsService extends EventEmitter {
             status: agent.status,
             tasksCompleted: agent.metrics?.tasksCompleted || 0,
             tasksFailed: agent.metrics?.tasksFailed || 0,
-            successRate: agent.metrics?.successRate || 100,
+            yieldedItems: agent.metrics?.yieldedItems || 0,
             avgResponseTime: agent.metrics?.avgResponseTime || 0,
             cpuUsage: agent.metrics?.cpuUsage || 0,
             memoryUsage: agent.metrics?.memoryUsage || 0,
@@ -253,11 +280,11 @@ class UnifiedMetricsService extends EventEmitter {
         agents: farmUniqueAgents.size,
         activeAgents: Array.from(farmUniqueAgents).filter(id => {
           const agent = this.agentMetrics.get(id);
-          return agent && ['running', 'active', 'working'].includes(agent.status);
+          return agent && ['active', 'running', 'working', 'busy'].includes(agent.status);
         }).length,
         completedTasks: farmFilesGenerated, // Map to files for compatibility
         failedTasks: farmFilesFailed,
-        successRate: farmTotalFiles > 0 ? (farmFilesGenerated / farmTotalFiles) * 100 : 100,
+        yieldedItems: 0, // Will be populated from harvest data
         uptime: farm.uptime || 0,
         cpuUsage: farm.metrics?.cpuUsage || 0,
         memoryUsage: farm.metrics?.memoryUsage || 0,
@@ -266,11 +293,13 @@ class UnifiedMetricsService extends EventEmitter {
     });
 
     // Calculate farm-based success rate
-    // Success rate is now percentage of completed farms vs failed farms
-    const completedAndFailedFarms = successfulFarms + failedFarms;
-    const successRate = completedAndFailedFarms > 0 
-      ? (successfulFarms / completedAndFailedFarms) * 100 
-      : (activeFarms > 0 ? 50 : 100); // If farms are running, show 50% as neutral
+    // Calculate yielded items from harvests (will be populated from harvest data)
+    let yieldedItems = 0;
+    let totalHarvests = 0;
+    let completedHarvests = 0;
+    
+    // Note: Harvest data will be fetched separately in fetchMetrics()
+    // This method calculates metrics from farms data only
     const avgCpuUsage = farmCount > 0 ? totalCpuUsage / farmCount : 0;
     const avgMemoryUsage = farmCount > 0 ? totalMemoryUsage / farmCount : 0;
 
@@ -292,7 +321,7 @@ class UnifiedMetricsService extends EventEmitter {
       filesGenerated,
       filesFailed,
       filesPending,
-      successRate, // Now based on farm success
+      yieldedItems,
       
       // File categorization
       filesText,
@@ -302,11 +331,17 @@ class UnifiedMetricsService extends EventEmitter {
       filesConfig,
       filesOther,
       
-      // Legacy task metrics for compatibility
-      totalTasks: totalFiles,
-      completedTasks: filesGenerated,
-      failedTasks: filesFailed,
-      pendingTasks: filesPending,
+      // Harvest metrics
+      totalHarvests,
+      completedHarvests,
+      failedHarvests: 0, // TODO: track failed harvests
+      pendingHarvests: totalHarvests - completedHarvests,
+      
+      // Legacy task metrics (map to harvest metrics for compatibility)
+      totalTasks: totalHarvests,
+      completedTasks: completedHarvests,
+      failedTasks: 0,
+      pendingTasks: totalHarvests - completedHarvests,
       
       // Resource metrics
       cpuUsage: avgCpuUsage,
@@ -341,11 +376,12 @@ class UnifiedMetricsService extends EventEmitter {
       }
 
       // Fetch from multiple endpoints
-      const [dashboardRes, farmsRes, agentsRes, systemRes] = await Promise.allSettled([
+      const [dashboardRes, farmsRes, agentsRes, systemRes, harvestsRes] = await Promise.allSettled([
         apiClient.get('/api/metrics/dashboard'),
         apiClient.get('/api/farms'),
         apiClient.get('/api/agents'),
-        apiClient.get('/api/metrics/system')
+        apiClient.get('/api/metrics/system'),
+        apiClient.get('/api/harvests')
       ]);
 
       let metrics = this.getDefaultMetrics();
@@ -360,10 +396,45 @@ class UnifiedMetricsService extends EventEmitter {
       // Override with dashboard metrics if available
       if (dashboardRes.status === 'fulfilled' && dashboardRes.value.data?.data) {
         const dashboard = dashboardRes.value.data.data;
+        
+        // Use the accurate metrics from the new aggregator
         metrics.activeFarms = dashboard.activeFarms ?? metrics.activeFarms;
+        metrics.activeAgents = dashboard.totalAgents ?? metrics.activeAgents; // Map totalAgents to activeAgents
+        metrics.completedHarvests = dashboard.harvestsCompleted ?? dashboard.tasksCompleted ?? metrics.completedHarvests;
+        metrics.yieldedItems = dashboard.yieldedItems ?? metrics.yieldedItems;
+        
+        // Also update totals for consistency
         metrics.totalAgents = dashboard.totalAgents ?? metrics.totalAgents;
-        metrics.completedTasks = dashboard.tasksCompleted ?? metrics.completedTasks;
-        metrics.successRate = dashboard.successRate ?? metrics.successRate;
+        metrics.uniqueAgents = dashboard.totalAgents ?? metrics.uniqueAgents; // Deduplicated count
+      }
+
+      // Process harvest data if available
+      if (harvestsRes.status === 'fulfilled' && harvestsRes.value.data?.data) {
+        const harvests = harvestsRes.value.data.data;
+        metrics.totalHarvests = harvests.length;
+        
+        let yieldedItems = 0;
+        let completedHarvests = 0;
+        
+        // Count completed harvests and sum yielded items
+        harvests.forEach((harvest: any) => {
+          if (harvest.status === 'ready' || harvest.status === 'completed') {
+            completedHarvests++;
+          }
+          // Sum yielded items from each harvest
+          if (harvest.yield && Array.isArray(harvest.yield)) {
+            yieldedItems += harvest.yield.length;
+          }
+        });
+        
+        metrics.yieldedItems = yieldedItems;
+        metrics.completedHarvests = completedHarvests;
+        metrics.pendingHarvests = metrics.totalHarvests - completedHarvests;
+        
+        // Update legacy task metrics for compatibility
+        metrics.totalTasks = metrics.totalHarvests;
+        metrics.completedTasks = metrics.completedHarvests;
+        metrics.pendingTasks = metrics.pendingHarvests;
       }
 
       // Add system metrics if available

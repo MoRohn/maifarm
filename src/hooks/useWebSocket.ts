@@ -3,7 +3,7 @@ import { Socket } from 'socket.io-client';
 import { WebSocketMessage } from '@/types';
 import { wsManager } from '@/services/websocket/singletonManager';
 import { useWebSocketStore } from '@/store/websocketStore';
-import { DEFAULT_WS_CONFIG } from '@/config/websocket';
+import { DEFAULT_WS_CONFIG } from '../config/websocket';
 
 interface UseWebSocketOptions {
   url: string;
@@ -43,7 +43,7 @@ export function useWebSocket(options: Partial<UseWebSocketOptions> = {}): UseWeb
 
     // Event handlers are set up in the singleton manager
     // Individual components can still add their own specific handlers
-  }, [url, reconnect, reconnectAttempts, reconnectDelay]);
+  }, [url]); // Only depend on URL to prevent unnecessary reconnections
 
   const disconnect = useCallback(() => {
     // Only release if we haven't already
@@ -85,11 +85,16 @@ export function useWebSocket(options: Partial<UseWebSocketOptions> = {}): UseWeb
     return () => {
       // Only release on actual component unmount, not on prop changes
       // This prevents unnecessary disconnections during re-renders
-      if (!hasReleasedRef.current) {
-        wsManager.release();
-        hasReleasedRef.current = true;
-      }
-      socketRef.current = null;
+      // Use a timeout to ensure we're actually unmounting and not just re-rendering
+      const timeoutId = setTimeout(() => {
+        if (!hasReleasedRef.current) {
+          wsManager.release();
+          hasReleasedRef.current = true;
+        }
+        socketRef.current = null;
+      }, 100); // Small delay to handle rapid mount/unmount cycles
+      
+      return () => clearTimeout(timeoutId);
     };
   }, []); // Remove dependencies to prevent reconnection on prop changes
   

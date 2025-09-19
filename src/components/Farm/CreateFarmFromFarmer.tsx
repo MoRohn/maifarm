@@ -16,8 +16,8 @@ import {
   User
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { FarmerTemplate } from '../../types/farmers';
-import { api } from '../../services/apiClient';
+import { FarmerTemplate } from '@/types/farmers';
+import { api } from '@/services/apiClient';
 import { toast } from 'react-hot-toast';
 import { YAMLDisplay } from './YAMLDisplay';
 
@@ -143,8 +143,8 @@ export const CreateFarmFromFarmer: React.FC = () => {
         const { farmId } = response.data.data;
         toast.success(`Farm "${inputs.farmName}" launched successfully!`);
         
-        // Navigate to the harvest page for this specific farm
-        navigate(`/harvests/${farmId}`, {
+        // Navigate through concept explainer first
+        navigate(`/farm/${farmId}/transition/farm`, {
           state: {
             farmId,
             farmerTemplate: farmerTemplate,

@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
-import { TimeSeriesData, MetricDataPoint } from '../../../types/analytics';
-import { formatAxisDate, getChartDomain, generateChartTheme } from '../../../utils/chartHelpers';
-import { useThemeStore } from '../../../store/themeStore';
+import { TimeSeriesData, MetricDataPoint } from '@/types/analytics';
+import { formatAxisDate, getChartDomain, generateChartTheme } from '@/utils/chartHelpers';
+import { useThemeStore } from '@/store/themeStore';
 
 interface LineChartProps {
   data: TimeSeriesData[];
@@ -13,7 +13,7 @@ interface LineChartProps {
   showGrid?: boolean;
   animate?: boolean;
   timeRange?: 'hour' | 'day' | 'week' | 'month';
-  onDataPointClick?: (seriesLabel: string, dataPoint: MetricDataPoint) => void;
+  onDataPointClick?: (_seriesLabel: string, _dataPoint: MetricDataPoint) => void;
 }
 
 export const LineChart: React.FC<LineChartProps> = ({
@@ -144,8 +144,8 @@ export const LineChart: React.FC<LineChartProps> = ({
         .data(series.data)
         .enter().append('circle')
         .attr('class', `dot-${index}`)
-        .attr('cx', d => xScale(d.timestamp))
-        .attr('cy', d => yScale(d.value))
+        .attr('cx', (d: any) => xScale(d.timestamp))
+        .attr('cy', (d: any) => yScale(d.value))
         .attr('r', 0)
         .attr('fill', series.color || chartTheme.colors[index % chartTheme.colors.length])
         .style('cursor', 'pointer');
@@ -162,7 +162,7 @@ export const LineChart: React.FC<LineChartProps> = ({
       // Hover effects removed to prevent console errors
       if (onDataPointClick) {
         dots.on('click', function(event, d) {
-          onDataPointClick(series.label, d);
+          onDataPointClick(series.label, d as any);
         });
       }
     });

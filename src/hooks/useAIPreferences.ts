@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useUserStore } from '../store/userStore';
-import { aiPreferences } from '../services/aiPreferences';
+import { useUserStore } from '@/store/userStore';
+import { aiPreferences } from '@/services/aiPreferences';
 
 interface AIPreferenceSuggestion {
   id: string;
@@ -75,7 +75,14 @@ export const useAIPreferences = () => {
         featureUsage: userActivity?.featureUsage || {}
       } : undefined;
       const suggestions = await aiPreferences.generateSuggestions(
-        activityData || { lastAction: '', timestamp: new Date(), frequentActions: [] }, 
+        activityData || {
+          lastAction: '',
+          timestamp: new Date(),
+          frequentActions: [],
+          totalActions: 0,
+          sessionDuration: 0,
+          featureUsage: {}
+        },
         preferences as any || {},
         category
       );

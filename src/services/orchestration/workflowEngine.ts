@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { ensureDate } from '../../utils/dateHelpers'
+import { ensureDate } from '@/utils/dateHelpers'
 import {
   Workflow,
   WorkflowStatus,
@@ -10,7 +10,7 @@ import {
   WorkflowTrigger,
   Task,
   TaskStatus
-} from '../../types/orchestration'
+} from '@/types/orchestration'
 import { agentLifecycleManager } from './agentLifecycleManager'
 import { dependencyResolver } from './dependencyResolver'
 import { websocketService } from '../websocket'
@@ -83,7 +83,7 @@ class WorkflowEngine {
     }
 
     // Don't allow updates while running
-    if (workflow.status === 'running') {
+    if (workflow.status === 'active') {
       throw new Error('Cannot update workflow while it is running')
     }
 
@@ -115,7 +115,7 @@ class WorkflowEngine {
       throw new Error(`Workflow ${id} not found`)
     }
 
-    if (workflow.status === 'running') {
+    if (workflow.status === 'active') {
       throw new Error('Cannot delete workflow while it is running')
     }
 
@@ -144,7 +144,7 @@ class WorkflowEngine {
     const execution: ExtendedWorkflowExecution = {
       id: executionId,
       workflowId,
-      status: 'running',
+      status: 'active',
       progress: 0,
       currentNodes: [],
       completedNodes: [],
@@ -167,7 +167,7 @@ class WorkflowEngine {
     this.executionContexts.set(executionId, context)
 
     // Update workflow status
-    workflow.status = 'running'
+    workflow.status = 'active'
     workflow.execution = execution
 
     // Start execution
@@ -293,7 +293,7 @@ class WorkflowEngine {
     const agents = agentLifecycleManager.getAllAgents()
     const availableAgent = agents.find(agent => 
       agent.type === agentType && 
-      (agent.status === 'idle' || agent.status === 'running') &&
+      (agent.status === 'idle' || agent.status === 'active') &&
       agent.capabilities.includes(taskType)
     )
 
@@ -592,7 +592,7 @@ class WorkflowEngine {
 
   async pauseWorkflow(workflowId: string): Promise<void> {
     const workflow = this.workflows.get(workflowId)
-    if (!workflow || workflow.status !== 'running') {
+    if (!workflow || workflow.status !== 'active') {
       throw new Error('Workflow is not running')
     }
 
@@ -610,9 +610,9 @@ class WorkflowEngine {
       throw new Error('Workflow is not paused')
     }
 
-    workflow.status = 'running'
+    workflow.status = 'active'
     if (workflow.execution) {
-      workflow.execution.status = 'running'
+      workflow.execution.status = 'active'
       const context = this.executionContexts.get(workflow.execution.id)
       if (context) {
         await this.continueExecution(workflow, workflow.execution, context)
@@ -622,7 +622,7 @@ class WorkflowEngine {
 
   async cancelWorkflow(workflowId: string): Promise<void> {
     const workflow = this.workflows.get(workflowId)
-    if (!workflow || (workflow.status !== 'running' && workflow.status !== 'paused')) {
+    if (!workflow || (workflow.status !== 'active' && workflow.status !== 'paused')) {
       throw new Error('Workflow is not running or paused')
     }
 

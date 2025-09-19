@@ -385,7 +385,7 @@ export class NeuralSwarmOptimizer extends EventEmitter {
     });
     
     // Store in Redis for persistence
-    await redisClient.lpush(
+    await redisClient.lPush(
       `swarm:messages:${targetId}`,
       JSON.stringify(message)
     );

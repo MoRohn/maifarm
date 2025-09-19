@@ -10,8 +10,8 @@ import {
   TaskCompletion,
   ErrorMetric,
   MetricDataPoint
-} from '../types/analytics';
-import { Farm, Agent } from '../types';
+} from '@/types/analytics';
+import { Farm, Agent } from '@/types';
 import { format, subHours, subDays, startOfHour, startOfDay, differenceInMinutes } from 'date-fns';
 import { groupBy, mean, sum, max, min } from 'lodash';
 import { websocketService } from './websocket';

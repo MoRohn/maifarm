@@ -5,7 +5,7 @@ import {
   GrafanaTarget,
   TimeSeries,
   MetricQuery
-} from '../types/metrics';
+} from '@/types/metrics';
 
 export interface GrafanaConfig {
   url: string;

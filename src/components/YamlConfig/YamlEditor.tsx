@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { AlertCircle, CheckCircle, Info, Zap } from 'lucide-react';
-import { YamlValidationResult, ValidationError, ValidationWarning } from '../../types/yaml';
-import { yamlValidator } from '../../services/yamlValidator';
+import { YamlValidationResult, ValidationError, ValidationWarning } from '@/types/yaml';
+import { yamlValidator } from '@/services/yamlValidator';
 import { debounce } from 'lodash';
 
 interface YamlEditorProps {

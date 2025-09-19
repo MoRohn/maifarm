@@ -8,6 +8,7 @@ import {
   updateConnectedClients,
   updateFarmEfficiency
 } from './metricsCollector.js';
+import { logger, LogCategory } from '../utils/logger.js';
 
 // System resource monitoring
 async function collectSystemMetrics() {
@@ -36,7 +37,7 @@ async function collectSystemMetrics() {
     
     updateSystemResources(cpuUsage, memoryUsage, diskUsage);
   } catch (error) {
-    console.error('Error collecting system metrics:', error);
+    logger.error(LogCategory.MONITORING, 'Error collecting system metrics:', error);
   }
 }
 
@@ -72,7 +73,7 @@ export async function metricsHandler(req: Request, res: Response) {
     const metrics = await metricsRegistry.metrics();
     res.end(metrics);
   } catch (error) {
-    console.error('Error generating metrics:', error);
+    logger.error(LogCategory.MONITORING, 'Error generating metrics:', error);
     res.status(500).json({ error: 'Failed to generate metrics' });
   }
 }
@@ -91,7 +92,7 @@ export async function farmMetricsHandler(req: Request, res: Response) {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error getting farm metrics:', error);
+    logger.error(LogCategory.MONITORING, 'Error getting farm metrics:', error);
     res.status(500).json({ error: 'Failed to get farm metrics' });
   }
 }
@@ -110,7 +111,7 @@ export async function agentMetricsHandler(req: Request, res: Response) {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error getting agent metrics:', error);
+    logger.error(LogCategory.MONITORING, 'Error getting agent metrics:', error);
     res.status(500).json({ error: 'Failed to get agent metrics' });
   }
 }
@@ -139,7 +140,7 @@ export async function systemMetricsHandler(req: Request, res: Response) {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error getting system metrics:', error);
+    logger.error(LogCategory.MONITORING, 'Error getting system metrics:', error);
     res.status(500).json({ error: 'Failed to get system metrics' });
   }
 }

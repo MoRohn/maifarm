@@ -11,7 +11,7 @@ import {
   Zap
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Harvest, HarvestResult } from '../../types/harvest';
+import { Harvest, HarvestResult } from '@/types/harvest';
 import { format } from 'date-fns';
 
 interface HarvestResultsProps {

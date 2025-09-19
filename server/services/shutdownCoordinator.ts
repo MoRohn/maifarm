@@ -8,8 +8,9 @@ import {
   FILE_COLLECTION_TIMEOUT,
   AGENT_CLOSING_PROMPT_TIMEOUT
 } from '../constants/timing';
-import { HarvestFileCollector } from './harvestFileCollector';
+import { harvestService } from './unified/harvestService';
 import { websocketManager } from '../websocket/websocketManager';
+import { orchestratorService } from './unified/orchestratorService';
 
 export type ShutdownMode = 'quick-task' | 'farm' | 'gowild';
 export type ShutdownReason = 'timeout' | 'user_request' | 'completion';
@@ -44,12 +45,12 @@ export interface ShutdownResult {
  */
 class ShutdownCoordinator extends EventEmitter {
   private activeShutdowns: Map<string, NodeJS.Timeout> = new Map();
-  private harvestCollector: HarvestFileCollector;
   private isShuttingDown: boolean = false;
+  private shutdownLocks: Map<string, Promise<void>> = new Map(); // Mutex for preventing race conditions
+  private shutdownInProgress: Set<string> = new Set(); // Track farms currently shutting down
 
   constructor() {
     super();
-    this.harvestCollector = new HarvestFileCollector();
     this.setupSignalHandlers();
   }
 
@@ -84,11 +85,41 @@ class ShutdownCoordinator extends EventEmitter {
    * Schedule a graceful shutdown for a farm/task
    * This sets up the timer to trigger shutdown 30s before the ultimate timeout
    */
-  scheduleShutdown(config: ShutdownConfig): void {
+  async scheduleShutdown(config: ShutdownConfig): Promise<void> {
     const { mode, farmId, userId, timeout } = config;
-    
-    // Clear any existing shutdown for this farm
-    this.cancelShutdown(farmId);
+
+    // Implement mutex lock to prevent race conditions
+    if (this.shutdownLocks.has(farmId)) {
+      logger.warn(`[ShutdownCoordinator] Waiting for existing shutdown operation to complete for farm ${farmId}`);
+      await this.shutdownLocks.get(farmId);
+    }
+
+    // Create a new lock for this operation
+    const lockPromise = this._scheduleShutdownWithLock(config);
+    this.shutdownLocks.set(farmId, lockPromise);
+
+    try {
+      await lockPromise;
+    } finally {
+      // Clean up the lock after operation completes
+      this.shutdownLocks.delete(farmId);
+    }
+  }
+
+  private async _scheduleShutdownWithLock(config: ShutdownConfig): Promise<void> {
+    const { mode, farmId, userId, timeout } = config;
+
+    // Check if shutdown is already in progress for this farm
+    if (this.shutdownInProgress.has(farmId)) {
+      logger.info(`[ShutdownCoordinator] Shutdown already in progress for farm ${farmId}, skipping duplicate request`);
+      return;
+    }
+
+    // Clear any existing shutdown timer for this farm to prevent conflicts
+    if (this.activeShutdowns.has(farmId)) {
+      logger.warn(`[ShutdownCoordinator] CRITICAL: Cancelling existing shutdown timer for farm ${farmId} to prevent race condition`);
+      this.cancelShutdown(farmId);
+    }
     
     // SIMPLIFIED: Calculate when to trigger graceful shutdown (always 30s before timeout)
     let totalTimeoutMs: number;
@@ -104,19 +135,56 @@ class ShutdownCoordinator extends EventEmitter {
         logger.error(`[ShutdownCoordinator] No timeout provided for ${mode} mode`);
         return;
       }
-      totalTimeoutMs = timeout * 1000; // Convert seconds to ms
+      
+      // FIXED: Always expect milliseconds from all callers
+      // This eliminates ambiguity and prevents timeout bugs
+      totalTimeoutMs = timeout;
+      logger.info(`[ShutdownCoordinator] Timeout set to ${totalTimeoutMs}ms (${Math.round(totalTimeoutMs / 1000)}s) for ${mode} mode`);
+      
       gracefulShutdownTime = totalTimeoutMs - GRACEFUL_SHUTDOWN_PERIOD; // Always 30s before
     }
     
-    logger.info(`[ShutdownCoordinator] Scheduling ${mode} shutdown for ${farmId}:`, {
+    // Ensure gracefulShutdownTime is positive
+    if (gracefulShutdownTime <= 0) {
+      logger.warn(`[ShutdownCoordinator] Graceful shutdown time is non-positive (${gracefulShutdownTime}ms), using minimum delay of 10s`);
+      gracefulShutdownTime = 10000; // Use 10 second minimum
+    }
+    
+    // CRITICAL DEBUG: Log exact timer values
+    console.log(`\n🔍 SHUTDOWN TIMER DEBUG 🔍`);
+    console.log(`Mode: ${mode}`);
+    console.log(`Farm ID: ${farmId}`);
+    console.log(`Timeout provided: ${timeout} seconds`);
+    console.log(`Total timeout (ms): ${totalTimeoutMs}ms`);
+    console.log(`Graceful shutdown delay (ms): ${gracefulShutdownTime}ms`);
+    console.log(`Timer will fire in: ${gracefulShutdownTime / 1000} seconds from now`);
+    console.log(`Current time: ${new Date().toISOString()}`);
+    console.log(`Timer will fire at: ${new Date(Date.now() + gracefulShutdownTime).toISOString()}\n`);
+    
+    logger.info(`[ShutdownCoordinator] CRITICAL: Scheduling ${mode} shutdown for ${farmId}:`, {
       totalTimeout: `${totalTimeoutMs / 1000}s`,
       gracefulShutdownAt: `${gracefulShutdownTime / 1000}s`,
-      gracePeriod: `${(totalTimeoutMs - gracefulShutdownTime) / 1000}s`
+      gracePeriod: `${(totalTimeoutMs - gracefulShutdownTime) / 1000}s`,
+      scheduledAt: new Date().toISOString(),
+      farmId: farmId
     });
+    
+    // CRITICAL: Log that this farm should NOT be cleaned up until timeout
+    console.log(`\n🚨 FARM PROTECTION ACTIVATED 🚨`);
+    console.log(`Farm ID: ${farmId}`);
+    console.log(`Session Name: farm-${farmId.substring(0, 8)}`);
+    console.log(`Protected Until: ${new Date(Date.now() + totalTimeoutMs).toISOString()}`);
+    console.log(`Graceful Shutdown Starts: ${new Date(Date.now() + gracefulShutdownTime).toISOString()}`);
+    console.log(`DO NOT KILL THIS SESSION BEFORE TIMEOUT!\n`);
     
     // Set timer for graceful shutdown (30s before timeout)
     const shutdownTimer = setTimeout(async () => {
-      logger.info(`[ShutdownCoordinator] Initiating graceful shutdown for ${farmId} (${mode})`);
+      logger.info(`[ShutdownCoordinator] TIMEOUT REACHED: Initiating graceful shutdown for ${farmId} (${mode})`);
+      console.log(`\n⏰ TIMEOUT TRIGGERED FOR FARM ${farmId} ⏰`);
+      console.log(`Expected timeout time: ${new Date().toISOString()}`);
+      console.log(`Mode: ${mode}, Reason: timeout`);
+      console.log(`Beginning graceful shutdown process...\n`);
+      
       await this.executeGracefulShutdown({
         ...config,
         reason: 'timeout'
@@ -141,7 +209,37 @@ class ShutdownCoordinator extends EventEmitter {
    */
   async executeGracefulShutdown(config: ShutdownConfig): Promise<ShutdownResult> {
     const startTime = new Date();
-    const { mode, farmId, userId, reason, harvestId, agentIds } = config;
+    const { farmId } = config;
+
+    // Check if already shutting down this farm
+    if (this.shutdownInProgress.has(farmId)) {
+      logger.warn(`[ShutdownCoordinator] Shutdown already in progress for farm ${farmId}, preventing duplicate execution`);
+      return {
+        success: false,
+        filesCollected: false,
+        barnStored: false,
+        errors: ['Shutdown already in progress'],
+        timing: {
+          shutdownStarted: startTime,
+          shutdownCompleted: new Date(),
+          durationMs: 0,
+          gracePeriodUsed: 0
+        }
+      };
+    }
+
+    // Mark this farm as shutting down
+    this.shutdownInProgress.add(farmId);
+    const { mode, userId, reason, harvestId, agentIds } = config;
+    
+    // CRITICAL DEBUG: Log who called this
+    console.log(`\n🚨 EXECUTE GRACEFUL SHUTDOWN CALLED 🚨`);
+    console.log(`Farm ID: ${farmId}`);
+    console.log(`Mode: ${mode}`);
+    console.log(`Reason: ${reason}`);
+    console.log(`Called at: ${startTime.toISOString()}`);
+    console.log(`Stack trace:`);
+    console.trace();
     
     logger.info(`[ShutdownCoordinator] Starting graceful shutdown for ${farmId}`, {
       mode,
@@ -167,10 +265,15 @@ class ShutdownCoordinator extends EventEmitter {
       
       // Step 2: Send closing prompt to agents to collect their work
       if (mode !== 'quick-task' || agentIds?.length) {
-        await this.sendClosingPrompts(farmId, mode, reason, agentIds);
-        
-        // Wait for agents to process closing prompt
-        await new Promise(resolve => setTimeout(resolve, AGENT_CLOSING_PROMPT_TIMEOUT));
+        try {
+          await this.sendClosingPrompts(farmId, mode, reason, agentIds);
+          
+          // Wait for agents to process closing prompt
+          await new Promise(resolve => setTimeout(resolve, AGENT_CLOSING_PROMPT_TIMEOUT));
+        } catch (error) {
+          // Don't fail the entire shutdown if closing prompts fail
+          logger.warn(`[ShutdownCoordinator] Continuing shutdown despite closing prompt error:`, error);
+        }
       }
       
       // Step 3: Collect files from agents
@@ -246,7 +349,10 @@ class ShutdownCoordinator extends EventEmitter {
       filesCollected,
       barnStored
     });
-    
+
+    // Clean up shutdown tracking to allow future shutdowns
+    this.shutdownInProgress.delete(farmId);
+
     return result;
   }
 
@@ -265,6 +371,13 @@ class ShutdownCoordinator extends EventEmitter {
   }
 
   /**
+   * Check if shutdown is scheduled for a farm
+   */
+  isShutdownScheduled(farmId: string): boolean {
+    return this.activeShutdowns.has(farmId);
+  }
+
+  /**
    * Send closing prompts to agents
    */
   private async sendClosingPrompts(
@@ -273,12 +386,15 @@ class ShutdownCoordinator extends EventEmitter {
     reason: ShutdownReason,
     agentIds?: string[]
   ): Promise<void> {
+    // Skip if we're already shutting down (prevent errors during process exit)
+    if (this.isShuttingDown) {
+      logger.info(`[ShutdownCoordinator] Skipping closing prompts - system is shutting down`);
+      return;
+    }
+    
     const closingPrompt = this.generateClosingPrompt(mode, reason);
     
     try {
-      // Import services dynamically to avoid circular dependencies
-      const { orchestratorService } = await import('./orchestratorService');
-      
       // Get farm status to find agents
       const farmStatus = await orchestratorService.getStatus(farmId);
       
@@ -295,7 +411,15 @@ class ShutdownCoordinator extends EventEmitter {
         }
       }
     } catch (error) {
-      logger.error(`[ShutdownCoordinator] Failed to send closing prompts:`, error);
+      // Check if this is a shutdown-related error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('service is no longer running') || 
+          errorMessage.includes('esbuild') ||
+          this.isShuttingDown) {
+        logger.info(`[ShutdownCoordinator] Service unavailable during shutdown - skipping closing prompts`);
+      } else {
+        logger.error(`[ShutdownCoordinator] Failed to send closing prompts:`, error);
+      }
     }
   }
 
@@ -314,11 +438,9 @@ class ShutdownCoordinator extends EventEmitter {
       }
       
       // Use timeout for file collection
-      const collectionPromise = this.harvestCollector.collectHarvestFiles(
-        harvestId,
+      const collectionPromise = harvestService.collectFiles(
         farmId,
-        `${mode} Farm`,
-        [] // Agent IDs will be determined internally
+        harvestId
       );
       
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -371,7 +493,7 @@ class ShutdownCoordinator extends EventEmitter {
     try {
       const { db } = await import('../database/connection');
       
-      const status = reason === 'timeout' ? 'timeout' : 
+      const status = reason === 'timeout' ? 'failed' :  // Changed from 'timeout' to 'failed'
                      reason === 'user_request' ? 'stopped' : 
                      'completed';
       
@@ -391,16 +513,42 @@ class ShutdownCoordinator extends EventEmitter {
    */
   private async cleanupResources(farmId: string, mode: ShutdownMode): Promise<void> {
     try {
+      // Unregister farm from active farms to allow future cleanup
+      try {
+        const { agentCleanupService } = await import('./agentCleanupService');
+        agentCleanupService.unregisterFarm(farmId);
+        logger.info(`[ShutdownCoordinator] Unregistered farm ${farmId} from active farms`);
+      } catch (error) {
+        logger.warn(`[ShutdownCoordinator] Failed to unregister farm ${farmId}:`, error);
+      }
+      
+      // Stop terminal streaming before killing the session
+      const sessionName = `farm-${farmId.substring(0, 8)}`;
+      try {
+        const { terminalStreamService } = await import('./terminalStreamService');
+        await terminalStreamService.stopStreaming(sessionName);
+        logger.info(`[ShutdownCoordinator] Stopped terminal streaming for ${sessionName}`);
+      } catch (error) {
+        logger.warn(`[ShutdownCoordinator] Failed to stop terminal streaming for ${sessionName}:`, error);
+      }
+      
       // Stop tmux sessions
       const { TmuxHelper } = await import('./tmuxHelper');
-      await TmuxHelper.stopSession(farmId);
+      logger.info(`[ShutdownCoordinator] CRITICAL: Killing tmux session ${sessionName} for farm ${farmId}`);
+      
+      await TmuxHelper.killSession(sessionName);
       
       // Clean up any remaining timers
       this.cancelShutdown(farmId);
       
-      logger.info(`[ShutdownCoordinator] Cleaned up resources for ${farmId}`);
+      console.log(`\n✅ FARM CLEANUP COMPLETED ✅`);
+      console.log(`Farm ID: ${farmId}`);
+      console.log(`Session: ${sessionName} killed`);
+      console.log(`Cleanup time: ${new Date().toISOString()}\n`);
+      
+      logger.info(`[ShutdownCoordinator] Successfully cleaned up resources for ${farmId}`);
     } catch (error) {
-      logger.error(`[ShutdownCoordinator] Resource cleanup failed:`, error);
+      logger.error(`[ShutdownCoordinator] Resource cleanup failed for ${farmId}:`, error);
     }
   }
 

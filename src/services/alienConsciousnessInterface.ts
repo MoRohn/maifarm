@@ -1,4 +1,4 @@
-import { BioSignature, TelepathicMessage, AlienControlGesture } from '../types/alienSpaceship';
+import { BioSignature, TelepathicMessage, AlienControlGesture } from '@/types/alienSpaceship';
 
 // Translation protocols for alien consciousness → AI agent communication
 export interface ConsciousnessTranslation {

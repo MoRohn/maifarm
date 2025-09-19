@@ -1,0 +1,392 @@
+name: maifarm_qa_implementation
+version: 1.0.0
+priority: critical
+estimated_hours: 240
+initial_prompt: |
+  Comprehensive QA & Testing fixes for MaiFarm - Resolves all critical issues, test failures, and implements best practices
+  Fix all critical issues in the MaiFarm codebase to achieve production readiness. This includes:
+  1. Resolve all TypeScript compilation errors (currently 936+ errors)
+  2. Fix failing test infrastructure (477/621 tests failing)
+  3. Implement security patches for XSS vulnerabilities
+  4. Clean up ESLint violations (2,496+ issues)
+  5. Add comprehensive test coverage (target 80%+)
+  6. Optimize performance bottlenecks
+  7. Ensure WCAG AA accessibility compliance
+  8. Document all critical functions and APIs
+  
+  Focus on systematic fixes that maintain existing UI while improving code quality, security, and reliability.
+
+steps:
+  - name: critical_typescript_fixes
+    content: Fix all TypeScript compilation errors blocking the build
+    priority: 1
+    tasks:
+      - name: fix_analytics_types
+        content: Fix undefined successRate and type mismatches in Analytics components
+        files:
+          - src/components/Analytics/Analytics.tsx
+          - src/components/Analytics/AnalyticsDashboard.tsx
+          - src/components/Analytics/AnalyticsPage.tsx
+        actions:
+          - Add default values for optional properties
+          - Update AgentPerformanceMetric interface
+          - Handle undefined cases with nullish coalescing
+
+      - name: fix_barn_interfaces
+        content: Add missing properties to BarnItem interface
+        files:
+          - src/types/barn.ts
+          - src/components/Barn/NewHarvestSpotlight.tsx
+        actions:
+          - Add summary property to BarnItem interface
+          - Update components using BarnItem
+          - Add proper type guards
+
+      - name: fix_dashboard_enums
+        content: Fix status enum mismatches in Dashboard components
+        files:
+          - src/components/Dashboard/WorkflowVisualization.tsx
+          - src/components/Dashboard/EnhancedDashboard.tsx
+          - src/components/Dashboard/FarmMetrics.tsx
+        actions:
+          - Add 'active' status to enum mappings
+          - Fix undefined variable references
+          - Correct index type issues
+
+      - name: fix_farm_variables
+        content: Fix undefined variables in Farm components
+        files:
+          - src/components/Farm/AgentLifecycle.tsx
+          - src/components/Farm/AgentPoolManager.tsx
+          - src/components/Farm/ClaudeCodeIntegration.tsx
+        actions:
+          - Complete reduce function implementations
+          - Fix variable name mismatches
+          - Add proper parameter destructuring
+
+  - name: test_infrastructure_repair
+    content: Fix test suite failures and infrastructure issues
+    priority: 1
+    tasks:
+      - name: fix_websocket_tests
+        content: Resolve WebSocket connection timeouts
+        files:
+          - tests/integration/websocket-connection.test.ts
+          - tests/setup/test-server.ts
+        actions:
+          - Increase timeout limits to 30000ms
+          - Add proper server startup in beforeAll
+          - Implement connection retry logic
+          - Mock WebSocket connections properly
+
+      - name: setup_test_database
+        content: Configure isolated test database
+        files:
+          - tests/setup/database.ts
+          - jest.config.cjs
+        actions:
+          - Create test database configuration
+          - Add database cleanup in afterEach
+          - Implement transaction rollback for tests
+
+      - name: fix_mock_implementations
+        content: Correct mock service implementations
+        files:
+          - tests/__mocks__/*.ts
+          - tests/setup/mocks.ts
+        actions:
+          - Update mock returns to match interfaces
+          - Add missing mock methods
+          - Implement proper async mock behavior
+
+  - name: security_patches
+    content: Fix security vulnerabilities and XSS issues
+    priority: 1
+    tasks:
+      - name: sanitize_html_output
+        content: Add HTML sanitization to prevent XSS
+        files:
+          - src/components/Terminal/*.tsx
+          - src/components/OAuth/*.tsx
+          - src/services/cloudflare.ts
+        actions:
+          - Install and configure DOMPurify
+          - Replace dangerouslySetInnerHTML with sanitized version
+          - Add content security policy headers
+
+      - name: secure_api_keys
+        content: Improve API key management security
+        files:
+          - server/services/apiKeyService.ts
+          - server/config/env.ts
+        actions:
+          - Validate encryption keys on startup
+          - Remove console.log of sensitive data
+          - Implement key rotation mechanism
+
+      - name: update_dependencies
+        content: Update vulnerable npm packages
+        actions:
+          - Run npm audit fix
+          - Update packages with known vulnerabilities
+          - Replace deprecated packages
+
+  - name: code_quality_cleanup
+    content: Fix ESLint violations and code quality issues
+    priority: 2
+    tasks:
+      - name: remove_unused_variables
+        content: Clean up unused imports and variables
+        files:
+          - src/components/**/*.tsx
+          - src/services/**/*.ts
+        actions:
+          - Remove unused imports
+          - Delete unused state variables
+          - Clean up unused function parameters
+
+      - name: fix_react_hooks
+        content: Fix React Hook dependency warnings
+        files:
+          - src/hooks/*.ts
+          - src/components/**/*.tsx
+        actions:
+          - Add missing useEffect dependencies
+          - Wrap callbacks in useCallback
+          - Fix custom hook dependencies
+
+      - name: replace_any_types
+        content: Replace 'any' with proper types
+        files:
+          - src/stores/*.ts
+          - src/services/*.ts
+        actions:
+          - Define proper interfaces
+          - Add type guards
+          - Use generics where appropriate
+
+      - name: remove_console_logs
+        content: Remove or conditionally wrap console.log statements
+        files:
+          - src/**/*.ts
+          - src/**/*.tsx
+        actions:
+          - Remove debug console.log statements
+          - Wrap necessary logs in NODE_ENV checks
+          - Replace with proper logging service
+
+  - name: component_testing
+    content: Add comprehensive component tests
+    priority: 2
+    tasks:
+      - name: test_critical_components
+        content: Add tests for core components
+        files:
+          - src/components/Dashboard/__tests__/
+          - src/components/Farm/__tests__/
+          - src/components/Analytics/__tests__/
+        actions:
+          - Create test files for each component
+          - Test rendering and user interactions
+          - Add snapshot tests for UI consistency
+
+      - name: test_services
+        content: Add service layer tests
+        files:
+          - src/services/__tests__/
+          - server/services/__tests__/
+        actions:
+          - Test API calls and responses
+          - Mock external dependencies
+          - Test error handling paths
+
+      - name: test_websocket_events
+        content: Add WebSocket event tests
+        files:
+          - tests/integration/websocket-events.test.ts
+        actions:
+          - Test all WebSocket event handlers
+          - Verify event payloads
+          - Test connection resilience
+
+  - name: performance_optimization
+    content: Optimize React rendering and bundle size
+    priority: 3
+    tasks:
+      - name: add_memoization
+        content: Optimize component rendering
+        files:
+          - src/components/Analytics/Charts/*.tsx
+          - src/components/Dashboard/*.tsx
+        actions:
+          - Wrap components in React.memo
+          - Use useMemo for expensive calculations
+          - Implement useCallback for event handlers
+
+      - name: implement_code_splitting
+        content: Reduce initial bundle size
+        files:
+          - src/App.tsx
+          - src/routes.tsx
+        actions:
+          - Add lazy loading for routes
+          - Split vendor bundles
+          - Implement dynamic imports
+
+      - name: optimize_database_queries
+        content: Improve database performance
+        files:
+          - server/services/*Service.ts
+          - server/database/queries.ts
+        actions:
+          - Add missing indexes
+          - Optimize N+1 queries
+          - Implement query caching
+
+  - name: accessibility_improvements
+    content: Implement WCAG compliance
+    priority: 3
+    tasks:
+      - name: add_aria_labels
+        content: Add ARIA labels to interactive elements
+        files:
+          - src/components/**/*.tsx
+        actions:
+          - Add aria-label to buttons
+          - Add role attributes
+          - Implement aria-describedby
+
+      - name: improve_keyboard_navigation
+        content: Enhance keyboard accessibility
+        files:
+          - src/components/layouts/*.tsx
+          - src/components/common/*.tsx
+        actions:
+          - Add tabIndex management
+          - Implement focus trapping in modals
+          - Add keyboard shortcuts
+
+      - name: fix_color_contrast
+        content: Ensure WCAG color contrast ratios
+        files:
+          - src/styles/*.css
+          - tailwind.config.js
+        actions:
+          - Audit color combinations
+          - Adjust text colors for contrast
+          - Add high contrast mode
+
+  - name: error_handling_enhancement
+    content: Implement comprehensive error handling
+    priority: 3
+    tasks:
+      - name: add_error_boundaries
+        content: Add React Error Boundaries
+        files:
+          - src/components/ErrorBoundary.tsx
+          - src/App.tsx
+        actions:
+          - Create ErrorBoundary component
+          - Wrap major sections with boundaries
+          - Implement error recovery UI
+
+      - name: handle_async_errors
+        content: Add try-catch to async functions
+        files:
+          - src/services/*.ts
+          - src/hooks/*.ts
+        actions:
+          - Wrap async calls in try-catch
+          - Add error state management
+          - Implement retry logic
+
+  - name: documentation_and_cleanup
+    content: Improve code documentation
+    priority: 4
+    tasks:
+      - name: add_jsdoc_comments
+        content: Document complex functions
+        files:
+          - src/services/*.ts
+          - src/utils/*.ts
+        actions:
+          - Add JSDoc comments
+          - Document parameters and returns
+          - Add usage examples
+
+      - name: create_api_documentation
+        content: Generate API documentation
+        files:
+          - server/api/*.ts
+          - docs/API.md
+        actions:
+          - Document all endpoints
+          - Add request/response examples
+          - Create OpenAPI specification
+
+automation:
+  pre_tasks:
+    - Create backup of current codebase
+    - Set up feature branch for fixes
+    - Configure test environment
+
+  post_tasks:
+    - Run full test suite
+    - Generate coverage report
+    - Run security audit
+    - Build production bundle
+    - Update documentation
+
+validation:
+  - All TypeScript errors resolved (npm run typecheck)
+  - ESLint passing (npm run lint)
+  - Test suite passing >95% (npm test)
+  - Coverage >80% (npm run test:coverage)
+  - Security audit clean (npm audit)
+  - Build successful (npm run build)
+  - Accessibility score >85 (npm run test:accessibility)
+
+monitoring:
+  - Track build status in CI/CD
+  - Monitor test coverage trends
+  - Log performance metrics
+  - Track error rates in production
+  - Monitor user feedback
+
+rollback_plan:
+  - Keep previous build artifacts
+  - Implement feature flags for major changes
+  - Maintain database migration rollbacks
+  - Document breaking changes
+  - Test rollback procedures
+
+success_metrics:
+  - Zero TypeScript compilation errors
+  - "Greater than 95% test pass rate"
+  - "Greater than 80% code coverage"
+  - Zero high/critical security vulnerabilities
+  - "Less than 5 second page load time"
+  - "Less than 1% error rate in production"
+  - WCAG AA compliance achieved
+
+team_requirements:
+  - Senior TypeScript Developer (2)
+  - QA Engineer (1)
+  - Security Specialist (1)
+  - DevOps Engineer (1)
+  - Total estimated hours: 240
+  - Timeline: 6-8 weeks
+
+dependencies:
+  - DOMPurify for HTML sanitization
+  - React Testing Library updates
+  - Jest configuration updates
+  - ESLint plugin updates
+  - Accessibility testing tools
+
+notes:
+  - Start with critical fixes to unblock deployment
+  - Run tests after each phase completion
+  - Document all breaking changes
+  - Coordinate with product team on UI changes
+  - Schedule security review after implementation

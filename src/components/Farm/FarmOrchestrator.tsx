@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, RefreshCw, AlertCircle, CheckCircle, Loader } from 'lucide-react';
-import { Farm } from '../../types';
-import { FarmSetupProgress, FarmTemplate } from '../../types/orchestration';
-import { useFarmOrchestration } from '../../hooks/useFarmOrchestration';
+import { Farm } from '@/types';
+import { FarmSetupProgress, FarmTemplate } from '@/types/orchestration';
+import { useFarmOrchestration } from '@/hooks/useFarmOrchestration';
 import FarmTemplateSelector from './FarmTemplateSelector';
 import FarmStatusMonitor from './FarmStatusMonitor';
 import AgentPoolManager from './AgentPoolManager';
@@ -81,7 +81,7 @@ const FarmOrchestrator: React.FC<FarmOrchestratorProps> = ({ onFarmCreated }) =>
       switch (status) {
         case 'completed':
           return <CheckCircle className="h-5 w-5 text-green-500" />;
-        case 'running':
+        case 'active':
           return <Loader className="h-5 w-5 text-blue-500 animate-spin" />;
         case 'failed':
           return <AlertCircle className="h-5 w-5 text-red-500" />;
@@ -108,13 +108,13 @@ const FarmOrchestrator: React.FC<FarmOrchestratorProps> = ({ onFarmCreated }) =>
         </div>
 
         <div className="space-y-3">
-          {setupProgress.steps.map((step, index) => (
-            <div key={index} className="flex items-center space-x-3">
+          {setupProgress.steps.map((step, stepIndex) => (
+            <div key={stepIndex} className="flex items-center space-x-3">
               {getStatusIcon(step.status)}
               <div className="flex-1">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium">{step.name}</span>
-                  {step.status === 'running' && (
+                  {step.status === 'active' && (
                     <span className="text-xs text-gray-500">{step.progress}%</span>
                   )}
                 </div>

@@ -8,8 +8,8 @@ import {
   DeploymentStatus, 
   DeploymentLog,
   DeploymentMetrics 
-} from '../types/yamlPipeline';
-import { YamlConfig } from '../types/yamlGenerator';
+} from '@/types/yamlPipeline';
+import { YamlConfig } from '@/types/yamlGenerator';
 import yamlAuditService from './yamlAuditService';
 import yamlVersioningService from './yamlVersioningService';
 
@@ -88,7 +88,7 @@ class YamlCicdService {
 
     try {
       // Update status to running
-      status.status = 'running';
+      status.status = 'active';
       this.addDeploymentLog(deploymentId, 'info', 'Deployment started');
 
       // Get YAML version
@@ -513,7 +513,7 @@ deploy:
    */
   async cancelDeployment(deploymentId: string): Promise<void> {
     const status = this.deployments.get(deploymentId);
-    if (!status || status.status !== 'running') {
+    if (!status || status.status !== 'active') {
       throw new Error('Cannot cancel deployment');
     }
 

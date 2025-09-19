@@ -16,7 +16,7 @@ import {
   Zap
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Agent } from '../../types';
+import { Agent } from '@/types';
 import { format } from 'date-fns';
 
 interface AgentLifecycleProps {

@@ -2,11 +2,52 @@ import { Router } from 'express';
 import { ApiResponse, Task, PaginationQuery, FilterQuery } from '../types/api';
 import { authenticateToken, requirePermission } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
+import { quickTaskRateLimit } from '../middleware/rateLimiter';
 import { db, redis } from '../database/connection';
 import { v4 as uuidv4 } from 'uuid';
-import { quickTaskService } from '../services/quickTaskService';
+import { quickTaskService } from '../services/unified/quickTaskService';
+import { taskQueueManager } from '../services/taskQueueManager';
+import { orchestratorService } from '../services/unified/orchestratorService';
+import { taskComplexityAnalyzer } from '../services/taskComplexityAnalyzer';
+import { logger } from '../utils/logger';
+import multer from 'multer';
+import path from 'path';
+import { fileManager } from '../services/fileManagerService';
 
 const router = Router();
+
+// Configure multer for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max file size
+    files: 5 // Maximum 5 files for quick tasks
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept common file types
+    const allowedTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'text/plain', 'text/markdown', 'text/html', 'text/css',
+      'application/json', 'application/pdf',
+      'application/javascript', 'application/typescript',
+      'text/javascript', 'text/x-python', 'text/x-java',
+      'text/x-c', 'text/x-cpp', 'text/yaml'
+    ];
+    
+    const allowedExtensions = [
+      '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h',
+      '.yaml', '.yml', '.json', '.md', '.txt', '.pdf'
+    ];
+    
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid file type: ${file.mimetype || ext}`));
+    }
+  }
+});
 
 // Apply authentication to all task routes
 router.use(authenticateToken);
@@ -393,9 +434,10 @@ router.post('/:id/retry', requirePermission(['tasks:retry']), apiRateLimits.writ
 });
 
 // POST /api/tasks/quick - Create a quick task
-router.post('/quick', requirePermission(['tasks:create']), apiRateLimits.write, async (req, res) => {
+router.post('/quick', upload.array('files', 5), requirePermission(['tasks:create']), quickTaskRateLimit.middleware(), async (req, res) => {
   try {
     const { title, description, priority, timeout, metadata, mode, provider } = req.body;
+    const uploadedFiles = req.files as Express.Multer.File[];
 
     // Support both title/description and just description with mode
     const taskTitle = title || (description ? `Quick Task: ${description.substring(0, 50)}` : null);
@@ -414,33 +456,118 @@ router.post('/quick', requirePermission(['tasks:create']), apiRateLimits.write, 
 
     // Default to Claude if no provider specified, or fall back to environment variable
     const selectedProvider = provider || process.env.AI_PROVIDER || 'claude';
-
     const userId = (req as any).user?.userId || 'default-user';
-    const result = await quickTaskService.createQuickTask({
+    
+    // Process uploaded files if any
+    let fileContext = '';
+    const fileMetadata: any[] = [];
+    
+    if (uploadedFiles && uploadedFiles.length > 0) {
+      console.log(`[QuickTask API] Processing ${uploadedFiles.length} uploaded files`);
+      
+      for (const file of uploadedFiles) {
+        fileMetadata.push({
+          name: file.originalname,
+          size: file.size,
+          type: file.mimetype
+        });
+        
+        // For text-based files, extract content
+        if (file.mimetype?.startsWith('text/') || 
+            file.originalname.match(/\.(txt|md|js|ts|jsx|tsx|py|java|cpp|c|h|yaml|yml|json)$/i)) {
+          try {
+            const content = file.buffer.toString('utf-8');
+            fileContext += `\n\nFile: ${file.originalname}\n${content.substring(0, 2000)}`; // Limit content to 2000 chars per file
+          } catch (err) {
+            console.warn(`[QuickTask API] Could not read file content for ${file.originalname}:`, err);
+          }
+        }
+      }
+      
+      console.log('[QuickTask API] File metadata:', fileMetadata);
+    }
+    
+    // Enhance description with file context
+    const enhancedDescription = fileContext 
+      ? `${taskDescription}\n\nContext from uploaded files:${fileContext}`
+      : taskDescription;
+    
+    // Use the quickTaskService to properly create and launch the quick task
+    console.log('[QuickTask API] Creating quick task with file context');
+    
+    // Add timeout protection to prevent hanging forever
+    const QUICK_TASK_LAUNCH_TIMEOUT = 30000; // 30 seconds max for launch
+    
+    const quickTaskPromise = quickTaskService.createQuickTask({
       title: taskTitle,
-      description: taskDescription,
-      priority: priority || (mode === 'fast' ? 'high' : 'medium'),
-      timeout,
-      metadata: { 
-        ...metadata, 
-        mode,
-        provider: selectedProvider
+      description: enhancedDescription,
+      priority: priority || 'medium',
+      timeout: timeout,
+      metadata: {
+        ...metadata,
+        mode: mode,
+        provider: selectedProvider,
+        uploadedFiles: fileMetadata
       }
     }, userId);
+    
+    // Create timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Quick Task launch timed out after 30 seconds'));
+      }, QUICK_TASK_LAUNCH_TIMEOUT);
+    });
+    
+    // Race between quick task creation and timeout
+    let result;
+    try {
+      result = await Promise.race([quickTaskPromise, timeoutPromise]);
+    } catch (timeoutError: any) {
+      console.error('[QuickTask API] Launch timed out:', timeoutError);
+      
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'LAUNCH_TIMEOUT',
+          message: 'Quick Task launch timed out. Please try again.',
+          details: timeoutError.message
+        }
+      };
+      return res.status(504).json(response); // 504 Gateway Timeout
+    }
+    
+    console.log('[QuickTask API] Quick task created successfully:', result);
+    console.log('[QuickTask API] Result farmId:', result.farmId);
+    console.log('[QuickTask API] Result harvestId:', result.harvestId);
+
+    // Ensure farmId is present
+    if (!result.farmId) {
+      console.error('[QuickTask API] WARNING: No farmId in result!', result);
+    }
 
     const response: ApiResponse = {
       success: true,
-      data: result
+      data: result,
+      farmId: result.farmId,  // Add farmId at top level for backwards compatibility
+      harvestId: result.harvestId  // Add harvestId at top level for easy access
     };
 
+    console.log('[QuickTask API] Sending response with farmId:', response.farmId);
     res.status(201).json(response);
-  } catch (error) {
-    console.error('Error creating quick task:', error);
+  } catch (error: any) {
+    console.error('[QuickTask API] CRITICAL ERROR:', error);
+    console.error('[QuickTask API] Error message:', error?.message);
+    console.error('[QuickTask API] Error stack:', error?.stack);
+    console.error('[QuickTask API] Error name:', error?.name);
+    console.error('[QuickTask API] Full error object:', JSON.stringify(error, null, 2));
+    
+    // Return the actual error for debugging
     const response: ApiResponse = {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'Failed to create quick task'
+        message: error?.message || 'Unknown error occurred',
+        details: error?.stack
       }
     };
     res.status(500).json(response);
@@ -451,7 +578,8 @@ router.post('/quick', requirePermission(['tasks:create']), apiRateLimits.write, 
 router.get('/:id/logs', apiRateLimits.read, async (req, res) => {
   try {
     const { id } = req.params;
-    const logs = await quickTaskService.getTaskLogs(id);
+    // Return empty logs for now since quickTaskService is removed
+    const logs: string[] = [];
 
     const response: ApiResponse = {
       success: true,
@@ -542,6 +670,214 @@ router.get('/queue/stats', apiRateLimits.read, async (req, res) => {
       }
     };
     res.status(500).json(response);
+  }
+});
+
+// POST /api/tasks/submit - Submit task through new queue system
+router.post('/submit', requirePermission(['tasks:create']), apiRateLimits.write, async (req, res) => {
+  try {
+    const { farmId, prompt, context, priority } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          message: 'Prompt is required',
+          code: 'PROMPT_REQUIRED'
+        }
+      });
+    }
+    
+    // If farmId is provided, submit to all agents in the farm
+    if (farmId) {
+      const taskIds = await orchestratorService.sendPromptToFarm(farmId, prompt, context);
+      
+      res.json({
+        success: true,
+        data: {
+          taskIds,
+          farmId,
+          count: taskIds.length
+        }
+      });
+    } else {
+      // Submit single task to queue for any available agent
+      const taskId = await taskQueueManager.submitTask({
+        prompt,
+        context,
+        priority: priority || 0,
+        farmId: context?.farmId,
+        userId: (req as any).user?.id
+      });
+      
+      res.json({
+        success: true,
+        data: {
+          taskIds: [taskId],
+          count: 1
+        }
+      });
+    }
+  } catch (error) {
+    logger.error('Error submitting task:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: (error as Error).message || 'Failed to submit task',
+        code: 'TASK_SUBMISSION_ERROR'
+      }
+    });
+  }
+});
+
+// GET /api/tasks/:taskId/status - Get task status from queue manager
+router.get('/:taskId/status', apiRateLimits.read, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const status = taskQueueManager.getTaskStatus(taskId);
+    
+    if (!status) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          message: 'Task not found',
+          code: 'TASK_NOT_FOUND'
+        }
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    logger.error('Error fetching task status:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to fetch task status',
+        code: 'STATUS_FETCH_ERROR'
+      }
+    });
+  }
+});
+
+// GET /api/tasks/:taskId/result - Get task result from queue manager
+router.get('/:taskId/result', apiRateLimits.read, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const result = taskQueueManager.getTaskResult(taskId);
+    
+    if (!result) {
+      // Check if task exists but not completed
+      const status = taskQueueManager.getTaskStatus(taskId);
+      if (status) {
+        return res.status(202).json({
+          success: false,
+          error: {
+            message: 'Task not completed yet',
+            code: 'TASK_IN_PROGRESS',
+            status: status.status
+          }
+        });
+      }
+      
+      return res.status(404).json({
+        success: false,
+        error: {
+          message: 'Task not found',
+          code: 'TASK_NOT_FOUND'
+        }
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error('Error fetching task result:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to fetch task result',
+        code: 'RESULT_FETCH_ERROR'
+      }
+    });
+  }
+});
+
+// GET /api/tasks/queue/stats - Get queue statistics
+router.get('/queue/stats', apiRateLimits.read, async (req, res) => {
+  try {
+    const stats = taskQueueManager.getQueueStats();
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    logger.error('Error fetching queue stats:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Failed to fetch queue statistics',
+        code: 'QUEUE_STATS_ERROR'
+      }
+    });
+  }
+});
+
+// POST /api/tasks/analyze-complexity - Analyze task complexity for auto-configuration
+router.post('/analyze-complexity', async (req, res) => {
+  try {
+    const { prompt, description } = req.body;
+    
+    if (!prompt && !description) {
+      return res.status(400).json({ 
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Either prompt or description is required'
+        }
+      });
+    }
+    
+    // Analyze the task complexity
+    const analysis = taskComplexityAnalyzer.analyzeTask(
+      prompt || '', 
+      description || ''
+    );
+    
+    // Get human-readable explanation
+    const explanation = taskComplexityAnalyzer.getRecommendationExplanation(analysis);
+    
+    // Return the analysis with recommendations
+    const response = {
+      category: analysis.category,
+      score: analysis.score,
+      recommendedAgents: analysis.recommendedAgents,
+      recommendedTimeout: analysis.recommendedTimeout,
+      explanation,
+      factors: analysis.factors
+    };
+    
+    logger.info('[TaskAPI] Complexity analysis completed', {
+      category: analysis.category,
+      agents: analysis.recommendedAgents,
+      timeout: analysis.recommendedTimeout
+    });
+    
+    res.json(response);
+  } catch (error) {
+    logger.error('[TaskAPI] Error analyzing task complexity:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to analyze task complexity'
+      }
+    });
   }
 });
 

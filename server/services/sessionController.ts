@@ -181,7 +181,7 @@ export class SessionController extends EventEmitter {
     const keys = await this.redis.keys(pattern);
     
     for (const key of keys) {
-      const sessionData = await this.redis.hgetall(key);
+      const sessionData = await this.redis.hGetAll(key);
       if (sessionData.farmId === farmId) {
         const session = this.deserializeSession(sessionData);
         this.sessions.set(session.id, session);
@@ -559,13 +559,13 @@ export class SessionController extends EventEmitter {
     const key = this.getSessionKey(session.id);
     const serialized = this.serializeSession(session);
     
-    await this.redis.hset(key, serialized);
+    await this.redis.hSet(key, serialized);
     await this.redis.expire(key, 7200); // 2 hour TTL
   }
 
   private async loadSession(sessionId: string): Promise<TmuxSession | null> {
     const key = this.getSessionKey(sessionId);
-    const data = await this.redis.hgetall(key);
+    const data = await this.redis.hGetAll(key);
     
     if (!data || Object.keys(data).length === 0) return null;
     return this.deserializeSession(data);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { multiClaudeService } from '../multiClaudeService';
-import { MultiClaudeConfig, MultiClaudeCommand } from '../../types/multiClaude';
+import { MultiClaudeConfig, MultiClaudeCommand } from '@/types/multiClaude';
 
 // Mock fetch globally
 global.fetch = vi.fn();

@@ -2,8 +2,8 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Users, TrendingUp, CheckCircle, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { AgentPerformanceMetric } from '../../types/analytics';
-import { formatPercentage } from '../../utils/format';
+import type { AgentPerformanceMetric } from '@/types/analytics';
+import { formatPercentage } from '@/utils/format';
 
 interface AgentEfficiencyMetricsProps {
   agents?: AgentPerformanceMetric[];

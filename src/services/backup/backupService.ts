@@ -1,4 +1,4 @@
-import { offlineStorage } from '../../utils/offlineStorage';
+import { offlineStorage } from '@/utils/offlineStorage';
 import { encryptionService } from '../encryptionService';
 
 export interface BackupConfig {

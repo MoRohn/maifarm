@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { useFarmStore } from '../../store/farmStore';
-import { useThemeStore } from '../../store/themeStore';
+import { useFarmStore } from '@/store/farmStore';
+import { useThemeStore } from '@/store/themeStore';
 
 interface CompactorAnimationProps {
   targetColor?: string;
@@ -151,7 +151,7 @@ const CompactorAnimation: React.FC<CompactorAnimationProps> = ({
   }, [isAnimating, logoSrc, newColor, colorScheme]);
 
   return (
-    <div className={`relative w-full h-64 overflow-hidden bg-gray-50 dark:bg-gray-900 ${className}`}>
+    <div className={`relative w-full h-64 overflow-hidden bg-gray-100 dark:bg-gray-900  ${className}`}>
       {isAnimating ? (
         <canvas ref={canvasRef} className="w-full h-full block" />
       ) : (

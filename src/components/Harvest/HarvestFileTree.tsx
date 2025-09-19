@@ -18,7 +18,7 @@ import {
   Copy,
   CheckCircle
 } from 'lucide-react';
-import { formatBytes } from '../../utils/format';
+import { formatBytes } from '@/utils/format';
 
 export interface FileTreeNode {
   id: string;

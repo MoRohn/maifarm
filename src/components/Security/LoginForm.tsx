@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Mail, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { AuthCredentials } from '../../types/security';
+import { AuthCredentials } from '@/types/security';
 
 interface LoginFormProps {
   onSuccess?: () => void;

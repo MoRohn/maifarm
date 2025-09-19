@@ -4,9 +4,9 @@ import {
   Shield, Lock, Key, AlertTriangle, Check, X, 
   Eye, UserCheck, Globe, Clock, Database, Download 
 } from 'lucide-react';
-import { SecurityConfig, PasswordPolicy } from '../../types/security';
-import { useAuth } from '../../hooks/useAuth';
-import { usePermissions } from '../../hooks/usePermissions';
+import { SecurityConfig, PasswordPolicy } from '@/types/security';
+import { useAuth } from '@/hooks/useAuth';
+import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'react-hot-toast';
 
 export const SecuritySettings: React.FC = () => {

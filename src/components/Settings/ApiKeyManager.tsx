@@ -11,7 +11,7 @@ import {
   CheckCircleIcon,
   XCircleIcon
 } from '@heroicons/react/24/outline';
-import { useUserStore } from '../../store/userStore';
+import { useUserStore } from '@/store/userStore';
 
 interface ApiKey {
   id: string;
@@ -30,6 +30,7 @@ export const ApiKeyManager: React.FC = () => {
   const [showKeys, setShowKeys] = useState<{ [key: string]: boolean }>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [claudeKeyStatus, setClaudeKeyStatus] = useState<'checking' | 'configured' | 'not-configured'>('checking');
+  const [openaiKeyStatus, setOpenaiKeyStatus] = useState<'checking' | 'configured' | 'not-configured'>('checking');
   
   const [newKey, setNewKey] = useState({
     name: '',
@@ -38,9 +39,10 @@ export const ApiKeyManager: React.FC = () => {
     customKey: '' // For entering existing API keys
   });
 
-  // Check if Claude API key is configured on the server
+  // Check if Claude and OpenAI API keys are configured on the server
   useEffect(() => {
     checkClaudeKeyStatus();
+    checkOpenAIKeyStatus();
     // Load any stored API keys from localStorage/server
     loadStoredApiKeys();
   }, []);
@@ -60,6 +62,21 @@ export const ApiKeyManager: React.FC = () => {
     }
   };
 
+  const checkOpenAIKeyStatus = async () => {
+    try {
+      const response = await fetch('/api/openai/status');
+      if (response.ok) {
+        const data = await response.json();
+        setOpenaiKeyStatus(data.configured ? 'configured' : 'not-configured');
+      } else {
+        setOpenaiKeyStatus('not-configured');
+      }
+    } catch (error) {
+      console.error('Error checking OpenAI API key status:', error);
+      setOpenaiKeyStatus('not-configured');
+    }
+  };
+
   const loadStoredApiKeys = () => {
     // Load from localStorage for persistence
     const storedKeys = localStorage.getItem('maifarm_api_keys');
@@ -75,6 +92,20 @@ export const ApiKeyManager: React.FC = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ apiKey: claudeKey.key, name: claudeKey.name })
+          }).catch(console.error);
+        }
+        // Send OpenAI keys to server if found
+        const openaiKey = parsed.find((k: ApiKey) => k.service === 'OpenAI');
+        if (openaiKey) {
+          // Re-configure on server in case it restarted
+          fetch('/api/openai/configure', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              apiKey: openaiKey.key,
+              model: 'gpt-4-turbo-preview',
+              maxTokens: 128000
+            })
           }).catch(console.error);
         }
       } catch (error) {
@@ -138,6 +169,30 @@ export const ApiKeyManager: React.FC = () => {
       }
     }
 
+    // If it's an OpenAI API key, send it to the server
+    if (newKey.service === 'OpenAI') {
+      try {
+        const response = await fetch('/api/openai/configure', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            apiKey: key.key,
+            model: 'gpt-4-turbo-preview',
+            maxTokens: 128000,
+            temperature: 0.7
+          })
+        });
+        
+        if (!response.ok) {
+          console.error('Failed to configure OpenAI API key on server');
+        }
+      } catch (error) {
+        console.error('Error configuring OpenAI API key:', error);
+      }
+    }
+
     const updated = [...apiKeys, key];
     setApiKeys(updated);
     updatePreferences({ apiKeys: updated });
@@ -145,9 +200,12 @@ export const ApiKeyManager: React.FC = () => {
     // Save to localStorage for persistence
     localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
     
-    // Refresh Claude key status if we just added one
+    // Refresh key status if we just added one
     if (newKey.service === 'Claude') {
       setTimeout(checkClaudeKeyStatus, 500);
+    }
+    if (newKey.service === 'OpenAI') {
+      setTimeout(checkOpenAIKeyStatus, 500);
     }
     
     setShowNewKeyModal(false);
@@ -163,9 +221,12 @@ export const ApiKeyManager: React.FC = () => {
     // Update localStorage
     localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
     
-    // If deleting Claude key, refresh status
+    // If deleting API key, refresh status
     if (keyToDelete?.service === 'Claude') {
       setTimeout(checkClaudeKeyStatus, 500);
+    }
+    if (keyToDelete?.service === 'OpenAI') {
+      setTimeout(checkOpenAIKeyStatus, 500);
     }
   };
 
@@ -184,9 +245,9 @@ export const ApiKeyManager: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-full">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-white">
             API Keys
@@ -197,44 +258,80 @@ export const ApiKeyManager: React.FC = () => {
         </div>
         <button
           onClick={() => setShowNewKeyModal(true)}
-          className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors duration-200"
+          className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 self-start sm:self-auto"
         >
           <PlusIcon className="w-4 h-4 mr-2" />
           New API Key
         </button>
       </div>
 
-      {/* Claude API Key Status */}
-      <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center space-x-2">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Claude API Status:
-          </span>
-          {claudeKeyStatus === 'checking' ? (
-            <span className="text-sm text-gray-500">Checking...</span>
-          ) : claudeKeyStatus === 'configured' ? (
-            <div className="flex items-center space-x-1">
-              <CheckCircleIcon className="w-4 h-4 text-green-500" />
-              <span className="text-sm text-green-600 dark:text-green-400">Configured</span>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-1">
-              <XCircleIcon className="w-4 h-4 text-red-500" />
-              <span className="text-sm text-red-600 dark:text-red-400">Not Configured</span>
-            </div>
+      {/* API Provider Status Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Claude API Key Status */}
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Claude API Status:
+            </span>
+            {claudeKeyStatus === 'checking' ? (
+              <span className="text-sm text-gray-500">Checking...</span>
+            ) : claudeKeyStatus === 'configured' ? (
+              <div className="flex items-center space-x-1">
+                <CheckCircleIcon className="w-4 h-4 text-green-500" />
+                <span className="text-sm text-green-600 dark:text-green-400">Configured</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1">
+                <XCircleIcon className="w-4 h-4 text-red-500" />
+                <span className="text-sm text-red-600 dark:text-red-400">Not Configured</span>
+              </div>
+            )}
+          </div>
+          {claudeKeyStatus === 'not-configured' && (
+            <button
+              onClick={() => {
+                setNewKey({ ...newKey, service: 'Claude' });
+                setShowNewKeyModal(true);
+              }}
+              className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 font-medium"
+            >
+              Add Claude Key
+            </button>
           )}
         </div>
-        {claudeKeyStatus === 'not-configured' && (
-          <button
-            onClick={() => {
-              setNewKey({ ...newKey, service: 'Claude' });
-              setShowNewKeyModal(true);
-            }}
-            className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 font-medium"
-          >
-            Add Claude Key
-          </button>
-        )}
+
+        {/* OpenAI API Key Status */}
+        <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              OpenAI API Status:
+            </span>
+            {openaiKeyStatus === 'checking' ? (
+              <span className="text-sm text-gray-500">Checking...</span>
+            ) : openaiKeyStatus === 'configured' ? (
+              <div className="flex items-center space-x-1">
+                <CheckCircleIcon className="w-4 h-4 text-green-500" />
+                <span className="text-sm text-green-600 dark:text-green-400">Configured</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1">
+                <XCircleIcon className="w-4 h-4 text-red-500" />
+                <span className="text-sm text-red-600 dark:text-red-400">Not Configured</span>
+              </div>
+            )}
+          </div>
+          {openaiKeyStatus === 'not-configured' && (
+            <button
+              onClick={() => {
+                setNewKey({ ...newKey, service: 'OpenAI' });
+                setShowNewKeyModal(true);
+              }}
+              className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 font-medium"
+            >
+              Add OpenAI Key
+            </button>
+          )}
+        </div>
       </div>
 
       {/* API Keys List */}
@@ -255,8 +352,8 @@ export const ApiKeyManager: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               className="p-5 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors duration-200 bg-white dark:bg-gray-800/50"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-3">
                     <h4 className="text-sm font-medium text-gray-900 dark:text-white">
                       {apiKey.name}
@@ -268,10 +365,10 @@ export const ApiKeyManager: React.FC = () => {
                   
                   <div className="mt-3">
                     <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
-                      <code className="flex-1 text-sm font-mono text-gray-600 dark:text-gray-400">
+                      <code className="flex-1 text-sm font-mono text-gray-600 dark:text-gray-400 truncate">
                         {showKeys[apiKey.id] ? apiKey.key : maskApiKey(apiKey.key)}
                       </code>
-                      <div className="flex items-center space-x-2 ml-3">
+                      <div className="flex items-center space-x-2 ml-3 flex-shrink-0">
                         <button
                           onClick={() => toggleShowKey(apiKey.id)}
                           className="p-1 text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
@@ -324,7 +421,7 @@ export const ApiKeyManager: React.FC = () => {
 
                 <button
                   onClick={() => handleDeleteKey(apiKey.id)}
-                  className="ml-4 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                  className="flex-shrink-0 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
                 >
                   <TrashIcon className="w-5 h-5" />
                 </button>
@@ -406,6 +503,24 @@ export const ApiKeyManager: React.FC = () => {
                   </div>
                 )}
 
+                {newKey.service === 'OpenAI' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      API Key (Enter your OpenAI API key)
+                    </label>
+                    <input
+                      type="password"
+                      value={newKey.customKey}
+                      onChange={(e) => setNewKey({ ...newKey, customKey: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                      placeholder="sk-..."
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300">platform.openai.com</a>
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Permissions
@@ -449,7 +564,8 @@ export const ApiKeyManager: React.FC = () => {
                 </button>
                 <button
                   onClick={handleCreateKey}
-                  disabled={!newKey.name || !newKey.service || newKey.permissions.length === 0 || (newKey.service === 'Claude' && !newKey.customKey)}
+                  disabled={!newKey.name || !newKey.service || newKey.permissions.length === 0 || 
+                           ((newKey.service === 'Claude' || newKey.service === 'OpenAI') && !newKey.customKey)}
                   className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors duration-200 font-medium"
                 >
                   Create Key

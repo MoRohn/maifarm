@@ -3,10 +3,38 @@ import { ApiResponse } from '../types/api';
 import { aiProviderManager, AIProvider } from '../config/aiProviders';
 import { authenticateToken } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
-import { getQwenOllamaClient } from '../services/qwenOllamaClient';
-import { ollamaService } from '../services/ollamaService';
+import { aiProviderService } from '../services/unified/aiProviderService';
+
+// Create openaiService as a facade for aiProviderService
+const openaiService = {
+  getConfig: () => aiProviderService.getProviderConfig('openai'),
+  validateConnection: () => aiProviderService.validateProvider('openai'),
+  testAPI: () => aiProviderService.testProvider('openai')
+};
 
 const router = Router();
+
+// GET /api/settings/ai-provider - Get current AI provider
+router.get('/ai-provider', async (req, res) => {
+  try {
+    const provider = aiProviderManager.getDefaultProvider();
+    res.json({ provider });
+  } catch (error) {
+    console.error('Failed to get AI provider:', error);
+    res.status(500).json({ error: 'Failed to get AI provider' });
+  }
+});
+
+// Alias for compatibility
+router.get('/current', async (req, res) => {
+  try {
+    const provider = aiProviderManager.getDefaultProvider();
+    res.json({ provider });
+  } catch (error) {
+    console.error('Failed to get AI provider:', error);
+    res.status(500).json({ error: 'Failed to get AI provider' });
+  }
+});
 
 // GET /api/providers/status - Get all provider status
 router.get('/status', authenticateToken, apiRateLimits.read, async (req, res) => {
@@ -14,15 +42,32 @@ router.get('/status', authenticateToken, apiRateLimits.read, async (req, res) =>
     const providers = aiProviderManager.getAllProviders();
     const defaultProvider = aiProviderManager.getDefaultProvider();
     
-    const providerStatus = providers.map(config => ({
-      provider: config.provider,
-      name: config.provider === 'claude' ? 'Claude Code' : 'Qwen3-Coder',
-      enabled: config.enabled,
-      configured: config.apiKey !== '',
-      model: config.model,
-      contextWindow: config.contextWindow,
-      isDefault: config.provider === defaultProvider
-    }));
+    // Get OpenAI status
+    const openaiConfig = openaiService.getConfig();
+    const openaiValidation = openaiConfig.isConfigured ? await openaiService.validateConnection() : null;
+    
+    const providerStatus = [
+      ...providers.map(config => ({
+        provider: config.provider,
+        name: config.provider === 'claude' ? 'Claude Code' : 'Unknown Provider',
+        enabled: config.enabled,
+        configured: config.apiKey !== '',
+        model: config.model,
+        contextWindow: config.contextWindow,
+        isDefault: config.provider === defaultProvider,
+        isLocal: false
+      })),
+      {
+        provider: 'openai',
+        name: 'OpenAI GPT-4',
+        enabled: openaiConfig.isConfigured,
+        configured: openaiConfig.isConfigured,
+        model: openaiValidation?.selectedModel || openaiConfig.model,
+        contextWindow: openaiValidation?.tokenLimit || 128000,
+        isDefault: defaultProvider === 'openai',
+        capabilities: openaiValidation?.capabilities
+      }
+    ];
 
     const response: ApiResponse = {
       success: true,
@@ -52,7 +97,7 @@ router.get('/:provider', authenticateToken, apiRateLimits.read, async (req, res)
   try {
     const { provider } = req.params;
     
-    if (!['claude', 'qwen'].includes(provider)) {
+    if (!['claude', 'openai'].includes(provider)) {
       const response: ApiResponse = {
         success: false,
         error: {
@@ -62,6 +107,32 @@ router.get('/:provider', authenticateToken, apiRateLimits.read, async (req, res)
       };
       return res.status(400).json(response);
     }
+    
+    // Handle OpenAI provider separately
+    if (provider === 'openai') {
+      const openaiConfig = openaiService.getConfig();
+      const validation = openaiConfig.isConfigured ? await openaiService.validateConnection() : null;
+      
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          provider: 'openai',
+          name: 'OpenAI GPT-4',
+          enabled: openaiConfig.isConfigured,
+          configured: openaiConfig.isConfigured,
+          model: validation?.selectedModel || openaiConfig.model,
+          endpoint: openaiConfig.apiEndpoint,
+          contextWindow: validation?.tokenLimit || 128000,
+          maxTokens: openaiConfig.maxTokens,
+          temperature: openaiConfig.temperature,
+          capabilities: validation?.capabilities,
+          availableModels: validation?.availableModels || [],
+          error: validation?.error
+        }
+      };
+      return res.json(response);
+    }
+    
     
     const isEnabled = aiProviderManager.isProviderEnabled(provider as AIProvider);
     
@@ -82,7 +153,7 @@ router.get('/:provider', authenticateToken, apiRateLimits.read, async (req, res)
       success: true,
       data: {
         provider: config.provider,
-        name: config.provider === 'claude' ? 'Claude Code' : 'Qwen3-Coder',
+        name: config.provider === 'claude' ? 'Claude Code' : 'Unknown Provider',
         enabled: config.enabled,
         configured: config.apiKey !== '',
         model: config.model,
@@ -114,7 +185,7 @@ router.post('/test', authenticateToken, apiRateLimits.write, async (req, res) =>
   try {
     const { provider = aiProviderManager.getDefaultProvider() } = req.body;
     
-    if (!['claude', 'qwen'].includes(provider)) {
+    if (!['claude', 'openai'].includes(provider)) {
       const response: ApiResponse = {
         success: false,
         error: {
@@ -124,6 +195,26 @@ router.post('/test', authenticateToken, apiRateLimits.write, async (req, res) =>
       };
       return res.status(400).json(response);
     }
+    
+    // Handle OpenAI provider separately
+    if (provider === 'openai') {
+      const testResult = await openaiService.testAPI();
+      
+      const response: ApiResponse = {
+        success: testResult.success,
+        data: {
+          provider: 'openai',
+          status: testResult.success ? 'connected' : 'error',
+          message: testResult.success ? 
+            'OpenAI GPT-4 is properly configured and ready' : 
+            testResult.error || 'OpenAI connection failed',
+          response: testResult.response,
+          timestamp: new Date()
+        }
+      };
+      return res.json(response);
+    }
+    
     
     const isEnabled = aiProviderManager.isProviderEnabled(provider as AIProvider);
     
@@ -138,7 +229,7 @@ router.post('/test', authenticateToken, apiRateLimits.write, async (req, res) =>
       return res.status(400).json(response);
     }
     
-    // TODO: Implement actual API connectivity test
+    // TODO: Implement actual API connectivity test for Claude/Qwen
     // For now, just check configuration
     const config = aiProviderManager.getProvider(provider as AIProvider);
     const isConfigured = config.apiKey !== '' || config.proxyEnabled === true;
@@ -169,117 +260,115 @@ router.post('/test', authenticateToken, apiRateLimits.write, async (req, res) =>
   }
 });
 
-// GET /api/providers/ollama/status - Check Ollama and local models status
-router.get('/ollama/status', authenticateToken, apiRateLimits.read, async (req, res) => {
-  try {
-    const systemInfo = await ollamaService.getSystemInfo();
-    
-    const response: ApiResponse = {
-      success: true,
-      data: systemInfo
-    };
-    
-    res.json(response);
-  } catch (error) {
-    console.error('Error getting Ollama status:', error);
-    const response: ApiResponse = {
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Failed to get Ollama status'
-      }
-    };
-    res.status(500).json(response);
-  }
-});
 
-// GET /api/providers/ollama/models - List available Ollama models
-router.get('/ollama/models', authenticateToken, apiRateLimits.read, async (req, res) => {
+// POST /api/providers/claude/validate - Validate Claude API key
+router.post('/claude/validate', authenticateToken, apiRateLimits.write, async (req, res) => {
   try {
-    const models = await ollamaService.listModels();
+    const { apiKey } = req.body;
     
-    const response: ApiResponse = {
-      success: true,
-      data: {
-        models,
-        recommendations: ollamaService.getRecommendedModels()
-      }
-    };
-    
-    res.json(response);
-  } catch (error) {
-    console.error('Error listing Ollama models:', error);
-    const response: ApiResponse = {
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Failed to list Ollama models'
-      }
-    };
-    res.status(500).json(response);
-  }
-});
-
-// GET /api/providers/ollama/instructions - Get setup instructions
-router.get('/ollama/instructions', authenticateToken, apiRateLimits.read, async (req, res) => {
-  try {
-    const { model = 'qwen2.5-coder:7b' } = req.query;
-    const instructions = ollamaService.getPullInstructions(model as string);
-    
-    const response: ApiResponse = {
-      success: true,
-      data: instructions
-    };
-    
-    res.json(response);
-  } catch (error) {
-    console.error('Error getting Ollama instructions:', error);
-    const response: ApiResponse = {
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Failed to get Ollama instructions'
-      }
-    };
-    res.status(500).json(response);
-  }
-});
-
-// POST /api/providers/ollama/test - Test a local model
-router.post('/ollama/test', authenticateToken, apiRateLimits.write, async (req, res) => {
-  try {
-    const { model } = req.body;
-    
-    if (!model) {
-      const response: ApiResponse = {
+    if (!apiKey || !apiKey.startsWith('sk-ant-')) {
+      return res.json({
         success: false,
-        error: {
-          code: 'MISSING_PARAMETER',
-          message: 'Model name is required'
-        }
-      };
-      return res.status(400).json(response);
+        error: { message: 'Invalid Claude API key format' }
+      });
     }
     
-    const testResult = await ollamaService.testModel(model);
+    // For now, just validate format
+    // TODO: Add actual API validation when Claude client is available
+    const response: ApiResponse = {
+      success: true,
+      data: { valid: true, message: 'Claude API key format is valid' }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to validate Claude API key' }
+    });
+  }
+});
+
+// POST /api/providers/claude/configure - Configure Claude
+router.post('/claude/configure', authenticateToken, apiRateLimits.write, async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    
+    // Save API key to environment or config
+    process.env.ANTHROPIC_API_KEY = apiKey;
+    
+    const response: ApiResponse = {
+      success: true,
+      data: { message: 'Claude configured successfully' }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to configure Claude' }
+    });
+  }
+});
+
+// POST /api/providers/openai/validate - Validate OpenAI API key
+router.post('/openai/validate', authenticateToken, apiRateLimits.write, async (req, res) => {
+  try {
+    const { apiKey, model } = req.body;
+    
+    if (!apiKey || !apiKey.startsWith('sk-')) {
+      return res.json({
+        success: false,
+        error: { message: 'Invalid OpenAI API key format' }
+      });
+    }
+    
+    // Update OpenAI service configuration
+    process.env.OPENAI_API_KEY = apiKey;
+    if (model) process.env.OPENAI_MODEL = model;
+    
+    // Test the connection
+    const testResult = await openaiService.testAPI();
     
     const response: ApiResponse = {
       success: testResult.success,
-      data: testResult
+      data: testResult.success ? 
+        { valid: true, message: 'OpenAI API key is valid' } :
+        { valid: false, message: testResult.error || 'Invalid API key' }
     };
     
     res.json(response);
   } catch (error) {
-    console.error('Error testing Ollama model:', error);
-    const response: ApiResponse = {
+    res.status(500).json({
       success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Failed to test Ollama model'
-      }
-    };
-    res.status(500).json(response);
+      error: { message: 'Failed to validate OpenAI API key' }
+    });
   }
 });
+
+// POST /api/providers/openai/configure - Configure OpenAI
+router.post('/openai/configure', authenticateToken, apiRateLimits.write, async (req, res) => {
+  try {
+    const { apiKey, model } = req.body;
+    
+    // Save configuration
+    process.env.OPENAI_API_KEY = apiKey;
+    if (model) process.env.OPENAI_MODEL = model;
+    
+    const response: ApiResponse = {
+      success: true,
+      data: { message: 'OpenAI configured successfully' }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: { message: 'Failed to configure OpenAI' }
+    });
+  }
+});
+
+
 
 export default router;

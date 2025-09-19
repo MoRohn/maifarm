@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { EventEmitter } from 'events';
-import { QuickTaskExecutor } from '../../services/quickTaskExecutor';
-import { quickTaskService } from '../../services/quickTaskService';
+import { QuickTaskExecutor } from '../../services/unified/quickTaskService';
+import { quickTaskService } from '../../services/unified/quickTaskService';
 import { WebSocketManager } from '../../websocket/websocketManager';
 import { db } from '../../database/connection';
 import { spawn } from 'child_process';

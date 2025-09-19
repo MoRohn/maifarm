@@ -12,7 +12,7 @@ import {
   Zap,
   DollarSign
 } from 'lucide-react';
-import { AggregatedMetrics } from '../../types/analytics';
+import { AggregatedMetrics } from '@/types/analytics';
 
 interface MetricsOverviewProps {
   metrics: AggregatedMetrics | null;

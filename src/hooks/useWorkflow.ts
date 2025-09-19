@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { workflowService, WorkflowStatus, WorkflowOptions, WorkflowResult } from '../services/workflowService';
+import { workflowService, WorkflowStatus, WorkflowOptions, WorkflowResult } from '@/services/farmService';
 import { useWebSocket } from './useWebSocket';
 import { toast } from 'react-hot-toast';
 

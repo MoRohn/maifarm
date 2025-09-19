@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Send, Settings, Shield, Cpu, Database, Zap } from 'lucide-react';
-import { YamlGenerationRequest, YamlConstraints } from '../../types/yaml';
+import { YamlGenerationRequest, YamlConstraints } from '@/types/yaml';
 
 interface PromptInputProps {
   onGenerate: (request: YamlGenerationRequest) => void;

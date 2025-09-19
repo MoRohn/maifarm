@@ -1,4 +1,4 @@
-import { EncryptedData, EncryptionConfig } from '../types/security';
+import { EncryptedData, EncryptionConfig } from '@/types/security';
 
 class EncryptionService {
   private config: EncryptionConfig = {

@@ -9,9 +9,9 @@ import {
   AgentMetrics,
   HealthCheckConfig,
   Task
-} from '../../types/orchestration'
-import { WebSocketMessage, AgentStatus } from '../../types/index'
-import type { AgentStatus as OrchestrationAgentStatus } from '../../types/orchestration'
+} from '@/types/orchestration'
+import { WebSocketMessage, AgentStatus } from '@/types/index'
+import type { AgentStatus as OrchestrationAgentStatus } from '@/types/orchestration'
 import { websocketService } from '../websocket'
 import { monitoringService } from '../monitoringService'
 import { auditService } from '../audit'
@@ -34,10 +34,10 @@ class AgentLifecycleManager {
   private healthCheckIntervals: Map<string, NodeJS.Timeout> = new Map()
   private stateMachineRules: Map<AgentStatus, AgentStatus[]> = new Map([
     ['provisioning', ['starting', 'failed']],
-    ['starting', ['running', 'failed']],
-    ['running', ['busy', 'idle', 'stopping', 'failed']],
-    ['busy', ['idle', 'running', 'stopping', 'failed']],
-    ['idle', ['busy', 'running', 'stopping', 'failed']],
+    ['starting', ['active', 'failed']],
+    ['active', ['busy', 'idle', 'stopping', 'failed']],
+    ['busy', ['idle', 'active', 'stopping', 'failed']],
+    ['idle', ['busy', 'active', 'stopping', 'failed']],
     ['stopping', ['stopped', 'failed']],
     ['stopped', ['starting', 'failed']],
     ['failed', ['starting', 'stopped']]
@@ -152,7 +152,7 @@ class AgentLifecycleManager {
     await new Promise(resolve => setTimeout(resolve, 1000))
     
     // Transition to running state
-    await this.transitionState(agentId, 'running', 'Agent started successfully')
+    await this.transitionState(agentId, 'active', 'Agent started successfully')
     
     // Start monitoring
     this.startMonitoring(agentId)
@@ -287,7 +287,7 @@ class AgentLifecycleManager {
     }
     
     // Update metrics
-    if (newState === 'running' || newState === 'idle') {
+    if (newState === 'active' || newState === 'idle') {
       if (agent.lifecycle?.health) {
         agent.lifecycle.health.status = 'healthy'
       }
@@ -433,7 +433,7 @@ class AgentLifecycleManager {
     agent.metadata.lastHealthCheckTime = new Date()
     
     // Handle unhealthy agents
-    if (healthStatus === 'unhealthy' && agent.status === 'running') {
+    if (healthStatus === 'unhealthy' && agent.status === 'active') {
       await this.handleUnhealthyAgent(agent, config)
     }
     
@@ -521,7 +521,7 @@ class AgentLifecycleManager {
     // Simulate resource usage updates
     const updateInterval = setInterval(() => {
       const agent = this.agents.get(agentId)
-      if (!agent || agent.status !== 'running') {
+      if (!agent || agent.status !== 'active') {
         clearInterval(updateInterval)
         return
       }
@@ -591,7 +591,7 @@ class AgentLifecycleManager {
       throw new Error(`Agent ${agentId} not found`)
     }
     
-    if (agent.status !== 'idle' && agent.status !== 'running') {
+    if (agent.status !== 'idle' && agent.status !== 'active') {
       throw new Error(`Agent ${agentId} is not available for tasks`)
     }
     

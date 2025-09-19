@@ -1,7 +1,10 @@
 import { Router, Response } from 'express';
-import { harvestService } from '../services/harvestService';
+import { harvestService } from '../services/unified/harvestService';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { HarvestCreateInput, HarvestFilter } from '../types/harvest';
+import { farmService as farmManager } from '../services/unified/farmService';
+import { barnService } from '../services/unified/barnService';
+import { spawn } from 'child_process';
 
 const router = Router();
 
@@ -106,7 +109,7 @@ router.post('/:farmId/collect', async (req: AuthRequest, res: Response) => {
     const userId = req.user?.userId || req.user?.id || 'default-user';
 
     // Get farm details to create harvest
-    const farmManager = require('../services/farmManager').farmManager;
+    // farmManager already imported at top
     const farm = await farmManager.getFarm(farmId, userId);
 
     if (!farm) {
@@ -152,7 +155,7 @@ router.post('/:id/complete', async (req: AuthRequest, res: Response) => {
     }
 
     // Store in barn
-    const barnService = require('../services/barnService').barnService;
+    // barnService already imported at top
     const barnEntry = await barnService.storeHarvest(harvest);
 
     // Emit WebSocket events
@@ -209,7 +212,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 router.get('/terminal/sessions', async (req: AuthRequest, res: Response) => {
   try {
     const { farmId } = req.query;
-    const { spawn } = require('child_process');
+    // spawn already imported at top
     
     // List all tmux sessions that look like farm or claude_agents sessions
     const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}']);
@@ -222,20 +225,28 @@ router.get('/terminal/sessions', async (req: AuthRequest, res: Response) => {
     await new Promise(resolve => listSessions.on('exit', resolve));
     
     let sessions = output.trim().split('\n').filter(line => 
-      line.includes('farm_') || line.includes('claude_agents')
+      line.includes('farm_') || line.includes('farm-') || line.includes('quick_') || line.includes('claude_agents')
     );
     
     // Filter by farmId if provided
     if (farmId && typeof farmId === 'string') {
       sessions = sessions.filter(sessionName => {
-        // Check if session name contains the farmId or its substring
-        if (sessionName.includes(farmId)) return true;
+        // Exact match for different session naming patterns
+        // Quick Task pattern: quick_{shortId}
+        if (sessionName === `quick_${farmId.substring(0, 8)}`) return true;
+        
+        // Regular farm patterns: farm-{farmId} or farm_{farmId}
+        if (sessionName === `farm-${farmId}`) return true;
         if (sessionName === `farm_${farmId}`) return true;
-        // Check for farmId substring (first 8 chars)
-        if (farmId.length >= 8) {
-          const shortId = farmId.substring(0, 8);
-          if (sessionName.includes(shortId)) return true;
-        }
+        
+        // Legacy pattern: claude_agents
+        if (sessionName === 'claude_agents' && farmId === 'default') return true;
+        
+        // For backward compatibility, also check if session contains the full farmId
+        // but only if it's a proper prefix match to avoid false positives
+        if (sessionName.startsWith(`farm-${farmId}`) || sessionName.startsWith(`farm_${farmId}`)) return true;
+        if (sessionName.startsWith(`quick_${farmId.substring(0, 8)}`)) return true;
+        
         return false;
       });
     }
@@ -288,7 +299,7 @@ router.get('/terminal/:sessionName/:agentId', async (req: AuthRequest, res: Resp
   try {
     const { sessionName, agentId } = req.params;
     const { lines = 100 } = req.query;
-    const { spawn } = require('child_process');
+    // spawn already imported at top
     
     // Capture terminal output from tmux pane
     const captureProcess = spawn('tmux', [
@@ -351,7 +362,7 @@ router.post('/terminal/:sessionName/:agentId/command', async (req: AuthRequest, 
   try {
     const { sessionName, agentId } = req.params;
     const { command } = req.body;
-    const { spawn } = require('child_process');
+    // spawn already imported at top
     
     if (!command) {
       return res.status(400).json({

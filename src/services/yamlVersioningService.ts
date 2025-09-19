@@ -3,15 +3,15 @@
  * Manages versioning, diffing, and rollback for YAML configurations
  */
 
-import { YamlConfig } from '../types/yamlGenerator';
+import { YamlConfig } from '@/types/yamlGenerator';
 import { 
   YamlVersion, 
   YamlDiff, 
   DiffChange 
-} from '../types/yamlPipeline';
+} from '@/types/yamlPipeline';
 import { openDB } from 'idb';
 import * as yaml from 'js-yaml';
-import { createHash } from '../utils/crypto';
+import { createHash } from '@/utils/crypto';
 
 class YamlVersioningService {
   private dbName = 'maifarm-yaml-versions';

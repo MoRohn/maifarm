@@ -12,7 +12,7 @@ import {
   Users,
   Award
 } from 'lucide-react';
-import { FarmerProfile } from '../../types/farmers';
+import { FarmerProfile } from '@/types/farmers';
 
 interface FarmerPersonalityProps {
   profile: FarmerProfile;

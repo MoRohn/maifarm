@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Plus, 
+  Sprout, 
   Code, 
   Settings, 
   Play,
@@ -15,21 +15,26 @@ import {
   Sparkles,
   X,
   Cpu,
-  Clock
+  Clock,
+  Brain,
+  Users,
+  Zap,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Farm, FarmConfig } from '../../types';
+import { Farm, FarmConfig } from '@/types';
 import { YAMLEditor } from './YAMLEditor';
 import { YAMLDisplay } from './YAMLDisplay';
 import { SeedPills } from '../Seeds/SeedPills';
-import { useFarmStore } from '../../store/farmStore';
-import { useSettingsStore, calculateMaxAgents } from '../../store/settingsStore';
-import { useUserStore } from '../../store/userStore';
-import { logFarmCreation, useActivityStore } from '../../store/activityStore';
-import { farmService } from '../../services/farmService';
-import { api } from '../../services/apiClient';
-import { Seed } from '../../types/seed';
-import yamlGeneratorService from '../../services/yamlGeneratorService';
+import { useFarmStore } from '@/store/farmStore';
+import { useSettingsStore, calculateMaxAgents } from '@/store/settingsStore';
+import { useUserStore } from '@/store/userStore';
+import { logFarmCreation, useActivityStore } from '@/store/activityStore';
+import { farmService } from '@/services/farmService';
+import { api } from '@/services/apiClient';
+import { Seed } from '@/types/seed';
+import yamlGeneratorService from '@/services/yamlGeneratorService';
 import { toast } from 'react-hot-toast';
 import { TIMEOUT_PRESETS, getTimeoutPreset, formatTimeout, getRecommendedTimeout } from '../../config/timeoutPresets';
 import FileUpload from '../common/FileUpload';
@@ -52,6 +57,7 @@ export const FarmCreator: React.FC<FarmCreatorProps> = ({ onClose, className }) 
   });
   const [selectedSeed, setSelectedSeed] = useState<Seed | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [isFileUploadExpanded, setIsFileUploadExpanded] = useState(false);
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
   
   // Get AI provider from settings, defaulting to 'claude' if not set
@@ -59,8 +65,8 @@ export const FarmCreator: React.FC<FarmCreatorProps> = ({ onClose, className }) 
   
   const [config, setConfig] = useState<FarmConfig>({
     autoScale: true,
-    maxAgents: settings.agentConfig?.maxAgents || 8,
-    timeout: 600, // Default to 10 minutes
+    maxAgents: 3, // Will be auto-calculated
+    timeout: 1800, // Will be auto-calculated (30 minutes default)
     retryPolicy: {
       enabled: settings.agentConfig?.autoRestart ?? true,
       maxRetries: (settings.agentConfig as any)?.retryAttempts || 3,
@@ -70,12 +76,20 @@ export const FarmCreator: React.FC<FarmCreatorProps> = ({ onClose, className }) 
       enabled: false,
       creativityLevel: (user?.preferences?.goWild?.creativityLevel || 3) as 1 | 2 | 3 | 4 | 5,
       boundaries: user?.preferences?.goWild?.boundaries?.restrictedDomains || []
-    },
-    persistInBackground: true // Default to true for persistence
+    }
   });
+  
+  const [complexityAnalysis, setComplexityAnalysis] = useState<{
+    category: string;
+    score: number;
+    recommendedAgents: number;
+    recommendedTimeout: number;
+    explanation: string;
+  } | null>(null);
 
   const [yaml, setYaml] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveAsSeed, setSaveAsSeed] = useState(false);
   const [seedName, setSeedName] = useState('');
@@ -99,25 +113,52 @@ export const FarmCreator: React.FC<FarmCreatorProps> = ({ onClose, className }) 
     }
   }, [step, yaml, error, saveAsSeed, isGeneratingYaml]);
 
-  // Update config when settings change
+  // Analyze task complexity when farm details change
   React.useEffect(() => {
-    setConfig(prev => ({
-      ...prev,
-      maxAgents: settings.agentConfig?.maxAgents || 8,
-      // Keep the user's selected timeout, don't override from settings
-      retryPolicy: {
-        enabled: settings.agentConfig?.autoRestart ?? true,
-        maxRetries: (settings.agentConfig as any)?.retryAttempts || 3,
-        backoffMultiplier: 2
-      },
-      goWildMode: {
-        ...prev.goWildMode,
-        enabled: prev.goWildMode?.enabled ?? false, // Ensure enabled is always boolean
-        creativityLevel: (user?.preferences?.goWild?.creativityLevel || prev.goWildMode?.creativityLevel || 3) as 1 | 2 | 3 | 4 | 5,
-        boundaries: user?.preferences?.goWild?.boundaries?.restrictedDomains || prev.goWildMode?.boundaries || []
+    if (farmDetails.name || farmDetails.description) {
+      analyzeTaskComplexity();
+    }
+  }, [farmDetails.name, farmDetails.description]);
+  
+  const analyzeTaskComplexity = async () => {
+    try {
+      const response = await api.post('/api/tasks/analyze-complexity', {
+        prompt: farmDetails.name,
+        description: farmDetails.description
+      });
+      
+      if (response.data) {
+        const analysis = response.data;
+        setComplexityAnalysis(analysis);
+        
+        // Update config with AI-recommended values
+        setConfig(prev => ({
+          ...prev,
+          maxAgents: analysis.recommendedAgents,
+          timeout: analysis.recommendedTimeout
+        }));
       }
-    }));
-  }, [settings.agentConfig, user?.preferences?.goWild]);
+    } catch (error) {
+      // Use intelligent defaults if analysis fails
+      const defaultAgents = farmDetails.type === 'collaborative' ? 4 : 3;
+      const defaultTimeout = 1800; // 30 minutes
+      
+      setConfig(prev => ({
+        ...prev,
+        maxAgents: defaultAgents,
+        timeout: defaultTimeout
+      }));
+    }
+  };
+  
+  const formatTimeout = (seconds: number): string => {
+    if (seconds < 3600) {
+      return `${Math.ceil(seconds / 60)} minutes`;
+    }
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours} hour${hours > 1 ? 's' : ''}`;
+  };
 
   // Auto-generate YAML when reaching the review step
   React.useEffect(() => {
@@ -147,10 +188,12 @@ ${config.goWildMode?.enabled ? `GoWild mode enabled with creativity level ${conf
 
       const response = await yamlGeneratorService.generateYaml({
         prompt,
+        mode: 'freestyle',
         options: {
           num_agents: config.maxAgents,
           complexity: 'moderate'
         }
+        // Remove enhancePrompt as it's not in the GenerationRequest type
       });
 
       if (response.success && response.raw_yaml) {
@@ -290,15 +333,36 @@ config:
   };
 
   const handleCreateFarm = async () => {
+    // Prevent double submission
+    if (isCreating) {
+      console.log('[FarmCreator] Already creating farm, ignoring duplicate request');
+      return;
+    }
+    
     console.log('[DEBUG] Farm creation started');
     console.log('[DEBUG] farmDetails:', farmDetails);
     console.log('[DEBUG] config:', config);
     console.log('[DEBUG] attachedFiles:', attachedFiles.length);
     
+    setIsCreating(true);
+    setError(null);
+    
     // Pre-validation checks
     if (!farmDetails.name || farmDetails.name.trim().length === 0) {
       setError('Farm name is required');
       toast.error('Please enter a farm name');
+      setIsCreating(false);
+      return;
+    }
+    
+    // Validate description length
+    if (!farmDetails.description || farmDetails.description.trim().length < 5) {
+      setError('Description must be at least 5 characters');
+      toast.error('Please provide at least 5 characters to describe your farm', {
+        icon: '⚠️',
+        duration: 3000
+      });
+      setIsCreating(false);
       return;
     }
     
@@ -313,6 +377,7 @@ config:
     if (!yamlValidation.valid) {
       setError(`YAML validation failed: ${yamlValidation.errors.join(', ')}`);
       toast.error('Please fix YAML configuration errors');
+      setIsCreating(false);
       return;
     }
     
@@ -335,7 +400,7 @@ config:
     
     try {
       // Prepare form data if files are attached
-      let farmData: any = {
+      const farmData: any = {
         name: farmDetails.name.trim(),
         description: farmDetails.description?.trim() || '',
         type: farmDetails.type,
@@ -354,7 +419,7 @@ config:
         formData.append('farmData', JSON.stringify(farmData));
         
         // Append each file
-        attachedFiles.forEach((file, index) => {
+        attachedFiles.forEach((file, _index) => {
           formData.append(`files`, file);
         });
 
@@ -374,50 +439,43 @@ config:
           totalTasks: 0,
           completedTasks: 0,
           failedTasks: 0,
-          avgCompletionTime: 0,
-          totalAgents: 0,
-          activeAgents: 0,
-          resourceUsage: {
+          queuedTasks: 0,
+          efficiency: 0,
+          resourceUtilization: {
             cpu: 0,
-            memory: 0,
-            network: 0
-          },
-          collaborationScore: 0,
-          efficiency: 0
+            memory: 0
+          }
         }
       });
       
       // Log the creation activity
       logFarmCreation(newFarm.name, newFarm.id);
       
-      // Launch the farm with multi-claude agents
+      // Launch the farm with multi-claude agents - UPDATED WORKFLOW
       console.log('Launching farm with agents...');
       try {
-        const launchResponse = await fetch(`/api/farms/${newFarm.id}/launch`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            numberOfAgents: config.maxAgents || 3,
-            collaborative: farmDetails.type === 'collaborative',
-            bundleSteps: farmDetails.type === 'sequential' ? 1 : undefined,
-            provider: selectedProvider,
-            timeout: config.timeout ? config.timeout * 1000 : 3600000 // Convert seconds to milliseconds, default 1 hour
-          })
+        const launchResult = await farmService.launchFarm(newFarm.id, {
+          numberOfAgents: config.maxAgents || 3,
+          yamlContent: yaml, // Include the YAML content for proper agent configuration
+          prompt: farmDetails.description || farmDetails.name || yaml,
+          provider: selectedProvider,
+          collaborative: farmDetails.type === 'collaborative',
+          goWildMode: config.goWildMode?.enabled || false
         });
 
-        if (!launchResponse.ok) {
-          console.error('Failed to launch farm agents, but farm was created');
-          toast.error('Farm created but agents failed to start. Please try launching manually.');
-        } else {
-          console.log('Farm agents launching successfully');
-          toast.success('Agents are starting up...');
-        }
-      } catch (launchError) {
+        console.log('Farm agents launched successfully:', launchResult);
+        toast.success(`Farm launched with ${config.maxAgents || 3} agents! 🚀`);
+        
+        // Update the farm status to indicate it's active
+        addFarm({
+          ...newFarm,
+          status: 'active'
+        });
+      } catch (launchError: any) {
         console.error('Error launching farm agents:', launchError);
-        toast.error('Farm created but agents failed to start. Please try launching manually.');
-        // Don't fail the whole operation if launching fails
+        // Show a warning but don't fail the operation
+        toast.error(`Farm created but agents failed to launch: ${launchError.message || 'Unknown error'}`);
+        // The farm is still created, just not launched
       }
       
       // Optionally save as seed
@@ -456,21 +514,26 @@ config:
         toast.success('Farm created successfully');
       }
       
-      // Close modal first, then navigate (like GoWild does)
+      // Close modal first, then navigate after a small delay to prevent race conditions
+      console.log('[FarmCreator] Closing modal');
       onClose?.();
       
-      // Small delay to ensure modal closes before navigation
+      // Navigate to ConceptExplainer for smooth transition
       setTimeout(() => {
-        navigate(`/harvests/${newFarm.id}`);
+        console.log(`[FarmCreator] Navigating to concept explainer for farm ${newFarm.id}`);
+        navigate(`/farm/${newFarm.id}/transition/create`);
       }, 100);
     } catch (err: any) {
+      console.error('[FarmCreator] Failed to create farm:', err);
+      
       // Detailed error handling
       let errorMessage = 'Failed to create farm';
       
-      if (err.message) {
-        errorMessage = err.message;
-      } else if (err.response?.data?.error?.message) {
+      // Extract the most specific error message available
+      if (err.response?.data?.error?.message) {
         errorMessage = err.response.data.error.message;
+      } else if (err.message) {
+        errorMessage = err.message;
       } else if (err.response?.status === 401) {
         errorMessage = 'Authentication required. Please log in.';
       } else if (err.response?.status === 403) {
@@ -488,6 +551,7 @@ config:
       console.error('Farm creation error:', err);
     } finally {
       setLoading(false);
+      setIsCreating(false);
     }
   };
 
@@ -508,26 +572,64 @@ config:
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Farm Name
               </label>
-              <input
-                type="text"
-                value={farmDetails.name}
-                onChange={(e) => setFarmDetails({ ...farmDetails, name: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-apple bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="My Awesome Farm"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={farmDetails.name}
+                  onChange={(e) => setFarmDetails({ ...farmDetails, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-apple bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  placeholder="My Awesome Farm"
+                />
+                {farmDetails.name.length > 0 && (
+                  <div className="absolute bottom-2 right-2 text-xs">
+                    <span className={clsx(
+                      "font-medium",
+                      farmDetails.name.length < 5 
+                        ? "text-yellow-600 dark:text-yellow-400" 
+                        : "text-gray-500 dark:text-gray-400"
+                    )}>
+                      {farmDetails.name.length}/5
+                    </span>
+                  </div>
+                )}
+              </div>
+              {farmDetails.name.length > 0 && farmDetails.name.length < 5 && (
+                <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                  Please add {5 - farmDetails.name.length} more character{5 - farmDetails.name.length !== 1 ? 's' : ''} for a better name
+                </p>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Description
               </label>
-              <textarea
-                value={farmDetails.description}
-                onChange={(e) => setFarmDetails({ ...farmDetails, description: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-apple bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                rows={3}
-                placeholder="Describe what this farm will do..."
-              />
+              <div className="relative">
+                <textarea
+                  value={farmDetails.description}
+                  onChange={(e) => setFarmDetails({ ...farmDetails, description: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-apple bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                  rows={3}
+                  placeholder="Describe what this farm will do..."
+                />
+                {farmDetails.description.trim().length > 0 && (
+                  <div className="absolute bottom-2 right-2 text-xs">
+                    <span className={clsx(
+                      "font-medium",
+                      farmDetails.description.trim().length < 5 
+                        ? "text-yellow-600 dark:text-yellow-400" 
+                        : "text-gray-500 dark:text-gray-400"
+                    )}>
+                      {farmDetails.description.trim().length}/5
+                    </span>
+                  </div>
+                )}
+              </div>
+              {farmDetails.description.trim().length > 0 && farmDetails.description.trim().length < 5 && (
+                <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                  Please add {5 - farmDetails.description.trim().length} more character{5 - farmDetails.description.trim().length !== 1 ? 's' : ''} for a better description
+                </p>
+              )}
             </div>
 
             <div>
@@ -570,18 +672,52 @@ config:
                 ))}
               </div>
             </div>
-            {/* File Upload Section */}
-            <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
-              <h4 className="text-base font-medium text-gray-900 dark:text-white mb-4">
-                Attach Context Files (Optional)
-              </h4>
-              <FileUpload
-                onFilesChange={setAttachedFiles}
-                maxFiles={10}
-                maxSizeInMB={10}
-                acceptedTypes={['*']}
-                className="mb-4"
-              />
+            {/* Collapsible File Upload Section */}
+            <div className="pt-6 border-t border-gray-200 dark:border-gray-700 space-y-2">
+              <button
+                type="button"
+                onClick={() => setIsFileUploadExpanded(!isFileUploadExpanded)}
+                className="flex items-center space-x-2 w-full text-left p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                {isFileUploadExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                )}
+                <Upload className="w-4 h-4 text-gray-500" />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Attach Context Files {attachedFiles.length > 0 && `(${attachedFiles.length})`}
+                </span>
+                {attachedFiles.length > 0 && (
+                  <div className="flex-1 flex justify-end">
+                    <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded-full">
+                      {attachedFiles.length} file{attachedFiles.length > 1 ? 's' : ''} attached
+                    </span>
+                  </div>
+                )}
+              </button>
+              
+              <AnimatePresence>
+                {isFileUploadExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pt-2 pb-1">
+                      <FileUpload
+                        onFilesChange={setAttachedFiles}
+                        maxFiles={10}
+                        maxSizeInMB={10}
+                        acceptedTypes={['*']}
+                        className="mb-4"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Seeds Section - Minimal Pills */}
@@ -637,73 +773,68 @@ config:
                   <span>Agent Configuration</span>
                 </h4>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-2">
-                      Max Agents
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="range"
-                        min="1"
-                        max="20"
-                        value={config.maxAgents}
-                        onChange={(e) => setConfig({ ...config, maxAgents: parseInt(e.target.value) || 1 })}
-                        className="flex-1"
-                      />
-                      <span className="w-12 text-center font-semibold text-primary-900 dark:text-primary-100">
-                        {config.maxAgents}
-                      </span>
+                  {/* AI-Optimized Configuration Display */}
+                  {(farmDetails.name || farmDetails.description) && (
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-apple-lg p-4 border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Brain className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        <h4 className="font-medium text-gray-900 dark:text-white">AI-Optimized Configuration</h4>
+                        {complexityAnalysis && (
+                          <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300">
+                            {complexityAnalysis.category}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-white dark:bg-gray-800 rounded-apple p-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Users className="w-4 h-4 text-gray-500" />
+                            <span className="text-xs text-gray-600 dark:text-gray-400">Optimal Agents</span>
+                          </div>
+                          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {config.maxAgents}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            {farmDetails.type === 'collaborative' ? 'Collaborative agents' : 'Sequential workflow'}
+                          </p>
+                        </div>
+                        
+                        <div className="bg-white dark:bg-gray-800 rounded-apple p-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Clock className="w-4 h-4 text-gray-500" />
+                            <span className="text-xs text-gray-600 dark:text-gray-400">Runtime Limit</span>
+                          </div>
+                          <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {formatTimeout(config.timeout || 300)}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            Auto-adjusted for task
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {complexityAnalysis && (
+                        <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                          <div className="flex items-start gap-2">
+                            <Zap className="w-3 h-3 text-blue-500 mt-0.5" />
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              {complexityAnalysis.explanation}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-primary-600 dark:text-primary-400 mt-1">
-                      {settings.agentConfig?.agentMode || 'default'} mode
-                    </p>
-                  </div>
+                  )}
                   
-                  <div>
-                    <label className="block text-sm font-medium text-primary-700 dark:text-primary-300 mb-3">
-                      <Clock className="inline w-4 h-4 mr-1" />
-                      Execution Timeout
-                    </label>
-                    <div className="grid grid-cols-5 gap-2">
-                      {[
-                        { label: '5m', value: 300 },
-                        { label: '10m', value: 600 },
-                        { label: '20m', value: 1200 },
-                        { label: '30m', value: 1800 },
-                        { label: '1hr', value: 3600 },
-                        { label: '2hr', value: 7200 },
-                        { label: '4hr', value: 14400 },
-                        { label: '6hr', value: 21600 },
-                        { label: '12hr', value: 43200 },
-                        { label: '24hr', value: 86400 }
-                      ].map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setConfig({ ...config, timeout: option.value })}
-                          className={clsx(
-                            'relative px-3 py-2 rounded-apple text-sm font-medium transition-all',
-                            'flex items-center justify-center',
-                            config.timeout === option.value
-                              ? 'bg-gray-400 dark:bg-gray-400 text-black shadow-sm'
-                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                          )}
-                        >
-                          <div className={clsx(
-                            'absolute left-2 w-3 h-3 rounded-full border-2 transition-all',
-                            config.timeout === option.value
-                              ? 'border-white bg-white'
-                              : 'border-gray-400 dark:border-gray-500'
-                          )} />
-                          <span className="ml-3">{option.label}</span>
-                        </button>
-                      ))}
+                  {!farmDetails.name && !farmDetails.description && (
+                    <div className="bg-gray-50 dark:bg-gray-800 rounded-apple-lg p-4 text-center">
+                      <Brain className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Enter farm details to see AI-optimized configuration
+                      </p>
                     </div>
-                    <p className="text-xs text-primary-600 dark:text-primary-400 mt-2">
-                      {formatTimeout(config.timeout || 600)}
-                      {config.timeout === 600 && ' (Default)'}
-                    </p>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -717,13 +848,15 @@ config:
                       <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-apple">
                         {selectedProvider === 'claude' ? (
                           <Cpu className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                        ) : selectedProvider === 'openai' ? (
+                          <Brain className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                         ) : (
                           <Sparkles className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                         )}
                       </div>
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">
-                          {selectedProvider === 'claude' ? 'Claude Code' : 'Qwen3-Coder'}
+                          {selectedProvider === 'claude' ? 'Claude Code' : 'OpenAI GPT-4'}
                         </p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">
                           Default AI engine from settings
@@ -754,16 +887,17 @@ config:
                     </p>
                   </div>
                   <button
-                    onClick={() => setConfig({ ...config, persistInBackground: !config.persistInBackground })}
+                    onClick={() => {}}
+                    disabled
                     className={clsx(
                       'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                      config.persistInBackground ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-700'
+                      'bg-gray-300 dark:bg-gray-700 opacity-50 cursor-not-allowed'
                     )}
                   >
                     <span
                       className={clsx(
                         'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                        config.persistInBackground ? 'translate-x-6' : 'translate-x-1'
+                        'translate-x-1'
                       )}
                     />
                   </button>
@@ -866,7 +1000,7 @@ config:
                   <div>
                     <dt className="text-gray-600 dark:text-gray-400 mb-1">AI Engine</dt>
                     <dd className="text-gray-900 dark:text-white font-medium capitalize">
-                      {selectedProvider === 'qwen' ? 'Qwen3-Coder' : 'Claude Code'}
+                      {selectedProvider === 'claude' ? 'Claude Code' : 'OpenAI GPT-4'}
                     </dd>
                   </div>
                   <div>
@@ -998,24 +1132,24 @@ config:
       {/* Progress Steps */}
       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center justify-between">
-          {(['plant', 'plow', 'grow'] as const).map((s, index) => (
-            <React.Fragment key={s}>
+          {(['plant', 'plow', 'grow'] as const).map((stepName, index) => (
+            <React.Fragment key={stepName}>
               <button
-                onClick={() => setStep(s)}
+                onClick={() => setStep(stepName)}
                 className={clsx(
                   'flex items-center space-x-2',
-                  step === s ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'
+                  step === stepName ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'
                 )}
               >
                 <div className={clsx(
                   'w-8 h-8 rounded-full flex items-center justify-center border-2',
-                  step === s 
+                  step === stepName 
                     ? 'border-primary-600 bg-primary-600 text-white' 
                     : 'border-gray-300 dark:border-gray-600'
                 )}>
                   {index + 1}
                 </div>
-                <span className="text-sm font-medium capitalize">{s}</span>
+                <span className="text-sm font-medium capitalize">{stepName}</span>
               </button>
               {index < 2 && (
                 <div className="flex-1 h-0.5 bg-gray-200 dark:bg-gray-700 mx-4" />
@@ -1056,10 +1190,10 @@ config:
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleCreateFarm}
-              disabled={loading || !yaml || !farmDetails.name}
-              className="flex items-center space-x-2 px-6 py-2 bg-[var(--color-primary)] text-white rounded-apple hover:bg-[var(--color-primary-dark)] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-[rgba(var(--color-primary-rgb),0.25)]"
+              disabled={loading || isCreating || !yaml || !farmDetails.name}
+              className="flex items-center space-x-2 px-6 py-2.5 bg-gradient-to-r from-apple-green to-apple-green-dark text-white rounded-apple-lg hover:shadow-apple-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-apple font-medium"
             >
-              {loading ? (
+              {(loading || isCreating) ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                   <span>Creating Farm...</span>

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { AgentCard } from '../AgentCard';
-import { MultiClaudeAgent } from '../../../types/multiClaude';
+import { MultiClaudeAgent } from '@/types/multiClaude';
 
 // Mock framer-motion
 vi.mock('framer-motion', () => ({

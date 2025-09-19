@@ -1,4 +1,4 @@
-import { AgentConfiguration } from '../components/Settings/AgentSettings';
+import { AgentConfiguration } from '@/components/Settings/AgentSettings';
 
 const STORAGE_KEYS = {
   AGENT_CONFIG: 'maifarm_agent_config',

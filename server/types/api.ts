@@ -1,103 +1,41 @@
-export interface ApiResponse<T = any> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-    details?: any;
-  };
-  meta?: {
-    page?: number;
-    limit?: number;
-    total?: number;
-    timestamp: Date;
-  };
-}
+// Re-export unified types
+export type {
+  ApiResponse,
+  Agent,
+  AgentStatus,
+  AgentHealth,
+  AgentType,
+  Farm,
+  FarmStatus,
+  OrchestrationStrategy,
+  AIProvider,
+  Task,
+  TaskPriority,
+  TaskStatus,
+  TerminalOutput,
+  TerminalStreamStatus,
+  Harvest,
+  HarvestStatus,
+  HarvestFile,
+  WebSocketEvent,
+  WebSocketMessage,
+  LogLevel,
+  LogEntry,
+  TIMING
+} from '../../shared/types/unified';
 
-export interface Agent {
-  id: string;
-  farmId: string;
-  name: string;
-  type: 'primary' | 'secondary' | 'specialized';
-  status: 'idle' | 'active' | 'processing' | 'error' | 'terminated';
-  capabilities: string[];
-  resources: {
-    cpu: number;
-    memory: number;
-    gpu?: number;
-  };
-  metrics: {
-    tasksCompleted: number;
-    tasksFailed: number;
-    averageExecutionTime: number;
-    uptime: number;
-    efficiency: number;
-  };
-  config: Record<string, any>;
-  lastHeartbeat: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
+// Import the actual types
+import type {
+  Agent as UnifiedAgent,
+  Farm as UnifiedFarm,
+  Task as UnifiedTask
+} from '../../shared/types/unified';
 
-export interface Farm {
-  id: string;
-  name: string;
-  description?: string;
-  status: 'preparing' | 'running' | 'paused' | 'failed' | 'terminated';
-  agents: string[]; // Agent IDs
-  provider?: 'claude' | 'qwen'; // AI provider for this farm
-  config: {
-    yaml?: string;
-    maxAgents: number;
-    resourceLimits: {
-      totalCpu: number;
-      totalMemory: number;
-      totalGpu?: number;
-    };
-    orchestrationStrategy: 'round-robin' | 'least-loaded' | 'priority' | 'custom';
-  };
-  metrics: {
-    totalTasks: number;
-    completedTasks: number;
-    failedTasks: number;
-    queuedTasks: number;
-    efficiency: number;
-    resourceUtilization: {
-      cpu: number;
-      memory: number;
-      gpu?: number;
-    };
-  };
-  tags: string[];
-  createdBy: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface Task {
-  id: string;
-  farmId: string;
-  agentId?: string;
-  type: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  status: 'queued' | 'assigned' | 'processing' | 'completed' | 'failed' | 'cancelled';
-  payload: Record<string, any>;
-  result?: Record<string, any>;
-  error?: {
-    message: string;
-    stack?: string;
-    code?: string;
-  };
-  dependencies: string[]; // Task IDs
-  retries: number;
-  maxRetries: number;
-  timeout: number;
-  metadata: Record<string, any>;
-  createdAt: Date;
-  assignedAt?: Date;
-  startedAt?: Date;
-  completedAt?: Date;
-  updatedAt: Date;
+// Re-export with compatibility
+export { 
+  type UnifiedAgent as Agent,
+  type UnifiedFarm as Farm,
+  type UnifiedTask as Task
 }
 
 export interface Metric {
@@ -158,7 +96,7 @@ export interface AuthToken {
 
 // AI Provider Types
 export interface AIProviderRequest {
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'openai';
   messages: Array<{
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -170,7 +108,7 @@ export interface AIProviderRequest {
 }
 
 export interface AIProviderResponse {
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'openai';
   content: string;
   model: string;
   usage?: {
@@ -182,13 +120,12 @@ export interface AIProviderResponse {
   metadata?: Record<string, any>;
 }
 
-export interface QwenSpecificConfig {
-  contextWindow?: number; // Up to 256K tokens
-  chainOfThought?: boolean;
+export interface ClaudeSpecificConfig {
+  constitutionalAI?: boolean;
   apiEndpoint?: string;
 }
 
-export interface ClaudeSpecificConfig {
-  constitutionalAI?: boolean;
+export interface OpenAISpecificConfig {
+  model?: string;
   apiEndpoint?: string;
 }

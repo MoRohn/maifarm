@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { TerminalOutput } from '../../../types/terminal';
-import { useWebSocket } from '../../../hooks/useWebSocket';
+import { TerminalOutput } from '@/types/terminal';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface UseTerminalOutputProps {
   sessionId: string | null;

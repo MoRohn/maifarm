@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as d3 from 'd3';
-import { TimeSeriesData, MetricDataPoint } from '../../../types/analytics';
-import { useThemeStore } from '../../../store/themeStore';
+import { TimeSeriesData, MetricDataPoint } from '@/types/analytics';
+import { useThemeStore } from '@/store/themeStore';
 
 interface RealTimeChartProps {
   data: TimeSeriesData | TimeSeriesData[];

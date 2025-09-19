@@ -15,7 +15,7 @@ import {
   Gauge
 } from 'lucide-react';
 import { GlassPanel } from './GlassPanel';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 
 interface WeatherData {
   temperature: number;

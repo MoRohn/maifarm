@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Heart, CheckCircle, AlertCircle, XCircle, Clock, Database, Globe, Server, Wifi, WifiOff, Activity } from 'lucide-react';
-import { useWebSocketStore } from '../../store/websocketStore';
-import { api } from '../../services/apiClient';
-import { connectionMonitor, ConnectionHealth } from '../../services/monitoring/connectionMonitor';
-import { websocketService } from '../../services/websocket';
+import { useWebSocketStore } from '@/store/websocketStore';
+import { api } from '@/services/apiClient';
+import { connectionMonitor, ConnectionHealth } from '@/services/monitoring/connectionMonitor';
+import { websocketService } from '@/services/websocket';
 
 interface HealthCheck {
   name: string;

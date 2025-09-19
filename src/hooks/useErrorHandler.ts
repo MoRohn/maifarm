@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { errorHandler, ErrorReport } from '../services/errorHandler';
-import { logger } from '../services/monitoring/logger';
+import { errorHandler, ErrorReport } from '@/services/errorHandler';
+import { logger } from '@/services/monitoring/logger';
 
 interface UseErrorHandlerOptions {
   component?: string;

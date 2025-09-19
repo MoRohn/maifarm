@@ -5,8 +5,8 @@ import {
   MultiClaudeCommand,
   MultiClaudeEvent,
   CoordinationData 
-} from '../types/multiClaude';
-import { multiClaudeService } from '../services/multiClaudeService';
+} from '@/types/multiClaude';
+import { multiClaudeService } from '@/services/multiClaudeService';
 import { useWebSocket } from './useWebSocket';
 
 const DEFAULT_CONFIG: MultiClaudeConfig = {
@@ -234,7 +234,7 @@ export const useMultiClaude = () => {
             id: `task_${Date.now()}`,
             prompt,
             startTime: new Date(),
-            status: 'running',
+            status: 'active',
             output: []
           }
         ]

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
-import { LoginCredentials } from '../../types/auth';
+import { useAuth } from '@/hooks/useAuth';
+import { LoginCredentials } from '@/types/auth';
 
 export const LoginForm: React.FC = () => {
   const { login, isLoading, error } = useAuth();

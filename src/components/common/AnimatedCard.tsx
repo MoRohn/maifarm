@@ -1,8 +1,8 @@
 import React, { forwardRef } from 'react';
 import { motion, HTMLMotionProps } from 'framer-motion';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 import { GlassPanel, GlassVariant } from './GlassPanel';
-import { useScrollAnimation } from '../../hooks/useAnimations';
+import { useScrollAnimation } from '@/hooks/useAnimations';
 
 interface AnimatedCardProps extends Omit<HTMLMotionProps<'div'>, 'ref'> {
   variant?: GlassVariant;

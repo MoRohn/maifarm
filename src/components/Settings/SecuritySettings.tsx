@@ -9,8 +9,8 @@ import {
   DocumentTextIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
-import { useUserStore } from '../../store/userStore';
-import { useAuth } from '../../hooks/useAuth';
+import { useUserStore } from '@/store/userStore';
+import { useAuth } from '@/hooks/useAuth';
 
 const SecuritySettings: React.FC = () => {
   const { user } = useAuth();

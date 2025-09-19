@@ -1,7 +1,7 @@
 // External API integration manager
 
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import { ExternalAPIConfig } from '../types/farm';
+import { ExternalAPIConfig } from '@/types/farm';
 import { faultTolerance, CircuitBreaker } from './faultTolerance';
 import { websocketService } from './websocket';
 

@@ -2,17 +2,29 @@ import { Router } from 'express';
 import { ApiResponse, Farm, PaginationQuery, FilterQuery } from '../types/api';
 import { authenticateToken, requirePermission } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
+import {
+  farmCreationRateLimit,
+  quickTaskRateLimit,
+  expensiveRateLimit
+} from '../middleware/rateLimiter';
 import { db } from '../database/connection';
 import { v4 as uuidv4 } from 'uuid';
 import { spawn } from 'child_process';
-import { claudeCodeManager } from '../services/claudeCodeManager';
-import { farmManager } from '../services/farmManager';
+
+// Import unified services from ServiceRegistry
+import { serviceRegistry, getService } from '../services/unified/ServiceRegistry';
 import { websocketManager } from '../websocket/websocketManager';
-import { orchestratorService, launchFarmWithBarnIntegration } from '../services/OrchestratorService';
+
+// Import legacy services that haven't been unified yet
 import { aiOrchestrator } from '../services/aiOrchestrator';
 import { harvestService } from '../services/harvestService';
 import { agentCleanupService } from '../services/agentCleanupService';
-import { barnCatalogService } from '../services/barnCatalogService';
+import { barnService } from '../services/barnService';
+
+// Initialize service registry
+serviceRegistry.initialize().catch(err => {
+  console.error('Failed to initialize service registry:', err);
+});
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
@@ -49,7 +61,7 @@ router.get('/', apiRateLimits.read, async (req, res) => {
     const { 
       page = 1, 
       limit = 20, 
-      sort = 'createdAt', 
+      sort = 'created_at', 
       order = 'desc',
       status,
       tags
@@ -57,8 +69,8 @@ router.get('/', apiRateLimits.read, async (req, res) => {
 
     const offset = (Number(page) - 1) * Number(limit);
     
-    // Build query
-    let query = 'SELECT * FROM farms WHERE 1=1';
+    // Build query - exclude deleted farms by default
+    let query = 'SELECT * FROM farms WHERE status != \'deleted\'';
     const params: any[] = [];
     let paramIndex = 1;
 
@@ -73,14 +85,16 @@ router.get('/', apiRateLimits.read, async (req, res) => {
       params.push(tagArray);
     }
 
-    // Add sorting and pagination
-    query += ` ORDER BY ${sort} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    // Add sorting and pagination with validation
+    const validSortColumns = ['created_at', 'updated_at', 'name', 'status'];
+    const sortColumn = validSortColumns.includes(sort as string) ? sort : 'created_at';
+    query += ` ORDER BY ${sortColumn} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
     params.push(limit, offset);
 
     const result = await db.query(query, params);
     
-    // Get total count
-    const countResult = await db.query('SELECT COUNT(*) FROM farms WHERE 1=1');
+    // Get total count (excluding deleted farms)
+    const countResult = await db.query('SELECT COUNT(*) FROM farms WHERE status != \'deleted\'');
     const total = parseInt(countResult.rows[0].count);
     
     // Fetch agents for all farms
@@ -238,18 +252,19 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
 });
 
 // POST /api/farms - Create new farm
-router.post('/', 
+router.post('/',
   upload.array('files'), // Add multer middleware to handle files if present
-  requirePermission(['farms:create']), 
-  apiRateLimits.write, 
+  requirePermission(['farms:create']),
+  farmCreationRateLimit.middleware(), // Use advanced rate limiter for farm creation
   async (req, res) => {
   const client = await db.connect();
   
   try {
-    console.log('[DEBUG] Farm creation request received');
-    console.log('[DEBUG] Request body:', req.body);
-    console.log('[DEBUG] Request files:', req.files ? `${(req.files as any[]).length} files` : 'none');
-    console.log('[DEBUG] Content-Type:', req.headers['content-type']);
+    console.log('[Farm API] Farm creation request received at', new Date().toISOString());
+    console.log('[Farm API] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('[Farm API] Request files:', req.files ? `${(req.files as any[]).length} files` : 'none');
+    console.log('[Farm API] Content-Type:', req.headers['content-type']);
+    console.log('[Farm API] User:', (req as any).user?.userId || 'maifarm-user');
     
     // Handle both JSON and multipart/form-data
     let farmData: any;
@@ -298,9 +313,25 @@ router.post('/',
     }
     
     const { name, description, config, tags = [], type = 'sequential', provider = 'claude' } = farmData;
-    const userId = (req as any).user?.userId || 'dev-user';
+    // Get userId from auth middleware (will be a valid UUID or null)
+    const userId = (req as any).user?.userId || null;
     
     // contextFiles is already declared above, no need to redeclare
+
+    // Parse config if it's a YAML string
+    let parsedConfig: any = {};
+    if (typeof config === 'string') {
+      // Config is a YAML string from FarmChatWizard
+      parsedConfig = {
+        yaml: config,
+        maxAgents: 3,
+        autoScale: false,
+        timeout: 3600
+      };
+    } else if (typeof config === 'object' && config !== null) {
+      // Config is already an object
+      parsedConfig = config;
+    }
 
     // Comprehensive validation
     const validationErrors: string[] = [];
@@ -326,7 +357,7 @@ router.post('/',
       validationErrors.push(`Type must be one of: ${validTypes.join(', ')}`);
     }
     
-    const validProviders = ['claude', 'qwen'];
+    const validProviders = ['claude', 'openai'];
     if (provider && !validProviders.includes(provider)) {
       validationErrors.push(`Provider must be one of: ${validProviders.join(', ')}`);
     }
@@ -371,50 +402,76 @@ router.post('/',
       return res.status(400).json(response);
     }
     
+    // Remove farm_id from parsedConfig if it exists (it's not a config field)
+    const { farm_id, ...cleanConfig } = parsedConfig || {};
+    
     // Start database transaction
     await client.query('BEGIN');
 
     // Use farmManager to create the farm
-    const farm = await farmManager.createFarm({
-      name: name.trim(),
-      description: description?.trim() || '',
-      type: type as 'sequential' | 'collaborative' | 'autonomous',
-      provider: provider as 'claude' | 'qwen',
-      config: {
-        maxAgents: config?.maxAgents || 8,
-        autoScale: config?.autoScale || false,
-        timeout: config?.timeout || 600, // 10 minutes default
-        yaml: config?.yaml || ''
-      },
-      userId,
-      createdBy: userId
-    });
+    console.log('[Farm API] Creating farm with farmManager...');
+    let farm;
+    try {
+      // Use unified farm service
+      const farmService = getService('farm');
+      farm = await farmService.launchFarm({
+        name: name.trim(),
+        description: description?.trim() || '',
+        type: type as 'sequential' | 'collaborative' | 'autonomous',
+        provider: provider as 'claude' | 'openai',
+        config: {
+          maxAgents: cleanConfig?.maxAgents || 8,
+          autoScale: cleanConfig?.autoScale || false,
+          timeout: cleanConfig?.timeout || 600, // 10 minutes default
+          yaml: cleanConfig?.yaml || ''
+        },
+        userId,
+        createdBy: userId
+      });
+      console.log('[Farm API] Farm created successfully with ID:', farm.id);
+    } catch (farmError: any) {
+      console.error('[Farm API] farmService.launchFarm failed:', farmError);
+      throw new Error(`Failed to create farm: ${farmError.message || 'Unknown error'}`);
+    }
 
     // Store in database with transaction
     const id = farm.id;
+    
+    // Clean the YAML content to avoid Unicode issues
+    let cleanedYaml = '';
+    if (cleanConfig?.yaml) {
+      // Remove problematic Unicode characters while preserving the content
+      cleanedYaml = cleanConfig.yaml
+        .replace(/[\ud800-\udbff](?![\udc00-\udfff])/g, '') // Remove lone high surrogates
+        .replace(/(?<![\ud800-\udbff])[\udc00-\udfff]/g, '') // Remove lone low surrogates
+        .replace(/[\u{1f300}-\u{1f9ff}]/gu, '') // Remove emojis
+        .replace(/[\u2600-\u27ff]/g, ''); // Remove other symbols
+    }
+    
     const defaultConfig = {
-      maxAgents: config?.maxAgents || 8,
+      maxAgents: cleanConfig?.maxAgents || 8,
       resourceLimits: {
         totalCpu: 8,
         totalMemory: 16384
       },
       orchestrationStrategy: 'round-robin',
-      autoScale: config?.autoScale || false,
-      prompt: config?.prompt || description || `Complete tasks for ${name}`,
-      timeout: config?.timeout || 3600,
-      retryPolicy: config?.retryPolicy || {
+      autoScale: cleanConfig?.autoScale || false,
+      prompt: cleanConfig?.prompt || description || `Complete tasks for ${name}`,
+      timeout: cleanConfig?.timeout || 3600,
+      retryPolicy: cleanConfig?.retryPolicy || {
         enabled: true,
         maxRetries: 3,
         backoffMultiplier: 2
       },
-      goWildMode: config?.goWildMode || {
+      goWildMode: cleanConfig?.goWildMode || {
         enabled: false,
         creativityLevel: 3,
         boundaries: []
       },
-      provider: provider as 'claude' | 'qwen',  // Store the AI provider
+      provider: provider as 'claude' | 'openai',  // Store the AI provider
       attachedFiles: contextFiles,  // Add uploaded files to config
-      ...config
+      yaml: cleanedYaml  // Store cleaned YAML content
+      // Don't spread cleanConfig - it may contain metadata fields that aren't valid config
     };
 
     const defaultMetrics = {
@@ -438,6 +495,14 @@ router.post('/',
       collaborationScore: 0
     };
 
+    // Debug logging to find the issue
+    console.log('[Farm API] Database insert parameters:', {
+      id,
+      userId,
+      configKeys: Object.keys(defaultConfig),
+      hasInvalidUUID: JSON.stringify(defaultConfig).includes('farm-')
+    });
+    
     await client.query(
       `INSERT INTO farms (id, name, description, status, config, metrics, tags, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -469,13 +534,135 @@ router.post('/',
       }
     });
 
+    // Check if auto-launch is requested (default to true for better UX)
+    const autoLaunch = req.body.autoLaunch !== false;
+    
+    if (autoLaunch) {
+      console.log('[Farm API] Auto-launching farm agents after creation...');
+      
+      try {
+        // Check if this should be Go Wild mode
+        const isGoWildMode = type === 'autonomous' || defaultConfig.goWildMode?.enabled;
+        
+        if (isGoWildMode) {
+          // Import and use goWildManager for Go Wild farms
+          const { goWildManager } = await import('../services/unified/farmService');
+          const goWildConfig = {
+            creativityLevel: defaultConfig.goWildMode?.creativityLevel || 70,
+            explorationDepth: defaultConfig.maxAgents || 5,
+            maxDuration: defaultConfig.timeout ? Math.ceil(defaultConfig.timeout / 60) : 30,
+            boundaries: {
+              allowExternalAPIs: true,
+              allowFileSystem: true,
+              allowNetworkRequests: true,
+              restrictedDomains: []
+            },
+            focusAreas: defaultConfig.goWildMode?.focusAreas || []
+          };
+          
+          const session = await goWildManager.startExploration(farm.id, goWildConfig);
+          console.log(`[Farm API] Started Go Wild session ${session.id} for farm ${farm.id}`);
+        } else {
+          // Regular farm launch
+          const numberOfAgents = defaultConfig.maxAgents || 3;
+          const farmPrompt = defaultConfig.prompt || description || `Complete tasks for ${name}`;
+          const selectedProvider = provider || process.env.AI_PROVIDER || 'claude';
+          
+          // Create harvest first
+          let harvestId: string | undefined;
+          try {
+            const harvest = await harvestService.startHarvest(farm.id, farm.name, userId);
+            harvestId = harvest.id;
+            console.log(`[Farm API] Created harvest ${harvestId} for auto-launched farm ${farm.id}`);
+          } catch (harvestError) {
+            console.error('[Farm API] Failed to create harvest for auto-launch:', harvestError);
+          }
+          
+          // Generate YAML if not provided
+          let yamlContent = defaultConfig.yaml;
+          if (!yamlContent) {
+            const { yamlGenerator } = await import('../services/yamlGenerator');
+            const yamlRequest = {
+              prompt: farmPrompt,
+              agentCount: numberOfAgents,
+              template: 'default'
+            };
+            const yamlResponse = await yamlGenerator.generateYaml(yamlRequest);
+            if (yamlResponse.success && yamlResponse.yaml) {
+              yamlContent = yamlResponse.yaml;
+              // Use dynamic timeout from YAML generator if available
+              if (yamlResponse.timeout && !defaultConfig.timeout) {
+                defaultConfig.timeout = yamlResponse.timeout;
+                console.log(`[Farm API] Using dynamic timeout: ${yamlResponse.timeout} seconds`);
+              }
+            }
+          }
+          
+          // Launch the farm agents
+          const launchParams = {
+            farmId: farm.id,
+            name: farm.name,
+            description: farm.description,
+            numberOfAgents,
+            prompt: farmPrompt,
+            yamlContent,
+            collaborative: type === 'collaborative',
+            provider: selectedProvider as 'claude' | 'openai',
+            harvestId,
+            timeout: defaultConfig.timeout ? defaultConfig.timeout * 1000 : undefined
+          };
+          
+          // Use unified farm service for orchestration
+          const farmService = getService('farm');
+          const launchedFarm = await farmService.launchFarm({
+            name: farm.name,
+            description: farm.description,
+            agentCount: launchParams.numberOfAgents || 1,
+            provider: launchParams.provider || 'claude',
+            config: parsedConfig,
+            timeout: launchParams.timeoutMinutes ? launchParams.timeoutMinutes * 60000 : undefined
+          });
+          const processId = launchedFarm.id;
+          
+          // Update farm config with process ID
+          defaultConfig.processId = processId;
+          await db.query(
+            'UPDATE farms SET config = $1, status = $2 WHERE id = $3',
+            [defaultConfig, 'launching', farm.id]
+          );
+          
+          console.log(`[Farm API] Auto-launched ${numberOfAgents} agents for farm ${farm.id} with process ${processId}`);
+          
+          // Schedule graceful shutdown if timeout is configured
+          if (defaultConfig.timeout && defaultConfig.timeout > 0) {
+            const { shutdownCoordinator } = await import('../services/shutdownCoordinator');
+            shutdownCoordinator.scheduleShutdown({
+              mode: 'farm',
+              farmId: farm.id,
+              userId,
+              reason: 'timeout',
+              timeout: defaultConfig.timeout * 1000, // Convert seconds to milliseconds
+              harvestId
+            });
+            console.log(`[Farm API] Scheduled graceful shutdown for farm ${farm.id} at ${defaultConfig.timeout}s`);
+          }
+        }
+        
+        // Update farm status in response
+        farm.status = 'launching';
+      } catch (launchError) {
+        console.error('[Farm API] Auto-launch failed, farm created but not started:', launchError);
+        // Don't fail the entire creation - farm is created, just not launched
+      }
+    }
+
     const response: ApiResponse<Farm> = {
       success: true,
       data: {
         id: farm.id,
         name: farm.name,
         description: farm.description,
-        status: 'active', // Return active status to client
+        status: autoLaunch ? 'launching' : 'active', // Return launching if auto-launched
         agents: farm.agents.map(a => a.id),
         config: defaultConfig,
         metrics: farm.metrics,
@@ -490,13 +677,15 @@ router.post('/',
   } catch (error: any) {
     // Rollback transaction on error
     await client.query('ROLLBACK');
-    console.error('Error creating farm:', error);
+    console.error('[Farm API] Error creating farm:', error);
+    console.error('[Farm API] Error stack:', error.stack);
     
     // More detailed error responses
     let errorCode = 'INTERNAL_ERROR';
     let errorMessage = 'Failed to create farm';
     let statusCode = 500;
     
+    // Log the actual error for debugging
     if (error.code === '23505') { // Unique constraint violation
       errorCode = 'DUPLICATE_ERROR';
       errorMessage = 'A farm with this name already exists';
@@ -505,19 +694,31 @@ router.post('/',
       errorCode = 'REFERENCE_ERROR';
       errorMessage = 'Invalid reference in farm configuration';
       statusCode = 400;
+    } else if (error.code === 'ECONNREFUSED') {
+      errorCode = 'DATABASE_ERROR';
+      errorMessage = 'Database connection failed. Please ensure PostgreSQL is running.';
+      statusCode = 503;
     } else if (error.message?.includes('farmManager')) {
       errorCode = 'FARM_MANAGER_ERROR';
+      errorMessage = error.message;
+      statusCode = 500;
+    } else if (error.message?.includes('Failed to create farm')) {
+      // Pass through the specific error from farmManager
+      errorCode = 'FARM_CREATION_ERROR';
       errorMessage = error.message;
       statusCode = 500;
     } else if (error.message) {
       errorMessage = `Failed to create farm: ${error.message}`;
     }
     
+    console.error('[Farm API] Returning error response:', { errorCode, errorMessage, statusCode });
+    
     const response: ApiResponse = {
       success: false,
       error: {
         code: errorCode,
-        message: errorMessage
+        message: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       }
     };
     res.status(statusCode).json(response);
@@ -531,7 +732,7 @@ router.put('/:id', requirePermission(['farms:update']), apiRateLimits.write, asy
   try {
     const { id } = req.params;
     const updates = req.body;
-    const userId = (req as any).user?.userId || 'dev-user';
+    const userId = (req as any).user?.userId || 'maifarm-user';
 
     // Update in farmManager
     const updatedFarm = await farmManager.updateFarm(id, userId, updates);
@@ -629,7 +830,7 @@ router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, 
   try {
     const { id } = req.params;
 
-    // First, check if farm has a multi-claude process and stop it gracefully
+    // First, check if farm has a XenoSync process and stop it gracefully
     const farmResult = await client.query('SELECT config, name, status FROM farms WHERE id = $1', [id]);
     if (farmResult.rows.length > 0) {
       const { config, status } = farmResult.rows[0];
@@ -638,20 +839,20 @@ router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, 
       if (status === 'running' || status === 'launching') {
         try {
           console.log(`[Farm DELETE] Attempting graceful shutdown before deletion for farm ${id}`);
-          const userId = (req as any).user?.userId || 'dev-user';
+          const userId = (req as any).user?.userId || 'maifarm-user';
           await farmManager.gracefulShutdownFarm(id, userId, 'user_request');
           console.log(`[Farm DELETE] Graceful shutdown completed for farm ${id}`);
         } catch (gracefulError) {
           console.warn(`[Farm DELETE] Graceful shutdown failed for farm ${id}, using regular stop:`, gracefulError);
           
-          // Fallback to regular multi-claude stop
+          // Fallback to legacy orchestrator stop (for backward compatibility)
           const processId = config?.processId;
           if (processId) {
             try {
               await orchestratorService.stopFarm(processId);
-              console.log(`[Farm DELETE] Stopped multi-claude process ${processId} for farm ${id}`);
+              console.log(`[Farm DELETE] Stopped XenoSync process ${processId} for farm ${id}`);
             } catch (stopError) {
-              console.error('Error stopping multi-claude process:', stopError);
+              console.error('Error stopping XenoSync process:', stopError);
               // Continue with deletion even if stopping fails
             }
           }
@@ -660,7 +861,7 @@ router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, 
     }
 
     // Use farmManager to ensure proper cleanup
-    const userId = (req as any).user?.userId || 'dev-user';
+    const userId = (req as any).user?.userId || 'maifarm-user';
     const deleted = await farmManager.deleteFarm(id, userId);
     
     if (!deleted) {
@@ -860,7 +1061,7 @@ router.get('/:id/claude-code/status', apiRateLimits.read, async (req, res) => {
 router.post('/:id/start', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.userId || 'dev-user';
+    const userId = (req as any).user?.userId || 'maifarm-user';
 
     // Get farm details
     const farmResult = await db.query('SELECT * FROM farms WHERE id = $1', [id]);
@@ -1015,7 +1216,7 @@ router.post('/:id/pause', requirePermission(['farms:control']), apiRateLimits.st
 });
 
 // POST /api/farms/from-seed - Create farm from seed template
-router.post('/from-seed', requirePermission(['farms:create']), apiRateLimits.write, async (req, res) => {
+router.post('/from-seed', requirePermission(['farms:create']), farmCreationRateLimit.middleware(), async (req, res) => {
   try {
     const { seedId, name, description, config } = req.body;
     const userId = (req as any).user?.userId;
@@ -1149,7 +1350,7 @@ router.post('/from-seed', requirePermission(['farms:create']), apiRateLimits.wri
 router.post('/:id/harvest', requirePermission(['farms:harvest']), apiRateLimits.write, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.userId || 'dev-user';
+    const userId = (req as any).user?.userId || 'maifarm-user';
     
     // Get farm details
     const farm = await farmManager.getFarm(id, userId);
@@ -1178,7 +1379,7 @@ router.post('/:id/harvest', requirePermission(['farms:harvest']), apiRateLimits.
     }
     
     // Import harvest service
-    const { harvestService } = await import('../services/harvestService');
+    const { harvestService } = await import('../services/unified/farmService');
     
     // Create harvest
     const harvest = await harvestService.startHarvest(farm.id, farm.name, userId);
@@ -1207,7 +1408,7 @@ router.post('/:id/harvest', requirePermission(['farms:harvest']), apiRateLimits.
       await harvestService.completeHarvest(harvest.id);
       
       // Store in barn
-      const { barnService } = await import('../services/barnService');
+      const { barnService } = await import('../services/unified/farmService');
       await barnService.storeHarvest(harvest);
     }
     
@@ -1248,7 +1449,7 @@ router.post('/:id/complete', requirePermission(['farms:control']), apiRateLimits
   try {
     const { id } = req.params;
     const { outputs, summary } = req.body;
-    const userId = (req as any).user?.userId || 'dev-user';
+    const userId = (req as any).user?.userId || 'maifarm-user';
     
     // Update farm status
     const farm = await farmManager.updateFarmStatus(id, 'completed');
@@ -1271,7 +1472,7 @@ router.post('/:id/complete', requirePermission(['farms:control']), apiRateLimits
     );
     
     // Create harvest automatically
-    const { harvestService } = await import('../services/harvestService');
+    const { harvestService } = await import('../services/unified/farmService');
     const harvest = await harvestService.startHarvest(farm.id, farm.name, userId);
     
     // Add outputs to harvest if provided
@@ -1301,7 +1502,7 @@ router.post('/:id/complete', requirePermission(['farms:control']), apiRateLimits
     await harvestService.completeHarvest(harvest.id);
     
     // Store in barn
-    const { barnService } = await import('../services/barnService');
+    const { barnService } = await import('../services/unified/farmService');
     const barnItem = await barnService.storeHarvest(harvest);
     
     // Emit WebSocket events
@@ -1352,7 +1553,7 @@ router.post('/:id/complete', requirePermission(['farms:control']), apiRateLimits
 });
 
 // POST /api/farms/:id/launch - Launch farm using orchestrator.py
-router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.write, async (req, res) => {
+router.post('/:id/launch', requirePermission(['farms:control']), expensiveRateLimit.middleware(), async (req, res) => {
   try {
     const { id } = req.params;
     const { 
@@ -1361,7 +1562,11 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       bundleSteps,
       includeBarnCatalog = false,
       barnReferences = [],
-      autoBarnDiscovery = false
+      autoBarnDiscovery = false,
+      goWildMode = false,
+      yamlContent,  // Accept YAML from frontend
+      prompt,       // Accept prompt from frontend
+      provider      // Accept provider from frontend
     } = req.body;
 
     // Get farm details
@@ -1378,17 +1583,80 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
     }
 
     const farm = farmResult.rows[0];
+    
+    // Check if this is a Go Wild farm
+    const isGoWildFarm = goWildMode || 
+                         farm.type === 'autonomous' || 
+                         farm.config?.goWildMode?.enabled;
+    
+    // If it's a Go Wild farm, start Go Wild exploration
+    if (isGoWildFarm) {
+      console.log(`[Farm Launch] Detected Go Wild mode for farm ${id}`);
+      
+      // Import goWildManager
+      const { goWildManager } = await import('../services/unified/farmService');
+      
+      // Prepare Go Wild config from farm and request
+      const goWildConfig = {
+        creativityLevel: farm.config?.goWildMode?.creativityLevel || 70,
+        explorationDepth: numberOfAgents || farm.config?.maxAgents || 5,
+        maxDuration: farm.config?.timeout ? Math.ceil(farm.config.timeout / 60) : 30, // Convert seconds to minutes
+        boundaries: {
+          allowExternalAPIs: true,
+          allowFileSystem: true,
+          allowNetworkRequests: true,
+          restrictedDomains: []
+        },
+        focusAreas: farm.config?.goWildMode?.focusAreas || []
+      };
+      
+      // Start Go Wild exploration
+      try {
+        const session = await goWildManager.startExploration(id, goWildConfig);
+        console.log(`[Farm Launch] Started Go Wild session ${session.id} for farm ${id}`);
+        
+        // IMPORTANT: Return early - Go Wild manager handles the launch
+        // Don't continue to regular orchestrator launch
+        const response: ApiResponse<any> = {
+          success: true,
+          data: {
+            message: 'Go Wild exploration started successfully',
+            sessionId: session.id,
+            farmId: id,
+            orchestrator: 'xenosync'
+          },
+          meta: {
+            version: '1.0.0', // API version
+            timestamp: new Date().toISOString()
+          }
+        };
+        return res.json(response);
+      } catch (goWildError) {
+        console.error('[Farm Launch] Failed to start Go Wild exploration:', goWildError);
+        // Continue with regular launch as fallback
+      }
+    }
 
-    // Launch farm using orchestratorService
+    // Launch farm using orchestratorService (only for non-Go Wild farms)
     // Use prompt from request body, config, description, or default
-    const farmPrompt = req.body.prompt || 
+    const farmPrompt = prompt || 
                       farm.config?.prompt || 
                       farm.description || 
                       farm.config?.yaml || 
                       `Help me with tasks for ${farm.name}`;
     
-    // Get provider from farm config or request body
-    const provider = req.body.provider || farm.config?.provider || process.env.AI_PROVIDER || 'claude';
+    // Get provider from request body or farm config
+    const selectedProvider = provider || farm.config?.provider || process.env.AI_PROVIDER || 'claude';
+    
+    // Update farm config with YAML content if provided from frontend
+    if (yamlContent && yamlContent !== farm.config?.yaml) {
+      farm.config = { ...farm.config, yaml: yamlContent };
+      // Update the database with the new YAML
+      await db.query(
+        'UPDATE farms SET config = $1 WHERE id = $2',
+        [farm.config, id]
+      );
+    }
     
     // First create the harvest, then pass its ID to the launch
     let harvestId: string | undefined;
@@ -1396,21 +1664,52 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       const harvest = await harvestService.startHarvest(id, farm.name, req.userId || 'system');
       harvestId = harvest.id;
       console.log(`[Farm Launch] Created harvest ${harvestId} for farm ${id}`);
+      
+      // If it's a Go Wild farm, tag the harvest appropriately
+      if (isGoWildFarm) {
+        // We'll update the tags directly on the harvest object
+        // The harvestService will persist these when it updates the harvest
+        console.log(`[Farm Launch] Tagged harvest ${harvestId} as Go Wild exploration`);
+      }
     } catch (harvestError) {
       console.error('Failed to create harvest for farm:', harvestError);
+      // Don't fail the launch if harvest creation fails
+      // but log it prominently
+      console.error('[Farm Launch] WARNING: Continuing without harvest tracking');
+    }
+    
+    // Generate YAML if not provided
+    let finalYamlContent = yamlContent || farm.config?.yaml;
+    if (!finalYamlContent) {
+      const { yamlGenerator } = await import('../services/yamlGenerator');
+      const yamlRequest = {
+        prompt: farmPrompt,
+        mode: collaborative ? 'collaborative' : 'sequential' as const,
+        provider: selectedProvider as 'claude' | 'openai',
+        constraints: {
+          maxAgents: numberOfAgents,
+          timeout: farm.config?.timeout
+        },
+        barnReferences,
+        includeBarnSuggestions: includeBarnCatalog
+      };
+      
+      const yamlResponse = await yamlGenerator.generateYaml(yamlRequest);
+      finalYamlContent = yamlResponse.yaml;
+      console.log(`[Farm Launch] Generated YAML configuration for farm ${id}`);
     }
     
     const launchParams = {
       farmId: id,
       name: farm.name,
       description: farm.description,
-      numberOfAgents,
+      numberOfAgents: Math.max(2, numberOfAgents), // Ensure minimum 2 agents for XenoSync
       prompt: farmPrompt,
-      yamlContent: farm.config.yaml,
-      steps: farm.config.steps || req.body.steps,
+      yamlContent: finalYamlContent,  // Use generated or provided YAML
+      steps: farm.config?.steps || req.body.steps,
       collaborative,
       bundleSteps,
-      provider: provider as 'claude' | 'qwen',
+      provider: selectedProvider as 'claude' | 'openai',
       contextFiles: farm.config?.attachmentPaths || [],  // Include attachment paths
       harvestId,  // Pass harvest ID to the service
       includeBarnCatalog,
@@ -1418,13 +1717,44 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       autoBarnDiscovery
     };
     
-    const processId = await orchestratorService.launchFarm(launchParams);
+    // Always use XenoSync for farm orchestration
+    let processId: string;
+    const { xenoSyncService } = await import('../services/XenoSyncService');
+    
+    console.log(`[Farm Launch] Using XenoSync orchestrator for farm ${id}`);
+    processId = await xenoSyncService.launchFarm({
+      farmId: id,
+      name: farm.name,
+      description: farm.description,
+      numberOfAgents: Math.max(2, numberOfAgents), // XenoSync minimum requirement
+      prompt: farmPrompt,
+      yamlContent: finalYamlContent,
+      mode: collaborative ? 'collaborative' : 'parallel',
+      timeout: farm.config?.timeout ? farm.config.timeout * 1000 : undefined,
+      contextFiles: farm.config?.attachmentPaths || [],
+      debug: false
+    });
 
     // Update farm with process ID
     await db.query(
       'UPDATE farms SET status = $1, config = $2, updated_at = $3 WHERE id = $4',
       ['launching', { ...farm.config, processId }, new Date(), id]
     );
+    
+    // CRITICAL FIX: Schedule timeout immediately after launch
+    if (farm.config?.timeout && farm.config.timeout > 0) {
+      const { shutdownCoordinator } = await import('../services/shutdownCoordinator');
+      console.log(`[Farm Launch API] CRITICAL: Scheduling timeout for farm ${id} with ${farm.config.timeout}s timeout`);
+      shutdownCoordinator.scheduleShutdown({
+        mode: 'farm',
+        farmId: id,
+        userId: req.userId || 'system',
+        reason: 'timeout',
+        timeout: farm.config.timeout,
+        harvestId: harvestId
+      });
+      console.log(`[Farm Launch API] CRITICAL: Timeout scheduled successfully for farm ${id}`);
+    }
     
     // Update farmManager status
     await farmManager.updateFarmStatus(id, 'launching');
@@ -1445,7 +1775,7 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       });
     }
     
-    // Broadcast farm launched event
+    // Broadcast farm launched event (using XenoSync session naming)
     websocketManager.broadcast('farm:launched', {
       farmId: id,
       farmName: farm.name,
@@ -1453,13 +1783,13 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
       harvestId,
       status: 'launching',
       numberOfAgents,
-      sessionName: `farm_${id.substring(0, 8)}`,
+      sessionName: `farm-${id.substring(0, 8)}`,
       timestamp: new Date()
     });
 
-    // Check for tmux session after a short delay and update status
+    // Check for tmux session after a very short delay and update status
     setTimeout(async () => {
-      const sessionName = `farm_${id.substring(0, 8)}`;
+      const sessionName = `farm-${id.substring(0, 8)}`;
       const checkSession = spawn('tmux', ['has-session', '-t', sessionName]);
       
       checkSession.on('exit', async (code) => {
@@ -1477,7 +1807,7 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
           console.log(`[Farm API] Farm ${id} tmux session detected, status updated to running`);
         }
       });
-    }, 3000); // Wait 3 seconds for tmux session to be created
+    }, 500); // Wait only 500ms for faster response
 
     const response: ApiResponse = {
       success: true,
@@ -1505,7 +1835,7 @@ router.post('/:id/launch', requirePermission(['farms:control']), apiRateLimits.w
 });
 
 // POST /api/farms/:id/launch-with-barn - Launch farm with enhanced barn integration
-router.post('/:id/launch-with-barn', requirePermission(['farms:control']), apiRateLimits.write, async (req, res) => {
+router.post('/:id/launch-with-barn', requirePermission(['farms:control']), expensiveRateLimit.middleware(), async (req, res) => {
   try {
     const { id } = req.params;
     const { 
@@ -1560,7 +1890,7 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), apiRa
       steps: farm.config.steps || req.body.steps,
       collaborative,
       bundleSteps,
-      provider: provider as 'claude' | 'qwen',
+      provider: provider as 'claude' | 'openai',
       contextFiles: farm.config?.attachmentPaths || [],  // Include attachment paths
       harvestId,
       autoBarnDiscovery,
@@ -1637,7 +1967,7 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), apiRa
 router.post('/:id/stop', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.userId || 'dev-user';
+    const userId = (req as any).user?.userId || 'maifarm-user';
 
     // Check if graceful shutdown was requested (default to true)
     const { graceful = true } = req.body;
@@ -1726,7 +2056,7 @@ router.post('/:id/graceful-shutdown', requirePermission(['farms:control']), apiR
   try {
     const { id } = req.params;
     const { reason = 'user_request' } = req.body;
-    const userId = (req as any).user?.userId || 'dev-user';
+    const userId = (req as any).user?.userId || 'maifarm-user';
 
     // Validate reason
     if (!['user_request', 'timeout', 'completion'].includes(reason)) {
@@ -2026,19 +2356,19 @@ router.put('/:id/provider', requirePermission(['farms:update']), apiRateLimits.w
     const { id } = req.params;
     const { provider } = req.body;
     
-    if (!provider || !['claude', 'qwen'].includes(provider)) {
+    if (!provider || !['claude', 'openai'].includes(provider)) {
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Provider must be either "claude" or "qwen"'
+          message: 'Provider must be either "claude" or "openai"'
         }
       };
       return res.status(400).json(response);
     }
 
     // Use AI orchestrator to switch provider
-    await aiOrchestrator.switchFarmProvider(id, provider as 'claude' | 'qwen');
+    await aiOrchestrator.switchFarmProvider(id, provider as 'claude' | 'openai');
     
     const response: ApiResponse = {
       success: true,
@@ -2063,7 +2393,8 @@ router.put('/:id/provider', requirePermission(['farms:update']), apiRateLimits.w
   }
 });
 
-// GET /api/farms/:id/multi-claude/status - Get orchestrator process status
+// GET /api/farms/:id/multi-claude/status - Get orchestrator process status (legacy endpoint maintained for compatibility)
+// New applications should use the standard farm status endpoint
 router.get('/:id/multi-claude/status', apiRateLimits.read, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2114,6 +2445,22 @@ router.get('/:id/multi-claude/status', apiRateLimits.read, async (req, res) => {
     // Get process status
     const status = orchestratorService.getFarmStatus(processId);
 
+    // Get agent names from database
+    let agentsWithNames = [];
+    if (status) {
+      const agentsResult = await db.query(
+        'SELECT id, name FROM agents WHERE farm_id = $1',
+        [id]
+      );
+      
+      const agentNameMap = new Map(agentsResult.rows.map(row => [row.id, row.name]));
+      
+      agentsWithNames = Array.from(status.agents.values()).map((agent: any) => ({
+        ...agent,
+        name: agentNameMap.get(agent.id) || `Agent ${agent.id}`
+      }));
+    }
+
     const response: ApiResponse = {
       success: true,
       data: status ? {
@@ -2121,7 +2468,7 @@ router.get('/:id/multi-claude/status', apiRateLimits.read, async (req, res) => {
         processId: status.id,
         status: status.status,
         tmuxSession: status.tmuxSession,
-        agents: Array.from(status.agents.values()),
+        agents: agentsWithNames,
         startTime: status.startTime
       } : null
     };

@@ -7,17 +7,31 @@ import { FarmersPage } from './components/Farmers/FarmersPage'
 import { BarnPage } from './components/Barn/BarnPage'
 import { CreateFarmFromSeed } from './components/Farm/CreateFarmFromSeed'
 import { CreateFarmFromFarmer } from './components/Farm/CreateFarmFromFarmer'
+import { ConceptExplainer } from './components/Farm/ConceptExplainer'
 import { HarvestPage } from './components/Harvest/HarvestPage'
 import SettingsPage from './components/Settings/SettingsPage'
 import Analytics from './components/Analytics/Analytics'
 import { MultiClaudeManager } from './components/MultiClaude/MultiClaudeManager'
 import SafeErrorPage from './components/ErrorPage/SafeErrorPage'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import { GlobalErrorBoundary } from './components/common/GlobalErrorBoundary'
+import { Calculator } from './components/Calculator/Calculator'
 import { useThemeStore } from './store/themeStore'
 import { AuthProvider } from './hooks/useAuth'
 import { ThemeProvider } from './components/common/ThemeProvider'
 import BackgroundIndicator from './components/common/BackgroundIndicator'
 import { ApiErrorDisplay } from './components/common/ApiErrorDisplay'
+import { CommandPalette } from './components/common/CommandPalette'
+import { setupHMRHandler } from './utils/hmrHandler'
+import { wsManager } from './services/websocket/singletonManager'
+
+// Setup HMR handler to prevent WebSocket suspension errors
+if (import.meta.env.DEV) {
+  setupHMRHandler();
+}
+
+// Initialize WebSocket connection on app startup using singleton manager
+wsManager.initialize('http://localhost:4567');
 
 function AppContent() {
   const theme = useThemeStore((state) => state.theme)
@@ -58,11 +72,12 @@ function AppContent() {
           <Route path="farms/new" element={<CreateFarmFromSeed />} />
           <Route path="farms/create-from-farmer" element={<CreateFarmFromFarmer />} />
           <Route path="farms/:farmId" element={<div>Farm Details (Coming Soon)</div>} />
-          <Route path="harvests/:farmId" element={<HarvestPage />} />
-          <Route path="harvest/:harvestId" element={<HarvestPage />} />
+          <Route path="farm/:farmId/transition/:mode" element={<ConceptExplainer />} />
+          <Route path="harvest/:farmId" element={<HarvestPage />} />
           <Route path="multiclaude" element={<MultiClaudeManager />} />
           <Route path="analytics" element={<Analytics />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="calculator" element={<Calculator />} />
           <Route path="*" element={<Navigate to="/home" replace />} />
         </Route>
         <Route path="/error" element={<SafeErrorPage />} />
@@ -81,6 +96,7 @@ function AppContent() {
       />
       <ApiErrorDisplay />
       <BackgroundIndicator />
+      <CommandPalette />
     </AuthProvider>
   )
 }
@@ -103,13 +119,20 @@ function App() {
   }
   
   return (
-    <ErrorBoundary>
-      <BrowserRouter>
-        <ThemeProvider>
-          <AppContent />
-        </ThemeProvider>
-      </BrowserRouter>
-    </ErrorBoundary>
+    <GlobalErrorBoundary
+      onError={(error, errorInfo) => {
+        // Log to backend error tracking
+        console.error('App Error:', error, errorInfo);
+      }}
+    >
+      <ErrorBoundary>
+        <BrowserRouter future={{ v7_relativeSplatPath: true }}>
+          <ThemeProvider>
+            <AppContent />
+          </ThemeProvider>
+        </BrowserRouter>
+      </ErrorBoundary>
+    </GlobalErrorBoundary>
   )
 }
 

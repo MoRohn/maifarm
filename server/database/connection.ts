@@ -1,6 +1,7 @@
 import { Pool, PoolConfig } from 'pg';
 import Redis from 'redis';
-import { inMemoryDb } from './inMemoryDb';
+import { logger } from '../config/logging';
+import { poolManager } from './poolManager';
 
 // PostgreSQL connection pool
 const pgConfig: PoolConfig = {
@@ -9,86 +10,139 @@ const pgConfig: PoolConfig = {
   database: process.env.DB_NAME || 'maifarm',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  max: parseInt(process.env.DB_POOL_SIZE || '20'),
+  max: parseInt(process.env.DB_POOL_SIZE || '50'), // Increased from 20 to prevent exhaustion
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000, // Increased from 2s to 5s for better stability
+  // Add statement timeout to prevent hanging queries
+  statement_timeout: 30000, // 30 seconds max per query
+  // Add query timeout for better resource management
+  query_timeout: 30000,
+  // Allow queueing when pool is full
+  allowExitOnIdle: false,
 };
 
 const pgPool = new Pool(pgConfig);
 
-// Database wrapper that falls back to in-memory storage
+// Enhanced Database wrapper with advanced pooling and monitoring
 class DatabaseWrapper {
-  private useInMemory = false;
-  
+  private connectionRetries = 0;
+  private maxRetries = 5;
+  private retryDelay = 1000; // Start with 1 second
+  private isConnected = false;
+
   async query(text: string, params?: any[]): Promise<any> {
-    if (this.useInMemory) {
-      return inMemoryDb.query(text, params);
-    }
-    
+    // Use the advanced pool manager for all queries
     try {
-      return await pgPool.query(text, params);
+      const result = await poolManager.query(text, params);
+      this.isConnected = true;
+      this.connectionRetries = 0;
+      return result;
     } catch (error: any) {
-      // Check for various connection error codes
-      const connectionErrorCodes = [
-        'ECONNREFUSED',  // Connection refused
-        'ENOTFOUND',     // Host not found
-        '28P01',         // Authentication failed
-        '3D000',         // Database does not exist
-        '28000',         // Invalid authorization
-        'ETIMEDOUT',     // Connection timeout
-        'EHOSTUNREACH',  // Host unreachable
-        '57P03'          // Server shutting down
-      ];
-      
-      // If it's a connection error and we haven't switched to in-memory yet
-      if (!this.useInMemory && (connectionErrorCodes.includes(error.code) || error.message?.includes('connect'))) {
-        console.warn(`PostgreSQL unavailable (${error.code || 'connection error'}), switching to in-memory database`);
-        this.useInMemory = true;
-        
-        // Initialize in-memory DB if needed
-        await inMemoryDb.connect();
-        
-        try {
-          return await inMemoryDb.query(text, params);
-        } catch (inMemoryError) {
-          console.error('In-memory database query failed:', inMemoryError);
-          throw inMemoryError;
+      const errorMessage = error.message || error;
+
+      // Check if this is a connection error
+      if (errorMessage.includes('ECONNREFUSED') ||
+          errorMessage.includes('Connection terminated') ||
+          errorMessage.includes('Connection lost')) {
+        logger.error('DATABASE', `Connection lost, attempting to reconnect...`);
+        this.isConnected = false;
+
+        // Retry with exponential backoff
+        if (this.connectionRetries < this.maxRetries) {
+          this.connectionRetries++;
+          await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+          this.retryDelay = Math.min(this.retryDelay * 2, 30000);
+          return this.query(text, params); // Recursive retry
         }
       }
-      
-      // Log the error for debugging
-      console.error('Database query error:', error.message || error);
+
+      // Check if this is an expected "already exists" or similar warning
+      if (typeof errorMessage === 'string' && (
+        errorMessage.includes('already exists') ||
+        errorMessage.includes('does not exist') ||
+        errorMessage.includes('duplicate key value')
+      )) {
+        // Log as info instead of error for these expected cases
+        logger.info('DATABASE', `Skipping: ${errorMessage}`);
+      } else {
+        // Log actual errors
+        logger.error('DATABASE', `Query failed: ${errorMessage}`);
+      }
+
       throw error;
+    }
+  }
+
+  // Use poolManager's transaction method
+  async transaction(callback: (client: any) => Promise<any>): Promise<any> {
+    return poolManager.transaction(callback);
+  }
+
+  // Get pool statistics
+  getPoolStats() {
+    return poolManager.getStats();
+  }
+
+  // Get slow queries
+  getSlowQueries(threshold?: number) {
+    return poolManager.getSlowQueries(threshold);
+  }
+  
+  async ensureConnection(): Promise<void> {
+    while (this.connectionRetries < this.maxRetries) {
+      try {
+        // Test the connection using pool manager
+        const health = await poolManager.checkHealth();
+        if (health.healthy) {
+          this.isConnected = true;
+          this.connectionRetries = 0; // Reset on success
+          this.retryDelay = 1000; // Reset delay
+          return;
+        }
+        throw new Error('Database health check failed');
+      } catch (error) {
+        this.connectionRetries++;
+        const nextDelay = Math.min(this.retryDelay * 2, 30000); // Max 30 seconds
+        
+        logger.warn('DATABASE', 
+          `Connection attempt ${this.connectionRetries}/${this.maxRetries} failed. ` +
+          `Retrying in ${nextDelay/1000}s...`);
+        
+        if (this.connectionRetries >= this.maxRetries) {
+          logger.error('DATABASE', 'Maximum connection retries exceeded');
+          throw new Error('Database connection failed after maximum retries');
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, nextDelay));
+        this.retryDelay = nextDelay;
+      }
     }
   }
   
   async connect() {
-    if (this.useInMemory) {
-      return inMemoryDb.connect();
-    }
-    
     try {
-      return await pgPool.connect();
+      const client = await pgPool.connect();
+      this.isConnected = true;
+      return client;
     } catch (error) {
-      console.warn('PostgreSQL connect failed, using in-memory database');
-      this.useInMemory = true;
-      return inMemoryDb.connect();
+      logger.error('DATABASE', 'PostgreSQL connect failed:', error);
+      this.isConnected = false;
+      throw error;
     }
   }
   
   async end() {
-    if (this.useInMemory) {
-      return inMemoryDb.end();
-    }
+    this.isConnected = false;
     return pgPool.end();
   }
   
-  setInMemoryMode(enabled: boolean) {
-    this.useInMemory = enabled;
-  }
-  
-  isInMemoryMode() {
-    return this.useInMemory;
+  getConnectionStatus() {
+    return {
+      isConnected: this.isConnected,
+      poolSize: pgPool.totalCount,
+      idleConnections: pgPool.idleCount,
+      waitingClients: pgPool.waitingCount
+    };
   }
 }
 
@@ -136,36 +190,36 @@ if (process.env.REDIS_URL) {
   delete redisConfig.socket;
 }
 
+// Create separate Redis clients for different purposes
+// Regular client for general commands
 export const redis = Redis.createClient(redisConfig);
 
+// Dedicated pub/sub clients (to avoid context conflicts)
+export const redisPub = Redis.createClient(redisConfig);
+export const redisSub = Redis.createClient(redisConfig);
+
 // Database health check
-export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis: boolean; inMemoryMode: boolean }> {
+export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis: boolean; connectionStatus: any }> {
   let postgresHealthy = false;
   let redisHealthy = false;
-  const inMemoryMode = db.isInMemoryMode();
 
   try {
-    if (inMemoryMode) {
-      // In-memory mode is always "healthy"
-      postgresHealthy = true;
-    } else {
-      // Add timeout for postgres health check
-      const pgPromise = pgPool.query('SELECT 1');
-      const pgTimeout = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('PostgreSQL health check timeout')), 1000)
-      );
-      
-      try {
-        const result = await Promise.race([pgPromise, pgTimeout]) as any;
-        postgresHealthy = result.rows.length > 0;
-      } catch (pgError: any) {
-        console.warn('PostgreSQL health check failed:', pgError.message);
-        // Don't throw, just mark as unhealthy
-        postgresHealthy = false;
-      }
+    // Add timeout for postgres health check
+    const pgPromise = pgPool.query('SELECT 1');
+    const pgTimeout = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('PostgreSQL health check timeout')), 1000)
+    );
+    
+    try {
+      const result = await Promise.race([pgPromise, pgTimeout]) as any;
+      postgresHealthy = result.rows.length > 0;
+    } catch (pgError: any) {
+      logger.warn('DATABASE', 'PostgreSQL health check failed:', pgError.message);
+      // Don't throw, just mark as unhealthy
+      postgresHealthy = false;
     }
   } catch (error: any) {
-    console.error('PostgreSQL health check error:', error.message);
+    logger.error('DATABASE', 'PostgreSQL health check error:', error.message);
     postgresHealthy = false;
   }
 
@@ -189,56 +243,120 @@ export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis:
     console.error('Redis health check failed:', error.message);
   }
 
-  return { postgres: postgresHealthy, redis: redisHealthy, inMemoryMode };
+  return { 
+    postgres: postgresHealthy, 
+    redis: redisHealthy, 
+    connectionStatus: db.getConnectionStatus()
+  };
 }
 
-// Initialize connections with graceful fallback
+// Initialize connections with proper error handling
 export async function initializeDatabase() {
   let postgresConnected = false;
   let redisConnected = false;
 
-  // Force in-memory mode if BYPASS_AUTH is enabled
-  if (process.env.BYPASS_AUTH === 'true') {
-    console.log('[DATABASE] BYPASS_AUTH enabled - using in-memory database');
-    db.setInMemoryMode(true);
-    postgresConnected = true; // Consider it "connected" for health checks
-  } else {
-    try {
-      // Test PostgreSQL connection
-      await pgPool.query('SELECT NOW()');
-      console.log('PostgreSQL connected successfully');
-      postgresConnected = true;
-    } catch (error) {
-      console.warn('PostgreSQL connection failed - running in degraded mode:', error.message);
-      console.warn('To use full functionality, please start PostgreSQL or run: docker-compose up postgres');
-      console.log('Using in-memory database for development');
-      db.setInMemoryMode(true);
+  // Always require PostgreSQL connection
+  try {
+    // Ensure connection with retry logic
+    await db.ensureConnection();
+    
+    // Test PostgreSQL connection
+    await pgPool.query('SELECT NOW()');
+    logger.info('DATABASE', '✅ PostgreSQL connected successfully');
+    postgresConnected = true;
+  } catch (error: any) {
+    logger.error('DATABASE', '❌ PostgreSQL connection failed:', error.message);
+    
+    // Provide helpful error messages
+    if (error.message.includes('ECONNREFUSED')) {
+      console.error('\n⚠️  PostgreSQL is not running. Please start it with one of:');
+      console.error('   - npm run setup:postgres (automated setup)');
+      console.error('   - brew services start postgresql@15 (macOS)');
+      console.error('   - docker-compose up postgres (Docker)');
+      console.error('   - sudo systemctl start postgresql (Linux)\n');
+    } else if (error.message.includes('password authentication failed')) {
+      console.error('\n⚠️  PostgreSQL authentication failed. Check your .env.development file:');
+      console.error('   DB_USER=maifarm');
+      console.error('   DB_PASSWORD=maifarm123');
+      console.error('   DB_NAME=maifarm_dev\n');
     }
+    
+    // Don't continue without database
+    throw new Error('Cannot start server without PostgreSQL connection');
   }
 
   try {
-    // Connect to Redis with timeout
-    const connectPromise = redis.connect();
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Redis connection timeout')), 5000)
-    );
-    
-    await Promise.race([connectPromise, timeoutPromise]);
-    console.log('Redis connected successfully');
+    // Connect all Redis clients
+    const redisClients = [
+      { client: redis, name: 'Main' },
+      { client: redisPub, name: 'Publisher' },
+      { client: redisSub, name: 'Subscriber' }
+    ];
+
+    for (const { client, name } of redisClients) {
+      if (client.isOpen) {
+        console.log(`Redis ${name} already connected, skipping reconnection`);
+      } else {
+        // Connect to Redis with timeout
+        const connectPromise = client.connect();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Redis ${name} connection timeout`)), 5000)
+        );
+
+        await Promise.race([connectPromise, timeoutPromise]);
+        console.log(`Redis ${name} connected successfully`);
+      }
+    }
     redisConnected = true;
   } catch (error) {
-    console.warn('Redis connection failed - running without caching:', error.message);
-    console.warn('To enable caching, please start Redis or run: docker-compose up redis');
-    // Redis will continue trying to reconnect in the background based on reconnectStrategy
+    // Check if error is about existing connection
+    if (error.message && error.message.includes('Socket already opened')) {
+      console.log('Redis socket already opened, treating as connected');
+      redisConnected = true;
+    } else {
+      console.warn('Redis connection failed - running without caching:', error.message);
+      console.warn('To enable caching, please start Redis or run: docker-compose up redis');
+      // Redis will continue trying to reconnect in the background based on reconnectStrategy
+    }
   }
 
   // Only run migrations if PostgreSQL is connected
   if (postgresConnected) {
     try {
-      await runMigrations();
-    } catch (error) {
-      console.error('Migration failed:', error);
-      // Don't throw - allow app to start in degraded mode
+      // Use the unified migration system
+      logger.info('DATABASE', '🚀 Running database migrations...');
+      
+      const { UnifiedMigrationRunner } = await import('./unifiedMigrationRunner');
+      const migrationRunner = new UnifiedMigrationRunner(pgPool);
+      
+      // Get status before running
+      const statusBefore = await migrationRunner.getStatus();
+      logger.info('DATABASE', 
+        `Migration status: ${statusBefore.applied}/${statusBefore.total} applied, ` +
+        `${statusBefore.pending} pending`);
+      
+      // Run migrations
+      const result = await migrationRunner.runMigrations();
+      
+      // Log results
+      if (result.success) {
+        logger.info('DATABASE', 
+          `✅ Migrations complete: ${result.applied.length} new migrations applied`);
+      } else {
+        logger.warn('DATABASE', 
+          `⚠️  Migrations completed with errors: ${result.failed.length} failed`);
+        
+        // Log specific failures
+        for (const [version, error] of result.errors) {
+          logger.error('DATABASE', `  Migration ${version} failed: ${error}`);
+        }
+      }
+      
+    } catch (error: any) {
+      logger.error('DATABASE', 'Migration system failed:', error.message);
+      
+      // Still try to continue if migrations fail (tables might already exist)
+      logger.warn('DATABASE', 'Continuing with existing database schema...');
     }
   }
 
@@ -246,26 +364,6 @@ export async function initializeDatabase() {
   return { postgresConnected, redisConnected };
 }
 
-// Simple migration runner
-async function runMigrations() {
-  try {
-    // Create migrations table if not exists
-    await db.query(`
-      CREATE TABLE IF NOT EXISTS migrations (
-        id SERIAL PRIMARY KEY,
-        filename VARCHAR(255) NOT NULL UNIQUE,
-        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Run migrations from migrations directory
-    // This is a placeholder - in production, use a proper migration tool
-    console.log('Database migrations completed');
-  } catch (error) {
-    console.error('Migration failed:', error);
-    throw error;
-  }
-}
 
 // Graceful shutdown
 export async function closeDatabaseConnections() {

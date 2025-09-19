@@ -11,7 +11,7 @@ import {
   ActionName,
   Condition,
   AccessContext,
-} from '../../types/rbac';
+} from '@/types/rbac';
 
 // Define missing types locally
 interface Action {

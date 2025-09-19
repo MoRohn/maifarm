@@ -1,4 +1,4 @@
-import { Agent, Farm } from '../../types';
+import { Agent, Farm } from '@/types';
 import { 
   MonitoringData, 
   TimeSeriesData, 
@@ -7,7 +7,7 @@ import {
   ErrorPrediction,
   CommunicationNode,
   CommunicationEdge
-} from '../../types/monitoring';
+} from '@/types/monitoring';
 import { prometheusExporter } from './prometheus';
 
 interface MetricsBuffer {

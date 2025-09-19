@@ -127,6 +127,36 @@ router.get('/api/metrics/farms/:farmId', async (req, res) => {
   }
 });
 
+// Log ingestion endpoint
+router.post('/logs', async (req, res) => {
+  try {
+    const { logs } = req.body;
+    
+    if (!logs || !Array.isArray(logs)) {
+      return res.status(400).json({ error: 'Invalid logs format' });
+    }
+    
+    // Process each log entry
+    for (const log of logs) {
+      if (log.level === 'error') {
+        console.error('[CLIENT_LOG]', log.message, log.details || '');
+      } else if (log.level === 'warn') {
+        console.warn('[CLIENT_LOG]', log.message, log.details || '');
+      } else {
+        console.log('[CLIENT_LOG]', log.message, log.details || '');
+      }
+    }
+    
+    res.json({ 
+      status: 'received',
+      timestamp: new Date(),
+      count: logs.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to process logs' });
+  }
+});
+
 // Error tracking endpoint
 router.post('/errors', async (req, res) => {
   try {

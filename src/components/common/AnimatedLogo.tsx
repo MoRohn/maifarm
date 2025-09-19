@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useFarmStore } from '../../store/farmStore';
-import { useThemeStore } from '../../store/themeStore';
+import { useFarmStore } from '@/store/farmStore';
+import { useThemeStore } from '@/store/themeStore';
 import { DynamicLogo } from './DynamicLogo';
 
 interface AnimatedLogoProps {

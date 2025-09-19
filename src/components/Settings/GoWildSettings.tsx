@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, Shield, Clock, AlertTriangle, Save, RotateCcw } from 'lucide-react';
-import { GoWildConfig } from '../../types/goWild';
-import { useUserStore } from '../../store/userStore';
-import { goWildService } from '../../services/goWildService';
+import { GoWildConfig } from '@/types/goWild';
+import { useUserStore } from '@/store/userStore';
+import { goWildService } from '@/services/goWildService';
 
 const GoWildSettings: React.FC = () => {
   const { user, updatePreferences } = useUserStore();
@@ -163,19 +163,48 @@ const GoWildSettings: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Max Duration (minutes)
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+              Max Duration
             </label>
-            <input
-              type="number"
-              min={5}
-              max={120}
-              value={config.maxDuration}
-              onChange={(e) => setConfig({ ...config, maxDuration: parseInt(e.target.value) })}
-              className="w-full px-3 py-2 rounded-apple border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Maximum time for exploration sessions (5-120 minutes)
+            <div className="grid grid-cols-5 gap-2">
+              {[
+                { label: '5m', value: 5 },
+                { label: '10m', value: 10 },
+                { label: '20m', value: 20 },
+                { label: '30m', value: 30 },
+                { label: '1hr', value: 60 },
+                { label: '2hr', value: 120 },
+                { label: '4hr', value: 240 },
+                { label: '6hr', value: 360 },
+                { label: '12hr', value: 720 },
+                { label: '24hr', value: 1440 }
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setConfig({ ...config, maxDuration: option.value })}
+                  className={`relative px-3 py-2 rounded-apple text-sm font-medium transition-all flex items-center justify-center ${
+                    config.maxDuration === option.value
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  <div className={`absolute left-2 w-3 h-3 rounded-full border-2 transition-all ${
+                    config.maxDuration === option.value
+                      ? 'border-white bg-white'
+                      : 'border-gray-400 dark:border-gray-500'
+                  }`} />
+                  <span className="ml-3">{option.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">
+              {config.maxDuration < 60 
+                ? `${config.maxDuration} minutes`
+                : config.maxDuration === 60
+                ? '1 hour'
+                : `${config.maxDuration / 60} hours`}
+              {config.maxDuration === 30 && ' (Default)'}
             </p>
           </div>
         </div>

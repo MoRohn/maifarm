@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { AuthUser, AuthCredentials, AuthResponse, Permission } from '../types/security';
-import { SecureStorage, EncryptionService } from '../utils/encryption';
+import { AuthUser, AuthCredentials, AuthResponse, Permission } from '@/types/security';
+import { SecureStorage, EncryptionService } from '@/utils/encryption';
 
 interface AuthState {
   isAuthenticated: boolean;

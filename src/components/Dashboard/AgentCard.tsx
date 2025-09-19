@@ -12,12 +12,12 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Agent } from '../../types';
+import { Agent } from '@/types';
 
 interface AgentCardProps {
   agent: Agent;
   onSelect?: (agent: Agent) => void;
-  onAction?: (agent: Agent, action: 'pause' | 'resume' | 'restart') => void;
+  onAction?: (_agent: Agent, _action: 'pause' | 'resume' | 'restart') => void;
   className?: string;
 }
 
@@ -120,16 +120,16 @@ export const AgentCard: React.FC<AgentCardProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500 dark:text-gray-400">CPU</span>
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                {agent.cpu}%
+                {agent.resources?.cpu || 0}%
               </span>
             </div>
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1 mt-1">
               <div
                 className={clsx(
                   'h-1 rounded-full transition-all duration-300',
-                  agent.cpu > 80 ? 'bg-red-500' : agent.cpu > 60 ? 'bg-yellow-500' : 'bg-green-500'
+                  (agent.resources?.cpu || 0) > 80 ? 'bg-red-500' : (agent.resources?.cpu || 0) > 60 ? 'bg-yellow-500' : 'bg-green-500'
                 )}
-                style={{ width: `${agent.cpu}%` }}
+                style={{ width: `${agent.resources?.cpu || 0}%` }}
               />
             </div>
           </div>
@@ -140,16 +140,16 @@ export const AgentCard: React.FC<AgentCardProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500 dark:text-gray-400">Memory</span>
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                {agent.memory}%
+                {agent.resources?.memory || 0}%
               </span>
             </div>
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1 mt-1">
               <div
                 className={clsx(
                   'h-1 rounded-full transition-all duration-300',
-                  agent.memory > 80 ? 'bg-red-500' : agent.memory > 60 ? 'bg-yellow-500' : 'bg-green-500'
+                  (agent.resources?.memory || 0) > 80 ? 'bg-red-500' : (agent.resources?.memory || 0) > 60 ? 'bg-yellow-500' : 'bg-green-500'
                 )}
-                style={{ width: `${agent.memory}%` }}
+                style={{ width: `${agent.resources?.memory || 0}%` }}
               />
             </div>
           </div>
@@ -159,7 +159,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({
       {/* Action Buttons */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-gray-500 dark:text-gray-400">
-          Last active: {new Date(agent.lastActive).toLocaleTimeString()}
+          Last active: {agent.lastActivity ? new Date(agent.lastActivity).toLocaleTimeString() : 'N/A'}
         </span>
         <div className="flex items-center space-x-1">
           {agent.status === 'working' && (

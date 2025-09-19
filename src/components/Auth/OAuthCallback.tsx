@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import { oauthService } from '../../services/oauth/oauthService';
-import { useAuth } from '../../hooks/useAuth';
-import { OAuthError } from '../../types/oauth';
+import { oauthService } from '@/services/oauth/oauthService';
+import { useAuth } from '@/hooks/useAuth';
+import { OAuthError } from '@/types/oauth';
 
 export const OAuthCallback: React.FC = () => {
   const navigate = useNavigate();

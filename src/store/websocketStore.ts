@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { Farm, Agent, WebSocketMessage } from '../types'
+import { Farm, Agent, WebSocketMessage } from '@/types'
 
 interface WebSocketState {
   connected: boolean

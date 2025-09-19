@@ -4,7 +4,7 @@ import { Server } from 'http';
 import { io as ioClient, Socket } from 'socket.io-client';
 import app from '../index';
 import { redis } from '../database/connection';
-import { cacheService } from '../services/cache';
+import { cacheService } from '../services/unified/stateCoordinator';
 
 describe('QA Fixes - Integration Tests', () => {
   let server: Server;

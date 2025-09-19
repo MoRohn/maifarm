@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { offlineSync } from '../services/offlineSync';
+import { offlineSync } from '@/services/offlineSync';
 import { useWebSocket } from './useWebSocket';
 import toast from 'react-hot-toast';
 

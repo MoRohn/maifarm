@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Send, Sparkles, Info, Settings2 } from 'lucide-react';
-import { GeneratorMode } from '../../types/yamlGenerator';
+import { GeneratorMode } from '@/types/yamlGenerator';
 
 interface PromptInputProps {
   value: string;

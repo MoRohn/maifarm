@@ -8,7 +8,7 @@ import { TerminalControls } from './TerminalControls';
 import { useTerminalSession } from './hooks/useTerminalSession';
 import { useTerminalOutput } from './hooks/useTerminalOutput';
 import { useTerminalCommand } from './hooks/useTerminalCommand';
-import { TerminalViewMode } from '../../types/terminal';
+import { TerminalViewMode } from '@/types/terminal';
 
 interface TerminalContainerProps {
   farmId?: string;
@@ -62,7 +62,7 @@ export const TerminalContainer: React.FC<TerminalContainerProps> = ({
     scrollToBottom
   } = useTerminalOutput({
     sessionId: activeSession,
-    agentId: viewMode.selectedAgent,
+    agentId: viewMode.selectedAgent ?? null,
     autoRefresh: true
   });
 
@@ -78,7 +78,7 @@ export const TerminalContainer: React.FC<TerminalContainerProps> = ({
     getCommandSuggestions
   } = useTerminalCommand({
     sessionId: activeSession,
-    agentId: viewMode.selectedAgent,
+    agentId: viewMode.selectedAgent ?? null,
     onCommandSent: (command) => {
       console.log(`Command sent: ${command}`);
     }
@@ -110,11 +110,13 @@ export const TerminalContainer: React.FC<TerminalContainerProps> = ({
   };
 
   // Handle command sending
-  const handleSendCommand = async (command: string, targetAgentId?: number) => {
+  const handleSendCommand = async (command: string, targetAgentId?: number): Promise<boolean> => {
     if (viewMode.type === 'grid' && !targetAgentId) {
       // Send to all agents in grid mode
       const agentIds = currentAgents.map(agent => agent.id);
-      return await sendCommandToMultiple(command, agentIds);
+      const results = await sendCommandToMultiple(command, agentIds);
+      // Return true if at least one command succeeded
+      return results.some(result => result.success);
     } else {
       return await sendCommand(command, targetAgentId);
     }
@@ -233,7 +235,7 @@ export const TerminalContainer: React.FC<TerminalContainerProps> = ({
   const containerClasses = `
     ${isFullscreen 
       ? 'fixed inset-0 z-50 bg-gray-900' 
-      : 'bg-gray-900 rounded-lg shadow-xl'
+      : 'bg-gray-900 rounded-lg shadow-xl h-full'
     } 
     ${className}
     flex flex-col
@@ -243,8 +245,9 @@ export const TerminalContainer: React.FC<TerminalContainerProps> = ({
     <div 
       className={containerClasses}
       style={{ 
-        height: isFullscreen ? '100vh' : maxHeight,
-        maxHeight: isFullscreen ? 'none' : maxHeight
+        height: isFullscreen ? '100vh' : '100%',
+        maxHeight: isFullscreen ? 'none' : '100%',
+        minHeight: isFullscreen ? '100vh' : '400px'
       }}
     >
       {/* Header */}

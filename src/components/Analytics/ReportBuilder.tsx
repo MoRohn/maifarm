@@ -16,9 +16,9 @@ import {
   X,
   Move
 } from 'lucide-react';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { reportGenerator } from '../../services/reportGenerator';
-import { Report, ReportSection, ReportFormat } from '../../types/analytics';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { reportGenerator } from '@/services/reportGenerator';
+import { Report, ReportSection, ReportFormat } from '@/types/analytics';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 

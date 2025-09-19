@@ -37,7 +37,7 @@ import {
   Filler
 } from 'chart.js';
 import { format } from 'date-fns';
-import { useCostTracking } from '../../hooks/useCostTracking';
+import { useCostTracking } from '@/hooks/useCostTracking';
 
 ChartJS.register(
   CategoryScale,

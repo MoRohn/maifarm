@@ -1,9 +1,9 @@
 /**
  * Provider Comparison Benchmarks
- * Compares performance between Claude Code and Qwen3-Coder
+ * Compares performance between Claude Code and OpenAI
  */
 
-import { performanceMonitor } from '../../server/services/performanceMonitor';
+import { performanceMonitor } from '../../server/services/unified/stateCoordinator';
 import { contextManager } from '../../server/services/contextManager';
 
 interface BenchmarkTask {
@@ -18,7 +18,7 @@ interface BenchmarkTask {
 
 interface BenchmarkResult {
   taskId: string;
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'openai';
   latency: number;
   tokensGenerated: number;
   throughput: number;
@@ -93,11 +93,11 @@ export class ProviderBenchmark {
    * Run full benchmark suite
    */
   async runBenchmarks(options?: {
-    providers?: ('claude' | 'qwen')[];
+    providers?: ('claude' | 'openai')[];
     tasks?: string[];
     iterations?: number;
   }): Promise<void> {
-    const providers = options?.providers || ['claude', 'qwen'];
+    const providers = options?.providers || ['claude', 'openai'];
     const tasksToRun = options?.tasks 
       ? benchmarkTasks.filter(t => options.tasks?.includes(t.id))
       : benchmarkTasks;
@@ -145,7 +145,7 @@ export class ProviderBenchmark {
    */
   private async runSingleBenchmark(
     task: BenchmarkTask,
-    provider: 'claude' | 'qwen'
+    provider: 'claude' | 'openai'
   ): Promise<BenchmarkResult> {
     const farmId = `benchmark_${task.id}_${provider}_${Date.now()}`;
     const startTime = Date.now();
@@ -203,7 +203,7 @@ export class ProviderBenchmark {
    */
   private async simulateProviderCall(
     task: BenchmarkTask,
-    provider: 'claude' | 'qwen'
+    provider: 'claude' | 'openai'
   ): Promise<{ tokensUsed: number; quality: number }> {
     // Simulate network latency
     const baseLatency = provider === 'claude' ? 1000 : 800; // Qwen slightly faster

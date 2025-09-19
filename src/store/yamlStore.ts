@@ -3,18 +3,18 @@
  */
 
 import { create } from 'zustand';
-import { YamlConfig } from '../types/yamlGenerator';
+import { YamlConfig } from '@/types/yamlGenerator';
 import { 
   YamlVersion, 
   ExtendedValidationResult,
   DeploymentStatus,
   ApprovalWorkflow 
-} from '../types/yamlPipeline';
-import yamlGeneratorService from '../services/yamlGeneratorService';
-import yamlValidationService from '../services/yamlValidationService';
-import yamlVersioningService from '../services/yamlVersioningService';
-import yamlAuditService from '../services/yamlAuditService';
-import yamlCicdService from '../services/yamlCicdService';
+} from '@/types/yamlPipeline';
+import yamlGeneratorService from '@/services/yamlGeneratorService';
+import yamlValidationService from '@/services/yamlValidationService';
+import yamlVersioningService from '@/services/yamlVersioningService';
+import yamlAuditService from '@/services/yamlAuditService';
+import yamlCicdService from '@/services/yamlCicdService';
 
 interface YamlStore {
   // Current YAML state

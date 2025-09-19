@@ -11,7 +11,7 @@ import {
   ToggleRight,
   AlertCircle
 } from 'lucide-react';
-import { MultiClaudeConfig } from '../../types/multiClaude';
+import { MultiClaudeConfig } from '@/types/multiClaude';
 
 interface AgentControlsProps {
   config: MultiClaudeConfig;

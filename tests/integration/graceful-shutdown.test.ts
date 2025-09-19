@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { shutdownCoordinator } from '../../server/services/shutdownCoordinator';
-import { quickTaskService } from '../../server/services/quickTaskService';
-import { farmManager } from '../../server/services/farmManager';
-import { goWildManager } from '../../server/services/goWildManager';
-import { harvestFileCollector } from '../../server/services/harvestFileCollector';
-import { barnService } from '../../server/services/barnService';
+import { quickTaskService } from '../../server/services/unified/quickTaskService';
+import { farmManager } from '../../server/services/unified/farmService';
+import { goWildManager } from '../../server/services/unified/farmService';
+import { harvestFileCollector } from '../../server/services/unified/farmService';
+import { barnService } from '../../server/services/unified/farmService';
 import { 
   QUICK_TASK_TIMEOUT, 
   GRACEFUL_SHUTDOWN_PERIOD,
@@ -69,7 +69,7 @@ describe('Graceful Shutdown Integration Tests', () => {
       expect(executeSpy).toHaveBeenCalledWith({
         mode: 'quick-task',
         farmId: TEST_FARM_ID,
-        userId: 'dev-user',
+        userId: 'maifarm-user',
         reason: 'completion'
       });
     });

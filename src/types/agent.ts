@@ -1,9 +1,47 @@
 // Agent lifecycle and management type definitions
 
-import { Agent } from './index';
+// Import base Agent type from unified types to avoid circular dependency
+import type { Agent as UnifiedAgent } from '../../shared/types/unified';
 
-// Re-export Agent for consumers of this module
-export type { Agent };
+// Define Agent type locally to break circular dependency
+export interface Agent extends UnifiedAgent {
+  // Keep backward compatibility fields
+  memory?: number;
+  cpu?: number;
+  lastActive?: Date;
+  performance?: {
+    cpuUsage: number;
+    memoryUsage: number;
+    responseTime: number;
+    throughput: number;
+  };
+  lifecycle?: {
+    state: string;
+    phase: string;
+    startTime: Date;
+    lastUpdate: Date;
+    health?: {
+      status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+      lastCheck?: Date;
+    };
+  };
+  tasks?: Array<{
+    id: string;
+    type: string;
+    status: string;
+    priority: string;
+    createdAt: Date;
+  }>;
+  // Properties from AgentInstance for compatibility
+  instanceId?: string;
+  poolId?: string;
+  state?: AgentState;
+  assignedTasks?: string[];
+  startTime?: Date;
+  lastHealthCheck?: Date;
+  restartCount?: number;
+  metadata?: Record<string, any>;
+}
 
 export interface AgentPool {
   id: string;
@@ -21,10 +59,9 @@ export interface AgentPool {
   metrics: PoolMetrics;
 }
 
-export interface AgentInstance extends Agent {
+export interface AgentInstance extends Omit<Agent, 'health' | 'resources'> {
   instanceId: string;
   poolId: string;
-  farmId?: string;
   state: AgentState;
   health: AgentHealth;
   resources: AgentResources;
@@ -223,7 +260,7 @@ export interface AgentTask {
   id: string;
   agentId: string;
   type: 'build' | 'test' | 'deploy' | 'analyze' | 'custom';
-  status: 'queued' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'assigned' | 'active' | 'completed' | 'failed' | 'cancelled';
   priority: 'low' | 'medium' | 'high' | 'critical';
   payload: Record<string, any>;
   dependencies?: string[];

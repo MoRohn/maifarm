@@ -12,7 +12,7 @@ import {
   Pause,
   Play
 } from 'lucide-react';
-import { TerminalSession, TerminalAgent } from '../../types/terminal';
+import { TerminalSession, TerminalAgent } from '@/types/terminal';
 
 interface TerminalPaneProps {
   session: TerminalSession;
@@ -125,7 +125,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({
 
   const terminalHeight = expanded 
     ? (showPrompt ? 'calc(100vh - 12rem)' : 'calc(100vh - 8rem)')
-    : (showPrompt ? '16rem' : '20rem');
+    : 'auto';
 
   return (
     <motion.div
@@ -207,11 +207,14 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({
       {/* Terminal Content */}
       <div 
         ref={terminalRef}
-        className="bg-black p-3 font-mono text-xs overflow-y-auto flex-1"
+        className="bg-black p-3 font-mono text-xs overflow-y-auto flex-1 min-h-0"
         style={{ 
-          height: terminalHeight,
+          maxHeight: terminalHeight === 'auto' ? '100%' : terminalHeight,
+          minHeight: '200px',
           scrollBehavior: 'smooth',
-          fontFamily: 'Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace'
+          fontFamily: 'Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace',
+          wordBreak: 'break-word',
+          overflowWrap: 'anywhere'
         }}
       >
         {output.length === 0 ? (
@@ -228,7 +231,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({
           output.map((line, index) => (
             <div 
               key={index} 
-              className={`whitespace-pre-wrap break-all leading-relaxed ${
+              className={`whitespace-pre-wrap break-words leading-relaxed overflow-hidden ${
                 line.startsWith('>') ? 'text-green-400' : 
                 line.startsWith('[') && line.endsWith(']') ? 'text-yellow-400' : 
                 line.includes('error') || line.includes('Error') ? 'text-red-400' :

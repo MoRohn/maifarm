@@ -1,4 +1,4 @@
-import { EncryptedData } from '../types/auth';
+import { EncryptedData } from '@/types/auth';
 
 class EncryptionService {
   private algorithm = 'AES-GCM';

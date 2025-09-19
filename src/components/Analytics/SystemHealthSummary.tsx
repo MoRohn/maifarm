@@ -2,8 +2,8 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Activity, Server, Wifi, HardDrive, AlertTriangle, CheckCircle } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { SystemHealthMetric } from '../../types/analytics';
-import { formatPercentage, formatNumber } from '../../utils/format';
+import type { SystemHealthMetric } from '@/types/analytics';
+import { formatPercentage, formatNumber } from '@/utils/format';
 
 interface SystemHealthSummaryProps {
   health?: SystemHealthMetric;

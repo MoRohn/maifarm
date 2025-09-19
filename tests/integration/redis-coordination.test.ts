@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import { Redis } from 'ioredis';
-import { RedisCoordinationStore } from '../../server/services/redisCoordinationStore';
+import { RedisCoordinationStore } from '../../server/services/unified/stateCoordinator';
 import { SessionController } from '../../server/services/sessionController';
 import { AtomicCoordinator } from '../../server/services/atomicCoordinator';
 import { multiClaudeServiceV2 } from '../../server/services/multiClaudeServiceV2';

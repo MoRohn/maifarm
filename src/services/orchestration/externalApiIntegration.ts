@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
-import { ExternalApiConfig } from '../../types/orchestration'
+import { ExternalApiConfig } from '@/types/orchestration'
 import { faultToleranceService } from './faultTolerance'
 import { encryptionService } from '../encryptionService'
 import { auditService } from '../audit'

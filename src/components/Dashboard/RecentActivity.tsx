@@ -48,7 +48,7 @@ export const RecentActivity: React.FC<RecentActivityProps> = ({
 
   if (recentActivities.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+      <div className="bg-gray-100 dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-800">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Activity className="w-5 h-5" />
           Recent Activity
@@ -65,7 +65,7 @@ export const RecentActivity: React.FC<RecentActivityProps> = ({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.3 }}
-      className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm"
+      className="bg-gray-100 dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-800"
     >
       <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
         <Activity className="w-5 h-5" />

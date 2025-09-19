@@ -1,11 +1,12 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Search, Copy, Download, ChevronUp, ChevronDown, 
+  Search, Copy, Download, ChevronUp, ChevronDown, ChevronRight,
   FileCode, Image, Link, FolderOpen, Terminal as TerminalIcon
 } from 'lucide-react';
 import { useTerminalTheme } from '../themes/TerminalThemeProvider';
 import { terminalLineAnimation, typewriterEffect } from '../animations/terminalAnimations';
+import { AnsiParser } from '@/utils/ansiParser';
 import hljs from 'highlight.js/lib/core';
 
 // Import common languages for syntax highlighting
@@ -119,6 +120,24 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
 
   // Parse and detect special content types
   const parseLineContent = useCallback((content: string): React.ReactNode => {
+    // First, check if the content has ANSI codes and clean/parse them
+    let cleanContent = content;
+    let hasAnsi = false;
+    
+    if (AnsiParser.hasAnsiCodes(content)) {
+      hasAnsi = true;
+      // Parse ANSI codes to HTML with proper styling
+      cleanContent = AnsiParser.parseToHtml(content);
+    } else {
+      // If no ANSI codes, escape HTML characters
+      cleanContent = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    
     // Detect file paths
     const filePathRegex = /([a-zA-Z0-9_\-./]+\.(ts|tsx|js|jsx|py|json|css|html|md|txt))(:\d+)?/g;
     // Detect URLs
@@ -126,31 +145,35 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
     // Detect image files
     const imageRegex = /([a-zA-Z0-9_\-./]+\.(png|jpg|jpeg|gif|svg|webp))/g;
 
-    let result = content;
+    let result = cleanContent;
     
-    // Replace file paths with clickable links
-    if (onFileLinkClick) {
-      result = result.replace(filePathRegex, (match, filePath, ext, lineNumber) => {
-        return `<span class="terminal-file-link" data-path="${filePath}" data-line="${lineNumber?.slice(1) || ''}">
-          <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-file"></use></svg>${match}
-        </span>`;
-      });
-    }
+    // Only apply these replacements if we haven't already parsed ANSI
+    // to avoid breaking the HTML structure
+    if (!hasAnsi) {
+      // Replace file paths with clickable links
+      if (onFileLinkClick) {
+        result = result.replace(filePathRegex, (match, filePath, ext, lineNumber) => {
+          return `<span class="terminal-file-link" data-path="${filePath}" data-line="${lineNumber?.slice(1) || ''}">
+            <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-file"></use></svg>${match}
+          </span>`;
+        });
+      }
 
-    // Replace URLs with clickable links
-    result = result.replace(urlRegex, (url) => {
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="terminal-url-link">
-        <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-link"></use></svg>${url}
-      </a>`;
-    });
-
-    // Replace image paths with preview icons
-    if (onImagePreview) {
-      result = result.replace(imageRegex, (match, imagePath) => {
-        return `<span class="terminal-image-link" data-image="${imagePath}">
-          <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-image"></use></svg>${match}
-        </span>`;
+      // Replace URLs with clickable links
+      result = result.replace(urlRegex, (url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="terminal-url-link">
+          <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-link"></use></svg>${url}
+        </a>`;
       });
+
+      // Replace image paths with preview icons
+      if (onImagePreview) {
+        result = result.replace(imageRegex, (match, imagePath) => {
+          return `<span class="terminal-image-link" data-image="${imagePath}">
+            <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-image"></use></svg>${match}
+          </span>`;
+        });
+      }
     }
 
     return <div dangerouslySetInnerHTML={{ __html: result }} />;
@@ -193,7 +216,7 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
   const copySelectedLines = () => {
     const selectedContent = lines
       .filter(line => selectedLines.has(line.id))
-      .map(line => line.content)
+      .map(line => AnsiParser.stripAnsi(line.content)) // Strip ANSI codes when copying
       .join('\n');
     navigator.clipboard.writeText(selectedContent);
   };
@@ -425,7 +448,7 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
       </div>
 
       {/* Custom scrollbar */}
-      <style jsx>{`
+      <style>{`
         .terminal-output::-webkit-scrollbar {
           width: 8px;
         }

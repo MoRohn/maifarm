@@ -3,21 +3,20 @@ import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import { 
   KeyIcon, 
-  DocumentDuplicateIcon,
   SparklesIcon,
   PaintBrushIcon,
   AdjustmentsHorizontalIcon,
-  CpuChipIcon
+  TrashIcon,
+  ServerIcon
 } from '@heroicons/react/24/outline';
 import ThemeSettings from './ThemeSettings';
-import ApiKeyManager from './ApiKeyManager';
-import FarmTemplates from './FarmTemplates';
 import GoWildSettings from './GoWildSettings';
 import BehaviorSettings from './BehaviorSettings';
 import AIProviderSettings from './AIProviderSettings';
-import { useUserStore } from '../../store/userStore';
-import { useAIPreferences } from '../../hooks/useAIPreferences';
-import { useThemeStore } from '../../store/themeStore';
+import { MaiBarnReset } from './MaiBarnReset';
+import { useUserStore } from '@/store/userStore';
+import { useAIPreferences } from '@/hooks/useAIPreferences';
+import { useThemeStore } from '@/store/themeStore';
 
 interface SettingsTab {
   id: string;
@@ -62,16 +61,10 @@ const SettingsPage: React.FC = () => {
     },
     {
       id: 'aiProvider',
-      label: 'AI Engine',
-      icon: CpuChipIcon,
+      label: 'AI Engine & Keys',
+      icon: ServerIcon,
       component: AIProviderSettings,
-      aiRecommended: aiSuggestions.some(s => s.category === 'ai-provider')
-    },
-    {
-      id: 'apiKeys',
-      label: 'API Keys',
-      icon: KeyIcon,
-      component: ApiKeyManager
+      aiRecommended: aiSuggestions.some(s => s.category === 'ai')
     },
     {
       id: 'behavior',
@@ -88,11 +81,11 @@ const SettingsPage: React.FC = () => {
       aiRecommended: aiSuggestions.some(s => s.category === 'exploration')
     },
     {
-      id: 'templates',
-      label: 'Farm Templates',
-      icon: DocumentDuplicateIcon,
-      component: FarmTemplates,
-      aiRecommended: aiSuggestions.some(s => s.category === 'templates')
+      id: 'maibarnReset',
+      label: 'Data Reset',
+      icon: TrashIcon,
+      component: MaiBarnReset,
+      aiRecommended: false
     }
   ];
 
@@ -186,9 +179,9 @@ const SettingsPage: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex gap-8">
+        <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar */}
-          <nav className="w-64 space-y-1">
+          <nav className="w-full lg:w-64 flex-shrink-0 space-y-1">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -201,15 +194,15 @@ const SettingsPage: React.FC = () => {
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                   }`}
                 >
-                  <div className="flex items-center space-x-3">
-                    <Icon className="w-5 h-5" />
-                    <span>{tab.label}</span>
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    <span className="truncate">{tab.label}</span>
                   </div>
                   {tab.aiRecommended && (
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
-                      className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"
+                      className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full flex-shrink-0 ml-2"
                     />
                   )}
                 </button>
@@ -218,14 +211,15 @@ const SettingsPage: React.FC = () => {
           </nav>
 
           {/* Main Content */}
-          <main className="flex-1">
+          <main className="flex-1 min-w-0">
             <motion.div
               key={activeTab}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2 }}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6"
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm"
             >
+              <div className="p-6">
               {/* AI Suggestions Banner */}
               {aiSuggestions.some(s => s.category === activeTab) && (
                 <motion.div
@@ -273,6 +267,7 @@ const SettingsPage: React.FC = () => {
               )}
 
               <ActiveComponent onChange={handleSettingChange} />
+              </div>
             </motion.div>
 
             {/* Save and Cancel Buttons - Always visible */}

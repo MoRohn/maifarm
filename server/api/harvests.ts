@@ -8,7 +8,7 @@ import { Harvest, HarvestArtifact } from '../../src/types/barn';
 import fs from 'fs/promises';
 import path from 'path';
 import { WebSocketManager } from '../websocket/websocketManager';
-import { harvestService } from '../services/harvestService';
+import { harvestService } from '../services/unified/harvestService';
 
 const router = Router();
 
@@ -47,8 +47,19 @@ router.get('/', apiRateLimits.read, async (req, res) => {
         params.push(category);
       }
 
+      // Map camelCase to snake_case for database columns
+      const columnMap: Record<string, string> = {
+        'createdAt': 'created_at',
+        'updatedAt': 'updated_at',
+        'lastUsedAt': 'last_used_at',
+        'useCount': 'use_count',
+        'farmId': 'farm_id',
+        'farmName': 'farm_name'
+      };
+      const dbColumn = columnMap[sortBy] || sortBy;
+
       // Add sorting and pagination
-      query += ` ORDER BY ${sortBy} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+      query += ` ORDER BY ${dbColumn} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
       params.push(limit, offset);
 
       const result = await db.query(query, params);
@@ -152,38 +163,85 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
     const { id } = req.params;
     const userId = (req as any).user?.userId || 'default-user';
     
+    console.log(`[HarvestAPI] Looking for harvest ${id} for user ${userId}`);
+    
+    // Validate ID format (should be UUID)
+    if (!id || !id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'INVALID_ID',
+          message: 'Invalid harvest ID format'
+        }
+      };
+      return res.status(400).json(response);
+    }
+    
     // Try database first, then fall back to harvestService
     try {
-      const result = await db.query(
+      // First try with user filter, then without (for dev/test environments)
+      let result = await db.query(
         'SELECT * FROM harvests WHERE id = $1 AND created_by = $2',
         [id, userId]
       );
       
+      // In development/test mode, also check without user filter
+      if (result.rows.length === 0 && process.env.NODE_ENV !== 'production') {
+        console.log(`[HarvestAPI] No harvest found for user ${userId}, checking without user filter (dev mode)`);
+        result = await db.query(
+          'SELECT * FROM harvests WHERE id = $1',
+          [id]
+        );
+      }
+      
+      console.log(`[HarvestAPI] Database query returned ${result.rows.length} rows for harvest ${id}`);
+      
       if (result.rows.length === 0) {
+        console.log(`[HarvestAPI] Harvest ${id} not found in database, trying harvestService`);
         throw new Error('Not found in database');
       }
 
       const row = result.rows[0];
+      console.log(`[HarvestAPI] Found harvest in DB: ${row.id} (${row.farm_name})`);
+      
+      // Convert database row to Harvest type format
       const harvest: Harvest = {
         id: row.id,
         farmId: row.farm_id,
-        farmName: row.farm_name,
-        name: row.name,
-        description: row.description,
-        type: row.type,
-        category: row.category,
+        farmName: row.farm_name || row.name,
+        status: row.status || 'completed',
+        createdAt: new Date(row.created_at),
+        completedAt: row.updated_at ? new Date(row.updated_at) : undefined,
+        summary: row.config?.summary || {
+          description: row.description || '',
+          totalFiles: 0,
+          filesGenerated: 0,
+          filesFailed: 0,
+          totalTasks: 0,
+          completedTasks: 0,
+          failedTasks: 0,
+          duration: 0,
+          efficiency: 0,
+          fileCategories: {
+            text: 0,
+            code: 0,
+            image: 0,
+            data: 0,
+            config: 0,
+            other: 0
+          }
+        },
+        results: row.metadata?.results || [],
+        insights: row.metadata?.insights || [],
+        yield: Array.isArray(row.yield) ? row.yield : [],
+        quality: row.config?.quality || {
+          completeness: 100,
+          accuracy: 100,
+          relevance: 100,
+          overallScore: 100
+        },
         tags: row.tags || [],
-        artifacts: row.artifacts || [],
-        config: row.config || {},
-        metadata: row.metadata || {},
-        parentHarvestId: row.parent_harvest_id,
-        version: row.version,
-        status: row.status,
-        createdBy: row.created_by,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        lastUsedAt: row.last_used_at,
-        useCount: row.use_count || 0
+        exportFormats: ['json', 'markdown', 'pdf']
       };
 
       const response: ApiResponse<Harvest> = {
@@ -194,11 +252,12 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
       res.json(response);
     } catch (dbError) {
       // Database not available or not found - fall back to harvestService
-      console.log(`[HarvestAPI] Database lookup failed for ${id}, trying harvestService`);
+      console.log(`[HarvestAPI] Database lookup failed for ${id}, trying harvestService fallback`);
       
       const harvest = await harvestService.getHarvest(id, userId);
       
       if (!harvest) {
+        console.log(`[HarvestAPI] Harvest ${id} not found in harvestService either`);
         const response: ApiResponse = {
           success: false,
           error: {
@@ -209,6 +268,7 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
         return res.status(404).json(response);
       }
 
+      console.log(`[HarvestAPI] Found harvest in harvestService: ${harvest.id} (${harvest.farmName})`);
       const response: ApiResponse<Harvest> = {
         success: true,
         data: harvest

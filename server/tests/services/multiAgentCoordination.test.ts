@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { OrchestratorService } from '../../services/OrchestratorService';
+import { OrchestratorService } from '../../services/unified/farmService';
 import { CoordinationService } from '../../services/coordinationService';
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';

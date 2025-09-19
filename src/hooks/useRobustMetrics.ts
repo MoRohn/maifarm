@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useFarmStore } from '../store/farmStore';
-import { apiClient } from '../services/apiClient';
+import { useFarmStore } from '@/store/farmStore';
+import { apiClient } from '@/services/apiClient';
 
 export interface MetricsData {
   totalAgents: number;
@@ -80,7 +80,7 @@ export const useRobustMetrics = (config: MetricsConfig = {}) => {
 
         // Filter to only count agents from active farms
         const activeFarmsList = farmsList.filter((f: any) => 
-          ['running', 'active', 'harvesting', 'launching'].includes(f.status)
+          ['active', 'active', 'harvesting', 'launching'].includes(f.status)
         );
         const activeFarmIds = new Set(activeFarmsList.map((f: any) => f.id));
         
@@ -109,7 +109,7 @@ export const useRobustMetrics = (config: MetricsConfig = {}) => {
         primaryData = {
           totalAgents: uniqueAgentIds.size,
           activeAgents: activeAgentsList.filter((a: any) => 
-            ['running', 'active', 'working', 'launching'].includes(a.status)
+            ['active', 'active', 'working', 'launching'].includes(a.status)
           ).length,
           totalFarms: farmsList.length,
           activeFarms: activeFarmsList.length,
@@ -135,11 +135,11 @@ export const useRobustMetrics = (config: MetricsConfig = {}) => {
         const activeStoreAgents = new Set();
         
         farms.forEach(farm => {
-          if (['running', 'active', 'harvesting', 'launching'].includes(farm.status)) {
+          if (['active', 'active', 'harvesting', 'launching'].includes(farm.status)) {
             (farm.agents || []).forEach((agent: any) => {
               if (agent?.id) {
                 uniqueStoreAgents.add(agent.id);
-                if (['running', 'active', 'working'].includes(agent.status)) {
+                if (['active', 'active', 'working'].includes(agent.status)) {
                   activeStoreAgents.add(agent.id);
                 }
               }
@@ -154,7 +154,7 @@ export const useRobustMetrics = (config: MetricsConfig = {}) => {
         const activeAgentsFromStore = activeStoreAgents.size;
 
         const activeFarmsFromStore = farms.filter(f => 
-          ['running', 'active', 'harvesting'].includes(f.status)
+          ['active', 'active', 'harvesting'].includes(f.status)
         ).length;
 
         // Try to get coordination file data
@@ -268,7 +268,7 @@ export const useFarmMetrics = (farmId: string) => {
       setFarmMetrics({
         agentCount: farm.agents?.length || 0,
         activeAgents: farm.agents?.filter((a: any) => 
-          ['running', 'active', 'working'].includes(a.status)
+          ['active', 'active', 'working'].includes(a.status)
         ).length || 0,
         completedTasks: farm.metrics?.completedTasks || 0,
         status: farm.status || 'idle',

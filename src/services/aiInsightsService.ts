@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Farm, Agent } from '../types';
+import { Farm, Agent } from '@/types';
 import { 
   AggregatedMetrics, 
   AgentPerformanceMetric, 
   TimeSeriesData 
-} from '../types/analytics';
+} from '@/types/analytics';
 
 export interface AIInsight {
   id: string;

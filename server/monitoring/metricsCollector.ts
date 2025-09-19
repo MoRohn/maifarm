@@ -215,11 +215,33 @@ export function recordAgentPerformance(agentId: string, agentType: string, perfo
 // Middleware for Express to track HTTP requests
 export function httpMetricsMiddleware(req: any, res: any, next: any) {
   const start = Date.now();
-  
+
   res.on('finish', () => {
     const duration = (Date.now() - start) / 1000;
     recordApiRequest(req.method, req.route?.path || req.path, res.statusCode, duration);
   });
-  
+
   next();
 }
+
+// Export as metricsCollector object for compatibility
+export const metricsCollector = {
+  getCurrentMetrics: () => ({
+    farms: activeFarmsGauge.get(),
+    agents: activeAgentsGauge.get(),
+    clients: connectedClientsGauge.get(),
+    resources: systemResourcesGauge.get()
+  }),
+  recordFarmCreation,
+  recordAgentSpawned,
+  recordTaskCompletion,
+  recordApiRequest,
+  recordWebSocketEvent,
+  updateActiveFarms,
+  updateActiveAgents,
+  updateConnectedClients,
+  updateSystemResources,
+  updateFarmEfficiency,
+  recordFarmLifecycle,
+  recordAgentPerformance
+};

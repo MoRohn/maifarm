@@ -1,27 +1,38 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Send, Copy, Maximize2, Minimize2, User, Activity, ChevronUp, ChevronDown, Command } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { AnsiParser } from '@/utils/ansiParser';
 
 interface AgentTerminalProps {
   farmId: string;
   agentId: number;
+  agentName?: string;
   agentUid?: string;
   status?: 'starting' | 'ready' | 'working' | 'idle' | 'error';
   className?: string;
   onCommand?: (command: string) => void;
 }
 
+interface TerminalMessage {
+  content: string;
+  type?: 'normal' | 'command' | 'status' | 'warning' | 'limit' | 'model' | 'rate-limit' | 'notice' | 'thinking';
+  timestamp?: string;
+  isPinned?: boolean;
+}
+
 export const AgentTerminal: React.FC<AgentTerminalProps> = ({
   farmId,
   agentId,
+  agentName,
   agentUid,
   status = 'starting',
   className,
   onCommand
 }) => {
-  const [terminalContent, setTerminalContent] = useState<string[]>([]);
+  const [terminalContent, setTerminalContent] = useState<TerminalMessage[]>([]);
+  const [pinnedMessages, setPinnedMessages] = useState<TerminalMessage[]>([]);
   const [commandInput, setCommandInput] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
   const [showCommandInput, setShowCommandInput] = useState(false);
@@ -30,18 +41,154 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { subscribe } = useWebSocket({
+  const { subscribe, socket, connected } = useWebSocket({
     url: import.meta.env.VITE_API_URL || 'http://localhost:4567'
   });
 
+  // Track if we've joined the session to avoid duplicate joins
+  const hasJoinedRef = useRef(false);
+  
+  // Function to join terminal session
+  const joinTerminalSession = useCallback(() => {
+    if (socket && connected && !hasJoinedRef.current) {
+      const sessionName = `farm-${farmId.substring(0, 8)}`;
+      // CRITICAL: Send both sessionId and farmId to ensure proper room joining
+      const joinData = {
+        sessionId: sessionName,
+        farmId: farmId // Full farmId for room management
+      };
+      socket.emit('terminal:join_session', joinData);
+      
+      // Also join agent-specific rooms
+      socket.emit('terminal:join_agent', {
+        sessionId: sessionName,
+        farmId,
+        agentId: Number(agentId),
+        agentIndex: Number(agentId)
+      });
+      
+      hasJoinedRef.current = true;
+      
+      // Request initial terminal state
+      socket.emit('terminal:request_state', {
+        sessionId: sessionName,
+        farmId,
+        agentId: Number(agentId)
+      });
+    }
+  }, [socket, connected, farmId, agentId]);
+
+  // Handle initial connection and reconnections
   useEffect(() => {
+    joinTerminalSession();
+    
+    // Reset join status when disconnected
+    if (!connected) {
+      hasJoinedRef.current = false;
+    }
+  }, [connected, joinTerminalSession]);
+
+  useEffect(() => {
+    
     // Subscribe to terminal updates for this agent
     const handleTerminalUpdate = (data: any) => {
       // Handle both direct data and payload format
       const eventData = data.payload || data;
-      if (eventData.farmId === farmId && eventData.agentId === agentId) {
-        const lines = eventData.content.split('\n');
-        setTerminalContent(prev => [...prev, ...lines].slice(-500)); // Keep last 500 lines
+      
+      // CRITICAL: Strict agent ID matching with normalization
+      // Normalize both incoming and component agentId to numbers for comparison
+      const incomingAgentId = typeof eventData.agentId === 'string' 
+        ? parseInt(eventData.agentId, 10)
+        : (eventData.agentId ?? eventData.agentIndex ?? eventData.paneIndex);
+      
+      const ourAgentId = typeof agentId === 'string' 
+        ? parseInt(agentId as any, 10)
+        : agentId;
+      
+      // Validate the incoming agent ID
+      if (isNaN(incomingAgentId) || incomingAgentId < 0) {
+        console.warn(`[AgentTerminal-${ourAgentId}] Invalid incoming agentId:`, eventData.agentId);
+        return;
+      }
+      
+      // Check if this update is for our agent - STRICT matching by agent ID
+      const isOurAgent = (eventData.farmId === farmId || eventData.sessionId?.includes(farmId)) && 
+                        (incomingAgentId === ourAgentId);
+      
+      // Debug logging for agent matching
+      if (!isOurAgent && eventData.farmId === farmId) {
+        console.log(`[AgentTerminal-${ourAgentId}] Ignoring output for agent ${incomingAgentId}`);
+        return;
+      }
+      
+      // Handle various content formats
+      let content = null;
+      if (eventData.content) {
+        content = eventData.content;
+      } else if (eventData.lines) {
+        content = Array.isArray(eventData.lines) ? eventData.lines : [eventData.lines];
+      } else if (eventData.output) {
+        content = eventData.output;
+      }
+      
+      if (isOurAgent && content) {
+        console.log(`[AgentTerminal-${ourAgentId}] Processing ${Array.isArray(content) ? content.length : 1} lines`);
+        const lines = Array.isArray(content) ? content : content.split('\n');
+        const newMessages: TerminalMessage[] = lines.map((line: string) => {
+          // Clean ANSI codes for type detection only
+          const cleanLineForDetection = AnsiParser.stripAnsi(line);
+          
+          // Detect message type based on clean content
+          let type: TerminalMessage['type'] = 'normal';
+          let isPinned = false;
+          
+          if (cleanLineForDetection.includes('[CLAUDE LIMIT]')) {
+            type = 'limit';
+            isPinned = true;
+          } else if (cleanLineForDetection.includes('[MODEL CHANGE]')) {
+            type = 'model';
+            isPinned = true;
+          } else if (cleanLineForDetection.includes('[RATE LIMIT]')) {
+            type = 'rate-limit';
+            isPinned = true;
+          } else if (cleanLineForDetection.includes('[CLAUDE CMD]')) {
+            type = 'command';
+          } else if (cleanLineForDetection.includes('[Status:')) {
+            type = 'status';
+          } else if (cleanLineForDetection.includes('⚠️') || cleanLineForDetection.includes('[Warning]')) {
+            type = 'warning';
+          } else if (cleanLineForDetection.includes('📌') || cleanLineForDetection.includes('[Notice]')) {
+            type = 'notice';
+          } else if (cleanLineForDetection.includes('🤔') || cleanLineForDetection.includes('Thinking...')) {
+            type = 'thinking';
+          } else if (cleanLineForDetection.startsWith('>')) {
+            type = 'command';
+          }
+          
+          // Clean the line fully for storage and display
+          const cleanContent = AnsiParser.cleanTerminalOutput(line);
+          
+          return {
+            content: cleanContent, // Store cleaned content
+            type,
+            timestamp: eventData.timestamp || new Date().toISOString(),
+            isPinned
+          };
+        }).filter((msg: any) => msg.content.trim() !== ''); // Filter out empty lines
+        
+        if (newMessages.length > 0) {
+          // Update pinned messages
+          const newPinned = newMessages.filter(msg => msg.isPinned);
+          if (newPinned.length > 0) {
+            setPinnedMessages(prev => [...prev, ...newPinned].slice(-3)); // Keep last 3 pinned
+          }
+          
+          setTerminalContent(prev => {
+            const combined = [...prev, ...newMessages];
+            // Implement circular buffer to prevent memory leaks
+            return combined.length > 1000 ? combined.slice(-1000) : combined;
+          })
+        }
       }
     };
 
@@ -49,7 +196,12 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
       // Handle both direct data and payload format
       const eventData = data.payload || data;
       if (eventData.farmId === farmId && eventData.agentId === agentId) {
-        setTerminalContent(prev => [...prev, `> ${eventData.command}`]);
+        const commandMsg: TerminalMessage = {
+          content: `> ${eventData.command}`,
+          type: 'command',
+          timestamp: new Date().toISOString()
+        };
+        setTerminalContent(prev => [...prev, commandMsg]);
       }
     };
 
@@ -57,11 +209,18 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
       // Handle both direct data and payload format
       const eventData = data.payload || data;
       if (eventData.farmId === farmId && eventData.agentId === agentId) {
-        setTerminalContent(prev => [...prev, `[Status: ${eventData.status}]`]);
+        const statusMsg: TerminalMessage = {
+          content: `[Status: ${eventData.status}]`,
+          type: 'status',
+          timestamp: new Date().toISOString()
+        };
+        setTerminalContent(prev => [...prev, statusMsg]);
       }
     };
 
+    // Subscribe to multiple terminal event types for better compatibility
     const unsubscribeTerminal = subscribe('agent:terminal', handleTerminalUpdate);
+    const unsubscribeTerminalOutput = subscribe('terminal:output', handleTerminalUpdate);
     const unsubscribeCommand = subscribe('agent:command', handleCommandSent);
     const unsubscribeStatus = subscribe('agent:status', handleAgentStatus);
 
@@ -70,10 +229,20 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
 
     return () => {
       unsubscribeTerminal();
+      unsubscribeTerminalOutput();
       unsubscribeCommand();
       unsubscribeStatus();
+      
+      // Leave terminal session on unmount
+      if (socket && connected) {
+        const sessionName = `farm-${farmId.substring(0, 8)}`;
+        socket.emit('terminal:leave_session', { sessionId: sessionName });
+      }
+      
+      // Reset join status
+      hasJoinedRef.current = false;
     };
-  }, [farmId, agentId, subscribe]);
+  }, [farmId, agentId, subscribe, socket, connected]);
 
   useEffect(() => {
     // Auto-scroll to bottom when new content is added
@@ -98,7 +267,13 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data.terminal) {
-          setTerminalContent(data.data.terminal);
+          // Convert plain strings to TerminalMessage objects
+          const messages = data.data.terminal.map((line: string) => ({
+            content: line,
+            type: 'normal' as const,
+            timestamp: new Date().toISOString()
+          }));
+          setTerminalContent(messages);
         }
       }
     } catch (error) {
@@ -132,7 +307,12 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
       }
     } catch (error) {
       console.error('Error sending command:', error);
-      setTerminalContent(prev => [...prev, `[Error: Failed to send command]`]);
+      const errorMsg: TerminalMessage = {
+        content: `[Error: Failed to send command]`,
+        type: 'warning',
+        timestamp: new Date().toISOString()
+      };
+      setTerminalContent(prev => [...prev, errorMsg]);
     }
   };
 
@@ -160,7 +340,8 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
   };
 
   const copyTerminalContent = () => {
-    const content = terminalContent.join('\n');
+    // Ensure we strip any remaining ANSI codes when copying
+    const content = terminalContent.map(msg => AnsiParser.stripAnsi(msg.content)).join('\n');
     navigator.clipboard.writeText(content);
   };
 
@@ -187,7 +368,7 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
   return (
     <motion.div
       className={clsx(
-        'bg-gray-900 rounded-lg border border-gray-700 overflow-hidden',
+        'bg-gray-900 rounded-lg border border-gray-700 overflow-hidden flex flex-col h-full min-h-0',
         isExpanded ? 'fixed inset-4 z-50' : 'relative',
         className
       )}
@@ -202,7 +383,7 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
           <div className="flex items-center space-x-2">
             <User className="w-3 h-3 text-gray-500" />
             <span className="text-sm font-mono text-gray-300">
-              Agent {agentId}
+              {agentName || `Agent ${agentId}`}
             </span>
             {agentUid && (
               <span className="text-xs text-gray-500 font-mono">
@@ -255,35 +436,78 @@ export const AgentTerminal: React.FC<AgentTerminalProps> = ({
         </div>
       </div>
 
+      {/* Pinned Messages */}
+      {pinnedMessages.length > 0 && (
+        <div className="bg-gray-800 border-b border-gray-700 p-2">
+          <div className="space-y-1">
+            {pinnedMessages.map((msg, index) => (
+              <div
+                key={`pinned-${index}`}
+                className={clsx(
+                  'text-xs font-mono px-2 py-1 rounded',
+                  msg.type === 'limit' && 'bg-orange-900/50 text-orange-300',
+                  msg.type === 'model' && 'bg-blue-900/50 text-blue-300',
+                  msg.type === 'rate-limit' && 'bg-red-900/50 text-red-300'
+                )}
+              >
+                {msg.content}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Terminal Content */}
       <div 
         ref={terminalRef}
         className={clsx(
-          'bg-black p-4 font-mono text-xs overflow-y-auto',
-          isExpanded ? (showCommandInput ? 'h-[calc(100vh-14rem)]' : 'h-[calc(100vh-8rem)]') : 
-                      (showCommandInput ? 'h-48' : 'h-64')
+          'bg-black p-2 sm:p-3 md:p-4 font-mono text-xs overflow-y-auto flex-1 min-h-0',
+          isExpanded ? 'max-h-full' : 'max-h-[400px]'
         )}
         style={{ 
           scrollBehavior: 'smooth',
-          fontFamily: 'Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace'
+          fontFamily: 'Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace',
+          minHeight: isExpanded ? 'calc(100vh - 12rem)' : '200px',
+          maxHeight: isExpanded ? 'calc(100vh - 8rem)' : 'clamp(250px, 40vh, 400px)',
+          wordBreak: 'break-word',
+          overflowWrap: 'anywhere'
         }}
       >
         {terminalContent.length === 0 ? (
           <div className="text-gray-600">Waiting for agent output...</div>
         ) : (
-          terminalContent.map((line, index) => (
-            <div 
-              key={index} 
-              className={clsx(
-                'whitespace-pre-wrap break-all',
-                line.startsWith('>') ? 'text-green-400' : 
-                line.startsWith('[') ? 'text-yellow-400' : 
-                'text-gray-300'
-              )}
-            >
-              {line || '\u00A0'}
-            </div>
-          ))
+          terminalContent.map((msg, index) => {
+            const getMessageStyle = () => {
+              switch (msg.type) {
+                case 'command': return 'text-green-400';
+                case 'status': return 'text-yellow-400';
+                case 'warning': return 'text-orange-400';
+                case 'limit': return 'text-orange-300 font-bold';
+                case 'model': return 'text-blue-300 font-bold';
+                case 'rate-limit': return 'text-red-400 font-bold';
+                case 'notice': return 'text-cyan-400';
+                case 'thinking': return 'text-purple-400 italic';
+                default: return 'text-gray-300';
+              }
+            };
+            
+            return (
+              <div 
+                key={index} 
+                className={clsx(
+                  'whitespace-pre-wrap break-words leading-relaxed',
+                  getMessageStyle(),
+                  msg.isPinned && 'bg-gray-900/30'
+                )}
+                style={{
+                  wordBreak: 'break-word',
+                  overflowWrap: 'anywhere'
+                }}
+              >
+                {msg.content || '\u00A0'}
+              </div>
+            );
+          })
         )}
       </div>
 

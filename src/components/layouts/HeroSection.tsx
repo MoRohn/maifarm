@@ -1,11 +1,11 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, TrendingUp, Zap, Brain } from 'lucide-react';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 import { GlassPanel } from '../common/GlassPanel';
 import { MetricCard } from '../common/MetricCard';
-import { useScrollAnimation } from '../../hooks/useAnimations';
-import { fadeIn, staggerContainer, staggerItem } from '../../styles/animations';
+import { useScrollAnimation } from '@/hooks/useAnimations';
+import { fadeIn, staggerContainer, staggerItem } from '@/styles/animations';
 
 interface HeroSectionProps {
   className?: string;
@@ -65,7 +65,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ className }) => {
         variants={staggerContainer}
         className="grid grid-cols-2 lg:grid-cols-4 gap-4"
       >
-        {metrics.map((metric, index) => (
+        {metrics.map((metric, _index) => (
           <motion.div key={metric.title} variants={staggerItem}>
             <MetricCard {...metric} />
           </motion.div>
@@ -82,7 +82,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ className }) => {
         </div>
         
         <div className="grid md:grid-cols-3 gap-4">
-          {suggestions.map((suggestion, index) => (
+          {suggestions.map((suggestion, _index) => (
             <motion.div
               key={suggestion.title}
               variants={staggerItem}

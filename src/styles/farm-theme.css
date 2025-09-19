@@ -1,0 +1,313 @@
+/* Farm Theme Styles for Digital Farm Experience */
+
+/* Farm Field Styles */
+.farm-field {
+  position: relative;
+  background: linear-gradient(135deg, #8B7355 0%, #A0826D 50%, #8B7355 100%);
+  border-radius: 12px;
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.1),
+    0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Wooden Fence Texture */
+.wooden-fence {
+  background-image: 
+    repeating-linear-gradient(90deg, 
+      #8B4513 0px, 
+      #A0522D 2px, 
+      #8B4513 4px, 
+      #654321 6px, 
+      #8B4513 8px);
+  background-size: 8px 100%;
+  border: 2px solid #654321;
+  box-shadow: 
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Fence Post */
+.fence-post {
+  background: linear-gradient(180deg, #654321 0%, #8B4513 50%, #654321 100%);
+  border-radius: 4px 4px 0 0;
+  box-shadow: 
+    inset -2px 0 4px rgba(0, 0, 0, 0.3),
+    inset 2px 0 4px rgba(255, 255, 255, 0.1);
+}
+
+/* Dirt Road Texture */
+.dirt-road {
+  background: 
+    linear-gradient(90deg, 
+      rgba(139, 69, 19, 0.8) 0%, 
+      rgba(160, 82, 45, 0.9) 25%, 
+      rgba(139, 69, 19, 0.8) 50%, 
+      rgba(160, 82, 45, 0.9) 75%, 
+      rgba(139, 69, 19, 0.8) 100%),
+    repeating-linear-gradient(0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.1) 2px,
+      rgba(0, 0, 0, 0.1) 4px);
+  position: relative;
+}
+
+/* Tire Tracks */
+.tire-tracks::before,
+.tire-tracks::after {
+  content: '';
+  position: absolute;
+  height: 2px;
+  background: rgba(101, 67, 33, 0.4);
+  width: 100%;
+}
+
+.tire-tracks::before {
+  top: 35%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.tire-tracks::after {
+  bottom: 35%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Crop Field Patterns */
+.crop-rows {
+  background-image: 
+    repeating-linear-gradient(0deg,
+      transparent,
+      transparent 20px,
+      rgba(34, 139, 34, 0.1) 20px,
+      rgba(34, 139, 34, 0.1) 22px);
+  background-size: 100% 100%;
+}
+
+/* Farm Sign */
+.farm-sign {
+  background: linear-gradient(135deg, #8B4513 0%, #A0522D 100%);
+  border: 3px solid #654321;
+  border-radius: 4px;
+  box-shadow: 
+    0 4px 6px rgba(0, 0, 0, 0.3),
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+.farm-sign::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 10px;
+  background: #654321;
+}
+
+/* Barn Style */
+.barn {
+  background: linear-gradient(180deg, #B22222 0%, #8B0000 100%);
+  position: relative;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.barn-roof {
+  width: 0;
+  height: 0;
+  border-left: 60px solid transparent;
+  border-right: 60px solid transparent;
+  border-bottom: 40px solid #8B0000;
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.barn-door {
+  background: linear-gradient(180deg, #654321 0%, #8B4513 100%);
+  border: 2px solid #4A2C17;
+  border-radius: 4px 4px 0 0;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Silo Style */
+.silo {
+  background: linear-gradient(180deg, #696969 0%, #808080 50%, #696969 100%);
+  border-radius: 50% 50% 0 0;
+  position: relative;
+  box-shadow: 
+    inset -2px 0 4px rgba(0, 0, 0, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.silo-bands {
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background: #4A4A4A;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Weather Effects */
+.raindrop {
+  background: linear-gradient(180deg, 
+    rgba(135, 206, 235, 0.8) 0%, 
+    rgba(30, 144, 255, 0.6) 100%);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  animation: fall linear infinite;
+}
+
+@keyframes fall {
+  to {
+    transform: translateY(100vh);
+  }
+}
+
+/* Sun Rays */
+.sun-ray {
+  background: linear-gradient(180deg, 
+    rgba(255, 223, 0, 0) 0%, 
+    rgba(255, 223, 0, 0.4) 50%, 
+    rgba(255, 223, 0, 0) 100%);
+  animation: rotate-rays 20s linear infinite;
+}
+
+@keyframes rotate-rays {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Cloud Animation */
+.cloud {
+  animation: drift linear infinite;
+}
+
+@keyframes drift {
+  from {
+    transform: translateX(-100px);
+  }
+  to {
+    transform: translateX(calc(100vw + 100px));
+  }
+}
+
+/* Crop Growth Animation */
+.growing-crop {
+  animation: grow 3s ease-in-out infinite alternate;
+}
+
+@keyframes grow {
+  0% {
+    transform: scaleY(0.8) translateY(2px);
+  }
+  100% {
+    transform: scaleY(1) translateY(0);
+  }
+}
+
+/* Farm Animal Movement */
+.farm-animal {
+  animation: wander 10s ease-in-out infinite;
+}
+
+@keyframes wander {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(10px);
+  }
+  75% {
+    transform: translateX(-10px);
+  }
+}
+
+/* Terminal Enhancements for Farm Theme */
+.farm-terminal {
+  background: rgba(0, 0, 0, 0.85);
+  border: 3px solid #654321;
+  border-radius: 8px;
+  box-shadow: 
+    0 4px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1);
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.farm-terminal-header {
+  background: linear-gradient(90deg, #654321 0%, #8B4513 100%);
+  padding: 8px 12px;
+  border-radius: 5px 5px 0 0;
+  border-bottom: 2px solid #4A2C17;
+}
+
+/* Harvest Basket */
+.harvest-basket {
+  background: linear-gradient(135deg, #D2691E 0%, #8B4513 100%);
+  border-radius: 0 0 50% 50% / 0 0 30% 30%;
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    0 4px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Scarecrow */
+.scarecrow {
+  cursor: pointer;
+  transition: transform 0.3s ease;
+}
+
+.scarecrow:hover {
+  transform: rotate(-5deg) scale(1.1);
+}
+
+/* Farm Gate */
+.farm-gate {
+  background: linear-gradient(90deg, #8B4513 0%, #654321 10%, #8B4513 20%);
+  background-size: 20px 100%;
+  border: 2px solid #4A2C17;
+  border-radius: 4px;
+  transition: transform 0.3s ease;
+}
+
+.farm-gate:hover {
+  transform: rotateY(25deg);
+}
+
+/* Watering Can Cursor */
+.watering-cursor {
+  cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="%234A90E2" d="M12 2l-5 9h10l-5-9z"/></svg>'), auto;
+}
+
+/* Day/Night Cycle Overlays */
+.dawn-overlay {
+  background: linear-gradient(180deg, 
+    rgba(255, 94, 77, 0.2) 0%, 
+    rgba(255, 154, 0, 0.1) 50%, 
+    transparent 100%);
+  pointer-events: none;
+}
+
+.dusk-overlay {
+  background: linear-gradient(180deg, 
+    rgba(138, 43, 226, 0.2) 0%, 
+    rgba(255, 64, 129, 0.1) 50%, 
+    transparent 100%);
+  pointer-events: none;
+}
+
+.night-overlay {
+  background: linear-gradient(180deg, 
+    rgba(25, 25, 112, 0.4) 0%, 
+    rgba(0, 0, 0, 0.2) 100%);
+  pointer-events: none;
+}

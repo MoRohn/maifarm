@@ -7,7 +7,7 @@ import {
   IntegrationConfig, 
   FarmTemplate,
   AINotificationSuggestion 
-} from '../types/settings';
+} from '@/types/settings';
 
 // Use Settings interface from types/settings.ts
 
@@ -36,6 +36,19 @@ interface AgentConfiguration {
   // New agent modes
   agentMode: 'default' | 'supercharge' | 'ultrafarmer';
   defaultInterval: number; // in minutes
+}
+
+interface OrchestratorConfiguration {
+  type: 'xenosync'; // XenoSync is the only orchestrator
+  xenosync?: {
+    enabled: boolean;
+    defaultMode: 'parallel' | 'collaborative';
+    minAgents: number;
+    maxAgents: number;
+    agentMonitorInterval: number;
+    messageGracePeriod: number;
+    logLevel: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+  };
 }
 
 interface SettingsStore {
@@ -80,6 +93,10 @@ interface SettingsStore {
   // Agent Configuration
   agentConfig: AgentConfiguration;
   updateAgentConfig: (config: Partial<AgentConfiguration>) => void;
+  
+  // Orchestrator Configuration
+  orchestratorConfig: OrchestratorConfiguration;
+  updateOrchestratorConfig: (config: Partial<OrchestratorConfiguration>) => void;
 }
 
 const defaultAgentConfig: AgentConfiguration = {
@@ -106,6 +123,19 @@ const defaultAgentConfig: AgentConfiguration = {
   failoverStrategy: 'restart',
   agentMode: 'default',
   defaultInterval: 10, // 10 minutes default
+};
+
+const defaultOrchestratorConfig: OrchestratorConfiguration = {
+  type: 'xenosync', // XenoSync is the only orchestrator
+  xenosync: {
+    enabled: true, // Always enabled
+    defaultMode: 'parallel',
+    minAgents: 2,
+    maxAgents: 20,
+    agentMonitorInterval: 30,
+    messageGracePeriod: 60,
+    logLevel: 'INFO'
+  }
 };
 
 // Helper function to get GPU count (mock implementation)
@@ -312,6 +342,12 @@ export const useSettingsStore = create<SettingsStore>()(
       agentConfig: defaultAgentConfig,
       updateAgentConfig: (updates) => set((state) => ({
         agentConfig: { ...state.agentConfig, ...updates },
+      })),
+      
+      // Orchestrator Configuration
+      orchestratorConfig: defaultOrchestratorConfig,
+      updateOrchestratorConfig: (updates) => set((state) => ({
+        orchestratorConfig: { ...state.orchestratorConfig, ...updates },
       })),
     }),
     {

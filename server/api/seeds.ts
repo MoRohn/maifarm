@@ -56,7 +56,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
     }
 
     // Get user ID from auth context
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     const seed = await seedService.create(input, userId);
     res.status(201).json(seed);
@@ -72,7 +72,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
     const input: SeedUpdateInput = req.body;
     
     // Get user ID from auth context
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     const seed = await seedService.update(req.params.id, input, userId);
     res.json(seed);
@@ -92,7 +92,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
   try {
     // Get user ID from auth context
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     await seedService.delete(req.params.id, userId);
     res.status(204).send();
@@ -144,7 +144,7 @@ router.post('/from-harvest/:harvestId', authenticateToken, async (req: AuthReque
     }
 
     // Get user ID from auth context
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     const seed = await seedService.createFromHarvest(harvestId, input, userId);
     res.status(201).json({ success: true, data: seed });
@@ -179,7 +179,7 @@ router.post('/from-barn-harvest/:harvestId', authenticateToken, async (req: Auth
     }
 
     // Get user ID from auth context
-    const userId = req.user?.userId || 'dev-user';
+    const userId = req.user?.userId || 'maifarm-user';
     
     const seed = await seedService.createFromBarnHarvest(harvestId, input, userId);
     res.status(201).json({ success: true, data: seed });

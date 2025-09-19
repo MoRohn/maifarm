@@ -295,6 +295,27 @@ router.get('/logs', authenticateToken, apiRateLimits.read, async (req, res) => {
       limit = 100 
     } = req.query;
 
+    // Check if application_logs table exists
+    const tableExists = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'application_logs'
+      );
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      // Return empty logs if table doesn't exist
+      const response: ApiResponse = {
+        success: true,
+        data: {
+          logs: [],
+          message: 'Logging table not initialized yet'
+        }
+      };
+      return res.json(response);
+    }
+
     let query = `
       SELECT * FROM application_logs 
       WHERE timestamp >= $1 AND timestamp <= $2
@@ -407,6 +428,59 @@ router.get('/performance', authenticateToken, apiRateLimits.read, async (req, re
       error: {
         code: 'INTERNAL_ERROR',
         message: 'Failed to fetch performance metrics'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
+// POST /api/monitoring/logs - Client log ingestion endpoint  
+router.post('/logs', async (req, res) => {
+  try {
+    const { logs } = req.body;
+    
+    if (!logs || !Array.isArray(logs)) {
+      return res.status(400).json({ 
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid logs format - expected array of log objects'
+        }
+      });
+    }
+    
+    // Process each log entry
+    for (const log of logs) {
+      const logMessage = `[CLIENT_LOG] ${log.message}`;
+      const logDetails = log.details ? ` | ${JSON.stringify(log.details)}` : '';
+      const fullMessage = `${logMessage}${logDetails}`;
+      
+      if (log.level === 'error') {
+        console.error(fullMessage);
+      } else if (log.level === 'warn') {
+        console.warn(fullMessage);
+      } else {
+        console.log(fullMessage);
+      }
+    }
+    
+    const response: ApiResponse = {
+      success: true,
+      data: { 
+        status: 'received',
+        timestamp: new Date(),
+        count: logs.length
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error processing client logs:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to process logs'
       }
     };
     res.status(500).json(response);

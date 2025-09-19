@@ -10,9 +10,9 @@ import {
   Eye,
   Play
 } from 'lucide-react';
-import { ExplorationSnapshot, RollbackRequest, RollbackResult } from '../../types/safety';
-import { snapshotService } from '../../services/explorationSnapshot';
-import { rollbackManager } from '../../services/rollbackManager';
+import { ExplorationSnapshot, RollbackRequest, RollbackResult } from '@/types/safety';
+import { snapshotService } from '@/services/explorationSnapshot';
+import { rollbackManager } from '@/services/rollbackManager';
 import { formatDistanceToNow } from 'date-fns';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';

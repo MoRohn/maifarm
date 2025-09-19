@@ -4,9 +4,9 @@ import {
   FileText, Search, Filter, Download, 
   AlertCircle, CheckCircle, XCircle, Clock 
 } from 'lucide-react';
-import { AuditLog as AuditLogType } from '../../types/security';
-import { auditService } from '../../services/audit';
-import { usePermissions } from '../../hooks/usePermissions';
+import { AuditLog as AuditLogType } from '@/types/security';
+import { auditService } from '@/services/audit';
+import { usePermissions } from '@/hooks/usePermissions';
 import { format } from 'date-fns';
 
 export const AuditLog: React.FC = () => {

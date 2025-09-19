@@ -5,7 +5,7 @@ export interface TerminalSession {
   paneCount: number;
   windowName: string;
   active: boolean;
-  status: 'starting' | 'running' | 'paused' | 'stopped' | 'error';
+  status: 'starting' | 'active' | 'paused' | 'stopped' | 'error';
   createdAt: Date;
   agents: TerminalAgent[];
 }

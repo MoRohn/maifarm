@@ -1,4 +1,4 @@
-import { Seed, SeedCreateInput, SeedUpdateInput, SeedFilter } from '../types/seed';
+import { Seed, SeedCreateInput, SeedUpdateInput, SeedFilter } from '@/types/seed';
 import apiClient from './apiClient';
 
 class SeedService {

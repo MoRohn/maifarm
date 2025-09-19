@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AuthCredentials, AuthResponse, AuthUser } from '../types/security';
-import { securityService } from '../services/securityService';
+import { AuthCredentials, AuthResponse, AuthUser } from '@/types/security';
+import { securityService } from '@/services/securityService';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 

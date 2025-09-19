@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { WifiOff, Wifi, Cloud, CloudOff, RefreshCw, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { offlineSync } from '../../services/offlineSync';
-import { useOfflineSync } from '../../hooks/useOfflineSync';
+import { offlineSync } from '@/services/offlineSync';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
 
 interface OfflineIndicatorProps {
   className?: string;

@@ -18,9 +18,9 @@ import {
   Target,
   AlertCircle
 } from 'lucide-react';
-import { aiInsightsService, AIInsight } from '../../services/aiInsightsService';
-import { useAnalyticsStore } from '../../store/analyticsStore';
-import { useFarmStore } from '../../store/farmStore';
+import { aiInsightsService, AIInsight } from '@/services/aiInsightsService';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useFarmStore } from '@/store/farmStore';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -54,13 +54,13 @@ export const AIInsights: React.FC<AIInsightsProps> = ({ onInsightApplied }) => {
     
     setIsGenerating(true);
     try {
-      const newInsights = await aiInsightsService.analyzeSystem(
+      await aiInsightsService.analyzeSystem(
         farms,
         metrics,
         agentPerformance,
         timeSeriesData
       );
-      
+
       const filteredInsights = aiInsightsService.getInsights(filter);
       setInsights(filteredInsights.slice(0, 10)); // Show top 10 insights
     } catch (error) {

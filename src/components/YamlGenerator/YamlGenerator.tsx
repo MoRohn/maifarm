@@ -5,8 +5,8 @@ import PromptInput from './PromptInputEnhanced';
 import YamlPreview from './YamlPreview';
 import YamlEditor from './YamlEditor';
 import AIProviderSelector, { type AIProvider } from '../common/AIProviderSelector';
-import { useYamlGenerator } from '../../hooks/useYamlGenerator';
-import { GeneratorMode } from '../../types/yamlGenerator';
+import { useYamlGenerator } from '@/hooks/useYamlGenerator';
+import { GeneratorMode } from '@/types/yamlGenerator';
 
 const YamlGenerator: React.FC = () => {
   const {

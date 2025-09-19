@@ -78,12 +78,12 @@ export class MaiBarn {
    */
   static async isSessionValid(sessionName: string): Promise<boolean> {
     try {
-      // Check if any pane in the session has recent activity
-      const checkCmd = `tmux capture-pane -t ${sessionName}:0.0 -p -S -10 2>/dev/null | grep -v '^$' | head -1`;
-      await execAsync(checkCmd);
-      // If we can capture output, the session exists
-      return true;
+      // Simply check if the session exists by listing its windows
+      const { stdout } = await execAsync(`tmux list-windows -t ${sessionName} -F "#{window_name}" 2>/dev/null`);
+      // If we get any output, the session exists
+      return stdout.trim().length > 0;
     } catch {
+      // Session doesn't exist
       return false;
     }
   }
@@ -152,17 +152,57 @@ export class MaiBarn {
     return false;
   }
 
+  // PERFORMANCE FIX: Cache farmManager import and add session cleanup throttling
+  private static farmManagerCache: any = null;
+  private static lastCleanupTime = 0;
+  private static readonly CLEANUP_THROTTLE_MS = 60000; // Only run cleanup once per minute
+
   /**
-   * Clean up stale/orphaned tmux sessions
+   * Clean up stale/orphaned tmux sessions (with caching and throttling)
    */
   static async cleanupStaleSessions(includeAll: boolean = false): Promise<string[]> {
+    // PERFORMANCE FIX: Throttle cleanup calls to prevent excessive overhead
+    const now = Date.now();
+    if (now - this.lastCleanupTime < this.CLEANUP_THROTTLE_MS) {
+      logger.debug(`[MaiBarn] Cleanup throttled, last run ${Math.ceil((now - this.lastCleanupTime) / 1000)}s ago`);
+      return [];
+    }
+    this.lastCleanupTime = now;
+
     const cleanedSessions: string[] = [];
     
     try {
       const allSessions = await this.getAllSessions();
       const relevantSessions = this.filterRelevantSessions(allSessions, includeAll);
       
+      // PERFORMANCE FIX: Cache farmManager import to avoid dynamic import overhead
+      if (!this.farmManagerCache) {
+        const { farmManager } = await import('./farmManager');
+        this.farmManagerCache = farmManager;
+      }
+      
+      const allFarms = await this.farmManagerCache.getAllFarms();
+      const activeFarms = allFarms.filter(f => 
+        f.status === 'active' || f.status === 'running' || f.status === 'launching'
+      );
+      const activeFarmIds = new Set(activeFarms.map(f => f.id));
+      
       for (const session of relevantSessions) {
+        // Check if this session belongs to an active farm
+        const farmIdMatch = session.name.match(/(?:farm[-_]|quick_)([a-f0-9-]+)/);
+        if (farmIdMatch) {
+          const sessionFarmId = farmIdMatch[1];
+          // Check if this session ID matches any active farm (including partial matches)
+          const belongsToActiveFarm = Array.from(activeFarmIds).some(farmId => 
+            farmId.startsWith(sessionFarmId) || sessionFarmId.startsWith(farmId.substring(0, 8))
+          );
+          
+          if (belongsToActiveFarm) {
+            logger.debug(`[MaiBarn] Skipping cleanup for active farm session: ${session.name}`);
+            continue; // Skip cleanup for active farm sessions
+          }
+        }
+        
         let shouldClean = this.shouldCleanSession(session);
         
         // Also check if session is actually active
@@ -381,7 +421,7 @@ export class MaiBarn {
     return new Promise((resolve, reject) => {
       const captureProcess = spawn('tmux', [
         'capture-pane',
-        '-t', `${sessionName}:0.${agentId}`,
+        '-t', `${sessionName}:agents.${agentId}`,
         '-p',
         '-S', `-${lines}`
       ]);

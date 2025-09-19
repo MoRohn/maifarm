@@ -12,11 +12,11 @@
   --color-accent-rgb: 132, 204, 22;
   
   /* Base Colors */
-  --color-background: #ffffff;
-  --color-surface: #f9fafb;
+  --color-background: #f8f8f8;  /* Light gray background instead of pure white */
+  --color-surface: #f5f5f5;  /* Slightly darker surface for cards/panels */
   --color-text: #111827;
   --color-text-secondary: #6b7280;
-  --color-border: #e5e7eb;
+  --color-border: #e2e4e7;  /* Slightly more visible border */
   
   /* Status Colors */
   --color-error: #dc2626;

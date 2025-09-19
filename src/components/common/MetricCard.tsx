@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown, Minus, LucideIcon } from 'lucide-react';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 import { GlassPanel } from './GlassPanel';
 
 interface MetricCardProps {

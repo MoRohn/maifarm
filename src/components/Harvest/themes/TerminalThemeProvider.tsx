@@ -52,7 +52,7 @@ export const TerminalThemeProvider: React.FC<TerminalThemeProviderProps> = ({
 
     // Apply effects classes
     const effects = theme.effects;
-    const effectClasses = [];
+    const effectClasses: string[] = [];
     if (effects.rainEffect) effectClasses.push('terminal-rain-effect');
     if (effects.glowText) effectClasses.push('terminal-glow-text');
     if (effects.scanlines) effectClasses.push('terminal-scanlines');

@@ -1,12 +1,12 @@
 // Farm orchestration service for managing farm lifecycle and operations
 
 import { v4 as uuidv4 } from 'uuid';
-import { Farm, FarmConfig } from '../types';
-import { FarmTemplate, FarmProvisioningStatus, ProvisioningStep, AgentBlueprint } from '../types/farm';
-import { Workflow, WorkflowExecution } from '../types/workflow';
-import { AgentInstance } from '../types/agent';
-import { useFarmStore } from '../store/farmStore';
-import { useAgentStore } from '../store/agentStore';
+import { Farm, FarmConfig } from '@/types';
+import { FarmTemplate, FarmProvisioningStatus, ProvisioningStep, AgentBlueprint } from '@/types/farm';
+import { Workflow, WorkflowExecution } from '@/types/workflow';
+import { AgentInstance } from '@/types/agent';
+import { useFarmStore } from '@/store/farmStore';
+import { useAgentStore } from '@/store/agentStore';
 import { agentLifecycle } from './agentLifecycle';
 import { workflowEngine } from './workflowEngine';
 import { templateManager } from './templateManager';
@@ -196,7 +196,7 @@ class FarmOrchestrator {
 
     // Suspend workflow
     const execution = this.farmExecutions.get(farmId);
-    if (execution && execution.status === 'running') {
+    if (execution && execution.status === 'active') {
       await workflowEngine.suspendExecution(execution.id);
     }
 

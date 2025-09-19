@@ -4,8 +4,8 @@ import {
   FarmTemplate, 
   FarmSetupRequest, 
   FarmSetupProgress 
-} from '../types/orchestration';
-import { FarmOrchestrationService } from '../services/farmOrchestrationService';
+} from '@/types/orchestration';
+import { FarmOrchestrationService } from '@/services/farmOrchestrationService';
 
 let orchestrationService: FarmOrchestrationService | null = null;
 

@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import { BarnItem, BarnFolder } from '../../../src/types/barn';
-import { barnService } from '../../services/barnService';
-import { harvestService } from '../../services/harvestService';
+import { barnService } from '../services/unified/barnService';
+import { harvestService } from '../services/unified/harvestService';
 
 // Helper to setup barn service mocks
 export const setupBarnServiceMocks = () => {

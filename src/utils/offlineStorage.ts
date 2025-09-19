@@ -1,4 +1,4 @@
-import { Farm, Agent } from '../types';
+import { Farm, Agent } from '@/types';
 
 // Extend ServiceWorkerRegistration to include sync
 declare global {

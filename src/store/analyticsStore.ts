@@ -15,9 +15,9 @@ import {
   AggregatedMetrics,
   AnalyticsFilter,
   FarmYieldMetrics,
-} from '../types/analytics';
-import { unifiedMetricsService } from '../services/unifiedMetricsService';
-import { ExtendedMetrics, MetricUpdateEvent } from '../types/metrics';
+} from '@/types/analytics';
+import { unifiedMetricsService } from '@/services/unifiedMetricsService';
+import { ExtendedMetrics, MetricUpdateEvent } from '@/types/metrics';
 
 interface AnalyticsStore extends AnalyticsState {
   // Actions

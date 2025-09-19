@@ -45,13 +45,62 @@ export class NotificationService {
       }
     });
     
-    // Agent notifications
+    // Agent error notifications
     websocketService.on('agent:error', (message) => {
       const settings = useSettingsStore.getState().notifications;
       if (settings?.types.agentError.channels.inApp) {
+        const payload = message.payload;
+        const errorTypeMap = {
+          'api_key': '🔑 API Key',
+          'cli_missing': '⚙️ CLI',
+          'permission': '🔒 Permission',
+          'timeout': '⏱️ Timeout',
+          'crash': '💥 Crash',
+          'unknown': '❓ Unknown'
+        };
+        
+        const errorIcon = errorTypeMap[payload?.type] || '❌';
+        const contextInfo = payload?.context ? ` (Context: ${payload.context.substring(0, 50)}...)` : '';
+        
         this.showNotification(
-          `Agent "${message.payload?.name}" encountered an error: ${message.payload?.error}`,
-          'error'
+          `${errorIcon} Agent "${payload?.agentName || payload?.name}" error: ${payload?.message || payload?.error}${contextInfo}`,
+          'error',
+          {
+            action: {
+              label: 'View Details',
+              onClick: () => {
+                console.log('Agent Error Details:', payload);
+                // TODO: Open error details modal
+              }
+            }
+          }
+        );
+      }
+    });
+    
+    // Agent warning notifications
+    websocketService.on('agent:warning', (message) => {
+      const settings = useSettingsStore.getState().notifications;
+      if (settings?.types.agentError.channels.inApp) { // Using agentError settings for now
+        const payload = message.payload;
+        const warningTypeMap = {
+          'timeout': '⏱️ Timeout',
+          'unknown': '⚠️ Warning'
+        };
+        
+        const warningIcon = warningTypeMap[payload?.type] || '⚠️';
+        
+        this.showNotification(
+          `${warningIcon} Agent "${payload?.agentName || payload?.name}" warning: ${payload?.message}`,
+          'warning',
+          {
+            action: {
+              label: 'Dismiss',
+              onClick: () => {
+                console.log('Warning dismissed:', payload);
+              }
+            }
+          }
         );
       }
     });

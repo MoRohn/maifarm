@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Play, Pause, RotateCcw, Plus, GitBranch, Clock, CheckCircle, XCircle } from 'lucide-react';
-import { WorkflowExecution } from '../../types/workflow';
-import { workflowEngine } from '../../services/workflowEngine';
+import { WorkflowExecution } from '@/types/workflow';
+import { workflowEngine } from '@/services/workflowEngine';
 
 interface WorkflowDesignerProps {
   farmId: string;
@@ -33,7 +33,7 @@ export function WorkflowDesigner({ farmId, workflows, onRefresh }: WorkflowDesig
         return <CheckCircle className="h-4 w-4 text-green-500" />;
       case 'failed':
         return <XCircle className="h-4 w-4 text-red-500" />;
-      case 'running':
+      case 'active':
         return <Play className="h-4 w-4 text-blue-500" />;
       case 'cancelled':
         return <Pause className="h-4 w-4 text-gray-500" />;
@@ -48,7 +48,7 @@ export function WorkflowDesigner({ farmId, workflows, onRefresh }: WorkflowDesig
         return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
       case 'failed':
         return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
-      case 'running':
+      case 'active':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400';
       case 'cancelled':
         return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
@@ -153,10 +153,10 @@ export function WorkflowDesigner({ farmId, workflows, onRefresh }: WorkflowDesig
                       </div>
                     </div>
                     
-                    {execution.nodeExecutions.find(n => n.status === 'running') && (
+                    {execution.nodeExecutions.find(n => n.status === 'active') && (
                       <div className="mt-3">
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                          Current Step: <span className="font-medium">{execution.nodeExecutions.find(n => n.status === 'running')?.nodeId || 'Initializing...'}</span>
+                          Current Step: <span className="font-medium">{execution.nodeExecutions.find(n => n.status === 'active')?.nodeId || 'Initializing...'}</span>
                         </div>
                       </div>
                     )}
@@ -196,7 +196,7 @@ export function WorkflowDesigner({ farmId, workflows, onRefresh }: WorkflowDesig
                   </div>
                   
                   <div className="ml-6">
-                    {execution.status === 'running' && (
+                    {execution.status === 'active' && (
                       <button
                         onClick={() => workflowEngine.cancelExecution?.(execution.id)}
                         className="px-3 py-1 text-sm bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/30 transition-colors"

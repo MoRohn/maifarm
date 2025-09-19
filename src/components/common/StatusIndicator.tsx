@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 
 export type Status = 'idle' | 'active' | 'success' | 'warning' | 'error' | 'loading';
 

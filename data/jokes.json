@@ -1,0 +1,356 @@
+{
+  "categories": {
+    "dad_jokes": {
+      "title": "Dad Jokes",
+      "icon": "👨",
+      "jokes": [
+        {
+          "setup": "Why don't scientists trust atoms?",
+          "punchline": "Because they make up everything!"
+        },
+        {
+          "setup": "Did you hear about the mathematician who's afraid of negative numbers?",
+          "punchline": "He'll stop at nothing to avoid them!"
+        },
+        {
+          "setup": "Why did the scarecrow win an award?",
+          "punchline": "He was outstanding in his field!"
+        },
+        {
+          "setup": "I told my wife she was drawing her eyebrows too high.",
+          "punchline": "She looked surprised!"
+        },
+        {
+          "setup": "Why don't eggs tell jokes?",
+          "punchline": "They'd crack each other up!"
+        },
+        {
+          "setup": "What do you call a fake noodle?",
+          "punchline": "An impasta!"
+        },
+        {
+          "setup": "I'm reading a book about anti-gravity.",
+          "punchline": "It's impossible to put down!"
+        },
+        {
+          "setup": "Did you hear about the claustrophobic astronaut?",
+          "punchline": "He just needed a little space!"
+        },
+        {
+          "setup": "Why did the bicycle fall over?",
+          "punchline": "It was two tired!"
+        },
+        {
+          "setup": "What do you call cheese that isn't yours?",
+          "punchline": "Nacho cheese!"
+        }
+      ]
+    },
+    "knock_knock": {
+      "title": "Knock Knock Jokes",
+      "icon": "🚪",
+      "jokes": [
+        {
+          "setup": "Knock knock. Who's there? Interrupting cow.",
+          "punchline": "Interrupting cow w- MOO!"
+        },
+        {
+          "setup": "Knock knock. Who's there? Nobel.",
+          "punchline": "Nobel who? Nobel... that's why I knocked!"
+        },
+        {
+          "setup": "Knock knock. Who's there? Tank.",
+          "punchline": "Tank who? You're welcome!"
+        },
+        {
+          "setup": "Knock knock. Who's there? Broken pencil.",
+          "punchline": "Broken pencil who? Never mind, it's pointless!"
+        },
+        {
+          "setup": "Knock knock. Who's there? Deja.",
+          "punchline": "Deja who? Knock knock!"
+        },
+        {
+          "setup": "Knock knock. Who's there? Cash.",
+          "punchline": "Cash who? No thanks, I prefer peanuts!"
+        },
+        {
+          "setup": "Knock knock. Who's there? Spell.",
+          "punchline": "Spell who? W-H-O!"
+        },
+        {
+          "setup": "Knock knock. Who's there? Cargo.",
+          "punchline": "Cargo who? Car go beep beep, vroom vroom!"
+        }
+      ]
+    },
+    "puns": {
+      "title": "Puns & Wordplay",
+      "icon": "🎭",
+      "jokes": [
+        {
+          "setup": "I used to hate facial hair...",
+          "punchline": "But then it grew on me!"
+        },
+        {
+          "setup": "Time flies like an arrow.",
+          "punchline": "Fruit flies like a banana!"
+        },
+        {
+          "setup": "I'm terrified of elevators.",
+          "punchline": "I'll take steps to avoid them!"
+        },
+        {
+          "setup": "Did you hear about the guy who invented Lifesavers?",
+          "punchline": "They say he made a mint!"
+        },
+        {
+          "setup": "I got a job at a bakery because I kneaded dough.",
+          "punchline": "Now I'm rolling in it!"
+        },
+        {
+          "setup": "The past, present, and future walked into a bar.",
+          "punchline": "It was tense!"
+        },
+        {
+          "setup": "I used to be a banker...",
+          "punchline": "But I lost interest!"
+        },
+        {
+          "setup": "Broken puppets for sale.",
+          "punchline": "No strings attached!"
+        },
+        {
+          "setup": "I wasn't originally going to get a brain transplant.",
+          "punchline": "But then I changed my mind!"
+        },
+        {
+          "setup": "What's the best thing about Switzerland?",
+          "punchline": "I don't know, but the flag is a big plus!"
+        }
+      ]
+    },
+    "tech_jokes": {
+      "title": "Tech & Programming Jokes",
+      "icon": "💻",
+      "jokes": [
+        {
+          "setup": "Why do programmers prefer dark mode?",
+          "punchline": "Because light attracts bugs!"
+        },
+        {
+          "setup": "How many programmers does it take to change a light bulb?",
+          "punchline": "None. That's a hardware problem!"
+        },
+        {
+          "setup": "Why do Java developers wear glasses?",
+          "punchline": "Because they don't C#!"
+        },
+        {
+          "setup": "A SQL query walks into a bar, walks up to two tables and asks...",
+          "punchline": "Can I join you?"
+        },
+        {
+          "setup": "Why did the developer go broke?",
+          "punchline": "Because he used up all his cache!"
+        },
+        {
+          "setup": "There are only 10 types of people in the world:",
+          "punchline": "Those who understand binary and those who don't!"
+        },
+        {
+          "setup": "Why did the programmer quit his job?",
+          "punchline": "Because he didn't get arrays!"
+        },
+        {
+          "setup": "What's a programmer's favorite hangout place?",
+          "punchline": "Foo Bar!"
+        },
+        {
+          "setup": "Why do Python programmers prefer snake_case?",
+          "punchline": "Because they can't C camelCase!"
+        },
+        {
+          "setup": "How do you comfort a JavaScript bug?",
+          "punchline": "You console it!"
+        }
+      ]
+    },
+    "animal_jokes": {
+      "title": "Animal Jokes",
+      "icon": "🐾",
+      "jokes": [
+        {
+          "setup": "What do you call a bear with no teeth?",
+          "punchline": "A gummy bear!"
+        },
+        {
+          "setup": "Why don't oysters share?",
+          "punchline": "Because they're shellfish!"
+        },
+        {
+          "setup": "What do you call a fish wearing a crown?",
+          "punchline": "Sofishticated!"
+        },
+        {
+          "setup": "Why do cows have hooves instead of feet?",
+          "punchline": "Because they lactose!"
+        },
+        {
+          "setup": "What do you call a pig that does karate?",
+          "punchline": "A pork chop!"
+        },
+        {
+          "setup": "Why don't ants get sick?",
+          "punchline": "Because they have little anty bodies!"
+        },
+        {
+          "setup": "What do you call a bear in the rain?",
+          "punchline": "A drizzly bear!"
+        },
+        {
+          "setup": "Why do fish live in saltwater?",
+          "punchline": "Because pepper makes them sneeze!"
+        },
+        {
+          "setup": "What do you call a lazy kangaroo?",
+          "punchline": "A pouch potato!"
+        },
+        {
+          "setup": "Why don't leopards play hide and seek?",
+          "punchline": "Because they're always spotted!"
+        }
+      ]
+    },
+    "food_jokes": {
+      "title": "Food Jokes",
+      "icon": "🍔",
+      "jokes": [
+        {
+          "setup": "Why did the tomato turn red?",
+          "punchline": "Because it saw the salad dressing!"
+        },
+        {
+          "setup": "What did the grape say when it got stepped on?",
+          "punchline": "Nothing, it just let out a little wine!"
+        },
+        {
+          "setup": "Why did the cookie go to the doctor?",
+          "punchline": "Because it felt crumbly!"
+        },
+        {
+          "setup": "What do you call a fake pizza?",
+          "punchline": "A pepperphony!"
+        },
+        {
+          "setup": "Why did the banana go to the doctor?",
+          "punchline": "It wasn't peeling well!"
+        },
+        {
+          "setup": "What's orange and sounds like a parrot?",
+          "punchline": "A carrot!"
+        },
+        {
+          "setup": "Why did the coffee file a police report?",
+          "punchline": "It got mugged!"
+        },
+        {
+          "setup": "What did the sushi say to the bee?",
+          "punchline": "Wasabi!"
+        },
+        {
+          "setup": "Why don't eggs tell each other secrets?",
+          "punchline": "Because they might crack up!"
+        },
+        {
+          "setup": "What do you call a sad strawberry?",
+          "punchline": "A blueberry!"
+        }
+      ]
+    },
+    "one_liners": {
+      "title": "One-Liners",
+      "icon": "⚡",
+      "jokes": [
+        {
+          "setup": "",
+          "punchline": "I told my computer I needed a break, and now it won't stop sending me KitKat ads."
+        },
+        {
+          "setup": "",
+          "punchline": "My therapist says I have a preoccupation with vengeance. We'll see about that."
+        },
+        {
+          "setup": "",
+          "punchline": "I used to think I was indecisive, but now I'm not too sure."
+        },
+        {
+          "setup": "",
+          "punchline": "The early bird might get the worm, but the second mouse gets the cheese."
+        },
+        {
+          "setup": "",
+          "punchline": "I haven't spoken to my wife in years. I didn't want to interrupt her."
+        },
+        {
+          "setup": "",
+          "punchline": "Parallel lines have so much in common. It's a shame they'll never meet."
+        },
+        {
+          "setup": "",
+          "punchline": "My wife told me to stop impersonating a flamingo. I had to put my foot down."
+        },
+        {
+          "setup": "",
+          "punchline": "I threw a boomerang a few years ago. I now live in constant fear."
+        },
+        {
+          "setup": "",
+          "punchline": "You know what they say about cliffhangers..."
+        },
+        {
+          "setup": "",
+          "punchline": "I'm on a whiskey diet. I've lost three days already."
+        }
+      ]
+    },
+    "school_jokes": {
+      "title": "School & Education",
+      "icon": "📚",
+      "jokes": [
+        {
+          "setup": "Why did the math book look so sad?",
+          "punchline": "Because it had too many problems!"
+        },
+        {
+          "setup": "Why did the student eat his homework?",
+          "punchline": "Because the teacher said it was a piece of cake!"
+        },
+        {
+          "setup": "What did the pencil say to the paper?",
+          "punchline": "Write on!"
+        },
+        {
+          "setup": "Why was the geometry book always stressed?",
+          "punchline": "It had too many angles to consider!"
+        },
+        {
+          "setup": "What's the king of all school supplies?",
+          "punchline": "The ruler!"
+        },
+        {
+          "setup": "Why did the teacher wear sunglasses to school?",
+          "punchline": "Because her students were so bright!"
+        },
+        {
+          "setup": "What do you call a teacher who never farts in public?",
+          "punchline": "A private tutor!"
+        },
+        {
+          "setup": "Why did the music teacher need a ladder?",
+          "punchline": "To reach the high notes!"
+        }
+      ]
+    }
+  }
+}

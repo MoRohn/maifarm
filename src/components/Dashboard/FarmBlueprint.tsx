@@ -220,7 +220,7 @@ export const FarmBlueprint: React.FC<FarmBlueprintProps> = ({ metrics }) => {
             </foreignObject>
 
             {/* Pulse animation for active sections */}
-            {section.stats[0].value > 0 && (
+            {Number(section.stats[0].value) > 0 && (
               <circle
                 cx={section.x}
                 cy={section.y}

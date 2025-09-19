@@ -9,7 +9,7 @@ import {
   ResourceUsage,
   Agent,
   AgentConfiguration
-} from '../../types/orchestration'
+} from '@/types/orchestration'
 
 // Define AgentStatus locally if not imported
 type AgentStatus = 'idle' | 'active' | 'busy' | 'error' | 'offline'
@@ -348,7 +348,7 @@ class FarmOrchestrator {
 
     try {
       // Step 1: Initialize farm
-      await this.updateSetupStep(setupId, 0, 'running')
+      await this.updateSetupStep(setupId, 0, 'active')
       
       let template: FarmTemplate | undefined
       if (request.templateId) {
@@ -362,7 +362,7 @@ class FarmOrchestrator {
         id: farmId,
         name: request.name,
         description!: request.description,
-        status: 'creating',
+        status: 'launching',
         template,
         agents: [],
         workflows: [],
@@ -379,7 +379,7 @@ class FarmOrchestrator {
       await this.updateSetupStep(setupId, 0, 'completed')
 
       // Step 2: Load template
-      await this.updateSetupStep(setupId, 1, 'running')
+      await this.updateSetupStep(setupId, 1, 'active')
       
       const configuration = template
         ? { ...template.configuration, ...request.configuration }
@@ -392,7 +392,7 @@ class FarmOrchestrator {
       await this.updateSetupStep(setupId, 1, 'completed')
 
       // Step 3: Provision agents
-      await this.updateSetupStep(setupId, 2, 'running')
+      await this.updateSetupStep(setupId, 2, 'active')
       
       const agents: Agent[] = []
       for (const agentConfig of configuration.agents) {
@@ -404,28 +404,28 @@ class FarmOrchestrator {
       await this.updateSetupStep(setupId, 2, 'completed')
 
       // Step 4: Configure resources
-      await this.updateSetupStep(setupId, 3, 'running')
+      await this.updateSetupStep(setupId, 3, 'active')
       
       farm.resources = this.calculateResourceUsage(agents, configuration.resources)
       
       await this.updateSetupStep(setupId, 3, 'completed')
 
       // Step 5: Set up monitoring
-      await this.updateSetupStep(setupId, 4, 'running')
+      await this.updateSetupStep(setupId, 4, 'active')
       
       await monitoringService.configureFarmMonitoring(farmId, configuration.monitoring)
       
       await this.updateSetupStep(setupId, 4, 'completed')
 
       // Step 6: Validate configuration
-      await this.updateSetupStep(setupId, 5, 'running')
+      await this.updateSetupStep(setupId, 5, 'active')
       
       await this.validateFarmConfiguration(farm, configuration)
       
       await this.updateSetupStep(setupId, 5, 'completed')
 
       // Step 7: Start services
-      await this.updateSetupStep(setupId, 6, 'running')
+      await this.updateSetupStep(setupId, 6, 'active')
       
       if (request.autoStart) {
         await this.startFarm(farmId)
@@ -434,7 +434,7 @@ class FarmOrchestrator {
       await this.updateSetupStep(setupId, 6, 'completed')
 
       // Complete setup
-      farm.status = request.autoStart ? 'running' : 'stopped'
+      farm.status = request.autoStart ? 'active' : 'stopped'
       this.farms.set(farmId, farm)
 
       progress.status = 'ready'
@@ -524,14 +524,14 @@ class FarmOrchestrator {
     // Additional validation logic...
   }
 
-  private async updateSetupStep(setupId: string, stepIndex: number, status: 'running' | 'completed' | 'failed', error?: string) {
+  private async updateSetupStep(setupId: string, stepIndex: number, status: 'active' | 'completed' | 'failed', error?: string) {
     const progress = this.setupProgress.get(setupId)
     if (!progress) return
 
     const step = progress.steps[stepIndex]
     step.status = status
     
-    if (status === 'running') {
+    if (status === 'active') {
       step.startedAt = new Date()
       step.progress = 50
       progress.currentStep = step.name
@@ -563,11 +563,11 @@ class FarmOrchestrator {
       throw new Error(`Farm ${farmId} not found`)
     }
 
-    if (farm.status === 'running') {
+    if (farm.status === 'active') {
       return farm
     }
 
-    farm.status = 'running'
+    farm.status = 'active'
     
     // Start all agents
     for (const agent of farm.agents) {

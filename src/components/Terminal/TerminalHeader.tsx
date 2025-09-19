@@ -13,7 +13,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
-import { TerminalSession, TerminalAgent, TerminalViewMode } from '../../types/terminal';
+import { TerminalSession, TerminalAgent, TerminalViewMode } from '@/types/terminal';
 
 interface TerminalHeaderProps {
   sessions: TerminalSession[];
@@ -52,7 +52,7 @@ export const TerminalHeader: React.FC<TerminalHeaderProps> = ({
 }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'running': return 'text-green-400 bg-green-400/10';
+      case 'active': return 'text-green-400 bg-green-400/10';
       case 'ready': return 'text-green-400 bg-green-400/10';
       case 'working': return 'text-blue-400 bg-blue-400/10';
       case 'paused': return 'text-yellow-400 bg-yellow-400/10';

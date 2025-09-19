@@ -7,7 +7,7 @@ import * as yaml from 'js-yaml';
 import { getFarmAgentName, formatFarmAgentName, formatFarmAgentNameNoEmoji } from '../utils/farmAgentNames';
 import { promptEnhancer } from './promptEnhancer';
 import { promptEnhancementService } from './promptEnhancementService';
-import { barnCatalogService } from './barnCatalogService';
+import { barnService as barnCatalogService } from './unified/barnService';
 import { thinkingStrategyService } from './thinkingStrategyService';
 import { ThinkingLevel, ThinkingConfig } from '../types/thinking';
 
@@ -263,24 +263,157 @@ agents:
     return 'moderate';
   }
 
+  /**
+   * Calculate dynamic timeout based on task complexity, agent count, and task type
+   * Returns timeout in seconds
+   */
+  private calculateDynamicTimeout(parsed: any): number {
+    // Base timeout values in seconds
+    const BASE_TIMEOUTS = {
+      testing: 1800,      // 30 minutes for testing tasks
+      review: 1200,       // 20 minutes for code review
+      development: 3600,  // 60 minutes for development
+      debugging: 2400,    // 40 minutes for debugging
+      analysis: 1800,     // 30 minutes for analysis
+      optimization: 2400, // 40 minutes for optimization
+      research: 2400,     // 40 minutes for research tasks
+      general: 1800       // 30 minutes default
+    };
+
+    // Start with base timeout for task type
+    let timeout = BASE_TIMEOUTS[parsed.taskType] || BASE_TIMEOUTS.general;
+
+    // Adjust for complexity
+    const complexity = this.determineComplexity(parsed.prompt || parsed.originalPrompt || '');
+    if (complexity === 'complex') {
+      timeout *= 2;      // Double for complex tasks
+    } else if (complexity === 'simple') {
+      timeout *= 0.75;   // Reduce for simple tasks
+    }
+
+    // Adjust for agent count (more agents = potentially more time needed for coordination)
+    if (parsed.agentCount > 5) {
+      timeout *= 1.25;   // 25% more time for large teams
+    } else if (parsed.agentCount > 10) {
+      timeout *= 1.5;    // 50% more time for very large teams
+    }
+
+    // Adjust for specific keywords that indicate longer running tasks
+    const longRunningIndicators = [
+      'comprehensive', 'thorough', 'complete', 'full',
+      'end-to-end', 'e2e', 'extensive', 'detailed',
+      'production', 'enterprise', 'large-scale'
+    ];
+    
+    const quickTaskIndicators = [
+      'quick', 'fast', 'rapid', 'brief', 'simple',
+      'basic', 'minimal', 'prototype', 'demo'
+    ];
+
+    const promptLower = (parsed.prompt || parsed.originalPrompt || '').toLowerCase();
+    
+    if (longRunningIndicators.some(ind => promptLower.includes(ind))) {
+      timeout *= 1.5;    // 50% more time for thorough tasks
+    } else if (quickTaskIndicators.some(ind => promptLower.includes(ind))) {
+      timeout *= 0.5;    // 50% less time for quick tasks
+    }
+
+    // Special case for Quick Task mode - fixed 5 minutes
+    if (parsed.mode === 'quicktask') {
+      timeout = 300;  // 5 minutes fixed for Quick Tasks
+    }
+
+    // Cap timeout values
+    const MIN_TIMEOUT = 300;    // 5 minutes minimum
+    const MAX_TIMEOUT = 14400;   // 4 hours maximum
+    
+    timeout = Math.max(MIN_TIMEOUT, Math.min(MAX_TIMEOUT, Math.round(timeout)));
+
+    console.log(`[YamlGenerator] Calculated timeout: ${timeout}s for ${parsed.taskType} task with ${parsed.agentCount} agents (complexity: ${complexity})`);
+    
+    return timeout;
+  }
+
   private generateAgentConfig(parsed: ParsedPrompt): any[] {
     const agents = [];
     const baseRoles = [
-      { name: 'coordinator', role: 'Coordinate tasks and manage workflow' },
-      { name: 'developer', role: 'Implement features and fix bugs' },
-      { name: 'tester', role: 'Test functionality and ensure quality' },
-      { name: 'analyzer', role: 'Analyze code and provide insights' },
-      { name: 'documenter', role: 'Create and maintain documentation' }
+      { 
+        name: 'coordinator', 
+        role: 'Coordinate tasks and manage workflow',
+        taskTemplates: [
+          'Create project structure and initial setup',
+          'Define task priorities and dependencies',
+          'Monitor progress and coordinate between agents',
+          'Ensure all requirements are met'
+        ]
+      },
+      { 
+        name: 'developer', 
+        role: 'Implement features and fix bugs',
+        taskTemplates: [
+          'Implement core functionality',
+          'Write clean, maintainable code',
+          'Fix bugs and handle edge cases',
+          'Optimize performance where needed'
+        ]
+      },
+      { 
+        name: 'tester', 
+        role: 'Test functionality and ensure quality',
+        taskTemplates: [
+          'Write unit tests for critical components',
+          'Perform integration testing',
+          'Validate edge cases and error handling',
+          'Ensure code quality standards are met'
+        ]
+      },
+      { 
+        name: 'analyzer', 
+        role: 'Analyze code and provide insights',
+        taskTemplates: [
+          'Review code for best practices',
+          'Identify potential improvements',
+          'Check for security vulnerabilities',
+          'Analyze performance bottlenecks'
+        ]
+      },
+      { 
+        name: 'documenter', 
+        role: 'Create and maintain documentation',
+        taskTemplates: [
+          'Document API endpoints and functions',
+          'Create user guides and tutorials',
+          'Maintain README and setup instructions',
+          'Document architectural decisions'
+        ]
+      }
     ];
+
+    // Generate context-aware tasks based on the parsed prompt
+    const contextTasks = this.generateContextAwareTasks(parsed);
 
     for (let i = 0; i < Math.min(parsed.agentCount, baseRoles.length); i++) {
       const role = baseRoles[i];
       const farmAgent = getFarmAgentName(role.name, i);
+      
+      // Select appropriate tasks for this agent based on role and context
+      const agentTasks = this.selectTasksForAgent(
+        role.name, 
+        role.taskTemplates, 
+        contextTasks, 
+        parsed
+      );
+      
       agents.push({
         name: formatFarmAgentNameNoEmoji(farmAgent),
         role: role.role,
+        type: 'specialized',  // Use valid database type
         capabilities: this.getCapabilitiesForRole(role.name, parsed.technologies),
-        personality: farmAgent.personality
+        tasks: agentTasks,  // Add specific tasks for each agent
+        personality: farmAgent.personality,
+        config: {
+          roleType: role.name  // Store the actual role in config
+        }
       });
     }
 
@@ -288,11 +421,23 @@ agents:
     if (parsed.agentCount > baseRoles.length) {
       for (let i = baseRoles.length; i < parsed.agentCount; i++) {
         const farmAgent = getFarmAgentName('general', i);
+        const supportTasks = [
+          'Assist other agents with their tasks',
+          'Handle miscellaneous requirements',
+          'Provide feedback and suggestions',
+          'Help with testing and validation'
+        ];
+        
         agents.push({
           name: formatFarmAgentNameNoEmoji(farmAgent),
           role: 'Support various tasks as needed',
+          type: 'secondary',  // Use valid database type for support agents
           capabilities: ['general-support', 'task-assistance'],
-          personality: farmAgent.personality
+          tasks: supportTasks.slice(0, Math.min(3, supportTasks.length)),
+          personality: farmAgent.personality,
+          config: {
+            roleType: 'support'  // Store the actual role in config
+          }
         });
       }
     }
@@ -310,6 +455,81 @@ agents:
     };
 
     return baseCapabilities[roleName] || ['general-tasks'];
+  }
+
+  private generateContextAwareTasks(parsed: ParsedPrompt): string[] {
+    const tasks: string[] = [];
+    
+    // Extract key actions from the description
+    const actionWords = ['build', 'create', 'implement', 'fix', 'test', 'analyze', 'document', 'refactor', 'optimize', 'deploy'];
+    const descLower = parsed.description.toLowerCase();
+    
+    for (const action of actionWords) {
+      if (descLower.includes(action)) {
+        tasks.push(`${action.charAt(0).toUpperCase() + action.slice(1)} ${parsed.taskType || 'solution'}`);
+      }
+    }
+    
+    // Add technology-specific tasks
+    for (const tech of parsed.technologies) {
+      if (tech.toLowerCase().includes('react')) {
+        tasks.push('Create React components');
+        tasks.push('Implement state management');
+      } else if (tech.toLowerCase().includes('node')) {
+        tasks.push('Set up Express server');
+        tasks.push('Implement API endpoints');
+      } else if (tech.toLowerCase().includes('python')) {
+        tasks.push('Create Python modules');
+        tasks.push('Implement data processing');
+      }
+    }
+    
+    return tasks;
+  }
+
+  private selectTasksForAgent(
+    roleName: string, 
+    taskTemplates: string[], 
+    contextTasks: string[], 
+    parsed: ParsedPrompt
+  ): string[] {
+    const tasks: string[] = [];
+    
+    // Use context from the prompt to customize tasks
+    const promptLower = parsed.description.toLowerCase();
+    
+    // Add role-specific tasks based on prompt context
+    if (roleName === 'coordinator') {
+      tasks.push(`Coordinate ${parsed.taskType || 'development'} for: ${parsed.description.substring(0, 100)}`);
+      if (parsed.agentCount > 2) {
+        tasks.push('Manage task distribution among agents');
+      }
+    } else if (roleName === 'developer') {
+      if (promptLower.includes('api')) {
+        tasks.push('Implement API endpoints');
+      }
+      if (promptLower.includes('database')) {
+        tasks.push('Set up database schema and connections');
+      }
+      if (parsed.technologies.length > 0) {
+        tasks.push(`Implement using ${parsed.technologies.join(', ')}`);
+      }
+    } else if (roleName === 'tester') {
+      tasks.push(`Test ${parsed.taskType || 'implementation'}`);
+      if (promptLower.includes('api')) {
+        tasks.push('Create API integration tests');
+      }
+    }
+    
+    // Add template tasks if we need more
+    const remainingSlots = Math.max(2, 4 - tasks.length);
+    for (let i = 0; i < Math.min(remainingSlots, taskTemplates.length); i++) {
+      if (!tasks.includes(taskTemplates[i])) {
+        tasks.push(taskTemplates[i]);
+      }
+    }
+    
+    return tasks.slice(0, 5); // Limit to 5 tasks per agent
   }
 
   async generateYaml(request: YamlGenerationRequest): Promise<YamlGenerationResponse> {
@@ -363,6 +583,9 @@ agents:
       const farmId = `farm-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const farmWorkspace = `maibarn/workspaces/active/${farmId}`;
       
+      // Calculate dynamic timeout based on task complexity
+      const dynamicTimeout = this.calculateDynamicTimeout(parsed);
+      
       const config = {
         name: `${parsed.technologies.join('-') || 'general'}-${parsed.taskType}-farm`,
         description: originalPrompt, // Use original prompt as description
@@ -372,7 +595,7 @@ agents:
         config: {
           autoScale: false,
           maxAgents: isQwen ? Math.min(parsed.agentCount * 2, 16) : Math.min(parsed.agentCount * 2, 10),
-          timeout: 3600,
+          timeout: dynamicTimeout,
           coordination: parsed.agentCount > 1 ? 'collaborative' : 'sequential',
           stagger: 5
         },
@@ -979,15 +1202,20 @@ agents:
       }
     }
     
+    // Add dynamic timeout to metadata
+    const dynamicTimeout = this.calculateDynamicTimeout(parsed);
+    
     return {
       ...baseResponse,
       yaml: yamlContent,
       suggestions,
       barnReferences: extractedRefs,
+      timeout: dynamicTimeout, // Add timeout at top level for easy access
       metadata: {
         ...baseResponse.metadata,
         barnIntegration: true,
-        barnReferencesCount: extractedRefs.length
+        barnReferencesCount: extractedRefs.length,
+        dynamicTimeout: dynamicTimeout // Also in metadata for consistency
       }
     };
   }
@@ -1396,21 +1624,48 @@ agents:
 
       // If no YAML content, create from farmer template structure
       if (!customizedYaml) {
+        // Build agent configurations with full personality and context
+        const enhancedAgents = farmerTemplate.agents.map((agent: any, index: number) => ({
+          ...agent,
+          name: agent.name,
+          role: agent.role,
+          emoji: agent.emoji,
+          personality: agent.personality,
+          capabilities: agent.capabilities || [],
+          specialties: agent.specialties || [],
+          // Add farmer-specific prompt context
+          prompt_context: `As ${agent.name} (${agent.emoji}), a ${agent.role} specialist from the ${farmerTemplate.title} team, ${agent.personality}. Focus on: ${(agent.specialties || agent.capabilities || []).join(', ')}`,
+          // Include user's custom prompt if provided
+          task_prompt: userInputs.customPrompt ? 
+            `${agent.role} perspective on: ${userInputs.customPrompt}` : 
+            farmerTemplate.initial_prompt
+        }));
+
         const yamlData = {
-          name: farmerTemplate.name,
-          title: farmerTemplate.title,
-          description: farmerTemplate.description,
-          agents: farmerTemplate.agents,
-          initial_prompt: farmerTemplate.initial_prompt,
+          name: userInputs.farmName || farmerTemplate.name,
+          title: `${farmerTemplate.title} - ${userInputs.farmName}`,
+          description: userInputs.description || farmerTemplate.description,
+          farmer_template: {
+            id: farmerTemplate.id,
+            title: farmerTemplate.title,
+            category: farmerTemplate.category
+          },
+          agents: enhancedAgents,
+          initial_prompt: userInputs.customPrompt ? 
+            `${farmerTemplate.initial_prompt}\n\nUser Request: ${userInputs.customPrompt}` :
+            farmerTemplate.initial_prompt,
           steps: farmerTemplate.steps,
           config: {
             ...farmerTemplate.config,
             maxAgents: userInputs.maxAgents || farmerTemplate.config?.maxAgents || 8,
-            timeout: userInputs.timeout || farmerTemplate.config?.timeout || 3600
+            timeout: userInputs.timeout || farmerTemplate.config?.timeout || 3600,
+            coordination: farmerTemplate.config?.coordination || 'collaborative',
+            stagger: farmerTemplate.config?.stagger || 10
           },
           metadata: {
             ...farmerTemplate.metadata,
             generated_at: new Date().toISOString(),
+            farmer_template_used: farmerTemplate.title,
             generated_from: 'farmer_template'
           }
         };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { YAMLTemplate } from '../../types';
+import { YAMLTemplate } from '@/types';
 
 interface YamlTemplatesProps {
   onSelectTemplate: (template: YAMLTemplate) => void;

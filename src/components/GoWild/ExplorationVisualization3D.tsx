@@ -13,17 +13,17 @@ import {
 import { Vector3, Color, BufferGeometry } from 'three';
 // import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { motion } from 'framer-motion';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 import { 
   ExplorationNode, 
   ExplorationPath, 
   VisualizationSettings 
-} from '../../types/exploration3d';
+} from '@/types/exploration3d';
 import { 
   getNodeColor, 
   calculateConnectionCurve,
   createParticleTrail 
-} from '../../utils/3dHelpers';
+} from '@/utils/3dHelpers';
 import { GlassPanel } from '../common/GlassPanel';
 
 interface ExplorationVisualization3DProps {

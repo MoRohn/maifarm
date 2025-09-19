@@ -1,4 +1,4 @@
-import { AISuggestion, Settings } from '../types/settings';
+import { AISuggestion, Settings } from '@/types/settings';
 
 interface UserActivity {
   totalFarms: number;

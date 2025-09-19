@@ -4,8 +4,8 @@
  * Test script to verify harvest can be stored in the barn
  */
 
-import { HarvestFileCollector } from '../server/services/harvestFileCollector.js';
-import { barnService } from '../server/services/barnService.js';
+import { HarvestFileCollector } from '../server/services/unified/farmService.js';
+import { barnService } from '../server/services/unified/farmService.js';
 import { logger } from '../server/utils/logger.js';
 
 const HARVEST_ID = 'c292ad60-628d-43d9-9e7a-5a485660afdc';

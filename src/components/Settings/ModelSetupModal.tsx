@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Download, Terminal, Cpu, HardDrive, CheckCircle, AlertCircle } from 'lucide-react';
-import type { RecommendedModel } from '../../types/ollama';
+import type { RecommendedModel } from '@/types/ollama';
 
 interface ModelSetupModalProps {
   isOpen: boolean;

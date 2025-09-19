@@ -12,7 +12,7 @@ import {
   Eye
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { HarvestSummary } from '../../types';
+import { HarvestSummary } from '@/types';
 import { format } from 'date-fns';
 import { Tooltip } from '../common/Tooltip';
 
@@ -300,7 +300,7 @@ export const HarvestCard: React.FC<HarvestCardProps> = memo(({
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1.0 }}
-        className="relative flex items-center justify-between pt-6 border-t border-gray-200/50 dark:border-gray-700/50"
+        className="relative flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-0 sm:justify-between pt-6 border-t border-gray-200/50 dark:border-gray-700/50"
       >
         <motion.button
           whileHover={{ scale: 1.05, x: 2 }}
@@ -309,13 +309,13 @@ export const HarvestCard: React.FC<HarvestCardProps> = memo(({
             e.stopPropagation();
             onClick?.();
           }}
-          className="flex items-center space-x-2 px-4 py-2 bg-apple-blue-DEFAULT text-white rounded-apple-lg hover:bg-apple-blue-dark transition-all duration-200 shadow-apple-sm text-sm font-semibold"
+          className="flex items-center justify-center space-x-2 w-full sm:w-auto min-w-0 sm:min-w-[100px] px-4 py-2.5 bg-apple-blue-DEFAULT text-white rounded-apple-lg hover:bg-apple-blue-dark transition-all duration-200 shadow-apple-sm text-sm font-semibold"
         >
-          <Eye className="w-4 h-4" />
-          <span>View Details</span>
+          <Eye className="w-4 h-4 flex-shrink-0" />
+          <span className="whitespace-nowrap">View</span>
         </motion.button>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center justify-end space-x-2">
           {onExport && (
             <Tooltip content="Export harvest data" position="top">
               <motion.button

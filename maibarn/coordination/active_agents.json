@@ -1,0 +1,10 @@
+[
+  {
+    "id": "agent_0",
+    "name": "Agent 1",
+    "farm_id": "test-manual",
+    "status": "active",
+    "started_at": "2025-08-15T15:24:44.900765",
+    "pane": "test-manual:agents.0"
+  }
+]

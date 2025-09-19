@@ -3,7 +3,7 @@ import { Bot, Cpu, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface AIProviderStatusProps {
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'openai';
   status?: 'active' | 'inactive' | 'error';
   showLabel?: boolean;
   size?: 'sm' | 'md' | 'lg';
@@ -24,8 +24,8 @@ export const AIProviderStatus: React.FC<AIProviderStatusProps> = ({
       color: 'text-purple-600 dark:text-purple-400',
       bgColor: 'bg-purple-100 dark:bg-purple-900/30'
     },
-    qwen: {
-      name: 'Qwen3-Coder',
+    openai: {
+      name: 'OpenAI GPT-4',
       icon: Cpu,
       color: 'text-blue-600 dark:text-blue-400',
       bgColor: 'bg-blue-100 dark:bg-blue-900/30'

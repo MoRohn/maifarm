@@ -1,9 +1,9 @@
 // Template management service for farm templates
 
 import { v4 as uuidv4 } from 'uuid';
-import { Farm } from '../types';
-import { FarmTemplate, AgentBlueprint } from '../types/farm';
-import { WorkflowTemplate } from '../types/workflow';
+import { Farm } from '@/types';
+import { FarmTemplate, AgentBlueprint } from '@/types/farm';
+import { WorkflowTemplate } from '@/types/workflow';
 
 class TemplateManager {
   private templates: Map<string, FarmTemplate> = new Map();

@@ -75,7 +75,7 @@ export enum MetricName {
   FILES_GENERATED = 'files_generated',
   FILES_FAILED = 'files_failed',
   FILES_PENDING = 'files_pending',
-  SUCCESS_RATE = 'success_rate',
+  YIELDED_ITEMS = 'yielded_items',
   
   // File categories
   FILES_TEXT = 'files_text',
@@ -110,20 +110,27 @@ export enum MetricName {
  */
 export const MetricLabels: Record<MetricName, string> = {
   [MetricName.TOTAL_FARMS]: 'Total Farms',
-  [MetricName.ACTIVE_FARMS]: 'Active Farms',
+  [MetricName.ACTIVE_FARMS]: 'Live Farms',
   [MetricName.STOPPED_FARMS]: 'Stopped Farms',
   [MetricName.FAILED_FARMS]: 'Failed Farms',
   
   [MetricName.TOTAL_AGENTS]: 'Total Agents',
-  [MetricName.ACTIVE_AGENTS]: 'Active Agents',
+  [MetricName.ACTIVE_AGENTS]: 'Agents Working',
   [MetricName.IDLE_AGENTS]: 'Idle Agents',
   [MetricName.UNIQUE_AGENTS]: 'Unique Agents',
   
-  [MetricName.TOTAL_TASKS]: 'Total Tasks',
-  [MetricName.COMPLETED_TASKS]: 'Completed Tasks',
-  [MetricName.FAILED_TASKS]: 'Failed Tasks',
-  [MetricName.PENDING_TASKS]: 'Pending Tasks',
-  [MetricName.SUCCESS_RATE]: 'Success Rate',
+  [MetricName.TOTAL_FILES]: 'Total Files',
+  [MetricName.FILES_GENERATED]: 'Files Generated',
+  [MetricName.FILES_FAILED]: 'Files Failed',
+  [MetricName.FILES_PENDING]: 'Files Pending',
+  [MetricName.YIELDED_ITEMS]: 'Yielded Items',
+  
+  [MetricName.FILES_TEXT]: 'Text Files',
+  [MetricName.FILES_CODE]: 'Code Files',
+  [MetricName.FILES_IMAGE]: 'Image Files',
+  [MetricName.FILES_DATA]: 'Data Files',
+  [MetricName.FILES_CONFIG]: 'Config Files',
+  [MetricName.FILES_OTHER]: 'Other Files',
   
   [MetricName.CPU_USAGE]: 'CPU Usage',
   [MetricName.MEMORY_USAGE]: 'Memory Usage',
@@ -179,7 +186,7 @@ export interface CoreMetrics {
   filesGenerated: MetricValue;
   filesFailed: MetricValue;
   filesPending: MetricValue;
-  successRate: MetricValue; // Percentage of successful farms (0-100)
+  yieldedItems: MetricValue; // Total yielded items from all harvests
   
   // File categorization
   filesText: MetricValue;
@@ -189,7 +196,13 @@ export interface CoreMetrics {
   filesConfig: MetricValue;
   filesOther: MetricValue;
   
-  // Legacy task metrics (for backward compatibility)
+  // Harvest metrics
+  totalHarvests: MetricValue;
+  completedHarvests: MetricValue;
+  failedHarvests: MetricValue;
+  pendingHarvests: MetricValue;
+  
+  // Legacy task metrics (kept for backward compatibility, maps to harvest metrics)
   totalTasks: MetricValue;
   completedTasks: MetricValue;
   failedTasks: MetricValue;
@@ -224,6 +237,7 @@ export interface ExtendedMetrics extends CoreMetrics {
   source: 'api' | 'websocket' | 'cache' | 'computed';
   isStale: boolean;
   staleSince?: Date;
+  successRate?: MetricValue; // Success rate percentage (0-100)
 }
 
 // Legacy interface for backward compatibility
@@ -455,7 +469,7 @@ export interface FarmMetricsUnified {
   activeAgents: MetricValue;
   completedTasks: MetricValue;
   failedTasks: MetricValue;
-  successRate: MetricValue;
+  yieldedItems: MetricValue;
   uptime: MetricValue;
   cpuUsage: MetricValue;
   memoryUsage: MetricValue;
@@ -472,11 +486,12 @@ export interface AgentMetricsUnified {
   status: string;
   tasksCompleted: MetricValue;
   tasksFailed: MetricValue;
-  successRate: MetricValue;
+  yieldedItems: MetricValue;
   avgResponseTime: MetricValue;
   cpuUsage: MetricValue;
   memoryUsage: MetricValue;
   lastActivity: Date;
+  successRate?: MetricValue; // Success rate percentage (0-100)
 }
 
 /**
@@ -553,7 +568,6 @@ export function formatMetricValue(value: MetricValue, unit: MetricUnit): string 
  */
 export function getMetricUnit(metricName: MetricName): MetricUnit {
   switch (metricName) {
-    case MetricName.SUCCESS_RATE:
     case MetricName.ERROR_RATE:
     case MetricName.UPTIME:
     case MetricName.CPU_USAGE:

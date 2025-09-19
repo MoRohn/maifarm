@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Activity, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { useWebSocketStore } from '../../store/websocketStore';
+import { useWebSocketStore } from '@/store/websocketStore';
 import * as d3 from 'd3';
 
 interface MetricData {

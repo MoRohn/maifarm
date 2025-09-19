@@ -1,5 +1,5 @@
-import { Permission, Role, AccessControl, AuthUser } from '../types/security';
-import { User } from '../types/auth';
+import { Permission, Role, AccessControl, AuthUser } from '@/types/security';
+import { User } from '@/types/auth';
 
 export class PermissionsService {
   private static instance: PermissionsService;

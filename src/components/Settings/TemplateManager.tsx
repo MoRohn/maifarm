@@ -13,7 +13,7 @@ import {
   Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ConfigTemplate } from '../../types/settings';
+import { ConfigTemplate } from '@/types/settings';
 
 const mockTemplates: ConfigTemplate[] = [
   {

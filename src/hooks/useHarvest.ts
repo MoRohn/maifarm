@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from './useWebSocket';
-import { harvestService } from '../services/harvestService';
+import { harvestService } from '@/services/harvestService';
 import { 
   Harvest, 
   HarvestFilter, 
   HarvestSummary,
   HarvestExport 
-} from '../types/harvest';
+} from '@/types/harvest';
 import { useToast } from './useToast';
 
 // Keep existing hooks for backward compatibility

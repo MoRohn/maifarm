@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { User } from '../types'
+import { User } from '@/types'
 
 interface UserPreferences {
   theme: 'light' | 'dark' | 'system';

@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { LucideIcon, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { clsx } from 'clsx';
-import { formatNumber, formatCurrency, formatPercentage } from '../../utils/format';
+import { formatNumber, formatCurrency, formatPercentage } from '@/utils/format';
 
 interface MetricsOverviewCardProps {
   title: string;

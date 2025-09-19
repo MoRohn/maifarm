@@ -13,8 +13,8 @@ import {
   FolderOpen,
   Terminal
 } from 'lucide-react';
-import { useToast } from '../../hooks/useToast';
-import type { OllamaStatus, ModelValidation, RecommendedModel } from '../../types/ollama';
+import { useToast } from '@/hooks/useToast';
+import type { OllamaStatus, ModelValidation, RecommendedModel } from '@/types/ollama';
 import ModelSetupModal from './ModelSetupModal';
 
 const LocalModelSettings: React.FC = () => {

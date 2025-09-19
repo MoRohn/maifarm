@@ -1,13 +1,13 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AgentCard } from './AgentCard';
-import { MultiClaudeAgent } from '../../types/multiClaude';
+import { MultiClaudeAgent } from '@/types/multiClaude';
 import { Plus, Grid3x3, Grid, LayoutGrid } from 'lucide-react';
 
 interface AgentGridProps {
   agents: MultiClaudeAgent[];
-  onAgentCommand: (agentId: string, command: string) => void;
-  onAgentPrompt: (agentId: string, prompt: string) => void;
+  onAgentCommand: (_agentId: string, _command: string) => void;
+  onAgentPrompt: (_agentId: string, _prompt: string) => void;
   onAddAgent: () => void;
   onRemoveAgent: (agentId: string) => void;
   maxAgents?: number;

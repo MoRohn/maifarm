@@ -1,6 +1,6 @@
-import { PredictiveInsight, PerformanceMetrics } from '../types/reporting';
-import { Farm } from '../types/index';
-import { Prediction, MetricDataPoint } from '../types/analytics';
+import { PredictiveInsight, PerformanceMetrics } from '@/types/reporting';
+import { Farm } from '@/types/index';
+import { Prediction, MetricDataPoint } from '@/types/analytics';
 import { v4 as uuidv4 } from 'uuid';
 
 interface HistoricalData {

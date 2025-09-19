@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { Farm, Agent } from '../types';
-import { FarmTemplate, Workflow, FarmSetupProgress, OrchestrationEvent } from '../types/orchestration';
-import { WorkflowExecution } from '../types/workflow';
+import { Farm, Agent } from '@/types';
+import { FarmTemplate, Workflow, FarmSetupProgress, OrchestrationEvent } from '@/types/orchestration';
+import { WorkflowExecution } from '@/types/workflow';
 
 interface OrchestrationState {
   farms: Farm[];

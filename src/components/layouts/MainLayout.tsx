@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 import { Header } from './Header';
-import { useResponsive } from '../../hooks/useResponsive';
-import { useFocusTrap } from '../../hooks/useAccessibility';
+import { useResponsive } from '@/hooks/useResponsive';
+import { useFocusTrap } from '@/hooks/useAccessibility';
 
 interface MainLayoutProps {
   children: React.ReactNode;

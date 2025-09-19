@@ -1,5 +1,10 @@
 @import './styles/theme.css';
 @import './styles/design-system.css';
+@import './styles/glass.css';
+@import './styles/terminal-professional.css';
+@import './styles/terminal-scrollbar.css';
+@import './styles/terminal-responsive.css';
+@import './styles/harvest-terminal.css';
 
 @tailwind base;
 @tailwind components;
@@ -19,41 +24,53 @@ body {
 
 @layer base {
   :root {
-    /* Bridge old variables to new theme system */
-    --background: 0 0% 100%;
+    /* Light mode colors - vibrant and fresh */
+    --background: 0 0% 100%;  /* Pure white background */
     --foreground: 222.2 84% 4.9%;
-    --primary: var(--color-primary);
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
+    --primary: 142 71% 45%;  /* Vibrant farm green */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 91% 60%;  /* Sky blue */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 10% 96.5%;  /* Very light gray */
     --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: var(--color-accent);
+    --accent: 47 96% 53%;  /* Golden yellow accent */
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: var(--color-primary);
-    --radius: 0.5rem;
+    --border: 214.3 32% 91%;
+    --input: 214.3 32% 91%;
+    --ring: 142 71% 45%;
+    --radius: 0.75rem;  /* More rounded corners */
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    
+    /* Additional color variables for compatibility */
+    --color-primary: 142 71% 45%;
+    --color-accent: 47 96% 53%;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    --primary: var(--color-primary);
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --primary: 142 71% 45%;  /* Same vibrant green in dark mode */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 91% 60%;  /* Sky blue */
+    --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
-    --accent: var(--color-accent);
-    --accent-foreground: 210 40% 98%;
+    --accent: 47 96% 53%;  /* Golden accent */
+    --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: var(--color-primary);
+    --border: 217.2 32.6% 20%;
+    --input: 217.2 32.6% 20%;
+    --ring: 142 71% 45%;
+    --card: 222.2 84% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 7%;
+    --popover-foreground: 210 40% 98%;
   }
 }
 
@@ -73,26 +90,26 @@ body {
 @layer utilities {
   /* Enhanced Glass Effects */
   .glass {
-    @apply backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 border border-white/20 dark:border-gray-700/50;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
-    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    @apply backdrop-blur-xl bg-gray-50/80 dark:bg-gray-900/80 border border-gray-200/30 dark:border-gray-700/50;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.9) 0%, rgba(245, 245, 245, 0.8) 100%);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
   }
   
   .glass-subtle {
-    @apply backdrop-blur-md bg-white/60 dark:bg-gray-900/60 border border-white/10 dark:border-gray-800/30;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
+    @apply backdrop-blur-md bg-gray-50/60 dark:bg-gray-900/60 border border-gray-200/20 dark:border-gray-800/30;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.7) 0%, rgba(245, 245, 245, 0.6) 100%);
   }
 
   .glass-heavy {
-    @apply backdrop-blur-2xl bg-white/90 dark:bg-gray-900/90 border border-white/30 dark:border-gray-700/60;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0) 100%);
-    box-shadow: 0 12px 48px 0 rgba(31, 38, 135, 0.1);
+    @apply backdrop-blur-2xl bg-gray-50/95 dark:bg-gray-900/90 border border-gray-200/40 dark:border-gray-700/60;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.95) 0%, rgba(245, 245, 245, 0.9) 100%);
+    box-shadow: 0 12px 48px 0 rgba(31, 38, 135, 0.08);
   }
   
   /* Card Styles with Depth */
   .card-base {
-    @apply bg-white dark:bg-gray-900 rounded-xl shadow-sm hover:shadow-md transition-all duration-300;
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    @apply bg-gray-50 dark:bg-gray-900 rounded-xl shadow-sm hover:shadow-md transition-all duration-300;
+    border: 1px solid rgba(0, 0, 0, 0.06);
   }
 
   .dark .card-base {

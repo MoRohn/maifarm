@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, Check, AlertCircle, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
-import { api } from '../../services/apiClient';
+import { api } from '@/services/apiClient';
 
 interface SyncResult {
   success: boolean;

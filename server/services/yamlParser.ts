@@ -34,21 +34,23 @@ class YamlParser {
       errors.push('Missing required field: name');
     }
 
-    if (!config.type) {
-      errors.push('Missing required field: type');
-    }
+    // Type is optional - we can infer it from the farm type
+    // if (!config.type) {
+    //   errors.push('Missing required field: type');
+    // }
 
     if (!config.agents || !Array.isArray(config.agents)) {
       errors.push('Missing or invalid field: agents (must be an array)');
     } else {
-      // Validate each agent
+      // Validate each agent - be more lenient
       config.agents.forEach((agent: any, index: number) => {
         if (!agent.name) {
           errors.push(`Agent ${index + 1}: missing name`);
         }
-        if (!agent.type) {
-          errors.push(`Agent ${index + 1}: missing type`);
-        }
+        // Agent type is optional - we can default to 'general'
+        // if (!agent.type) {
+        //   errors.push(`Agent ${index + 1}: missing type`);
+        // }
       });
     }
 

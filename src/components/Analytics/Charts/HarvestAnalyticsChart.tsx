@@ -7,8 +7,8 @@ import {
   ChartOptions
 } from 'chart.js';
 import { Pie } from 'react-chartjs-2';
-import { useThemeStore } from '../../../store/themeStore';
-import type { HarvestAnalytics } from '../../../types/analytics';
+import { useThemeStore } from '@/store/themeStore';
+import type { HarvestAnalytics } from '@/types/analytics';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 

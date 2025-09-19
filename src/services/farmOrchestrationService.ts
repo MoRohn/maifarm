@@ -9,9 +9,9 @@ import {
   SetupStep,
   OrchestrationEvent,
   OrchestrationResourceUsage
-} from '../types/orchestration';
-import { ResourceUsage } from '../types/index';
-import { ensureDate } from '../utils/dateHelpers';
+} from '@/types/orchestration';
+import { ResourceUsage } from '@/types/index';
+import { ensureDate } from '@/utils/dateHelpers';
 import { WorkflowEngine } from './workflowEngine';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
@@ -227,7 +227,7 @@ export class FarmOrchestrationService extends EventEmitter {
       name: request.name,
       description: request.description || '',
       type: 'autonomous',
-      status: 'active', // Base Farm type expects 'active' not 'creating'
+      status: 'active', // Base Farm type expects 'active' not 'launching'
       agents: [],
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -269,7 +269,7 @@ export class FarmOrchestrationService extends EventEmitter {
       progress: 0,
       currentStep: 'Initializing farm',
       steps: [
-        { name: 'Initialize farm', status: 'running', progress: 0 },
+        { name: 'Initialize farm', status: 'active', progress: 0 },
         { name: 'Provision agents', status: 'pending', progress: 0 },
         { name: 'Configure resources', status: 'pending', progress: 0 },
         { name: 'Setup monitoring', status: 'pending', progress: 0 },
@@ -433,7 +433,7 @@ export class FarmOrchestrationService extends EventEmitter {
     const { setupProgress } = context;
     if (!setupProgress) return;
 
-    step.status = 'running';
+    step.status = 'active';
     step.startedAt = new Date();
     
     try {
@@ -783,7 +783,7 @@ export class FarmOrchestrationService extends EventEmitter {
     // Pause all agents
     const agents = Array.from(context.agentPool.values());
     for (const agent of agents) {
-      if (agent.status === 'working' || agent.status === 'running') {
+      if (agent.status === 'working' || agent.status === 'active') {
         agent.status = 'paused';
       }
     }
@@ -941,7 +941,7 @@ export class FarmOrchestrationService extends EventEmitter {
   private async validateAgentHealth(farm: Farm): Promise<boolean> {
     // Validate all agents are healthy
     return farm.agents.every(agent => 
-      agent.status === 'running' || agent.status === 'idle'
+      agent.status === 'active' || agent.status === 'idle'
     );
   }
 

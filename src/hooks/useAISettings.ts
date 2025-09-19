@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSettingsStore } from '../store/settingsStore';
-import { useUserStore } from '../store/userStore';
-import { AISuggestion, ConfigTemplate } from '../types/settings';
-import { aiSettingsService } from '../services/aiSettingsService';
+import { useSettingsStore } from '@/store/settingsStore';
+import { useUserStore } from '@/store/userStore';
+import { AISuggestion, ConfigTemplate } from '@/types/settings';
+import { aiSettingsService } from '@/services/aiSettingsService';
 
 // Type for store settings
-type StoreSettings = Parameters<ReturnType<typeof useSettingsStore>['updateSettings']>[0];
+type StoreSettings = Parameters<typeof useSettingsStore extends () => infer R
+  ? R extends { updateSettings: (settings: infer S) => void }
+    ? (settings: S) => void
+    : never
+  : never>[0];
 
 export const useAISettings = () => {
   const { settings, updateSettings } = useSettingsStore();

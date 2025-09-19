@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSettingsStore } from '../../store/settingsStore';
-import { ThemeConfig } from '../../types/settings';
+import { useSettingsStore } from '@/store/settingsStore';
+import { ThemeConfig } from '@/types/settings';
 
 interface ThemeEngineProps {
   onThemeChange?: (theme: ThemeConfig) => void;

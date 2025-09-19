@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { PerformanceMetrics as PerformanceMetricsType } from '../../types/reporting';
-import { predictiveAnalyticsService } from '../../services/predictiveAnalytics';
+import { PerformanceMetrics as PerformanceMetricsType } from '@/types/reporting';
+import { predictiveAnalyticsService } from '@/services/predictiveAnalytics';
 
 interface PerformanceMetricsProps {
   metrics: PerformanceMetricsType;

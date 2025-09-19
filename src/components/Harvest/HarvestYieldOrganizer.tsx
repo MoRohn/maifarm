@@ -16,7 +16,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { HarvestYield } from '../../types/harvest';
+import { HarvestYield } from '@/types/harvest';
 
 interface HarvestYieldOrganizerProps {
   yield: HarvestYield[];
@@ -56,7 +56,7 @@ export const HarvestYieldOrganizer: React.FC<HarvestYieldOrganizerProps> = ({
       // Auto-tag based on content
       const tags: string[] = [];
       
-      if (yieldItem.size > 1024 * 1024) tags.push('large');
+      if (yieldItem.size && yieldItem.size > 1024 * 1024) tags.push('large');
       if (yieldItem.type === 'code') tags.push('implementation');
       if (yieldItem.type === 'documentation') tags.push('docs');
       if (yieldItem.name.includes('test')) tags.push('testing');
@@ -270,9 +270,9 @@ export const HarvestYieldOrganizer: React.FC<HarvestYieldOrganizerProps> = ({
                             {yieldItem.description}
                           </p>
                           <div className="mt-2 flex items-center space-x-3 text-xs text-gray-500">
-                            <span>{formatFileSize(yieldItem.size)}</span>
+                            <span>{yieldItem.size ? formatFileSize(yieldItem.size) : 'N/A'}</span>
                             <span>•</span>
-                            <span>{yieldItem.createdBy.agentName}</span>
+                            <span>{yieldItem.createdBy?.agentName || 'Unknown'}</span>
                           </div>
                         </div>
                       </div>

@@ -29,7 +29,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Workflow, WorkflowNode as WorkflowNodeType, WorkflowEdge } from '../../types/workflow';
+import { Workflow, WorkflowNode as WorkflowNodeType, WorkflowEdge } from '@/types/workflow';
 
 interface WorkflowBuilderProps {
   workflow?: Workflow;
@@ -144,7 +144,7 @@ export const WorkflowBuilder: React.FC<WorkflowBuilderProps> = ({ workflow, onSa
     [setEdges]
   );
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
     setShowNodePanel(true);
   }, []);

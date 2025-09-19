@@ -1,24 +1,15 @@
 import { useEffect, useState } from 'react';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  Activity, 
-  Users, 
-  Cpu, 
-  DollarSign,
-  AlertTriangle,
-  CheckCircle,
-  XCircle
-} from 'lucide-react';
-import { reportingService } from '../../services/reportingService';
-import { predictiveAnalyticsService } from '../../services/predictiveAnalytics';
-import { analyticsService } from '../../services/analyticsService';
-import { useFarmStore } from '../../store/farmStore';
-import { PerformanceMetrics, PredictiveInsight } from '../../types/reporting';
-import { AgentPerformanceMetric } from '../../types/analytics';
-import { PerformanceMetrics as MetricsComponent } from './PerformanceMetrics';
+import {Activity, AlertTriangle, CheckCircle, DollarSign, TrendingDown, TrendingUp, Users} from 'lucide-react';
+import { reportingService } from '@/services/reportingService';
+import { predictiveAnalyticsService } from '@/services/predictiveAnalytics';
+import { getAllAgentsFromFarms } from '@/utils/farmHelpers';
+import { analyticsService } from '@/services/analyticsService';
+import { useFarmStore } from '@/store/farmStore';
+import { PerformanceMetrics, PredictiveInsight } from '@/types/reporting';
+import { AgentPerformanceMetric } from '@/types/analytics';
 import { PredictiveInsights } from './PredictiveInsights';
 import { ReportGenerator } from './ReportGenerator';
+import { PerformanceMetrics as PerformanceMetricsComponent } from './PerformanceMetrics';
 
 export function AnalyticsOverview() {
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
@@ -62,7 +53,7 @@ export function AnalyticsOverview() {
       setInsights(insightsData);
       
       // Get agent performance data
-      const allAgents = farms.flatMap(farm => farm.agents);
+      const allAgents = getAllAgentsFromFarms(farms);
       if (allAgents.length > 0) {
         const agentPerfData = await analyticsService.getAgentPerformanceMetrics(
           allAgents,
@@ -312,7 +303,7 @@ export function AnalyticsOverview() {
         )}
 
         {activeTab === 'performance' && metrics && (
-          <MetricsComponent 
+          <PerformanceMetricsComponent 
             agents={agentPerformance} 
             timeRange={{
               start: new Date(Date.now() - (timeframe === '1h' ? 3600000 : timeframe === '24h' ? 86400000 : timeframe === '7d' ? 604800000 : 2592000000)),

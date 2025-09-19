@@ -817,9 +817,21 @@ class MultiClaudeOrchestrator:
                 # Add a maximum runtime to prevent infinite hanging
                 max_runtime = self.args.max_runtime
                 start_time = time.time()
+                print(f"[*] Maximum runtime set to {max_runtime} seconds ({max_runtime/60:.1f} minutes)")
+                
+                # Add progress counter
+                last_status_time = time.time()
                 
                 while RUNNING:
                     time.sleep(1)
+                    
+                    # Show status every 30 seconds
+                    if time.time() - last_status_time > 30:
+                        elapsed = time.time() - start_time
+                        remaining = max_runtime - elapsed
+                        print(f"[*] Status: Running for {elapsed:.0f}s, {remaining:.0f}s remaining until timeout")
+                        last_status_time = time.time()
+                    
                     # Check if we've exceeded maximum runtime
                     if time.time() - start_time > max_runtime:
                         print(f"[!] Maximum runtime of {max_runtime} seconds exceeded, shutting down gracefully")
@@ -1076,8 +1088,8 @@ Examples:
                        help='Seconds between agent launches (default: 5)')
     parser.add_argument('--wait-after-launch', type=float, default=15.0,
                        help='Seconds to wait after launching before sending prompts (default: 15)')
-    parser.add_argument('--max-runtime', type=int, default=300,
-                       help='Maximum runtime in seconds before graceful shutdown (default: 300)')
+    parser.add_argument('--max-runtime', type=int, default=30000,
+                       help='Maximum runtime in seconds before graceful shutdown (default: 30000)')
     
     # Behavior options
     parser.add_argument('--no-kill-on-exit', dest='kill_on_exit', 
@@ -1126,4 +1138,10 @@ Examples:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"\n[ERROR] Script failed: {e}")
+        import traceback
+        traceback.print_exc()
+        input("\nPress Enter to exit...")

@@ -1,4 +1,4 @@
-import { Farm, Agent } from '../types';
+import { Farm, Agent } from '@/types';
 
 export class DragDropService {
   private static instance: DragDropService;

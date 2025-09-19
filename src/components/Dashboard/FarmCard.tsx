@@ -1,710 +1,459 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  MoreVertical, 
-  Pause, 
-  Play, 
-  RotateCw,
-  Users,
+  Sprout,
+  Droplets,
+  Sun,
+  Leaf,
+  Package,
+  ChevronRight,
+  Pause,
+  Play,
+  MoreHorizontal,
   Activity,
   Clock,
-  ChevronRight,
-  Terminal,
-  Package,
+  Zap,
+  TrendingUp,
+  Users,
+  Cpu,
+  Sparkles,
   Rocket,
   Bot,
-  Cpu,
-  StopCircle
+  Brain
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Farm } from '../../types';
+import { Farm } from '@/types';
+import { getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
 import { formatDistanceToNow } from 'date-fns';
-import { ClaudeCodeIntegration } from '../Farm/ClaudeCodeIntegration';
-import { useHarvestStore } from '../../store/harvestStore';
 import { useNavigate } from 'react-router-dom';
-import { useToast } from '../../hooks/useToast';
-import { AIProviderStatus } from '../common/AIProviderStatus';
-import { Tooltip } from '../ui/tooltip';
+import { useToast } from '@/hooks/useToast';
 
 interface FarmCardProps {
   farm: Farm;
   className?: string;
 }
 
-export const FarmCard: React.FC<FarmCardProps> = ({ farm: rawFarm, className }) => {
-  // Ensure farm has required properties
-  if (!rawFarm || typeof rawFarm !== 'object') {
-    console.error('FarmCard: Invalid farm prop', rawFarm);
-    return null;
-  }
-  
-  // Normalize farm data to ensure it has all required properties
-  const farm = {
-    ...rawFarm,
-    agents: Array.isArray(rawFarm.agents) ? rawFarm.agents : [],
-    status: rawFarm.status || 'unknown',
-    metrics: {
-      ...rawFarm.metrics,
-      totalTasks: rawFarm.metrics?.totalTasks ?? 0,
-      completedTasks: rawFarm.metrics?.completedTasks ?? 0,
-      failedTasks: rawFarm.metrics?.failedTasks ?? 0,
-      efficiency: rawFarm.metrics?.efficiency ?? 0
-    }
-  };
-  
-  const [showClaudeCode, setShowClaudeCode] = useState(false);
-  const [isCreatingHarvest, setIsCreatingHarvest] = useState(false);
-  const [isLaunching, setIsLaunching] = useState(false);
-  const [animatedProgress, setAnimatedProgress] = useState(0);
+export const FarmCard: React.FC<FarmCardProps> = ({ farm, className }) => {
   const navigate = useNavigate();
-  const { createHarvest } = useHarvestStore();
-  const { success: showSuccess, error: showError } = useToast();
+  const { success: showSuccess } = useToast();
+  const [showMenu, setShowMenu] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [pulseAnimation, setPulseAnimation] = useState(false);
   
-  const handleCreateHarvest = async () => {
-    setIsCreatingHarvest(true);
-    try {
-      const harvest = await createHarvest(farm.id, farm.name);
-      if (harvest) {
-        // Navigate to harvest view
-        navigate(`/harvests/${harvest.id}`);
-      }
-    } catch (error) {
-      console.error('Failed to create harvest:', error);
-    } finally {
-      setIsCreatingHarvest(false);
+  useEffect(() => {
+    if ((farm.status === 'active' || farm.status === 'running') && !pulseAnimation) {
+      setPulseAnimation(true);
+    } else if (farm.status !== 'active' && farm.status !== 'running') {
+      setPulseAnimation(false);
     }
-  };
+  }, [farm.status]);
 
-  const handleLaunchFarm = async () => {
-    setIsLaunching(true);
-    try {
-      const response = await fetch(`/api/farms/${farm.id}/launch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          numberOfAgents: farm.config?.maxAgents || 3,
-          collaborative: farm.config?.collaborative || false
-        })
-      });
-
-      if (response.ok) {
-        showSuccess('Farm launched successfully');
-        // Navigate to harvest view to see terminals
-        navigate(`/harvests/${farm.id}`);
-      } else {
-        throw new Error('Failed to launch farm');
-      }
-    } catch (error) {
-      console.error('Failed to launch farm:', error);
-      showError('Failed to launch farm');
-    } finally {
-      setIsLaunching(false);
-    }
-  };
-
-  const handleStopFarm = async () => {
-    try {
-      const response = await fetch(`/api/farms/${farm.id}/stop`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          graceful: true // Use graceful shutdown by default to collect yields
-        })
-      });
-
-      if (response.ok) {
-        showSuccess('Farm gracefully stopped - yields collected');
-        // Refresh farm data
-        window.location.reload();
-      } else {
-        throw new Error('Failed to stop farm');
-      }
-    } catch (error) {
-      console.error('Failed to stop farm:', error);
-      showError('Failed to stop farm');
-    }
-  };
-
-  const handlePauseFarm = async () => {
-    try {
-      const response = await fetch(`/api/farms/${farm.id}/pause`, {
-        method: 'POST'
-      });
-
-      if (response.ok) {
-        showSuccess('Farm paused');
-        // Refresh farm data
-        window.location.reload();
-      } else {
-        throw new Error('Failed to pause farm');
-      }
-    } catch (error) {
-      console.error('Failed to pause farm:', error);
-      showError('Failed to pause farm');
-    }
-  };
-
-  const handleResumeFarm = async () => {
-    try {
-      const response = await fetch(`/api/farms/${farm.id}/resume`, {
-        method: 'POST'
-      });
-
-      if (response.ok) {
-        showSuccess('Farm resumed');
-        // Refresh farm data
-        window.location.reload();
-      } else {
-        throw new Error('Failed to resume farm');
-      }
-    } catch (error) {
-      console.error('Failed to resume farm:', error);
-      showError('Failed to resume farm');
-    }
-  };
-
-  const handleRestartFarm = async () => {
-    try {
-      // First stop the farm gracefully to collect yields
-      const stopResponse = await fetch(`/api/farms/${farm.id}/stop`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          graceful: true // Use graceful shutdown for restart to collect yields
-        })
-      });
-
-      if (!stopResponse.ok) {
-        throw new Error('Failed to stop farm');
-      }
-
-      // Wait a moment before restarting
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Then launch it again
-      const launchResponse = await fetch(`/api/farms/${farm.id}/launch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          numberOfAgents: farm.config?.maxAgents || 3,
-          collaborative: farm.config?.collaborative || false
-        })
-      });
-
-      if (launchResponse.ok) {
-        showSuccess('Farm restarted successfully');
-        // Navigate to harvest view
-        navigate(`/harvests/${farm.id}`);
-      } else {
-        throw new Error('Failed to restart farm');
-      }
-    } catch (error) {
-      console.error('Failed to restart farm:', error);
-      showError('Failed to restart farm');
-    }
-  };
-
-  const handleViewDetails = () => {
-    // Navigate to the farm's harvest page
-    navigate(`/harvests/${farm.id}`);
-  };
-  
-  const statusColors = {
-    active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    running: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    launching: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    paused: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    completed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    stopped: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  } as const;
-
-  // Get glow effect based on status
-  const getStatusGlow = (status: string) => {
-    // Create CSS custom property for dynamic glow color
-    const glowStyles: Record<string, React.CSSProperties> = {
-      // Blue glow for idle/preparing
-      idle: {
-        '--glow-color-light': 'rgba(59, 130, 246, 0.15)', // blue-500 with low opacity
-        '--glow-color-dark': 'rgba(96, 165, 250, 0.25)', // blue-400 with medium opacity
-      } as React.CSSProperties,
-      preparing: {
-        '--glow-color-light': 'rgba(59, 130, 246, 0.15)',
-        '--glow-color-dark': 'rgba(96, 165, 250, 0.25)',
-      } as React.CSSProperties,
-      // Green glow for launching/running/active
-      launching: {
-        '--glow-color-light': 'rgba(34, 197, 94, 0.15)', // green-500 with low opacity
-        '--glow-color-dark': 'rgba(74, 222, 128, 0.25)', // green-400 with medium opacity
-      } as React.CSSProperties,
-      running: {
-        '--glow-color-light': 'rgba(34, 197, 94, 0.15)',
-        '--glow-color-dark': 'rgba(74, 222, 128, 0.25)',
-      } as React.CSSProperties,
-      active: {
-        '--glow-color-light': 'rgba(34, 197, 94, 0.15)',
-        '--glow-color-dark': 'rgba(74, 222, 128, 0.25)',
-      } as React.CSSProperties,
-      // Gold/yellow glow for completed/harvest_ready
-      completed: {
-        '--glow-color-light': 'rgba(59, 130, 246, 0.15)', // blue-500 with low opacity
-        '--glow-color-dark': 'rgba(96, 165, 250, 0.25)', // blue-400 with medium opacity
-      } as React.CSSProperties,
-      harvest_ready: {
-        '--glow-color-light': 'rgba(250, 204, 21, 0.15)',
-        '--glow-color-dark': 'rgba(251, 191, 36, 0.25)',
-      } as React.CSSProperties,
-      // Red glow for error/failed
-      error: {
-        '--glow-color-light': 'rgba(239, 68, 68, 0.15)', // red-500 with low opacity
-        '--glow-color-dark': 'rgba(248, 113, 113, 0.25)', // red-400 with medium opacity
-      } as React.CSSProperties,
-      failed: {
-        '--glow-color-light': 'rgba(239, 68, 68, 0.15)',
-        '--glow-color-dark': 'rgba(248, 113, 113, 0.25)',
-      } as React.CSSProperties,
-      stopped: {
-        '--glow-color-light': 'rgba(239, 68, 68, 0.15)',
-        '--glow-color-dark': 'rgba(248, 113, 113, 0.25)',
-      } as React.CSSProperties,
-      // Orange glow for paused
-      paused: {
-        '--glow-color-light': 'rgba(251, 146, 60, 0.15)', // orange-400 with low opacity
-        '--glow-color-dark': 'rgba(251, 146, 60, 0.25)', // orange-400 with medium opacity
-      } as React.CSSProperties,
-      // Default gray glow for unknown status
-      default: {
-        '--glow-color-light': 'rgba(156, 163, 175, 0.1)', // gray-400 with very low opacity
-        '--glow-color-dark': 'rgba(209, 213, 219, 0.15)', // gray-300 with low opacity
-      } as React.CSSProperties,
-    };
-
-    return glowStyles[status] || glowStyles.default;
-  };
-
-  // Calculate progress based on available data
-  const calculateProgressPercentage = () => {
-    // If we have explicit task metrics, use those
-    if (farm.metrics.totalTasks > 0) {
-      return (farm.metrics.completedTasks / farm.metrics.totalTasks) * 100;
-    }
-    
-    // For Go Wild farms, calculate based on creativity progression
-    if (farm.config.goWildMode?.enabled) {
-      const farmAge = farm.createdAt ? Date.now() - new Date(farm.createdAt).getTime() : 0;
-      const maxGoWildDuration = farm.config.timeout || 900000; // 15 minutes default
-      const timeProgress = Math.min((farmAge / maxGoWildDuration) * 100, 100);
-      
-      // Adjust based on status
-      switch (farm.status) {
-        case 'launching':
-          return Math.min(timeProgress, 35);
-        case 'running':
-        case 'active':
-          return Math.max(40, Math.min(timeProgress, 85));
-        case 'completed':
-          return 100;
-        case 'failed':
-          return Math.max(timeProgress * 0.7, 10); // Show some progress even on failure
-        case 'paused':
-          return Math.max(timeProgress * 0.8, 20);
-        default:
-          return Math.max(timeProgress, 5);
-      }
-    }
-    
-    // For regular farms, calculate based on agent activity and status
-    const agentCount = farm.agents?.length || 0;
-    const activeAgentCount = farm.agents?.filter(a => 
-      a.status === 'running' || a.status === 'working' || a.status === 'busy'
-    ).length || 0;
-    
-    // Base progress on farm status and agent activity
-    let baseProgress = 0;
-    switch (farm.status) {
-      case 'launching':
-        baseProgress = 25 + (agentCount > 0 ? 15 : 0);
-        break;
-      case 'running':
+  const getStatusColor = (status: string | undefined) => {
+    switch (status) {
       case 'active':
-        baseProgress = 50 + (activeAgentCount / Math.max(agentCount, 1)) * 35;
-        break;
+      case 'running':
+        return {
+          badge: 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 dark:from-green-500/30 dark:to-emerald-500/30 border border-green-500/30',
+          glow: 'shadow-green-500/20',
+          icon: 'text-green-500',
+          pulse: true
+        };
+      case 'idle':
+        return {
+          badge: 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-blue-400 dark:from-blue-500/30 dark:to-cyan-500/30 border border-blue-500/30',
+          glow: 'shadow-blue-500/20',
+          icon: 'text-blue-500',
+          pulse: false
+        };
+      case 'harvesting':
+        return {
+          badge: 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400 dark:from-amber-500/30 dark:to-orange-500/30 border border-amber-500/30',
+          glow: 'shadow-amber-500/20',
+          icon: 'text-amber-500',
+          pulse: true
+        };
       case 'completed':
-        baseProgress = 100;
-        break;
+        return {
+          badge: 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 dark:from-purple-500/30 dark:to-pink-500/30 border border-purple-500/30',
+          glow: 'shadow-purple-500/20',
+          icon: 'text-purple-500',
+          pulse: false
+        };
       case 'failed':
-        baseProgress = Math.max((activeAgentCount / Math.max(agentCount, 1)) * 40, 15);
-        break;
-      case 'paused':
-        baseProgress = Math.max((activeAgentCount / Math.max(agentCount, 1)) * 60, 30);
-        break;
+        return {
+          badge: 'bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 dark:from-red-500/30 dark:to-rose-500/30 border border-red-500/30',
+          glow: 'shadow-red-500/20',
+          icon: 'text-red-500',
+          pulse: false
+        };
       default:
-        baseProgress = 10;
+        return {
+          badge: 'bg-gray-500/10 text-gray-400 border border-gray-500/30',
+          glow: 'shadow-gray-500/20',
+          icon: 'text-gray-500',
+          pulse: false
+        };
     }
-    
-    // Add farm age factor for long-running tasks
-    if (farm.createdAt) {
-      const farmAge = Date.now() - new Date(farm.createdAt).getTime();
-      const timeBonus = Math.min((farmAge / 300000) * 10, 15); // Up to 15% bonus over 5 minutes
-      baseProgress = Math.min(baseProgress + timeBonus, 95);
-    }
-    
-    return Math.round(baseProgress);
   };
 
-  const progressPercentage = calculateProgressPercentage();
-
-  // Animate progress bar for running farms
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
+  const getIcon = () => {
+    const iconClass = "w-5 h-5";
     
-    // For running farms, add subtle animation
-    if (farm.status === 'running' || farm.status === 'active') {
-      interval = setInterval(() => {
-        setAnimatedProgress(prev => {
-          const target = progressPercentage;
-          const diff = target - prev;
-          
-          // Smooth transition towards target
-          if (Math.abs(diff) < 0.5) {
-            return target;
-          }
-          
-          // Add small random variations for dynamic feel
-          const variation = (Math.random() - 0.5) * 2;
-          const step = diff > 0 ? Math.max(0.5, diff * 0.1) : Math.min(-0.5, diff * 0.1);
-          
-          return Math.max(0, Math.min(95, prev + step + variation));
-        });
-      }, 1000);
-    } else {
-      // For non-running farms, set progress immediately
-      setAnimatedProgress(progressPercentage);
+    // Special icons for specific farm names/types
+    if (farm.name?.toLowerCase().includes('gowild')) {
+      return <Rocket className={iconClass} />;
+    }
+    if (farm.name?.toLowerCase().includes('quick')) {
+      return <Zap className={iconClass} />;
+    }
+    if (farm.name?.toLowerCase().includes('ai') || farm.name?.toLowerCase().includes('claude')) {
+      return <Brain className={iconClass} />;
     }
     
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [farm.status, progressPercentage, farm.id]);
+    // Default icons by type
+    switch (farm.type) {
+      case 'sequential':
+        return <Leaf className={iconClass} />;
+      case 'collaborative':
+        return <Users className={iconClass} />;
+      case 'autonomous':
+        return <Bot className={iconClass} />;
+      default:
+        return <Sprout className={iconClass} />;
+    }
+  };
 
-  // Initialize animated progress
-  useEffect(() => {
-    setAnimatedProgress(progressPercentage);
-  }, [farm.id]);
+  const handleViewFarm = () => {
+    navigate(`/harvest/${farm.id}`);
+  };
 
-  const displayProgress = farm.status === 'running' || farm.status === 'active' 
-    ? animatedProgress 
-    : progressPercentage;
+  const handleToggleStatus = () => {
+    // Toggle between active and paused
+    const currentStatus = farm.status || 'idle';
+    showSuccess(currentStatus === 'active' ? 'Farm paused' : 'Farm resumed');
+    setShowMenu(false);
+  };
 
-  const isLaunchingStatus = farm.status === 'launching';
-  const statusGlowStyle = getStatusGlow(farm.status);
+  const agentCount = getAgentCount(farm);
+  const agents = getAgentsFromFarm(farm);
+  const activeAgents = agents.filter(a => a.status === 'active' || a.status === 'working').length;
+  
+  const statusColors = getStatusColor(farm.status);
+  const completionRate = farm.metrics && farm.metrics.totalTasks > 0 
+    ? Math.round((farm.metrics.completedTasks / farm.metrics.totalTasks) * 100)
+    : farm.status === 'completed' ? 100 : farm.status === 'active' || farm.status === 'running' ? 45 : 0;
 
   return (
     <motion.div
-      whileHover={!isLaunchingStatus ? { y: -4 } : {}}
-      style={statusGlowStyle}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -4 }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
       className={clsx(
-        'bg-white dark:bg-gray-900 rounded-apple-lg transition-all duration-500',
-        'border border-gray-200 dark:border-gray-800',
-        // Glow effect using CSS variables - subtle in light mode, slightly brighter in dark
-        'shadow-[0_0_20px_var(--glow-color-light)] dark:shadow-[0_0_30px_var(--glow-color-dark)]',
-        // Enhanced shadow on hover
-        'hover:shadow-[0_0_25px_var(--glow-color-light)] dark:hover:shadow-[0_0_40px_var(--glow-color-dark)]',
-        isLaunchingStatus && 'opacity-75 cursor-not-allowed',
+        "relative group cursor-pointer",
         className
       )}
     >
-      {/* Header */}
-      <div className="p-6 pb-4">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-              {farm.name}
-            </h4>
-            <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
-              <span className="flex items-center space-x-1">
-                <Users className="w-4 h-4" />
-                <span>{(() => {
-                  // Simple agent count - just count array length
-                  const agents = farm.agents || [];
-                  const count = agents.length;
-                  return `${count} ${count === 1 ? 'agent' : 'agents'}`;
-                })()}</span>
-              </span>
-              <span className="flex items-center space-x-1">
-                <Clock className="w-4 h-4" />
-                <span>{(() => {
-                  if (!farm.createdAt) return 'Unknown';
-                  const date = new Date(farm.createdAt);
-                  return isNaN(date.getTime()) ? 'Unknown' : formatDistanceToNow(date, { addSuffix: true });
-                })()}</span>
-              </span>
-            </div>
-          </div>
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <MoreVertical className="w-5 h-5" />
-          </motion.button>
+      {/* Glow effect for active status */}
+      {statusColors.pulse && (
+        <motion.div
+          animate={{
+            opacity: [0.4, 0.8, 0.4],
+          }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+          className={clsx(
+            "absolute inset-0 rounded-2xl blur-xl",
+            statusColors.glow
+          )}
+        />
+      )}
+      
+      {/* Main Card */}
+      <div
+        className={clsx(
+          "relative overflow-hidden rounded-2xl",
+          "bg-gradient-to-br from-gray-900/90 to-gray-800/90 dark:from-gray-800/90 dark:to-gray-900/90",
+          "backdrop-blur-xl border border-gray-700/50 dark:border-gray-600/50",
+          "shadow-2xl hover:shadow-3xl transition-all duration-500",
+          isHovered && "border-gray-600/70 dark:border-gray-500/70"
+        )}
+        onClick={handleViewFarm}
+      >
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-5">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500" />
+          <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnits">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
         </div>
-
-        {/* Status Badge and Provider */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-2">
-            <span className={clsx(
-              'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-              statusColors[farm.status]
-            )}>
-              {farm.status ? farm.status.charAt(0).toUpperCase() + farm.status.slice(1) : 'Unknown'}
-            </span>
-            {farm.provider && (
-              <AIProviderStatus 
-                provider={farm.provider} 
-                status="active"
-                size="sm"
-                showLabel={false}
-              />
-            )}
-          </div>
-          <span className="text-sm text-gray-600 dark:text-gray-400">
-            {farm.metrics.efficiency || 0}% efficiency
-          </span>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between text-sm mb-1">
-            <span className="text-gray-600 dark:text-gray-400">Progress</span>
-            <span className="font-medium text-gray-900 dark:text-white">
-              {Math.round(displayProgress)}%
-            </span>
-          </div>
-          <div className="h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${displayProgress}%` }}
-              transition={{ 
-                duration: farm.status === 'running' || farm.status === 'active' ? 0.8 : 0.5, 
-                ease: 'easeOut' 
-              }}
-              className="h-full bg-gradient-to-r from-primary-500 to-primary-600"
-            />
-          </div>
-        </div>
-
-        {/* Metrics */}
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          <div className="text-center">
-            <div className="text-2xl font-semibold text-gray-900 dark:text-white">
-              {farm.metrics.completedTasks}
-            </div>
-            <div className="text-xs text-gray-600 dark:text-gray-400">Completed</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-semibold text-gray-900 dark:text-white">
-              {farm.metrics.totalTasks - farm.metrics.completedTasks - farm.metrics.failedTasks}
-            </div>
-            <div className="text-xs text-gray-600 dark:text-gray-400">Pending</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-semibold text-gray-900 dark:text-white">
-              {farm.metrics.failedTasks}
-            </div>
-            <div className="text-xs text-gray-600 dark:text-gray-400">Failed</div>
-          </div>
-        </div>
-
-        {/* Active Agents Preview */}
-        <div className="space-y-2">
-          {farm.agents.slice(0, 2).map((agent) => (
-            <div
-              key={`agent-${farm.id}-${agent.id}`}
-              className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-apple"
-            >
-              <div className="flex items-center space-x-2">
-                <div className={clsx(
-                  'w-2 h-2 rounded-full',
-                  agent.status === 'working' ? 'bg-green-500' : 
-                  agent.status === 'error' ? 'bg-red-500' : 'bg-gray-400'
-                )} />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {agent.name}
-                </span>
+        
+        <div className="relative p-6 z-10">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <motion.div 
+                className={clsx(
+                  "p-3 rounded-xl bg-gradient-to-br",
+                  "from-gray-700/50 to-gray-800/50",
+                  "border border-gray-600/50",
+                  "shadow-lg",
+                  statusColors.icon
+                )}
+                animate={isHovered ? { rotate: [0, -10, 10, -10, 10, 0] } : {}}
+                transition={{ duration: 0.5 }}
+              >
+                {getIcon()}
+              </motion.div>
+              <div>
+                <h3 className="font-bold text-lg text-white">
+                  {farm.name}
+                </h3>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Clock className="w-3 h-3 text-gray-500" />
+                  <p className="text-xs text-gray-500">
+                    {farm.createdAt 
+                      ? formatDistanceToNow(farm.createdAt instanceof Date ? farm.createdAt : new Date(farm.createdAt), { addSuffix: true })
+                      : 'Just now'}
+                  </p>
+                </div>
               </div>
-              {agent.currentTask && (
-                <span className="text-xs text-gray-600 dark:text-gray-400 truncate max-w-[120px]">
-                  {agent.currentTask}
-                </span>
+            </div>
+          
+            {/* Menu button */}
+            <div className="relative">
+              <motion.button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu(!showMenu);
+                }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                className="p-2 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors backdrop-blur-sm border border-gray-600/30"
+              >
+                <MoreHorizontal className="w-4 h-4 text-gray-400" />
+              </motion.button>
+            
+              <AnimatePresence>
+                {showMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                    className="absolute right-0 mt-2 w-48 bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-2xl border border-gray-700/50 z-50 overflow-hidden"
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleStatus();
+                      }}
+                      className="w-full px-4 py-3 text-left text-sm hover:bg-gray-700/50 flex items-center space-x-2 text-gray-200 transition-colors"
+                    >
+                      {(farm.status === 'active' || farm.status === 'running') ? (
+                        <>
+                          <Pause className="w-4 h-4" />
+                          <span>Pause Farm</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4" />
+                          <span>Resume Farm</span>
+                        </>
+                      )}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+          </div>
+        </div>
+
+          {/* Description */}
+          {farm.description && (
+            <p className="text-sm text-gray-400 mb-4 line-clamp-2 leading-relaxed">
+              {farm.description}
+            </p>
+          )}
+
+          {/* Status and Metrics Row */}
+          <div className="flex items-center justify-between mb-4">
+            <motion.div
+              animate={statusColors.pulse ? { scale: [1, 1.05, 1] } : {}}
+              transition={{ duration: 2, repeat: Infinity }}
+              className={clsx(
+                "px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider",
+                statusColors.badge,
+                "backdrop-blur-sm"
+              )}
+            >
+              <div className="flex items-center space-x-1.5">
+                {statusColors.pulse && (
+                  <motion.div
+                    animate={{ opacity: [1, 0.3, 1] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                    className="w-2 h-2 rounded-full bg-current"
+                  />
+                )}
+                <span>{farm.status ? farm.status.charAt(0).toUpperCase() + farm.status.slice(1) : 'Idle'}</span>
+              </div>
+            </motion.div>
+            
+            {/* Metrics badges */}
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-gray-700/30 backdrop-blur-sm border border-gray-600/30">
+                <Users className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs font-medium text-gray-300">{activeAgents}/{agentCount}</span>
+              </div>
+              
+              {(farm.status === 'active' || farm.status === 'running') && (
+                <div className="flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-gray-700/30 backdrop-blur-sm border border-gray-600/30">
+                  <Activity className="w-3.5 h-3.5 text-green-400" />
+                  <span className="text-xs font-medium text-gray-300">Live</span>
+                </div>
               )}
             </div>
-          ))}
-          {farm.agents.length > 2 && (
-            <div className="text-xs text-gray-600 dark:text-gray-400 text-center">
-              +{farm.agents.length - 2} more agents
+          </div>
+
+          {/* Progress Section */}
+          <div className="mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <TrendingUp className="w-3.5 h-3.5 text-gray-500" />
+                <span className="text-xs font-medium text-gray-400">Progress</span>
+              </div>
+              <span className="text-xs font-bold text-gray-300">{completionRate}%</span>
+            </div>
+            <div className="relative h-2 bg-gray-700/50 rounded-full overflow-hidden backdrop-blur-sm">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${completionRate}%` }}
+                transition={{ duration: 1.5, ease: 'easeOut' }}
+                className="absolute inset-y-0 left-0 rounded-full"
+                style={{
+                  background: `linear-gradient(90deg, ${statusColors.icon === 'text-green-500' ? '#10b981' : statusColors.icon === 'text-blue-500' ? '#3b82f6' : statusColors.icon === 'text-amber-500' ? '#f59e0b' : '#8b5cf6'} 0%, ${statusColors.icon === 'text-green-500' ? '#34d399' : statusColors.icon === 'text-blue-500' ? '#60a5fa' : statusColors.icon === 'text-amber-500' ? '#fbbf24' : '#a78bfa'} 100%)`
+                }}
+              >
+                {/* Shimmer effect */}
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                  animate={{
+                    x: ['-100%', '200%']
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: 'linear'
+                  }}
+                />
+              </motion.div>
+            </div>
+          </div>
+          
+          {/* Additional Stats Grid */}
+          {farm.metrics && (
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <div className="text-center p-2 rounded-lg bg-gray-700/20 backdrop-blur-sm border border-gray-600/20">
+                <div className="text-xs text-gray-500 mb-1">Tasks</div>
+                <div className="text-sm font-bold text-gray-300">
+                  {farm.metrics.completedTasks || 0}/{farm.metrics.totalTasks || 0}
+                </div>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-gray-700/20 backdrop-blur-sm border border-gray-600/20">
+                <div className="text-xs text-gray-500 mb-1">Efficiency</div>
+                <div className="text-sm font-bold text-gray-300">
+                  {farm.metrics.efficiency || 0}%
+                </div>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-gray-700/20 backdrop-blur-sm border border-gray-600/20">
+                <div className="text-xs text-gray-500 mb-1">CPU</div>
+                <div className="text-sm font-bold text-gray-300">
+                  {farm.metrics.resourceUtilization?.cpu || 0}%
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action Button */}
+          <motion.button
+            onClick={handleViewFarm}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className={clsx(
+              "w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-xl",
+              "bg-gradient-to-r",
+              statusColors.icon === 'text-green-500' ? "from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600" :
+              statusColors.icon === 'text-blue-500' ? "from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600" :
+              statusColors.icon === 'text-amber-500' ? "from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600" :
+              statusColors.icon === 'text-purple-500' ? "from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600" :
+              "from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800",
+              "text-white font-bold shadow-lg",
+              "transition-all duration-300",
+              "group relative overflow-hidden"
+            )}
+          >
+            {/* Button shimmer effect */}
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -skew-x-12"
+              animate={isHovered ? {
+                x: ['100%', '-100%']
+              } : {}}
+              transition={{
+                duration: 0.75,
+                ease: 'easeInOut'
+              }}
+            />
+            <span className="relative flex items-center space-x-2">
+              <Sparkles className="w-4 h-4" />
+              <span>View Details</span>
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </span>
+          </motion.button>
+          
+          {/* Agent Avatars Row */}
+          {agentCount > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <div className="flex -space-x-2">
+                {agents.slice(0, 5).map((agent, index) => (
+                  <motion.div
+                    key={agent.id}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 border-2 border-gray-800 flex items-center justify-center relative group"
+                    style={{ zIndex: agents.length - index }}
+                  >
+                    <span className="text-white text-xs font-bold">
+                      {agent.name ? agent.name.charAt(0).toUpperCase() : 'A'}
+                    </span>
+                    {(agent.status === 'active' || agent.status === 'working') && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border border-gray-800 animate-pulse" />
+                    )}
+                  </motion.div>
+                ))}
+                {agentCount > 5 && (
+                  <div className="w-8 h-8 rounded-full bg-gray-700/50 backdrop-blur-sm border-2 border-gray-800 flex items-center justify-center">
+                    <span className="text-xs font-bold text-gray-400">+{agentCount - 5}</span>
+                  </div>
+                )}
+              </div>
+              
+              {farm.type && (
+                <div className="px-2 py-1 rounded-lg bg-gray-700/30 backdrop-blur-sm border border-gray-600/30">
+                  <span className="text-xs font-medium text-gray-400 capitalize">{farm.type}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
-
-      {/* Actions */}
-      <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-800 rounded-b-apple-lg">
-        {isLaunchingStatus ? (
-          <div className="flex items-center justify-center py-2">
-            <div className="flex items-center space-x-2 text-yellow-600 dark:text-yellow-400">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              >
-                <Rocket className="w-5 h-5" />
-              </motion.div>
-              <span className="text-sm font-medium">Farm is launching...</span>
-            </div>
-          </div>
-        ) : (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            {!farm.config?.processId ? (
-              <Tooltip content="Launch a new farm with AI agents">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleLaunchFarm}
-                  disabled={isLaunching}
-                  className={clsx(
-                    "p-2 rounded-apple transition-colors",
-                    isLaunching
-                      ? "text-gray-400 bg-gray-100 dark:bg-gray-800 cursor-not-allowed"
-                      : "text-purple-600 hover:bg-purple-100 dark:hover:bg-purple-900/30"
-                  )}
-                >
-                  <Rocket className="w-4 h-4" />
-                </motion.button>
-              </Tooltip>
-            ) : (farm.status === 'active' || farm.status === 'running') ? (
-              <>
-                <Tooltip content="Pause all agents in this farm">
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handlePauseFarm}
-                    className="p-2 text-orange-600 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-apple transition-colors"
-                  >
-                    <Pause className="w-4 h-4" />
-                  </motion.button>
-                </Tooltip>
-                <Tooltip content="Stop and terminate this farm">
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleStopFarm}
-                    className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-apple transition-colors"
-                  >
-                    <StopCircle className="w-4 h-4" />
-                  </motion.button>
-                </Tooltip>
-              </>
-            ) : farm.status === 'paused' ? (
-              <Tooltip content="Resume paused agents">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleResumeFarm}
-                  className="p-2 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-apple transition-colors"
-                >
-                  <Play className="w-4 h-4" />
-                </motion.button>
-              </Tooltip>
-            ) : (
-              <Tooltip content="Start this farm">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleLaunchFarm}
-                  className="p-2 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-apple transition-colors"
-                >
-                  <Play className="w-4 h-4" />
-                </motion.button>
-              </Tooltip>
-            )}
-            <Tooltip content="Restart farm with fresh agents">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleRestartFarm}
-                className="p-2 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-apple transition-colors"
-              >
-                <RotateCw className="w-4 h-4" />
-              </motion.button>
-            </Tooltip>
-            <Tooltip content="Open Claude Code terminal integration">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowClaudeCode(true)}
-                className="p-2 text-purple-600 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-apple transition-colors"
-              >
-                <Terminal className="w-4 h-4" />
-              </motion.button>
-            </Tooltip>
-            {farm.status === 'completed' && (
-              <Tooltip content="Collect outputs from completed tasks">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleCreateHarvest}
-                  disabled={isCreatingHarvest}
-                  className={clsx(
-                    "p-2 rounded-apple transition-colors",
-                    isCreatingHarvest 
-                      ? "text-gray-400 bg-gray-100 dark:bg-gray-800 cursor-not-allowed"
-                      : "text-primary-600 hover:bg-primary-100 dark:hover:bg-primary-900/30"
-                  )}
-                >
-                  <Package className="w-4 h-4" />
-                </motion.button>
-              </Tooltip>
-            )}
-          </div>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleViewDetails}
-            className="flex items-center space-x-1 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-          >
-            <span>View Details</span>
-            <ChevronRight className="w-4 h-4" />
-          </motion.button>
-        </div>
-        )}
-      </div>
-      
-      {/* Claude Code Integration Modal */}
-      {showClaudeCode && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-          >
-            <div className="p-6">
-              <ClaudeCodeIntegration 
-                farm={farm} 
-                onClose={() => setShowClaudeCode(false)} 
-              />
-            </div>
-          </motion.div>
-        </div>
-      )}
     </motion.div>
   );
 };

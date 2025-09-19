@@ -1,16 +1,37 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { motion } from 'framer-motion';
-import { Terminal, RefreshCw, Send, Maximize2, Minimize2, Copy, Download, Grid, LayoutList, Pause, Play, MessageSquare, FileText } from 'lucide-react';
-import { useWebSocket } from '../../hooks/useWebSocket';
-import { useFarmStore } from '../../store/farmStore';
-import { getAgentName, createAgentNameMapping } from '../../utils/agentNameMapper';
-import { useTabVisibility } from '../../hooks/useTabVisibility';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  Terminal, 
+  RefreshCw, 
+  Send, 
+  Maximize2, 
+  Minimize2, 
+  Copy, 
+  Download, 
+  Grid, 
+  LayoutList, 
+  Pause, 
+  Play, 
+  TreePine,
+  Layers,
+  Monitor,
+  Activity,
+  ChevronRight,
+  Cpu
+} from 'lucide-react';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { useFarmStore } from '@/store/farmStore';
+import { getAgentName, createAgentNameMapping } from '@/utils/agentNameMapper';
+import { getAgentNameByIndex } from '@/utils/farmAgentNames';
+import { useTabVisibility } from '@/hooks/useTabVisibility';
+import { terminalSubscriptionManager } from '@/utils/terminalSubscriptionManager';
 import { Tooltip } from '../common/Tooltip';
 import { AgentBar } from './AgentBar';
 import { HtmlPreview } from './HtmlPreview';
-
-// Lazy load HarvestTerminalPro for better performance
-const HarvestTerminalPro = lazy(() => import('./HarvestTerminalPro'));
+import { FarmLandscape } from './FarmLandscape';
+import { AnsiParser, stripAnsi, detectOutputType, getOutputColor, parseToSegments } from '@/utils/ansiParser';
+import { HarvestTerminalErrorBoundary } from './HarvestTerminalErrorBoundary';
+import { WorkflowVisualization } from './WorkflowVisualization';
 
 interface TerminalSession {
   sessionName: string;
@@ -21,16 +42,61 @@ interface TerminalSession {
   metadata?: any;
 }
 
-
 interface HarvestTerminalProps {
   farmId?: string;
   className?: string;
-  legacyMode?: boolean;
-  forceProMode?: boolean;
+  defaultView?: 'farm' | 'grid' | 'single' | 'stacked';
 }
 
-// Legacy component for backward compatibility
-const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, className = '' }) => {
+// Safe ANSI renderer component that handles errors gracefully
+const SafeAnsiRenderer: React.FC<{ content: string }> = ({ content }) => {
+  try {
+    // Sanitize the content first
+    if (!content || typeof content !== 'string') {
+      return <span>{'\u00A0'}</span>;
+    }
+    
+    // Limit content length to prevent performance issues
+    const truncatedContent = content.length > 10000 
+      ? content.substring(0, 10000) + '...[truncated]'
+      : content;
+    
+    // Try to parse ANSI codes
+    const parsed = AnsiParser.parseToHtml(truncatedContent);
+    
+    // Additional safety check - ensure parsed result is a string
+    if (typeof parsed !== 'string') {
+      console.error('[SafeAnsiRenderer] AnsiParser returned non-string:', typeof parsed);
+      return <span>{stripAnsi(content) || '\u00A0'}</span>;
+    }
+    
+    // Check for potentially dangerous patterns
+    if (parsed.includes('<script') || parsed.includes('javascript:') || parsed.includes('onerror=')) {
+      console.warn('[SafeAnsiRenderer] Potentially dangerous content detected, using stripped version');
+      return <span>{stripAnsi(content) || '\u00A0'}</span>;
+    }
+    
+    // Render the parsed HTML
+    return <span dangerouslySetInnerHTML={{ __html: parsed }} />;
+  } catch (error) {
+    // If anything goes wrong, fall back to plain text
+    console.error('[SafeAnsiRenderer] Error rendering ANSI content:', error);
+    try {
+      // Try to at least strip ANSI codes
+      return <span>{stripAnsi(content) || '\u00A0'}</span>;
+    } catch (stripError) {
+      // Last resort - just show raw content or placeholder
+      console.error('[SafeAnsiRenderer] Error stripping ANSI:', stripError);
+      return <span>{content || '\u00A0'}</span>;
+    }
+  }
+};
+
+export const HarvestTerminal: React.FC<HarvestTerminalProps> = ({ 
+  farmId, 
+  className = '',
+  defaultView = 'grid'  // Default to grid view to show multiple agents
+}) => {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<number>(0);
@@ -41,19 +107,22 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
   const [isSessionsLoading, setIsSessionsLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [viewMode, setViewMode] = useState<'grid' | 'single' | 'stacked'>('stacked');
+  const [viewMode, setViewMode] = useState<'farm' | 'grid' | 'single' | 'stacked' | 'workflow'>(defaultView);
   const [pausedAgents, setPausedAgents] = useState<{ [key: number]: boolean }>({});
   const [showPromptForAgent, setShowPromptForAgent] = useState<{ [key: number]: boolean }>({});
   const [sessionCheckCount, setSessionCheckCount] = useState(0);
-  const [lastFarmLaunchEvent, setLastFarmLaunchEvent] = useState<string | null>(null);
   const [expandedAgents, setExpandedAgents] = useState<Set<number>>(new Set());
   const [lastLines, setLastLines] = useState<Map<number, string>>(new Map());
   const [htmlPreviews, setHtmlPreviews] = useState<Array<{filePath: string; agentId: number; agentName: string}>>([]);
-  const [showHtmlPreview, setShowHtmlPreview] = useState<{filePath: string; agentId: number; agentName: string} | null>(null);
+  const [showHtmlPreview, setShowHtmlPreview] = useState<{filePath: string; agentId: number; agentName: string; farmId: string} | null>(null);
+  const [terminalTheme, setTerminalTheme] = useState<'professional-dark' | 'professional-light' | 'default'>('professional-dark');
+  
   const terminalRef = useRef<HTMLDivElement>(null);
   const gridTerminalRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const subscriptionKeysRef = useRef<string[]>([]);
+  const messageDedupeCache = useRef<Map<string, number>>(new Map()); // Cache for deduplicating messages
 
   // Get farm data for agent name mapping
   const farms = useFarmStore(state => state.farms);
@@ -71,12 +140,44 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
           const data = await response.json();
           if (data.success && data.data) {
             const farmData = data.data;
+            
+            // Enhanced logging for GoWild detection
+            const isGoWild = farmData.metadata?.isGoWild || 
+                           farmData.mode === 'goWild' || 
+                           farmData.config?.goWildMode?.enabled;
+            
+            if (isGoWild) {
+              console.log('[HarvestTerminal] 🌟 GoWild Farm Detected:', {
+                farmId: farmData.id,
+                mode: farmData.mode,
+                agentCount: farmData.agents?.length || 0,
+                agentTypes: farmData.agents?.map((a: any) => typeof a) || [],
+                metadata: farmData.metadata,
+                config: farmData.config
+              });
+            }
             setCurrentFarm(farmData);
             // Create agent name mapping from fetched farm data
             if (farmData.agents && farmData.agents.length > 0) {
-              const mapping = createAgentNameMapping(farmData);
-              setAgentNameMapping(mapping);
-              console.log('[HarvestTerminal] Created agent name mapping with', farmData.agents.length, 'agents');
+              // Handle both object agents and string agent IDs (GoWild case)
+              const isGoWildFarm = farmData.metadata?.isGoWild || 
+                                   farmData.mode === 'goWild' || 
+                                   farmData.agents.some((a: any) => typeof a === 'string');
+              
+              if (isGoWildFarm && farmData.agents.every((a: any) => typeof a === 'string')) {
+                // GoWild farms with string agent IDs - create simple mapping
+                const simpleMapping: any = {};
+                farmData.agents.forEach((agentId: string, index: number) => {
+                  simpleMapping[index] = getAgentNameByIndex(index);
+                });
+                setAgentNameMapping(simpleMapping);
+                console.log('[HarvestTerminal] Created GoWild agent mapping with', farmData.agents.length, 'string agents');
+              } else {
+                // Standard farms with agent objects
+                const mapping = createAgentNameMapping(farmData);
+                setAgentNameMapping(mapping);
+                console.log('[HarvestTerminal] Created standard agent name mapping with', farmData.agents.length, 'agents');
+              }
             }
           }
         }
@@ -98,18 +199,59 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
   
   // Helper function to get agent display name
   const getAgentDisplayName = useCallback((agentIndex: number): string => {
-    if (agentNameMapping) {
-      return getAgentName(agentIndex, agentNameMapping, `Agent ${agentIndex}`);
+    // Validate agentIndex
+    if (typeof agentIndex !== 'number' || isNaN(agentIndex) || agentIndex < 0) {
+      console.warn('[HarvestTerminal] Invalid agentIndex:', agentIndex);
+      return `Agent ${agentIndex || 0}`;
     }
-    return `Agent ${agentIndex}`;
-  }, [agentNameMapping]);
+    
+    // First try to use the mapping from the farm data
+    if (agentNameMapping) {
+      const mappedName = getAgentName(agentIndex, agentNameMapping);
+      // If we get a valid farm animal name, use it
+      if (mappedName && !mappedName.startsWith('Agent-') && !mappedName.startsWith('Agent ')) {
+        return mappedName;
+      }
+    }
+    
+    // If no mapping or invalid mapping, check if we have farm data with agents
+    if (currentFarm && currentFarm.agents && currentFarm.agents[agentIndex]) {
+      const agent = currentFarm.agents[agentIndex];
+      
+      // Handle both object agents and string agent IDs (GoWild case)
+      if (typeof agent === 'string') {
+        // GoWild farms may have string agent IDs
+        return getAgentNameByIndex(agentIndex);
+      } else if (typeof agent === 'object' && agent) {
+        // Standard farm with agent objects
+        if (agent.name && agent.name !== `Agent ${agent.id?.slice(0, 8)}` && !agent.name.startsWith('Agent ')) {
+          return agent.name;
+        }
+      }
+    }
+    
+    // Fallback to farm animal names based on index
+    return getAgentNameByIndex(agentIndex);
+  }, [agentNameMapping, currentFarm]);
 
-  // Use stable WebSocket connection with default settings
-  // The singleton manager ensures we reuse the same connection
-  const { socket, isConnected, reconnect } = useWebSocket();
+  // Use stable WebSocket connection with enhanced terminal configuration
+  const { socket, isConnected, reconnect } = useWebSocket({
+    url: import.meta.env.VITE_API_URL || 'http://localhost:4567',
+    reconnect: true,
+    reconnectAttempts: 15,
+    reconnectDelay: 1500
+  });
+  
+  // Set up terminal subscription manager
+  useEffect(() => {
+    if (socket && isConnected) {
+      console.log('[HarvestTerminal] Setting up TerminalSubscriptionManager with socket');
+      terminalSubscriptionManager.setSocket(socket);
+    }
+  }, [socket, isConnected]);
   
   // Use tab visibility to manage connection
-  const { isVisible, wasInBackground, backgroundDurationFormatted } = useTabVisibility({
+  const { isVisible, wasInBackground } = useTabVisibility({
     onVisible: () => {
       console.log('[HarvestTerminal] Tab became visible');
       if (wasInBackground && !isConnected) {
@@ -141,16 +283,6 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
     try {
       setSessionCheckCount(prev => prev + 1);
       
-      // Optionally trigger cleanup first (only on first load or manual refresh)
-      if (forceCleanup || source === 'initial' || source === 'manual-refresh') {
-        console.log('[HarvestTerminal] Triggering session cleanup');
-        try {
-          await fetch('/api/terminal/cleanup', { method: 'POST' });
-        } catch (cleanupErr) {
-          console.error('[HarvestTerminal] Cleanup failed:', cleanupErr);
-        }
-      }
-      
       // Build URL with farmId if provided
       const url = farmId 
         ? `/api/terminal/sessions?farmId=${encodeURIComponent(farmId)}`
@@ -165,429 +297,459 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
         
         // Filter sessions by farmId if provided
         if (farmId && sessionList.length > 0) {
-          // Look for sessions that match our farm ID pattern
-          const originalCount = sessionList.length;
           const shortFarmId = farmId.substring(0, 8);
-          const isQuickTask = farmId.startsWith('quick-task-');
-          
           sessionList = sessionList.filter((session: TerminalSession) => {
             // Direct farmId match
             if (session.farmId === farmId) return true;
-            // Check if extracted farmId matches shortened version
             if (session.farmId === shortFarmId) return true;
             
+            // Session name based matching
             if (session.sessionName) {
-              // Handle Quick Task sessions
-              if (isQuickTask) {
-                // Quick tasks use pattern: quick_XXXXXXXX
-                // farmId format: quick-task-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXXXXXX
-                if (session.sessionName.startsWith('quick_') || session.sessionName.startsWith('quick-')) {
-                  // Extract the task ID part from farmId (after quick-task-)
-                  const taskIdPart = farmId.replace('quick-task-', '').substring(0, 8);
-                  if (session.sessionName.includes(taskIdPart)) {
-                    return true;
-                  }
-                  // Also check if the session metadata indicates it's a quick task
-                  if (session.metadata?.isQuickTask) {
-                    return true;
-                  }
-                }
-              } else {
-                // Handle regular farm sessions
-                // Check for both dash and underscore patterns
-                if (session.sessionName === `farm-${shortFarmId}` || 
-                    session.sessionName === `farm_${shortFarmId}`) return true;
-                // Check if it contains the shortFarmId anywhere
-                if (session.sessionName.includes(shortFarmId)) return true;
-              }
+              const normalizedName = session.sessionName.toLowerCase();
+              const shortIdLower = shortFarmId.toLowerCase();
+              
+              // Handle quick task sessions - they use their session name as farmId
+              if (normalizedName.startsWith('quick_') && farmId.startsWith('quick_')) return true;
+              if (normalizedName.includes('quicktask') && farmId.startsWith('quick-task-')) return true;
+              
+              // Standard farm session matching
+              if (normalizedName.includes(shortIdLower)) return true;
+              if (normalizedName === farmId) return true;
             }
             return false;
           });
-          
-          // Log filtering results for debugging
-          console.log(`[HarvestTerminal] Filtered ${originalCount} sessions to ${sessionList.length} for farmId: ${farmId} (isQuickTask: ${isQuickTask})`);
-          if (sessionList.length === 0) {
-            if (isQuickTask) {
-              const taskIdPart = farmId.replace('quick-task-', '').substring(0, 8);
-              console.log(`[HarvestTerminal] No Quick Task sessions found matching pattern: quick_${taskIdPart} or quick-${taskIdPart}`);
-            } else {
-              console.log(`[HarvestTerminal] No farm sessions found matching farmId: ${farmId} (short: ${farmId.substring(0, 8)})`);
-            }
-          }
         }
         
         setSessions(sessionList);
+        setIsSessionsLoading(false);
         
-        // Auto-select the most recent session if none selected
-        if (!selectedSession && sessionList.length > 0) {
-          // Sessions should already be sorted by creation time (most recent first)
-          console.log(`[HarvestTerminal] Auto-selecting most recent session: ${sessionList[0].sessionName}`);
-          setSelectedSession(sessionList[0].sessionName);
-          // Fetch terminal output immediately when selecting
-          setTimeout(() => fetchTerminalOutput(), 100);
-        }
-        
-        // If we found sessions, stop loading
-        if (sessionList.length > 0) {
-          setIsSessionsLoading(false);
-        }
-      } else {
-        console.error('[HarvestTerminal] Failed to fetch sessions:', response.status, response.statusText);
+        // Auto-select first session if none selected - use setState callback to get fresh value
+        setSelectedSession(currentSelected => {
+          if (sessionList.length > 0 && !currentSelected) {
+            const firstSession = sessionList[0];
+            console.log('[HarvestTerminal] Auto-selecting first session:', firstSession.sessionName);
+            return firstSession.sessionName;
+          }
+          return currentSelected;
+        });
       }
     } catch (error) {
       console.error('[HarvestTerminal] Error fetching sessions:', error);
+      setIsSessionsLoading(false);
     }
-  }, [selectedSession, farmId]);
+  }, [farmId]); // Remove selectedSession from dependencies to avoid closure issues
 
-  // No debounce for immediate session detection
-  const debouncedFetchSessions = useCallback((source: string) => {
-    if (isConnected) { // Only fetch if connected
-      fetchSessions(source);
-    }
-  }, [fetchSessions, isConnected]);
-
-  // Clean terminal output by removing redundant prompts and empty lines
-  const cleanTerminalOutput = useCallback((rawLines: string[]): string[] => {
-    if (!rawLines || rawLines.length === 0) return [];
-    
-    // Filter out empty lines, duplicate prompts, and MaiFarm system messages
-    const cleaned = rawLines.filter((line, index) => {
-      // Skip empty lines at the beginning
-      if (index === 0 && !line.trim()) return false;
-      
-      // Skip duplicate consecutive prompts
-      if (index > 0 && line === rawLines[index - 1] && line.includes('@') && line.includes('%')) {
-        return false;
-      }
-      
-      // Replace username@hostname with MF for MaiFarm and shorten IDs
-      if (line.includes('@') && (line.includes('%') || line.includes('$'))) {
-        // First replace username@hostname with MF
-        line = line.replace(/^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+/, 'MF');
-        
-        // Then shorten any IDs in the prompt (farm IDs, session IDs, etc.)
-        // Look for patterns like farm-xxxxxxxx, quick_xxxxxxxx, or any UUID-like strings
-        line = line.replace(/\b(farm[-_]|quick[-_]|session[-_])?([a-f0-9]{8})([a-f0-9-]*)\b/gi, (match: string, prefix: string, firstPart: string) => {
-          // If it has a prefix (farm-, quick-, etc.), keep prefix and first 5 chars of ID
-          if (prefix) {
-            return prefix + firstPart.substring(0, 5);
-          }
-          // For standalone IDs, just show first 5 chars
-          return firstPart.substring(0, 5);
-        });
-        
-        rawLines[index] = line;
-      }
-      
-      // Filter out heartbeat messages and MaiFarm automated system messages
-      if (line.includes('HEARTBEAT_') || 
-          line.includes('echo "HEARTBEAT') ||
-          line.includes('echo HEARTBEAT') ||
-          line.includes('KEEPALIVE_') ||
-          line.includes('echo "KEEPALIVE') ||
-          line.includes('CONNECTION_CHECK') ||
-          line.includes('AGENT_STATUS_') ||
-          line.includes('FARM_SYNC_') ||
-          line.includes('MAIFARM_INTERNAL_') ||
-          line.includes('# MaiFarm automated') ||
-          line.includes('# Internal system message') ||
-          (line.includes('echo') && line.includes('$$')) || // Filter echo commands with process IDs
-          (line.includes('echo') && line.includes('$(date')) || // Filter echo commands with date
-          // Filter out Claude's prompt input boxes and related UI elements
-          line.includes('╭──────────────────────────────────────╮') ||
-          line.includes('╰──────────────────────────────────────╯') ||
-          line.includes('╭─────────────────────────────────────╮') ||
-          line.includes('╰─────────────────────────────────────╯') ||
-          line.includes('│                                      │') ||
-          line.includes('│                                     │') ||
-          (line.includes('bypass permissions') && line.includes('shift+tab')) ||
-          (line.includes('shift+tab to') && line.includes('cycle')) ||
-          line.includes('to cycle)') ||
-          // Filter out any lines that are just box drawing characters with spaces
-          /^[╭╮╯╰│\s─]+$/.test(line) ||
-          // Filter out lines that contain only box characters and "to cycle" text
-          (/^[╭╮╯╰│\s─]*to cycle\)[╭╮╯╰│\s─]*$/.test(line))
-      ) {
-        return false;
-      }
-      
-      // Keep lines that have actual content or are meaningful prompts
-      return true;
-    });
-    
-    // Check for Claude Code welcome message or important output
-    const hasClaudeWelcome = cleaned.some(line => 
-      line.includes('Welcome to Claude Code') || 
-      line.includes('claude') ||
-      line.includes('/help for help')
-    );
-    
-    // If we have Claude welcome, keep all content
-    if (hasClaudeWelcome) {
-      return cleaned;
-    }
-    
-    // If we only have prompt lines and no actual output, show a single clean prompt
-    const hasRealContent = cleaned.some(line => 
-      line.trim() && 
-      !line.match(/^(MF|[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+) .* [%$#]$/)
-    );
-    
-    if (!hasRealContent && cleaned.length > 0) {
-      // Return just one clean prompt line, preferring MF prompt
-      const promptLine = cleaned.find(line => 
-        (line.startsWith('MF ') && (line.includes('%') || line.includes('$'))) ||
-        (line.includes('@') && (line.includes('%') || line.includes('$')))
-      );
-      return promptLine ? [promptLine] : ['Initializing agent...'];
-    }
-    
-    return cleaned;
-  }, []);
-
-  // Update last line for an agent
-  const updateLastLine = useCallback((agentId: number, output: string[]) => {
-    if (output.length > 0) {
-      const lastLine = output[output.length - 1];
-      setLastLines(prev => new Map(prev).set(agentId, lastLine));
-    }
-  }, []);
-  
-  // Update last lines whenever terminal outputs change
-  useEffect(() => {
-    Object.entries(terminalOutputs).forEach(([id, output]) => {
-      const agentId = Number(id);
-      if (output && output.length > 0) {
-        updateLastLine(agentId, output);
-        
-        // Check for HTML file opens in the output
-        detectHtmlFileOpens(agentId, output);
-      }
-    });
-  }, [terminalOutputs, updateLastLine]);
-  
-  // Detect when agents open HTML files
-  const detectHtmlFileOpens = useCallback((agentId: number, output: string[]) => {
-    // Look for patterns indicating HTML file was opened
-    const htmlPatterns = [
-      /Bash\(open:?\s*([^)]+\.html[^)]*)\)/i,  // Bash(open: file.html)
-      /opening?\s+['"]?([^'"]+\.html)['"]?/i,   // opening "file.html"
-      /open\s+['"]?([^'"]+\.html)['"]?/i,        // open file.html
-      /created?\s+['"]?([^'"]+\.html)['"]?/i,    // created file.html
-      /wrote?\s+['"]?([^'"]+\.html)['"]?/i,      // wrote file.html
-    ];
-    
-    output.forEach(line => {
-      for (const pattern of htmlPatterns) {
-        const match = line.match(pattern);
-        if (match && match[1]) {
-          const filePath = match[1].trim();
-          const agentName = getAgentDisplayName(agentId);
-          
-          // Check if we already have this file in previews
-          const alreadyExists = htmlPreviews.some(
-            p => p.filePath === filePath && p.agentId === agentId
-          );
-          
-          if (!alreadyExists) {
-            console.log(`[HarvestTerminal] Detected HTML file open: ${filePath} by ${agentName}`);
-            setHtmlPreviews(prev => [...prev, { filePath, agentId, agentName }]);
-            
-            // Auto-show the preview
-            setShowHtmlPreview({ filePath, agentId, agentName });
-          }
-          break;
-        }
-      }
-    });
-  }, [htmlPreviews, getAgentDisplayName]);
-
-  // Toggle agent expansion in stacked view
-  const toggleAgentExpansion = useCallback((agentId: number) => {
-    setExpandedAgents(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(agentId)) {
-        newSet.delete(agentId);
-      } else {
-        newSet.add(agentId);
-      }
-      return newSet;
-    });
-  }, []);
-
-  // Fetch terminal output for all agents
+  // Fetch initial terminal output via HTTP
   const fetchTerminalOutput = useCallback(async () => {
     if (!selectedSession) return;
     
+    const currentSession = sessions.find(s => s.sessionName === selectedSession);
+    if (!currentSession) return;
+    
     setIsLoading(true);
     try {
-      const currentSession = sessions.find(s => s.sessionName === selectedSession);
-      if (!currentSession) return;
-      
-      // Fetch terminal output for all agents
       const outputs: { [key: number]: string[] } = {};
+      
       for (let i = 0; i < currentSession.paneCount; i++) {
-        try {
-          // Capture more lines to show the full launch process
-          const response = await fetch(`/api/terminal/${selectedSession}/${i}?lines=500`);
-          if (response.ok) {
-            const data = await response.json();
-            const rawOutput = data.data.terminal || [];
-            outputs[i] = cleanTerminalOutput(rawOutput);
-          }
-        } catch (error) {
-          console.error(`Error fetching terminal output for agent ${i}:`, error);
-          outputs[i] = [`Error loading terminal for agent ${i}`];
+        const response = await fetch(`/api/terminal/output?session=${encodeURIComponent(selectedSession)}&pane=${i}`);
+        if (response.ok) {
+          const data = await response.json();
+          outputs[i] = data.data || [];
         }
       }
-      setTerminalOutputs(prev => ({ ...prev, ...outputs }));
+      
+      setTerminalOutputs(outputs);
     } catch (error) {
-      console.error('Error fetching terminal output:', error);
+      console.error('[HarvestTerminal] Error fetching terminal output:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedSession, sessions, cleanTerminalOutput]);
+  }, [selectedSession, sessions]);
+  
+  // Setup robust WebSocket terminal streaming using TerminalSubscriptionManager
+  useEffect(() => {
+    // Validate all required conditions
+    if (!socket || !isConnected || !selectedSession || selectedSession.trim() === '') {
+      console.log('[HarvestTerminal] Skipping subscription setup - missing requirements:', {
+        hasSocket: !!socket,
+        isConnected,
+        selectedSession: selectedSession || 'null',
+        selectedSessionLength: selectedSession?.length || 0
+      });
+      return;
+    }
+    
+    console.log(`[HarvestTerminal] Setting up robust terminal subscription for: ${selectedSession}`);
+    
+    // Clear previous output when switching sessions
+    setTerminalOutputs({});
+    
+    // Clean up previous subscriptions
+    subscriptionKeysRef.current.forEach(key => {
+      terminalSubscriptionManager.unsubscribe(key);
+    });
+    subscriptionKeysRef.current = [];
+    
+    // Create subscription callback for handling terminal output
+    const handleTerminalOutput = (data: {
+      sessionName?: string;
+      sessionId?: string;
+      sessionIdFallback?: string;
+      farmId?: string;
+      agentId: number | string;  // Accept both types for compatibility
+      lines?: string[];
+      output?: string;
+      timestamp?: number | Date;
+    }) => {
+      // Create a deduplication key based on content and agent
+      const dedupeKey = `${data.agentId}-${data.output || (data.lines && data.lines.join('')) || ''}`;
+      const now = Date.now();
+      
+      // Check if we've seen this exact message recently (within 500ms)
+      if (messageDedupeCache.current.has(dedupeKey)) {
+        const lastSeen = messageDedupeCache.current.get(dedupeKey)!;
+        if (now - lastSeen < 500) {
+          console.log('[HarvestTerminal] Duplicate message detected, skipping');
+          return; // Skip duplicate message
+        }
+      }
+      
+      // Store this message in the cache
+      messageDedupeCache.current.set(dedupeKey, now);
+      
+      // Clean up old entries from cache (keep only last 100 entries)
+      if (messageDedupeCache.current.size > 100) {
+        const entries = Array.from(messageDedupeCache.current.entries());
+        const toKeep = entries.slice(-100);
+        messageDedupeCache.current = new Map(toKeep);
+      }
+      
+      // CRITICAL FIX: Validate and normalize agentId FIRST
+      let agentIndex: number;
+      
+      // Handle both string and number agentId types
+      if (typeof data.agentId === 'string') {
+        // Try to parse agentId as a number
+        const parsed = parseInt(data.agentId, 10);
+        if (isNaN(parsed)) {
+          console.error('[HarvestTerminal] ⚠️ Invalid agentId (not a number):', data.agentId);
+          return; // Exit early if we can't parse the agentId
+        }
+        agentIndex = parsed;
+      } else if (typeof data.agentId === 'number') {
+        agentIndex = data.agentId;
+      } else {
+        console.error('[HarvestTerminal] ⚠️ Invalid agentId type:', typeof data.agentId, data.agentId);
+        return; // Exit early if agentId is neither string nor number
+      }
+      
+      // Validate agentIndex is within reasonable bounds (0-999)
+      if (agentIndex < 0 || agentIndex > 999) {
+        console.error('[HarvestTerminal] ⚠️ AgentId out of bounds:', agentIndex);
+        return;
+      }
+      
+      // Enhanced session matching logic for quick tasks and farms
+      const sessionMatches = (
+        data.sessionName === selectedSession ||
+        data.sessionId === selectedSession ||
+        data.farmId === selectedSession ||
+        data.sessionIdFallback === selectedSession ||
+        (data.sessionName?.startsWith('quick_') && selectedSession?.startsWith('quick_')) ||
+        (data.farmId?.startsWith('quick_') && selectedSession?.startsWith('quick_'))
+      );
+      
+      // Enhanced monitoring for GoWild terminal data
+      const isGoWildSession = data.sessionName?.includes('goWild') || 
+                             data.sessionId?.includes('goWild') ||
+                             selectedSession?.includes('goWild');
+      
+      if (isGoWildSession) {
+        console.log('[HarvestTerminal] 🌟 GoWild Terminal Output:', {
+          sessionName: data.sessionName,
+          sessionId: data.sessionId,
+          farmId: data.farmId,
+          originalAgentId: data.agentId,
+          originalAgentIdType: typeof data.agentId,
+          parsedAgentIndex: agentIndex,
+          hasOutput: !!data.output,
+          hasLines: !!data.lines,
+          outputLength: data.output?.length || 0,
+          linesCount: data.lines?.length || 0,
+          selectedSession,
+          sessionMatches,
+          dataStructure: Object.keys(data)
+        });
+        
+        // Monitor for potential issues
+        if (typeof data.agentId === 'string') {
+          console.warn('[HarvestTerminal] ⚠️ GoWild agentId is string, converted to:', agentIndex);
+        }
+      } else {
+        console.log('[HarvestTerminal] 🎯 TERMINAL OUTPUT RECEIVED:', {
+          sessionName: data.sessionName,
+          sessionId: data.sessionId,
+          farmId: data.farmId,
+          originalAgentId: data.agentId,
+          parsedAgentIndex: agentIndex,
+          hasOutput: !!data.output,
+          hasLines: !!data.lines,
+          outputLength: data.output?.length || 0,
+          linesCount: data.lines?.length || 0,
+          selectedSession,
+          sessionMatches
+        });
+      }
+      
+      // Only process output if it matches our selected session
+      if (!sessionMatches) {
+        console.log('[HarvestTerminal] Ignoring output - session mismatch');
+        return;
+      }
+      
+      // Convert output to lines array (handle both formats)
+      let linesToAdd: string[] = [];
+      if (data.lines && Array.isArray(data.lines)) {
+        linesToAdd = data.lines;
+      } else if (data.output && typeof data.output === 'string') {
+        linesToAdd = data.output.split('\n');
+      } else {
+        console.warn('[HarvestTerminal] Received terminal output with no valid data');
+        return;
+      }
+      
+      console.log(`[HarvestTerminal] Processing ${linesToAdd.length} lines for agent ${agentIndex}`, {
+        agentIndex,
+        originalAgentId: data.agentId,
+        sessionName: data.sessionName,
+        firstLine: linesToAdd[0]?.substring(0, 50) // Log first 50 chars of first line
+      });
+      
+      // Deduplicate lines to prevent showing the same output multiple times
+      setTerminalOutputs(prev => {
+        const updated = { ...prev };
+        if (!updated[agentIndex]) {
+          updated[agentIndex] = [];
+          console.log(`[HarvestTerminal] Created new output array for agent ${agentIndex}`);
+        }
+        
+        const previousLength = updated[agentIndex].length;
+        const existingLines = updated[agentIndex];
+        
+        // Check if the last line matches the first new line (duplicate detection)
+        let newLinesToAdd = linesToAdd;
+        if (existingLines.length > 0 && linesToAdd.length > 0) {
+          const lastExistingLine = existingLines[existingLines.length - 1];
+          const firstNewLine = linesToAdd[0];
+          
+          // If they match, we might be getting duplicate data
+          if (lastExistingLine === firstNewLine) {
+            console.log(`[HarvestTerminal] Detected potential duplicate at agent ${agentIndex}, skipping first line`);
+            newLinesToAdd = linesToAdd.slice(1);
+          }
+        }
+        
+        // Also check if we're getting the exact same set of lines (complete duplicate)
+        if (existingLines.length >= linesToAdd.length) {
+          const recentLines = existingLines.slice(-linesToAdd.length);
+          const isDuplicate = recentLines.every((line, index) => line === linesToAdd[index]);
+          if (isDuplicate) {
+            console.log(`[HarvestTerminal] Detected complete duplicate output for agent ${agentIndex}, skipping`);
+            return prev; // Don't update if it's a complete duplicate
+          }
+        }
+        
+        updated[agentIndex] = [...existingLines, ...newLinesToAdd];
+        console.log(`[HarvestTerminal] Updated agent ${agentIndex}: ${previousLength} -> ${updated[agentIndex].length} lines`);
+        
+        // Keep only last 1000 lines per agent
+        if (updated[agentIndex].length > 1000) {
+          updated[agentIndex] = updated[agentIndex].slice(-1000);
+        }
+        return updated;
+      });
+    };
+    
+    // Subscribe to terminal sessions using the robust subscription manager
+    const sessionVariations = new Set<string>(); // Use Set to avoid duplicates
+    
+    // If we have a farmId, create the most specific session variation first
+    if (farmId) {
+      // Extract different ID formats
+      const shortFarmId = farmId.substring(0, 8);
+      const fullFarmId = farmId;
+      
+      // Determine the session type and add only the most relevant patterns
+      // This prevents duplicate subscriptions that cause the same output to appear multiple times
+      if (selectedSession) {
+        // If we have a selected session, prioritize it
+        sessionVariations.add(selectedSession);
+      } else {
+        // Add patterns based on farm type - only add the most likely ones
+        // Standard farm session pattern (most common)
+        sessionVariations.add(`farm-${shortFarmId}`);
+        
+        // Only add other patterns if they match the farm type
+        if (farmId.startsWith('qt-') || farmId.includes('quick')) {
+          sessionVariations.add(`quick_${shortFarmId}`);
+          sessionVariations.add(`quick-task-${shortFarmId}`);
+        } else if (currentFarm?.mode === 'goWild' || currentFarm?.metadata?.isGoWild) {
+          sessionVariations.add(`goWild-${shortFarmId}`);
+        }
+        
+        // Add the farmId as fallback
+        sessionVariations.add(farmId);
+      }
+    }
+    
+    // Always include the selected session if it exists
+    if (selectedSession) {
+      sessionVariations.add(selectedSession);
+      
+      // Also add variations of selected session for better matching
+      if (selectedSession.includes('-')) {
+        const parts = selectedSession.split('-');
+        if (parts.length >= 2) {
+          // Try last part as potential ID
+          const potentialId = parts[parts.length - 1];
+          if (potentialId.length >= 8) {
+            sessionVariations.add(potentialId);
+            sessionVariations.add(potentialId.substring(0, 8));
+          }
+        }
+      }
+    }
+    
+    console.log(`[HarvestTerminal] Creating subscriptions for ${sessionVariations.size} unique session variations:`, Array.from(sessionVariations));
+    
+    // Create subscriptions for all session variations
+    const variationsArray = Array.from(sessionVariations);
+    variationsArray.forEach((sessionId, index) => {
+      if (sessionId && sessionId.trim()) {
+        console.log(`[HarvestTerminal] [${index + 1}/${variationsArray.length}] Creating subscription for: ${sessionId}`);
+        
+        const subscriptionKey = terminalSubscriptionManager.subscribe(
+          sessionId.trim(),
+          farmId,
+          handleTerminalOutput
+        );
+        
+        subscriptionKeysRef.current.push(subscriptionKey);
+        console.log(`[HarvestTerminal] Created subscription ${subscriptionKey} for session ${sessionId}`);
+      } else {
+        console.warn(`[HarvestTerminal] Skipping invalid session ID at index ${index}:`, sessionId);
+      }
+    });
+    
+    console.log(`[HarvestTerminal] Created ${subscriptionKeysRef.current.length} terminal subscriptions`);
+    
+    // Cleanup function
+    return () => {
+      console.log(`[HarvestTerminal] Cleaning up ${subscriptionKeysRef.current.length} terminal subscriptions`);
+      subscriptionKeysRef.current.forEach(key => {
+        terminalSubscriptionManager.unsubscribe(key);
+      });
+      subscriptionKeysRef.current = [];
+    };
+  }, [socket, isConnected, selectedSession, farmId]);
 
   // Send command to specific agent
-  const sendCommand = async (agentId: number = selectedAgent, customCommand?: string) => {
-    const commandToSend = customCommand || command || agentCommands[agentId];
-    if (!selectedSession || !commandToSend?.trim()) return;
+  const sendCommand = async (agentIndex: number) => {
+    const cmd = agentCommands[agentIndex];
+    if (!cmd || !selectedSession) return;
     
     try {
-      // Add the command to terminal output immediately for better UX
-      setTerminalOutputs(prev => ({
-        ...prev,
-        [agentId]: [...(prev[agentId] || []), `$ ${commandToSend}`]
-      }));
-      
-      const response = await fetch(`/api/terminal/${selectedSession}/${agentId}/command`, {
+      const response = await fetch('/api/terminal/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: commandToSend })
+        body: JSON.stringify({
+          session: selectedSession,
+          pane: agentIndex,
+          command: cmd
+        })
       });
       
       if (response.ok) {
-        // Clear the appropriate input field
-        if (customCommand) {
-          setAgentCommands(prev => ({ ...prev, [agentId]: '' }));
-        } else {
-          setCommand('');
-        }
-        
-        // Also emit via WebSocket for faster response
-        if (socket && socket.connected) {
-          socket.emit('terminal:send_command', {
-            sessionId: selectedSession,
-            agentId,
-            command: commandToSend,
-            timestamp: Date.now()
-          });
-        }
-        
-        // Refresh terminal after a short delay
-        setTimeout(fetchTerminalOutput, 250);
-      } else {
-        console.error('Failed to send command');
-        // Remove the command from output if it failed
-        setTerminalOutputs(prev => ({
-          ...prev,
-          [agentId]: prev[agentId].slice(0, -1)
-        }));
+        setAgentCommands(prev => ({ ...prev, [agentIndex]: '' }));
+        // Refresh output after sending command
+        setTimeout(() => fetchTerminalOutput(), 500);
       }
     } catch (error) {
-      console.error('Error sending command:', error);
-      // Remove the command from output if it failed
-      setTerminalOutputs(prev => ({
-        ...prev,
-        [agentId]: prev[agentId]?.slice(0, -1) || []
-      }));
+      console.error('[HarvestTerminal] Error sending command:', error);
     }
   };
 
-  // Toggle pause/continue for specific agent
-  const toggleAgentPause = async (agentId: number) => {
-    const isPaused = pausedAgents[agentId];
-    const commandToSend = isPaused ? 'fg' : '\x1a'; // Ctrl+Z for pause, fg for continue
-    
-    try {
-      await sendCommand(agentId, commandToSend);
-      setPausedAgents(prev => ({ ...prev, [agentId]: !isPaused }));
-    } catch (error) {
-      console.error('Error toggling agent pause:', error);
-    }
-  };
-
-  // Toggle prompt visibility for specific agent
-  const togglePromptForAgent = (agentId: number) => {
-    setShowPromptForAgent(prev => ({ ...prev, [agentId]: !prev[agentId] }));
+  // Toggle agent pause
+  const toggleAgentPause = (agentIndex: number) => {
+    setPausedAgents(prev => ({
+      ...prev,
+      [agentIndex]: !prev[agentIndex]
+    }));
   };
 
   // Copy terminal output to clipboard
-  const copyToClipboard = (agentId?: number) => {
-    let text = '';
-    if (agentId !== undefined && terminalOutputs[agentId]) {
-      text = terminalOutputs[agentId].join('\n');
-    } else {
-      // Copy all outputs
-      text = Object.entries(terminalOutputs)
-        .map(([id, output]) => `=== ${getAgentDisplayName(Number(id))} ===\n${output.join('\n')}`)
-        .join('\n\n');
+  const copyToClipboard = async (agentIndex: number) => {
+    const output = terminalOutputs[agentIndex];
+    if (output) {
+      const text = output.join('\n');
+      await navigator.clipboard.writeText(text);
     }
-    navigator.clipboard.writeText(text).then(() => {
-      console.log('Terminal output copied to clipboard');
-    });
   };
 
-  // Download terminal output
-  const downloadOutput = () => {
-    const text = Object.entries(terminalOutputs)
-      .map(([id, output]) => `=== ${getAgentDisplayName(Number(id))} ===\n${output.join('\n')}`)
-      .join('\n\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `harvest-terminal-${selectedSession}-all-agents.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    console.log('Terminal output downloaded');
+  // Launch agents for the farm using MaiFarmer orchestration
+  const launchAgents = async () => {
+    if (!farmId) return;
+    
+    try {
+      // Check if farm is GoWild mode
+      const isGoWild = currentFarm?.mode === 'goWild' || farmId.includes('goWild');
+      
+      const response = await fetch(`/api/farms/${farmId}/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentCount: isGoWild ? 5 : 3,  // More agents for GoWild
+          useFarmers: true,  // Use MaiFarmer orchestration
+          farmers: isGoWild 
+            ? ['buzz-bee', 'daisy-donkey', 'harvest-hound', 'wilbur-pig', 'clucky-chicken']
+            : ['buzz-bee', 'daisy-donkey', 'harvest-hound'],
+          orchestrator: 'maifarmer'  // Explicitly specify MaiFarmer
+        })
+      });
+      
+      if (response.ok) {
+        // Refresh sessions after launch
+        setTimeout(() => {
+          fetchSessions('launch', true);
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('[HarvestTerminal] Error launching agents:', error);
+    }
   };
 
-  // Setup auto-refresh with connection check and keep-alive
+  // Initial load and when farmId changes
   useEffect(() => {
-    if (autoRefresh && selectedSession && isConnected) {
+    fetchSessions('initial', true);
+  }, [fetchSessions, farmId]);
+
+  // Fetch terminal output when session changes
+  useEffect(() => {
+    if (selectedSession) {
+      fetchTerminalOutput();
+    }
+  }, [selectedSession, fetchTerminalOutput]);
+  
+  // Auto-refresh terminal output as fallback for WebSocket streaming
+  useEffect(() => {
+    if (autoRefresh && selectedSession && isVisible) {
+      // Use polling as backup even if WebSocket is connected
+      // This ensures we get updates even if WebSocket events are missed
+      console.log('[HarvestTerminal] Setting up auto-refresh for session:', selectedSession);
       refreshIntervalRef.current = setInterval(() => {
-        // Only refresh if tab is visible and connected
-        if (isVisible && isConnected) {
-          fetchTerminalOutput();
-          
-          // Send keep-alive ping to prevent WebSocket timeout
-          if (socket && socket.connected) {
-            socket.emit('harvest:keepalive', { 
-              farmId, 
-              sessionName: selectedSession,
-              timestamp: Date.now()
-            });
-          }
-        } else if (!isVisible) {
-          // Tab is hidden, send less frequent keep-alive
-          if (socket && socket.connected) {
-            socket.emit('harvest:keepalive', { 
-              farmId, 
-              sessionName: selectedSession,
-              tabHidden: true,
-              timestamp: Date.now()
-            });
-          }
-        } else if (!isConnected) {
-          // Try to reconnect if disconnected
-          console.log('[HarvestTerminal] WebSocket disconnected, attempting reconnect...');
-          reconnect();
-        }
-      }, isVisible ? 2000 : 10000); // 2s when visible, 10s when hidden
-    } else if (refreshIntervalRef.current) {
-      clearInterval(refreshIntervalRef.current);
-      refreshIntervalRef.current = null;
+        console.log('[HarvestTerminal] Auto-refresh triggered');
+        fetchTerminalOutput();
+      }, 2000); // Poll every 2 seconds for better responsiveness
     }
     
     return () => {
@@ -595,909 +757,493 @@ const LegacyHarvestTerminal: React.FC<HarvestTerminalProps> = ({ farmId, classNa
         clearInterval(refreshIntervalRef.current);
       }
     };
-  }, [autoRefresh, selectedSession, isConnected, isVisible, fetchTerminalOutput, socket, farmId, reconnect]);
+  }, [autoRefresh, selectedSession, isConnected, isVisible, socket, fetchTerminalOutput]);
 
-  // Initial load and refresh when farmId changes or component mounts
-  useEffect(() => {
-    console.log('[HarvestTerminal] Component mounted/updated with farmId:', farmId);
-    setIsSessionsLoading(true);
-    setSessionCheckCount(0);
-    
-    // Check for pre-populated session from cache
-    const cachedSession = sessionStorage.getItem(`farm_session_${farmId}`);
-    if (cachedSession) {
-      try {
-        const sessionData = JSON.parse(cachedSession);
-        console.log('[HarvestTerminal] Found cached session:', sessionData);
-        
-        // Pre-populate session immediately
-        const tempSession: TerminalSession = {
-          sessionName: sessionData.sessionName,
-          paneCount: sessionData.agentCount || 5,
-          windowName: 'agents',
-          active: true,
-          farmId: farmId
-        };
-        setSessions([tempSession]);
-        setSelectedSession(sessionData.sessionName);
-        setIsSessionsLoading(false);
-        
-        // Still fetch actual sessions to verify
-        setTimeout(() => fetchSessions('cached-verify'), 100);
-      } catch (error) {
-        console.error('[HarvestTerminal] Error parsing cached session:', error);
-      }
-    }
-    
-    // Immediate initial check without debouncing
-    fetchSessions('initial');
-    
-    // Set up more aggressive refresh interval for faster detection
-    const sessionRefreshInterval = setInterval(() => {
-      if (sessionCheckCount < 30 && isConnected) { // Increased max checks
-        debouncedFetchSessions('interval');
-      } else {
-        clearInterval(sessionRefreshInterval);
-        setIsSessionsLoading(false);
-      }
-    }, 1000); // Check every 1 second for faster detection
-    
-    return () => {
-      clearInterval(sessionRefreshInterval);
-    };
-  }, [farmId]); // Only re-run when farmId changes
-
-  // Join/leave terminal sessions via WebSocket for live updates
-  useEffect(() => {
-    if (!socket || !isConnected || !selectedSession) return;
-    
-    // Join the terminal session for live updates
-    console.log(`[HarvestTerminal] Joining terminal session: ${selectedSession}`);
-    socket.emit('terminal:join_session', { 
-      sessionId: selectedSession, 
-      farmId: farmId 
-    });
-    
-    // Load initial terminal output
-    fetchTerminalOutput();
-    
-    // Cleanup: leave the session when unmounting or changing sessions
-    return () => {
-      console.log(`[HarvestTerminal] Leaving terminal session: ${selectedSession}`);
-      socket.emit('terminal:leave_session', { 
-        sessionId: selectedSession 
-      });
-    };
-  }, [socket, isConnected, selectedSession, farmId]); // Join/leave when session changes
-  
-  // Load terminal when agent changes in single view mode
-  useEffect(() => {
-    if (selectedSession && viewMode === 'single') {
-      fetchTerminalOutput();
-    }
-  }, [selectedAgent, viewMode]); // Fetch when agent changes in single view
-
-  // Auto-scroll to bottom when terminal output changes
-  useEffect(() => {
-    // Single view auto-scroll
-    if (terminalRef.current && viewMode === 'single' && terminalOutputs[selectedAgent]?.length > 0) {
-      // Double requestAnimationFrame to ensure DOM is fully updated
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (terminalRef.current) {
-            terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
-          }
-        });
-      });
-    }
-    
-    // Grid view auto-scroll for each terminal window
-    if (viewMode === 'grid') {
-      Object.keys(terminalOutputs).forEach((agentId) => {
-        const id = Number(agentId);
-        const ref = gridTerminalRefs.current[id];
-        if (ref && terminalOutputs[id]?.length > 0) {
-          // Double requestAnimationFrame to ensure DOM is fully updated
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              const currentRef = gridTerminalRefs.current[id];
-              if (currentRef) {
-                currentRef.scrollTop = currentRef.scrollHeight;
-              }
-            });
-          });
-        }
-      });
-    }
-  }, [terminalOutputs, selectedAgent, viewMode]);
-
-  // WebSocket listeners and session management
-  useEffect(() => {
-    if (!socket || !isConnected) return;
-
-    const handleTerminalUpdate = (data: any) => {
-      // Handle terminal updates for the current session
-      const updateSessionName = data.sessionName || data.farmId;
-      const updateAgentId = data.agentId;
-      
-      // Check if this update is for our current session
-      if (selectedSession && updateSessionName) {
-        // Match by session name or by farmId
-        const shortFarmId = farmId?.substring(0, 8);
-        const isOurSession = updateSessionName === selectedSession || 
-                            updateSessionName.includes(shortFarmId) ||
-                            (data.farmId === farmId);
-        
-        if (isOurSession) {
-          // Update terminal output for the specific agent
-          if (updateAgentId !== undefined) {
-            setTerminalOutputs(prev => {
-              const current = prev[updateAgentId] || [];
-              
-              // Handle different data formats
-              let newLines: string[] = [];
-              if (data.newLines && Array.isArray(data.newLines)) {
-                newLines = data.newLines;
-              } else if (data.content) {
-                newLines = data.content.split('\n').filter((line: string) => line.trim());
-              } else if (data.data?.lines && Array.isArray(data.data.lines)) {
-                newLines = data.data.lines;
-              }
-              
-              if (newLines.length > 0) {
-                // Clean the new lines before adding
-                const cleanedNewLines = cleanTerminalOutput(newLines);
-                return {
-                  ...prev,
-                  [updateAgentId]: [...current, ...cleanedNewLines].slice(-500) // Keep last 500 lines
-                };
-              }
-              return prev;
-            });
-          } else {
-            // General update - refetch all
-            fetchTerminalOutput();
-          }
-        }
-      }
-    };
-
-    const handleFarmLaunched = (data: any) => {
-      // Farm launched - check for new sessions with the correct farmId
-      console.log('[HarvestTerminal] Farm launched event received:', data);
-      const eventFarmId = data.farmId || data.payload?.farmId;
-      const eventSession = data.tmuxSession || data.payload?.tmuxSession || data.sessionName || data.payload?.sessionName;
-      const agentCount = data.agentCount || data.payload?.agentCount || data.agents || data.payload?.agents || 5;
-      
-      // Check if this event is for our farm
-      const shortFarmId = farmId?.substring(0, 8);
-      const eventShortFarmId = eventFarmId?.substring(0, 8);
-      const isOurFarm = eventFarmId === farmId || 
-                        eventShortFarmId === shortFarmId ||
-                        (eventSession && shortFarmId && eventSession.includes(shortFarmId));
-      
-      if (isOurFarm) {
-        console.log('[HarvestTerminal] This is our farm! Session name:', eventSession, 'FarmId:', eventFarmId);
-        setIsSessionsLoading(true);
-        setLastFarmLaunchEvent(eventSession || eventFarmId);
-        
-        // If we know the session name, we can immediately add it
-        if (eventSession) {
-          console.log('[HarvestTerminal] Creating session entry for:', eventSession);
-          // Create a temporary session entry so UI can show it immediately
-          const tempSession: TerminalSession = {
-            sessionName: eventSession,
-            paneCount: agentCount,
-            windowName: 'agents',
-            active: true,
-            farmId: eventFarmId
-          };
-          setSessions(prev => {
-            // Check if session already exists
-            if (prev.some(s => s.sessionName === eventSession)) {
-              return prev;
-            }
-            return [tempSession, ...prev];
-          });
-          
-          // Auto-select this session
-          setSelectedSession(eventSession);
-        }
-        
-        // Immediate and rapid session checks for faster detection
-        fetchSessions('farm:launched-immediate');
-        setTimeout(() => fetchSessions('farm:launched-1'), 250);
-        setTimeout(() => fetchSessions('farm:launched-2'), 500);
-        setTimeout(() => fetchSessions('farm:launched-3'), 1000);
-        setTimeout(() => {
-          fetchSessions('farm:launched-final');
-          setIsSessionsLoading(false);
-        }, 2000); // Final check after 2 seconds
-      }
-    };
-
-    const handleFarmStatus = (data: any) => {
-      const eventFarmId = data.farmId || data.payload?.farmId;
-      const shortFarmId = farmId?.substring(0, 8);
-      const eventShortFarmId = eventFarmId?.substring(0, 8);
-      
-      if ((eventFarmId === farmId || eventShortFarmId === shortFarmId) &&
-          (data.status === 'active' || data.status === 'active')) {
-        console.log('[HarvestTerminal] Farm status update for our farm:', data.status);
-        debouncedFetchSessions('farm:status');
-      }
-    };
-
-    const handleTmuxReady = (data: any) => {
-      // Tmux ready - immediate session fetch for instant display
-      console.log('[HarvestTerminal] Tmux ready event received:', data);
-      const eventFarmId = data.farmId || data.payload?.farmId;
-      const eventSession = data.sessionName || data.payload?.sessionName;
-      
-      // Check if this is for our farm
-      const shortFarmId = farmId?.substring(0, 8);
-      const eventShortFarmId = eventFarmId?.substring(0, 8);
-      const isOurFarm = eventFarmId === farmId || 
-                        eventShortFarmId === shortFarmId ||
-                        (eventSession && shortFarmId && eventSession.includes(shortFarmId));
-      
-      if (isOurFarm) {
-        console.log('[HarvestTerminal] Tmux ready for our farm:', eventSession);
-        // If we have the session name, add it immediately
-        if (eventSession) {
-          const paneCount = data.paneCount || data.payload?.paneCount || data.agentCount || data.payload?.agentCount || 5;
-          const tempSession: TerminalSession = {
-            sessionName: eventSession,
-            paneCount: paneCount,
-            windowName: 'agents',
-            active: true,
-            farmId: eventFarmId || farmId
-          };
-          setSessions(prev => {
-            // Check if session already exists
-            if (prev.some(s => s.sessionName === eventSession)) {
-              return prev;
-            }
-            return [tempSession, ...prev];
-          });
-          setSelectedSession(eventSession);
-        }
-        
-        fetchSessions('tmux:ready');
-        // Quick follow-up to ensure we catch the session
-        setTimeout(() => fetchSessions('tmux:ready-retry'), 250);
-        setIsSessionsLoading(false);
-      }
-    };
-
-    const handleFarmCleanup = (data: any) => {
-      // Farm cleanup - refresh sessions
-      debouncedFetchSessions('farm:cleanup');
-    };
-
-    // Also listen for terminal output events from the monitoring system
-    const handleTerminalOutput = (data: any) => {
-      handleTerminalUpdate(data);
-    };
-
-    socket.on('harvest:terminal:update', handleTerminalUpdate);
-    // Handle session prepared event for immediate UI update
-    const handleSessionPrepared = (data: any) => {
-      console.log('[HarvestTerminal] Session prepared event:', data);
-      if (data.farmId === farmId || data.sessionName?.includes(farmId?.substring(0, 8))) {
-        // Add the session immediately to the UI
-        const preparedSession: TerminalSession = {
-          sessionName: data.sessionName,
-          paneCount: data.agentCount || 5,
-          windowName: 'agents',
-          active: true,
-          farmId: data.farmId
-        };
-        setSessions(prev => {
-          if (!prev.some(s => s.sessionName === data.sessionName)) {
-            return [preparedSession, ...prev];
-          }
-          return prev;
-        });
-        setSelectedSession(data.sessionName);
-        setIsSessionsLoading(false);
-      }
-    };
-    
-    // Handle real-time terminal output streaming
-    const handleStreamingOutput = (data: any) => {
-      if (data.sessionName === selectedSession && data.lines && data.lines.length > 0) {
-        setTerminalOutputs(prev => ({
-          ...prev,
-          [data.agentId]: [...(prev[data.agentId] || []), ...data.lines].slice(-1000)
-        }));
-      }
-    };
-    
-    // Handle streaming ready event
-    const handleStreamingReady = (data: any) => {
-      console.log('[HarvestTerminal] Terminal streaming ready:', data);
-      if (data.sessionName === selectedSession) {
-        // Join the terminal room for targeted updates
-        socket.emit('terminal:join', { room: `terminal:${data.sessionName}` });
-        // Stop polling if streaming is active
-        setAutoRefresh(false);
-      }
-    };
-
-    socket.on('session:prepared', handleSessionPrepared);
-    socket.on('terminal:output', handleStreamingOutput); // Real-time streaming output
-    socket.on('terminal:streaming:ready', handleStreamingReady);
-    socket.on('harvest:terminal:command', handleTerminalUpdate);
-    socket.on('agent:terminal', handleTerminalUpdate); // Listen for agent terminal updates
-    socket.on('terminal:update', handleTerminalUpdate); // Listen for general terminal updates
-    socket.on('terminal:event', handleTerminalOutput); // Listen for terminal events
-    socket.on('farm:launched', handleFarmLaunched);
-    socket.on('farm:agents:launching', handleFarmLaunched); // Also listen to agents launching
-    socket.on('farm:status', handleFarmStatus);
-    socket.on('multi-claude:status', handleFarmStatus);
-    socket.on('farm:tmux:ready', handleTmuxReady);
-    socket.on('farm:cleanup:completed', handleFarmCleanup);
-    socket.on('farm:deleted', handleFarmCleanup);
-
-    return () => {
-      socket.off('session:prepared', handleSessionPrepared);
-      socket.off('terminal:output', handleStreamingOutput);
-      socket.off('terminal:streaming:ready', handleStreamingReady);
-      socket.off('harvest:terminal:update', handleTerminalUpdate);
-      socket.off('harvest:terminal:command', handleTerminalUpdate);
-      socket.off('agent:terminal', handleTerminalUpdate);
-      socket.off('terminal:update', handleTerminalUpdate);
-      socket.off('terminal:event', handleTerminalOutput);
-      socket.off('farm:launched', handleFarmLaunched);
-      socket.off('farm:agents:launching', handleFarmLaunched);
-      socket.off('farm:status', handleFarmStatus);
-      socket.off('multi-claude:status', handleFarmStatus);
-      socket.off('farm:tmux:ready', handleTmuxReady);
-      socket.off('farm:cleanup:completed', handleFarmCleanup);
-      socket.off('farm:deleted', handleFarmCleanup);
-    };
-  }, [socket, isConnected, selectedSession, selectedAgent, fetchTerminalOutput, fetchSessions, cleanTerminalOutput]);
-
+  // Get current session
   const currentSession = sessions.find(s => s.sessionName === selectedSession);
+  
+  // Ensure we have the correct agent count from the farm if session doesn't have it
+  const effectivePaneCount = currentSession?.paneCount || 
+    (currentFarm?.agents?.length) || 
+    (currentFarm?.config?.numberOfAgents) || 
+    2; // Default to 2 agents if nothing else is available
 
   return (
     <>
-      <div className={`harvest-terminal ${isFullscreen ? 'fixed inset-0 z-[60] lg:left-64' : ''} ${className}`}>
-        <div className="bg-gray-900 rounded-lg shadow-xl h-full flex flex-col">
-        {/* Header */}
-        <div className="bg-gray-800 px-4 py-3 rounded-t-lg border-b border-gray-700">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Terminal className="w-5 h-5 text-green-400" />
-              
-              {/* Session selector or message */}
-              {!isConnected && (
-                <Tooltip content="Click to reconnect">
-                  <button 
-                    onClick={() => {
-                      console.log('[HarvestTerminal] Manual reconnect triggered');
-                      reconnect();
-                      // Also try to fetch sessions after reconnecting
-                      setTimeout(() => {
-                        fetchSessions('manual-reconnect');
-                        fetchTerminalOutput();
-                      }, 1000);
-                    }}
-                    className="p-1.5 bg-red-600 hover:bg-red-700 rounded text-white transition-colors"
+      <div className={`harvest-terminal ${isFullscreen ? 'fixed inset-0 z-[60] lg:left-64' : 'h-full'} ${className}`}>
+        <div className="backdrop-blur-xl bg-white/70 dark:bg-gray-900/70 rounded-3xl shadow-2xl h-full flex flex-col overflow-hidden border border-gray-200/50 dark:border-gray-700/50">
+          {/* Header with Glass Effect */}
+          <div className="backdrop-blur-xl bg-white/80 dark:bg-gray-800/80 px-4 py-3 rounded-t-3xl border-b border-gray-200/50 dark:border-gray-700/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="p-2 backdrop-blur-xl bg-white/60 dark:bg-gray-700/60 rounded-xl">
+                  <Terminal className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                
+                {/* Session Selector with Glass Effect */}
+                {sessions.length > 0 && (
+                  <select
+                    value={selectedSession || ''}
+                    onChange={(e) => setSelectedSession(e.target.value)}
+                    className="backdrop-blur-xl bg-white/80 dark:bg-gray-700/80 text-gray-900 dark:text-white px-3 py-1.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-gray-200/50 dark:border-gray-600/50 transition-all duration-300"
                   >
-                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <option value="">Select a session</option>
+                    {sessions.map(session => (
+                      <option key={session.sessionName} value={session.sessionName}>
+                        {session.sessionName} ({session.paneCount} agents)
+                      </option>
+                    ))}
+                  </select>
+                )}
+                
+                {/* Status */}
+                {currentSession && (
+                  <div className="flex items-center space-x-2 text-xs">
+                    <span className="text-gray-400">Agents:</span>
+                    <span className="text-green-400 font-bold">{currentSession.paneCount}</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Controls with Glass Effect */}
+              <div className="flex items-center space-x-2">
+                {/* View Mode Toggle with Glass Effect */}
+                <div className="flex items-center backdrop-blur-xl bg-white/70 dark:bg-gray-700/70 rounded-2xl p-0.5 border border-gray-200/50 dark:border-gray-600/50 shadow-lg">
+                    <Tooltip content="Farm View" position="bottom">
+                      <button
+                        onClick={() => setViewMode('farm')}
+                        className={`p-1.5 rounded-xl transition-all duration-300 ${
+                          viewMode === 'farm' 
+                            ? 'bg-white dark:bg-gray-700 text-emerald-600 dark:text-emerald-400 shadow-lg' 
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <TreePine className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Grid View" position="bottom">
+                      <button
+                        onClick={() => currentSession && setViewMode('grid')}
+                        disabled={!currentSession}
+                        className={`p-1.5 rounded-xl transition-all duration-300 ${
+                          viewMode === 'grid' 
+                            ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-lg' 
+                            : currentSession
+                              ? 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-gray-700/50'
+                              : 'text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        <Grid className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Stacked View" position="bottom">
+                      <button
+                        onClick={() => currentSession && setViewMode('stacked')}
+                        disabled={!currentSession}
+                        className={`p-1.5 rounded transition-colors ${
+                          viewMode === 'stacked' 
+                            ? 'bg-blue-600 text-white' 
+                            : currentSession
+                              ? 'text-gray-400 hover:text-white'
+                              : 'text-gray-600 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        <Layers className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Single Agent View" position="bottom">
+                      <button
+                        onClick={() => currentSession && setViewMode('single')}
+                        disabled={!currentSession}
+                        className={`p-1.5 rounded transition-colors ${
+                          viewMode === 'single' 
+                            ? 'bg-blue-600 text-white' 
+                            : currentSession
+                              ? 'text-gray-400 hover:text-white'
+                              : 'text-gray-600 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        <Monitor className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip content="Workflow View" position="bottom">
+                      <button
+                        onClick={() => setViewMode('workflow')}
+                        className={`p-1.5 rounded-xl transition-all duration-300 ${
+                          viewMode === 'workflow' 
+                            ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-lg' 
+                            : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-white/50 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <Activity className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                  </div>
+                
+                <Tooltip content="Refresh Output" position="bottom">
+                  <button
+                    onClick={() => fetchTerminalOutput()}
+                    disabled={isLoading}
+                    className="p-2 backdrop-blur-xl bg-white/80 dark:bg-gray-700/80 rounded-xl hover:bg-white/90 dark:hover:bg-gray-700/90 transition-all duration-300 disabled:opacity-50 border border-gray-200/50 dark:border-gray-600/50 shadow-lg"
+                  >
+                    <RefreshCw className={`w-4 h-4 text-gray-600 dark:text-gray-300 ${isLoading ? 'animate-spin' : ''}`} />
                   </button>
                 </Tooltip>
-              )}
-              {isConnected && isSessionsLoading ? (
-                <span className="text-gray-400 text-sm flex items-center">
-                  <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
-                  Checking for sessions... (attempt #{sessionCheckCount})
-                </span>
-              ) : sessions.length > 0 ? (
-                // Show the single session info without dropdown
-                <div className="flex items-center space-x-2">
-                  <Terminal className="w-4 h-4 text-green-400" />
-                  <span className="text-sm text-gray-300">{sessions[0].sessionName}</span>
-                  <span className="text-sm text-gray-400">({sessions[0].paneCount} agents)</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <span className="text-gray-400 text-sm">
-                    {isSessionsLoading ? 'Detecting sessions...' : 'No sessions found'}
-                  </span>
-                  <Tooltip content="Refresh terminal sessions" position="bottom">
-                    <button
-                      onClick={() => {
-                        console.log('[HarvestTerminal] Manual refresh triggered with cleanup');
-                        setIsSessionsLoading(true);
-                        setSessionCheckCount(0);
-                        fetchSessions('manual-refresh', true);
-                      }}
-                      className="p-1 hover:bg-gray-700 rounded transition-colors"
-                    >
-                      <RefreshCw className={`w-4 h-4 text-gray-400 hover:text-white ${isSessionsLoading ? 'animate-spin' : ''}`} />
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
-              
-              {/* Agent selector for single view mode */}
-              {viewMode === 'single' && currentSession && currentSession.paneCount > 1 && (
-                <select
-                  value={selectedAgent}
-                  onChange={(e) => setSelectedAgent(Number(e.target.value))}
-                  className="bg-gray-700 text-white px-3 py-1 rounded text-sm"
-                >
-                  {Array.from({ length: currentSession.paneCount }, (_, i) => (
-                    <option key={i} value={i}>
-                      {getAgentDisplayName(i)}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            
-            {/* Controls */}
-            <div className="flex items-center space-x-2">
-              {/* View Mode Toggle */}
-              {currentSession && currentSession.paneCount > 1 && (
-                <Tooltip content={
-                  viewMode === 'grid' ? 'Switch to stacked view' : 
-                  viewMode === 'stacked' ? 'Switch to single agent view' : 
-                  'Switch to grid view (all agents)'
-                } position="bottom">
+                
+                <Tooltip content={autoRefresh ? 'Disable auto-refresh' : 'Enable auto-refresh'} position="bottom">
                   <button
-                    onClick={() => {
-                      if (viewMode === 'grid') setViewMode('stacked');
-                      else if (viewMode === 'stacked') setViewMode('single');
-                      else setViewMode('grid');
-                    }}
-                    className="p-2 bg-blue-600 rounded hover:bg-blue-700 transition-colors"
+                    onClick={() => setAutoRefresh(!autoRefresh)}
+                    className={`p-2 backdrop-blur-xl rounded-xl transition-all duration-300 border shadow-lg ${
+                      autoRefresh 
+                        ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
+                        : 'bg-white/80 dark:bg-gray-700/80 hover:bg-white/90 dark:hover:bg-gray-700/90 border-gray-200/50 dark:border-gray-600/50 text-gray-600 dark:text-gray-400'
+                    }`}
                   >
-                    {viewMode === 'grid' ? (
-                      <Grid className="w-4 h-4 text-white" />
-                    ) : viewMode === 'stacked' ? (
-                      <LayoutList className="w-4 h-4 text-white" />
+                    {autoRefresh ? (
+                      <Play className="w-4 h-4" />
                     ) : (
-                      <Terminal className="w-4 h-4 text-white" />
+                      <Pause className="w-4 h-4" />
                     )}
                   </button>
                 </Tooltip>
-              )}
-              
-              <Tooltip content={autoRefresh ? 'Disable auto-refresh' : 'Enable auto-refresh (updates every 2 seconds)'} position="bottom">
-                <button
-                  onClick={() => setAutoRefresh(!autoRefresh)}
-                  className={`p-2 rounded ${autoRefresh ? 'bg-green-600' : 'bg-gray-700'} hover:bg-opacity-80 transition-colors`}
-                >
-                  <RefreshCw className={`w-4 h-4 text-white ${autoRefresh ? 'animate-spin' : ''}`} />
-                </button>
-              </Tooltip>
-              
-              <Tooltip content="Copy terminal output to clipboard" position="bottom">
-                <button
-                  onClick={() => copyToClipboard()}
-                  className="p-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-                >
-                  <Copy className="w-4 h-4 text-white" />
-                </button>
-              </Tooltip>
-              
-              <Tooltip content="Download terminal output as text file" position="bottom">
-                <button
-                  onClick={downloadOutput}
-                  className="p-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-                >
-                  <Download className="w-4 h-4 text-white" />
-                </button>
-              </Tooltip>
-              
-              <Tooltip content={isFullscreen ? 'Exit fullscreen mode' : 'Enter fullscreen mode'} position="bottom">
-                <button
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="p-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-                >
-                  {isFullscreen ? (
-                    <Minimize2 className="w-4 h-4 text-white" />
-                  ) : (
-                    <Maximize2 className="w-4 h-4 text-white" />
-                  )}
-                </button>
-              </Tooltip>
+                
+                <Tooltip content={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} position="bottom">
+                  <button
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="p-2 backdrop-blur-xl bg-white/80 dark:bg-gray-700/80 rounded-xl hover:bg-white/90 dark:hover:bg-gray-700/90 transition-all duration-300 border border-gray-200/50 dark:border-gray-600/50 shadow-lg"
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+                    ) : (
+                      <Maximize2 className="w-4 h-4 text-gray-600 dark:text-gray-300" />
+                    )}
+                  </button>
+                </Tooltip>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Terminal Display */}
-        {viewMode === 'grid' && currentSession && currentSession.paneCount > 1 ? (
-          // Grid View
-          <div className="flex-1 bg-black p-2 overflow-y-auto">
-            <div className={`grid gap-2 ${
-              currentSession.paneCount <= 2 ? 'grid-cols-1 lg:grid-cols-2' :
-              currentSession.paneCount <= 4 ? 'grid-cols-2' :
-              currentSession.paneCount <= 6 ? 'grid-cols-2 lg:grid-cols-3' :
-              'grid-cols-2 lg:grid-cols-4'
-            }`}>
-              {Array.from({ length: currentSession.paneCount }, (_, i) => (
-                <div key={i} className="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col">
-                  <div className="bg-gray-800 px-3 py-2 flex items-center justify-between border-b border-gray-700">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                      <span className="text-sm font-semibold text-white">{getAgentDisplayName(i)}</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <button
-                        onClick={() => toggleAgentPause(i)}
-                        className={`p-1 rounded transition-colors ${
-                          pausedAgents[i] ? 'bg-yellow-600 hover:bg-yellow-700' : 'hover:bg-gray-700'
-                        }`}
-                        title={pausedAgents[i] ? 'Continue' : 'Pause'}
-                      >
-                        {pausedAgents[i] ? (
-                          <Play className="w-3 h-3 text-white" />
-                        ) : (
-                          <Pause className="w-3 h-3 text-gray-400" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => togglePromptForAgent(i)}
-                        className={`p-1 rounded transition-colors ${
-                          showPromptForAgent[i] ? 'bg-blue-600 hover:bg-blue-700' : 'hover:bg-gray-700'
-                        }`}
-                        title="Toggle prompt"
-                      >
-                        <MessageSquare className="w-3 h-3 text-gray-400" />
-                      </button>
-                      <Tooltip content="Copy this agent's output" position="bottom">
+          {/* Terminal Display */}
+          {viewMode === 'farm' ? (
+            // Farm View
+            <div className="flex-1 overflow-hidden">
+              <FarmLandscape
+                farmId={farmId || 'default'}
+                farmName={currentFarm?.name || 'Digital Farm'}
+                agents={currentSession ? Array.from({ length: currentSession.paneCount }, (_, i) => ({
+                  id: i,
+                  name: getAgentDisplayName(i),
+                  status: pausedAgents[i] ? 'idle' : 'working',
+                  uid: `agent-${i}`
+                })) : []}
+                weather={currentFarm?.status === 'active' ? 'sunny' : 'cloudy'}
+                onLaunchAgents={launchAgents}
+              />
+            </div>
+          ) : !currentSession ? (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              {isSessionsLoading ? 'Loading sessions...' : 'No terminal sessions available - Switch to Farm View'}
+            </div>
+          ) : viewMode === 'grid' ? (
+            // Professional Grid View with Apple Glass Effect
+            <div className="flex-1 bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-black p-3 sm:p-4 md:p-6 overflow-y-auto min-h-0">
+              <div className={`grid gap-2 sm:gap-3 md:gap-4 ${
+                effectivePaneCount <= 2 ? 'grid-cols-1 md:grid-cols-2' :
+                effectivePaneCount <= 4 ? 'grid-cols-1 sm:grid-cols-2' :
+                effectivePaneCount <= 6 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' :
+                'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+              } auto-rows-fr`}>
+                {Array.from({ length: effectivePaneCount }, (_, i) => (
+                  <motion.div 
+                    key={i} 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3, delay: i * 0.05 }}
+                    className="backdrop-blur-xl bg-white/70 dark:bg-gray-900/70 border border-gray-200/50 dark:border-gray-700/50 rounded-2xl overflow-hidden shadow-2xl hover:shadow-3xl transition-all duration-300"
+                  >
+                    <div className="backdrop-blur-xl bg-white/80 dark:bg-gray-800/80 px-4 py-3 flex items-center justify-between border-b border-gray-200/50 dark:border-gray-700/50">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                        <span className="text-sm font-medium text-gray-200">{getAgentDisplayName(i)}</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => toggleAgentPause(i)}
+                          className={`p-1 rounded ${pausedAgents[i] ? 'bg-yellow-600' : 'hover:bg-gray-700'}`}
+                        >
+                          {pausedAgents[i] ? <Play className="w-3 h-3 text-white" /> : <Pause className="w-3 h-3 text-gray-400" />}
+                        </button>
                         <button
                           onClick={() => copyToClipboard(i)}
-                          className="p-1 hover:bg-gray-700 rounded transition-colors"
+                          className="p-1 hover:bg-gray-700 rounded"
                         >
                           <Copy className="w-3 h-3 text-gray-400" />
                         </button>
-                      </Tooltip>
+                      </div>
                     </div>
-                  </div>
-                  <div 
-                    ref={(el) => { gridTerminalRefs.current[i] = el; }}
-                    className="h-80 overflow-y-auto font-mono text-xs bg-black p-2"
-                    style={{ minHeight: '20rem', maxHeight: '20rem' }}
-                  >
-                    {isLoading ? (
-                      <div className="space-y-2 p-2">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                          <div className="text-green-400 text-xs">Initializing agent {i}...</div>
+                    <div 
+                      ref={el => gridTerminalRefs.current[i] = el}
+                      className={`p-2 sm:p-3 md:p-4 overflow-y-auto font-mono text-xs flex-1 min-h-[200px] max-h-[400px] ${
+                        terminalTheme === 'professional-dark' ? 'bg-black/80 text-blue-300' :
+                        terminalTheme === 'professional-light' ? 'bg-gray-100 text-gray-800' :
+                        'bg-gradient-to-br from-blue-950/50 to-black/80 text-cyan-300'
+                      }`}
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: terminalTheme === 'professional-dark' ? '#374151 #111827' : 
+                                       terminalTheme === 'professional-light' ? '#d1d5db #f3f4f6' :
+                                       '#1e40af #030712',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        height: 'clamp(200px, 30vh, 400px)'
+                      }}
+                    >
+                      {terminalOutputs[i]?.map((line, idx) => (
+                        <div key={idx} className="whitespace-pre-wrap leading-relaxed break-words overflow-hidden" style={{ overflowWrap: 'anywhere' }}>
+                          <SafeAnsiRenderer content={line || '\u00A0'} />
                         </div>
-                        <div className="space-y-1">
-                          <div className="h-3 bg-gray-800 rounded animate-pulse w-3/4"></div>
-                          <div className="h-3 bg-gray-800 rounded animate-pulse w-1/2"></div>
-                          <div className="h-3 bg-gray-800 rounded animate-pulse w-5/6"></div>
+                      )) || (
+                        <div className="text-gray-500 flex items-center space-x-2">
+                          <Activity className="w-3 h-3 animate-pulse" />
+                          <span>Awaiting output...</span>
                         </div>
-                      </div>
-                    ) : terminalOutputs[i]?.length > 0 ? (
-                      <div className="space-y-0">
-                        {terminalOutputs[i].map((line, idx) => {
-                          // Highlight important lines
-                          let className = "text-green-400";
-                          if (line.includes('IMPORTANT:') || line.includes('ERROR:')) {
-                            className = "text-yellow-400";
-                          } else if (line.includes('Welcome to Claude Code')) {
-                            className = "text-cyan-400 font-semibold";
-                          } else if (line.includes('Agent Role')) {
-                            className = "text-purple-400";
-                          }
-                          return (
-                            <div key={idx} className="whitespace-pre-wrap leading-tight">
-                              <span className={className}>{line || '\u00A0'}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-gray-600 text-center py-8">
-                        <Terminal className="w-8 h-8 mx-auto mb-2 opacity-50 animate-pulse" />
-                        <div className="text-sm">Waiting for output...</div>
-                        <div className="text-xs mt-1 text-gray-500">{getAgentDisplayName(i)}</div>
-                      </div>
-                    )}
-                  </div>
-                  {/* Prompt input for each agent (hidden by default) */}
-                  {showPromptForAgent[i] && (
-                    <div className="mt-2 pt-2 border-t border-gray-700">
-                      <div className="flex items-center space-x-1">
-                        <span className="text-green-400 font-mono text-xs">$</span>
+                      )}
+                    </div>
+                    {/* Professional Command Input */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm px-2 sm:px-3 md:px-4 py-2 sm:py-3 border-t border-gray-700/30">
+                      <div className="flex items-center space-x-2">
+                        <ChevronRight className="w-3 h-3 text-blue-400" />
                         <input
                           type="text"
                           value={agentCommands[i] || ''}
                           onChange={(e) => setAgentCommands(prev => ({ ...prev, [i]: e.target.value }))}
-                          onKeyPress={(e) => e.key === 'Enter' && sendCommand(i, agentCommands[i])}
-                          placeholder="Command..."
-                          className="flex-1 bg-gray-800 text-white px-2 py-1 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
+                          onKeyDown={(e) => e.key === 'Enter' && sendCommand(i)}
+                          className="flex-1 bg-transparent text-gray-200 text-xs outline-none placeholder-gray-500"
+                          placeholder="Enter command..."
                         />
-                        <Tooltip content="Send command to agent" position="left">
-                          <button
-                            onClick={() => sendCommand(i, agentCommands[i])}
-                            disabled={!agentCommands[i]?.trim()}
-                            className="p-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors"
-                          >
-                            <Send className="w-3 h-3" />
-                          </button>
-                        </Tooltip>
+                        <button
+                          onClick={() => sendCommand(i)}
+                          className="p-1.5 bg-blue-600/80 hover:bg-blue-600 rounded-lg transition-all duration-200 shadow-lg shadow-blue-500/20"
+                        >
+                          <Send className="w-3 h-3 text-white" />
+                        </button>
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </motion.div>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : viewMode === 'stacked' && currentSession && currentSession.paneCount > 1 ? (
-          // Stacked View
-          <div className="flex-1 bg-black p-4 overflow-y-auto">
-            <div className="space-y-3">
-              {Array.from({ length: currentSession.paneCount }, (_, i) => {
-                const agentOutput = terminalOutputs[i] || [];
-                const lastLine = lastLines.get(i) || 'Initializing...';
-                
-                return (
-                  <AgentBar
+          ) : viewMode === 'stacked' ? (
+            // Professional Stacked View
+            <div className="flex-1 bg-gradient-to-br from-gray-950 via-gray-900 to-black p-3 sm:p-4 md:p-6 overflow-y-auto min-h-0">
+              <div className="space-y-2 sm:space-y-3 md:space-y-4">
+                {Array.from({ length: effectivePaneCount }, (_, i) => (
+                  <motion.div
                     key={i}
-                    agentId={i}
-                    agentName={getAgentDisplayName(i)}
-                    lastLine={lastLine}
-                    fullOutput={agentOutput}
-                    expanded={expandedAgents.has(i)}
-                    isActive={!pausedAgents[i]}
-                    isPaused={pausedAgents[i]}
-                    onToggle={() => toggleAgentExpansion(i)}
-                    onPause={() => toggleAgentPause(i)}
-                    onResume={() => toggleAgentPause(i)}
-                    onCopy={() => copyToClipboard(i)}
-                    onSendCommand={(cmd) => sendCommand(i, cmd)}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          // Single View
-          <div className="flex-1 flex flex-col bg-black">
-            {/* Single view controls bar */}
-            <div className="bg-gray-800 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-              <span className="text-sm font-bold text-gray-400">{getAgentDisplayName(selectedAgent)}</span>
-              <div className="flex items-center space-x-2">
-                <Tooltip content={pausedAgents[selectedAgent] ? 'Resume agent execution' : 'Pause agent execution'} position="bottom">
-                  <button
-                    onClick={() => toggleAgentPause(selectedAgent)}
-                    className={`p-1.5 rounded transition-colors ${
-                      pausedAgents[selectedAgent] ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-gray-700 hover:bg-gray-600'
-                    }`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="bg-gray-900/50 backdrop-blur-sm border border-gray-700/30 rounded-xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300"
                   >
-                    {pausedAgents[selectedAgent] ? (
-                      <Play className="w-4 h-4 text-white" />
-                    ) : (
-                      <Pause className="w-4 h-4 text-white" />
-                    )}
-                  </button>
-                </Tooltip>
-                <Tooltip content="Toggle command prompt" position="bottom">
-                  <button
-                    onClick={() => togglePromptForAgent(selectedAgent)}
-                    className={`p-1.5 rounded transition-colors ${
-                      showPromptForAgent[selectedAgent] ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'
+                    <div className="bg-gradient-to-r from-gray-800/60 to-gray-900/60 backdrop-blur-sm px-5 py-3 flex items-center justify-between border-b border-gray-700/30">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2">
+                          <Cpu className="w-4 h-4 text-blue-400" />
+                          <span className="text-sm font-medium text-gray-200">{getAgentDisplayName(i)}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-xs">
+                          <span className="px-2 py-1 bg-green-500/10 text-green-400 rounded-lg border border-green-500/20">Active</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => toggleAgentPause(i)}
+                          className={`p-1 rounded ${pausedAgents[i] ? 'bg-yellow-600' : 'hover:bg-gray-700'}`}
+                        >
+                          {pausedAgents[i] ? <Play className="w-3 h-3 text-white" /> : <Pause className="w-3 h-3 text-gray-400" />}
+                        </button>
+                        <button
+                          onClick={() => copyToClipboard(i)}
+                          className="p-1 hover:bg-gray-700 rounded"
+                        >
+                          <Copy className="w-3 h-3 text-gray-400" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newExpanded = new Set(expandedAgents);
+                            if (newExpanded.has(i)) {
+                              newExpanded.delete(i);
+                            } else {
+                              newExpanded.add(i);
+                            }
+                            setExpandedAgents(newExpanded);
+                          }}
+                          className="p-1 hover:bg-gray-700 rounded"
+                        >
+                          {expandedAgents.has(i) ? <Minimize2 className="w-3 h-3 text-gray-400" /> : <Maximize2 className="w-3 h-3 text-gray-400" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className={`p-3 sm:p-4 md:p-5 font-mono text-xs overflow-y-auto transition-all duration-300 ${
+                      expandedAgents.has(i) ? 'min-h-[300px] max-h-[500px]' : 'min-h-[150px] max-h-[250px]'
+                    } ${
+                      terminalTheme === 'professional-dark' ? 'bg-black/80 text-blue-300' :
+                      terminalTheme === 'professional-light' ? 'bg-gray-100 text-gray-800' :
+                      'bg-gradient-to-br from-blue-950/50 to-black/80 text-cyan-300'
                     }`}
-                  >
-                    <MessageSquare className="w-4 h-4 text-white" />
-                  </button>
-                </Tooltip>
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: terminalTheme === 'professional-dark' ? '#374151 #111827' : 
+                                       terminalTheme === 'professional-light' ? '#d1d5db #f3f4f6' :
+                                       '#1e40af #030712',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        height: expandedAgents.has(i) ? 'clamp(300px, 40vh, 500px)' : 'clamp(150px, 25vh, 250px)'
+                      }}
+                    >
+                      {terminalOutputs[i]?.map((line, idx) => (
+                        <div key={idx} className="whitespace-pre-wrap leading-relaxed hover:bg-white/5 px-1 -mx-1 rounded transition-colors break-words overflow-wrap-anywhere">
+                          <SafeAnsiRenderer content={line || '\u00A0'} />
+                        </div>
+                      )) || (
+                        <div className="text-gray-500 flex items-center space-x-2">
+                          <Activity className="w-3 h-3 animate-pulse" />
+                          <span>Awaiting output...</span>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
               </div>
             </div>
-            
-            {/* Terminal output */}
-            <div 
-              ref={terminalRef}
-              className="flex-1 p-4 overflow-y-auto font-mono text-sm scroll-smooth"
-              style={{ minHeight: '400px' }}
-            >
-              {isLoading ? (
-                <div className="p-8">
-                  <div className="flex items-center justify-center mb-4">
-                    <Terminal className="w-8 h-8 text-green-400 animate-pulse" />
-                  </div>
-                  <div className="space-y-2 max-w-2xl mx-auto">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                      <div className="text-green-400">Connecting to {getAgentDisplayName(selectedAgent)}...</div>
-                    </div>
-                    <div className="space-y-1 pl-4">
-                      <div className="h-4 bg-gray-800/50 rounded animate-pulse w-3/4"></div>
-                      <div className="h-4 bg-gray-800/50 rounded animate-pulse w-1/2"></div>
-                      <div className="h-4 bg-gray-800/50 rounded animate-pulse w-5/6"></div>
-                      <div className="h-4 bg-gray-800/50 rounded animate-pulse w-2/3"></div>
-                    </div>
-                  </div>
-                </div>
-              ) : terminalOutputs[selectedAgent]?.length > 0 ? (
-                <div className="space-y-0">
-                  {terminalOutputs[selectedAgent].map((line, index) => (
-                    <div key={index} className="whitespace-pre-wrap leading-relaxed">
-                      <span className="text-green-400">{line || '\u00A0'}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-gray-500 text-center py-12">
-                  <Terminal className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                  <div className="text-lg mb-2">
-                    {selectedSession 
-                      ? 'Waiting for agent output...'
-                      : sessions.length === 0
-                        ? 'No terminal sessions detected'
-                        : 'Select a session to view terminal output'}
-                  </div>
-                  <div className="text-sm opacity-70 mb-4">
-                    {selectedSession 
-                      ? `${getAgentDisplayName(selectedAgent)} is initializing or hasn't produced output yet`
-                      : sessions.length === 0
-                        ? farmId 
-                          ? `Searching for sessions matching farm: ${farmId.slice(0, 8)}...`
-                          : 'Waiting for Claude Code agents to launch...'
-                        : 'Launch a farm to see agent terminals'}
-                  </div>
-                  {sessions.length === 0 && (
-                    <Tooltip content="Retry detecting terminal sessions" position="top">
-                      <button
-                        onClick={() => {
-                          console.log('[HarvestTerminal] Retry detection from empty state');
-                          setIsSessionsLoading(true);
-                          fetchSessions('empty-state-retry');
-                        }}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
-                      >
-                        Retry Detection
-                      </button>
-                    </Tooltip>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Global Command Input - Always visible for easy access */}
-        {selectedSession && currentSession && (
-          <div className="bg-gray-800 px-4 py-3 rounded-b-lg border-t border-gray-700">
-            <div className="flex items-center space-x-2">
-              <span className="text-green-400 font-mono">$</span>
-              {viewMode !== 'single' && currentSession.paneCount > 1 && (
-                <select
-                  value={selectedAgent}
-                  onChange={(e) => setSelectedAgent(Number(e.target.value))}
-                  className="bg-gray-700 text-white px-2 py-1.5 rounded text-sm"
-                >
-                  {Array.from({ length: currentSession.paneCount }, (_, i) => (
-                    <option key={i} value={i}>
-                      {getAgentDisplayName(i)}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <input
-                ref={inputRef}
-                type="text"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    sendCommand();
-                    // Focus remains on input for rapid command entry
-                    e.currentTarget.focus();
-                  }
+          ) : viewMode === 'workflow' ? (
+            // Workflow View
+            <div className="flex-1 overflow-hidden">
+              <WorkflowVisualization
+                agents={currentSession ? Array.from({ length: currentSession.paneCount }, (_, i) => ({
+                  id: `agent-${i}`,
+                  name: getAgentDisplayName(i),
+                  status: pausedAgents[i] ? 'idle' : 'active',
+                  progress: 0,
+                  messages: terminalOutputs[i]?.slice(-5) || []
+                })) : []}
+                onLaunchAgents={launchAgents}
+                onSendCommand={(agentId: string, cmd: string) => {
+                  const agentIndex = parseInt(agentId.replace('agent-', ''));
+                  setAgentCommands(prev => ({ ...prev, [agentIndex]: cmd }));
+                  sendCommand(agentIndex);
                 }}
-                placeholder={`Enter command for ${getAgentDisplayName(selectedAgent)}...`}
-                className="flex-1 bg-gray-900 text-white px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                autoFocus
+                farmId={farmId}
               />
-              <Tooltip content="Send command to agent (Enter)" position="left">
-                <button
-                  onClick={() => {
-                    sendCommand();
-                    // Refocus input after click
-                    inputRef.current?.focus();
-                  }}
-                  disabled={!command.trim()}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
-                >
-                  <Send className="w-4 h-4" />
-                  <span className="text-sm">Send</span>
-                </button>
-              </Tooltip>
             </div>
-            {/* Quick command suggestions */}
-            <div className="mt-2 flex items-center space-x-2">
-              <span className="text-xs text-gray-400">Quick:</span>
-              {['ls', 'pwd', 'git status', 'npm test', 'clear'].map(cmd => (
-                <button
-                  key={cmd}
-                  onClick={() => {
-                    setCommand(cmd);
-                    sendCommand(selectedAgent, cmd);
-                    inputRef.current?.focus();
-                  }}
-                  className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
-                >
-                  {cmd}
-                </button>
-              ))}
+          ) : (
+            // Professional Single View
+            <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-950 via-gray-900 to-black overflow-hidden">
+              {/* Process Selector */}
+              <div className="bg-gray-900/60 backdrop-blur-sm px-6 py-3 border-b border-gray-700/30">
+                <div className="flex items-center space-x-3 overflow-x-auto">
+                  {Array.from({ length: effectivePaneCount }, (_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedAgent(i)}
+                      className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-all duration-200 ${
+                        selectedAgent === i
+                          ? 'bg-blue-600/80 text-white shadow-lg shadow-blue-500/20'
+                          : 'bg-gray-800/40 text-gray-400 hover:text-white hover:bg-gray-700/50 border border-gray-700/30'
+                      }`}
+                    >
+                      {getAgentDisplayName(i)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Professional Single Terminal */}
+              <div className={`flex-1 p-6 overflow-y-auto font-mono text-sm min-h-0 ${
+                terminalTheme === 'professional-dark' ? 'bg-black/80 text-blue-300' :
+                terminalTheme === 'professional-light' ? 'bg-gray-100 text-gray-800' :
+                'bg-gradient-to-br from-blue-950/50 to-black/80 text-cyan-300'
+              }`}
+                style={{
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: terminalTheme === 'professional-dark' ? '#374151 #111827' : 
+                                 terminalTheme === 'professional-light' ? '#d1d5db #f3f4f6' :
+                                 '#1e40af #030712'
+                }}
+              >
+                {terminalOutputs[selectedAgent]?.map((line, idx) => (
+                  <div key={idx} className="whitespace-pre-wrap leading-relaxed hover:bg-white/5 px-2 -mx-2 rounded transition-colors break-words overflow-wrap-anywhere">
+                    <SafeAnsiRenderer content={line || '\u00A0'} />
+                  </div>
+                )) || (
+                  <div className="text-gray-500 flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <Activity className="w-8 h-8 mx-auto mb-3 animate-pulse" />
+                      <p>Awaiting output from {getAgentDisplayName(selectedAgent)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Professional Command Input */}
+              <div className="bg-gray-900/60 backdrop-blur-sm px-6 py-4 border-t border-gray-700/30">
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2 text-blue-400">
+                    <ChevronRight className="w-4 h-4" />
+                    <span className="text-sm font-medium">{getAgentDisplayName(selectedAgent)}</span>
+                  </div>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        sendCommand(selectedAgent);
+                        setCommand('');
+                      }
+                    }}
+                    className="flex-1 bg-gray-800/40 backdrop-blur-sm text-gray-200 px-4 py-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/50 border border-gray-700/30 placeholder-gray-500"
+                    placeholder="Enter command..."
+                  />
+                  <button
+                    onClick={() => {
+                      sendCommand(selectedAgent);
+                      setCommand('');
+                    }}
+                    className="px-4 py-2 bg-blue-600/80 hover:bg-blue-600 rounded-lg transition-all duration-200 shadow-lg shadow-blue-500/20 flex items-center space-x-2"
+                  >
+                    <Send className="w-4 h-4 text-white" />
+                    <span className="text-sm font-medium text-white">Send</span>
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
-    
-    {/* HTML Preview Modal */}
-    {showHtmlPreview && farmId && (
-      <HtmlPreview
-        filePath={showHtmlPreview.filePath}
-        farmId={farmId}
-        agentId={showHtmlPreview.agentId}
-        agentName={showHtmlPreview.agentName}
-        onClose={() => setShowHtmlPreview(null)}
-      />
-    )}
-    
-    {/* HTML Files Notification */}
-    {htmlPreviews.length > 0 && !showHtmlPreview && (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="fixed bottom-20 right-4 z-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 max-w-sm"
-      >
-        <div className="flex items-center space-x-2 mb-2">
-          <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          <h4 className="font-semibold text-gray-900 dark:text-white">HTML Files Detected</h4>
-        </div>
-        <div className="space-y-2">
-          {htmlPreviews.slice(-3).map((preview, idx) => (
-            <button
-              key={idx}
-              onClick={() => setShowHtmlPreview(preview)}
-              className="block w-full text-left p-2 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-            >
-              <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                {preview.filePath.split('/').pop()}
-              </div>
-              <div className="text-xs text-gray-600 dark:text-gray-400">
-                by {preview.agentName}
-              </div>
-            </button>
-          ))}
-        </div>
-      </motion.div>
-    )}
+
+      {/* HTML Preview Modal */}
+      <AnimatePresence>
+        {showHtmlPreview && (
+          <HtmlPreview
+            filePath={showHtmlPreview.filePath}
+            farmId={showHtmlPreview.farmId || farmId || ''}
+            agentId={showHtmlPreview.agentId}
+            agentName={showHtmlPreview.agentName}
+            onClose={() => setShowHtmlPreview(null)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 };
 
-// Main HarvestTerminal component - Always use Pro mode
-export const HarvestTerminal: React.FC<HarvestTerminalProps> = (props) => {
-  const { legacyMode, forceProMode, ...restProps } = props;
-  
-  // Always use Pro mode - it's the new default
+// Export wrapped version with error boundary for safety
+export const HarvestTerminalWithErrorBoundary: React.FC<HarvestTerminalProps> = (props) => {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-full bg-gray-900 rounded-lg">
-        <div className="text-center">
-          <Terminal className="w-12 h-12 text-green-400 mx-auto mb-4 animate-pulse" />
-          <p className="text-gray-400">Loading Harvest Terminal Pro...</p>
-        </div>
-      </div>
-    }>
-      <HarvestTerminalPro {...restProps} />
-    </Suspense>
+    <HarvestTerminalErrorBoundary farmId={props.farmId}>
+      <HarvestTerminal {...props} />
+    </HarvestTerminalErrorBoundary>
   );
 };
-
-export default HarvestTerminal;

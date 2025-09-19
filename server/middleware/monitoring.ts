@@ -94,23 +94,33 @@ export const monitoringMiddleware = {
             const route = req.route?.path || req.path || 'unknown';
             slowRequestThreshold.inc({ route });
             
-            console.warn(`Slow request detected: ${req.method} ${route} took ${duration}ms`);
+            // Only log if significantly slow
+            if (duration > thresholdMs * 2) {
+              console.warn(`Slow request detected: ${req.method} ${route} took ${duration}ms`);
+            }
             
-            // Log slow request for analysis
-            db.query(
-              `INSERT INTO slow_requests (request_id, endpoint, method, duration, threshold, query_params, body_size, timestamp)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-              [
-                req.monitoringId,
-                route,
-                req.method,
-                duration,
-                thresholdMs,
-                JSON.stringify(req.query),
-                req.get('content-length') || 0,
-                new Date()
-              ]
-            ).catch(err => console.error('Failed to log slow request:', err));
+            // Log slow request for analysis (only if table exists)
+            if (process.env.ENABLE_SLOW_REQUEST_LOGGING === 'true') {
+              db.query(
+                `INSERT INTO slow_requests (request_id, endpoint, method, duration, threshold, query_params, body_size, timestamp)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [
+                  req.monitoringId,
+                  route,
+                  req.method,
+                  duration,
+                  thresholdMs,
+                  JSON.stringify(req.query),
+                  req.get('content-length') || 0,
+                  new Date()
+                ]
+              ).catch(err => {
+                // Silently ignore if table doesn't exist
+                if (!err.message?.includes('relation "slow_requests" does not exist')) {
+                  console.error('Failed to log slow request:', err);
+                }
+              });
+            }
           }
         }
       };

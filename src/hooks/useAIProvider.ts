@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSettingsStore } from '../store/settingsStore';
-import type { AIProvider } from '../components/common/AIProviderSelector';
+import { useSettingsStore } from '@/store/settingsStore';
+import type { AIProvider } from '@/components/common/AIProviderSelector';
 
 interface AIProviderHook {
   provider: AIProvider;
@@ -37,16 +37,19 @@ export const useAIProvider = (): AIProviderHook => {
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data.providers) {
-          const status = {
+          const status: Record<string, { configured: boolean; enabled: boolean }> = {
             claude: { configured: false, enabled: false },
-            qwen: { configured: false, enabled: false }
+            qwen: { configured: false, enabled: false },
+            openai: { configured: false, enabled: false }
           };
-          
+
           result.data.providers.forEach((p: any) => {
-            status[p.provider as AIProvider] = {
-              configured: p.configured,
-              enabled: p.enabled
-            };
+            if (p.provider in status) {
+              status[p.provider] = {
+                configured: p.configured,
+                enabled: p.enabled
+              };
+            }
           });
           
           setProviderStatus(status);

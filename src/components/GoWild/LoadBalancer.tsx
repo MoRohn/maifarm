@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Activity, Cpu, HardDrive, Network } from 'lucide-react';
-import { cn } from '../../utils/cn';
+import { cn } from '@/utils/cn';
 import { GlassPanel } from '../common/GlassPanel';
 import { StatusIndicator } from '../common/StatusIndicator';
 

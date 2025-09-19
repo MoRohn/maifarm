@@ -5,7 +5,7 @@
 
 import { Server as SocketServer, Socket } from 'socket.io';
 import { Server as HttpServer } from 'http';
-import UnifiedRedisStateManager from '../services/unifiedRedisStateManager';
+import UnifiedRedisStateManager from '../services/unified/stateCoordinator';
 import { redis } from '../database/connection';
 import { EventEmitter } from 'events';
 

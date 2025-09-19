@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useThemeStore } from '../../store/themeStore';
+import { useThemeStore } from '@/store/themeStore';
 
 interface DynamicLogoProps {
   className?: string;

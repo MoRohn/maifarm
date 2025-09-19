@@ -5,6 +5,7 @@
 
 import { Server, Socket } from 'socket.io';
 import { metricsSynchronizer } from '../services/metricsSynchronizer';
+import { metricsAggregator } from '../services/metricsAggregator';
 import { websocketManager } from './websocketManager';
 import { validateWebSocketMetrics, sanitizeMetrics } from '../middleware/metricsValidation';
 
@@ -87,14 +88,27 @@ export class MetricsWebSocketHandler {
   /**
    * Send current metrics to a specific client
    */
-  private sendCurrentMetrics(socket: Socket): void {
-    const metrics = metricsSynchronizer.getMetrics();
-    const dashboardMetrics = metricsSynchronizer.getDashboardMetrics();
+  private async sendCurrentMetrics(socket: Socket): Promise<void> {
+    // Get accurate metrics from the new aggregator
+    const dashboardMetrics = await metricsAggregator.getDashboardMetrics();
+    const accuracy = metricsAggregator.getAccuracy();
+    
+    // Also get legacy metrics for compatibility
+    const legacyMetrics = metricsSynchronizer.getMetrics();
     
     socket.emit('metrics:update', {
       type: 'full',
-      metrics,
+      metrics: {
+        // Use aggregator metrics for dashboard values
+        activeFarms: dashboardMetrics.liveFarms,
+        activeAgents: dashboardMetrics.agentsWorking,
+        completedHarvests: dashboardMetrics.harvestsCompleted,
+        yieldedItems: dashboardMetrics.yieldedItems,
+        // Include other legacy metrics
+        ...legacyMetrics
+      },
       dashboard: dashboardMetrics,
+      accuracy,
       timestamp: new Date(),
       version: Date.now(),
       source: 'server'
