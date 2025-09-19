@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware'
 import { Farm, Agent, FarmMetrics } from '@/types'
 import { farmService } from '@/services/farmService'
 
+const isActiveFarmStatus = (status: Farm['status']) =>
+  status === 'active' || status === 'running'
+
 interface FarmStats {
   activeFarms: number
   totalAgents: number
@@ -59,7 +62,7 @@ export const useFarmStore = create<FarmState>()(
         const normalizedFarm = { ...farm, agents: farm.agents || [] };
         return {
           farms: [...state.farms, normalizedFarm],
-          activeFarms: normalizedFarm.status === 'active'
+          activeFarms: isActiveFarmStatus(normalizedFarm.status)
             ? [...state.activeFarms, normalizedFarm]
             : state.activeFarms,
           recentFarms: [normalizedFarm, ...state.recentFarms].slice(0, 5),
@@ -72,9 +75,7 @@ export const useFarmStore = create<FarmState>()(
         );
         
         // Rebuild activeFarms based on status
-        const activeFarms = updatedFarms.filter(f => 
-          f.status === 'active' || f.status === 'active'
-        );
+        const activeFarms = updatedFarms.filter(f => isActiveFarmStatus(f.status));
         
         return {
           farms: updatedFarms,
@@ -99,7 +100,7 @@ export const useFarmStore = create<FarmState>()(
           const { farms } = await farmService.fetchFarms();
           // Ensure all farms have agents arrays
           const normalizedFarms = farms.map(f => ({ ...f, agents: f.agents || [] }));
-          const activeFarms = normalizedFarms.filter(f => f.status === 'active');
+          const activeFarms = normalizedFarms.filter(f => isActiveFarmStatus(f.status));
           set({ 
             farms: normalizedFarms, 
             activeFarms,
