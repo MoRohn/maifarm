@@ -16,6 +16,21 @@ const envFile = process.env.NODE_ENV === 'production'
 
 dotenv.config({ path: resolve(process.cwd(), envFile) });
 
+export class ConfigurationValidationError extends Error {
+  public readonly errors: string[];
+
+  constructor(errors: string[]) {
+    super('Configuration validation failed');
+    this.name = 'ConfigurationValidationError';
+    this.errors = errors;
+  }
+}
+
+export interface ConfigurationValidationResult {
+  success: boolean;
+  errors: string[];
+}
+
 // Helper function to get required env variable
 function getEnvVar(key: string, defaultValue?: string): string {
   const value = process.env[key] || defaultValue;
@@ -220,7 +235,7 @@ export function validateConfig(): void {
 
   // Throw error if critical issues found
   if (errors.length > 0) {
-    throw new Error(`Configuration validation failed:\n${errors.join('\n')}`);
+    throw new ConfigurationValidationError(errors);
   }
 }
 
@@ -256,16 +271,24 @@ export function logConfiguration(): void {
   }
 }
 
-export function validateConfiguration(): boolean {
+export function validateConfiguration(): ConfigurationValidationResult {
   try {
     validateConfig();
-    return true;
-  } catch (error: any) {
-    console.error('Configuration validation failed:', error?.message || error);
-    if (error?.stack) {
-      console.error('Stack trace:', error.stack);
+    logger.info('[CONFIG] Configuration validation passed.');
+    return { success: true, errors: [] };
+  } catch (error: unknown) {
+    const errors = error instanceof ConfigurationValidationError
+      ? error.errors
+      : [error instanceof Error ? error.message : String(error)];
+
+    logger.error('[CONFIG] Configuration validation failed.');
+    errors.forEach(issue => logger.error(`[CONFIG] ${issue}`));
+
+    if (error instanceof Error && error.stack) {
+      logger.debug('[CONFIG] Validation stack trace', error.stack);
     }
-    return false;
+
+    return { success: false, errors };
   }
 }
 

@@ -297,7 +297,7 @@ self.addEventListener('message', async (event) => {
   if (event.data && event.data.type === 'FARM_STATUS_UPDATE') {
     const { farmId, status, autoPauseOnClose } = event.data;
     
-    if (status === 'active' || status === 'active') {
+    if (status === 'active' || status === 'running') {
       activeFarms.add(farmId);
       // Store auto-pause preference for this farm
       await storeFarmPreference(farmId, { autoPauseOnClose });

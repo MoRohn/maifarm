@@ -12,9 +12,28 @@ import { v4 as uuidv4 } from 'uuid';
 import { config, logConfiguration, validateConfiguration } from './config/index';
 import { logger } from './config/logging';
 
-// Skip validation for now - fixing import issues
-// TODO: Re-enable validation after fixing all import issues
-logger.info('SERVER', '🚀 Starting server in development mode...');
+logger.info('SERVER', `🚀 Starting server in ${config.env} mode...`);
+
+const validationResult = validateConfiguration();
+
+if (!validationResult.success) {
+  const issueCount = validationResult.errors.length;
+  const summary = `Configuration validation failed with ${issueCount} issue${issueCount === 1 ? '' : 's'}.`;
+
+  const exitMessage = process.env.NODE_ENV === 'test'
+    ? `${summary} Halting startup in test environment.`
+    : `${summary} Exiting startup.`;
+
+  logger.error('CONFIG', exitMessage);
+
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error([summary, ...validationResult.errors.map(err => `- ${err}`)].join('\n'));
+  }
+
+  process.exit(1);
+}
+
+logConfiguration();
 
 // Import API routes
 import authRouter from './api/auth';

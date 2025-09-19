@@ -3,5 +3,12 @@
  * Redirects to the new centralized configuration
  */
 
-export { config, validateConfig as validateConfiguration, logConfiguration } from './index';
+export {
+  config,
+  validateConfiguration,
+  logConfiguration,
+  ConfigurationValidationError,
+  ConfigurationValidationResult,
+} from './index';
+
 export default './index';
