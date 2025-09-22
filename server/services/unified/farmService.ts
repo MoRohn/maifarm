@@ -263,8 +263,17 @@ class UnifiedFarmService extends EventEmitter {
       try {
         logger.info(`Launching farm ${farm.id} (attempt ${attempt}/${maxRetries})`);
 
-        // Create tmux session
-        await terminalService.createSession(farm.id, config.numberOfAgents);
+        // Create tmux session (this sets up streaming infrastructure)
+        const sessionName = await terminalService.createSession(
+          farm.id,
+          config.numberOfAgents
+        );
+
+        // Ensure we keep the orchestrator session name in sync when the terminal
+        // service returns an existing session (best-effort safeguard)
+        if (sessionName && sessionName !== farm.sessionName) {
+          farm.sessionName = sessionName;
+        }
 
         // Launch orchestrator
         await this.launchOrchestrator(farm, config);
@@ -300,36 +309,59 @@ class UnifiedFarmService extends EventEmitter {
    * Launch the orchestrator process
    */
   private async launchOrchestrator(farm: Farm, config: FarmConfig): Promise<void> {
-    // Prepare YAML file if provided
-    let yamlPath: string | undefined;
+    // Prepare YAML prompt file if provided
+    let promptFilePath: string | undefined;
     if (config.yamlContent) {
-      yamlPath = path.join(farm.workspacePath, 'config.yaml');
-      await fs.writeFile(yamlPath, config.yamlContent);
+      promptFilePath = path.join(farm.workspacePath, 'config.yaml');
+      await fs.writeFile(promptFilePath, config.yamlContent, 'utf-8');
     }
 
-    // Build orchestrator command
-    const args = [
+    const workspaceBaseDir = this.paths.FARM_WORKSPACES_ACTIVE
+      ? this.paths.FARM_WORKSPACES_ACTIVE
+      : path.dirname(farm.workspacePath);
+
+    const coordinationDir = this.paths.COORDINATION_DIR
+      ? this.paths.COORDINATION_DIR
+      : path.join(workspaceBaseDir, '..', 'coordination');
+
+    // Build orchestrator command with explicit long-form flags that match the CLI
+    const orchestratorArgs: string[] = [
       this.ORCHESTRATOR_PATH,
-      '-n', config.numberOfAgents.toString(),
-      '-p', config.prompt,
-      '--farm-id', farm.id,
-      '--session-name', farm.sessionName
+      '--session',
+      farm.sessionName,
+      '--farm-id',
+      farm.id,
+      '--num-agents',
+      config.numberOfAgents.toString(),
+      '--provider',
+      config.provider,
+      '--workspace-dir',
+      workspaceBaseDir,
+      '--coordination-dir',
+      coordinationDir,
+      '--reuse-session'
     ];
 
-    if (yamlPath) {
-      args.push('--yaml', yamlPath);
+    if (config.prompt && config.prompt.trim().length > 0) {
+      orchestratorArgs.push('--prompt', config.prompt);
     }
 
-    if (config.provider !== 'claude') {
-      args.push('--provider', config.provider);
+    if (promptFilePath) {
+      orchestratorArgs.push('--prompt-file', promptFilePath);
     }
 
-    if (config.staggerDelay === 0) {
-      args.push('--fast-launch');
+    if (config.staggerDelay && config.staggerDelay > 0) {
+      orchestratorArgs.push('--stagger', config.staggerDelay.toString());
+    } else {
+      orchestratorArgs.push('--fast-launch');
+    }
+
+    if (config.mode === FarmMode.COLLABORATIVE) {
+      orchestratorArgs.push('--collaborative');
     }
 
     // Spawn orchestrator process (use python3 for compatibility)
-    const orchestrator = spawn('python3', args, {
+    const orchestrator = spawn('python3', orchestratorArgs, {
       cwd: farm.workspacePath,
       env: {
         ...process.env,
