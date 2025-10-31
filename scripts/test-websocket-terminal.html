@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Terminal Stream Test</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            background-color: #1e1e1e;
+            color: #00ff00;
+            padding: 20px;
+            margin: 0;
+        }
+        h1 {
+            color: #00ff00;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .status {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border: 1px solid #444;
+        }
+        .connected {
+            color: #00ff00;
+        }
+        .disconnected {
+            color: #ff0000;
+        }
+        .terminal-output {
+            background: #000;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            padding: 15px;
+            height: 400px;
+            overflow-y: auto;
+            margin: 20px 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .terminal-line {
+            margin: 2px 0;
+            white-space: pre-wrap;
+        }
+        .agent-0 { color: #ff6b6b; }
+        .agent-1 { color: #4ecdc4; }
+        .agent-2 { color: #45b7d1; }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin-right: 10px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+        button:hover {
+            background: #00dd00;
+        }
+        button:disabled {
+            background: #666;
+            color: #333;
+            cursor: not-allowed;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .stat-item {
+            background: #2d2d2d;
+            padding: 10px;
+            border-radius: 5px;
+            flex: 1;
+        }
+        .stat-label {
+            color: #888;
+            font-size: 12px;
+        }
+        .stat-value {
+            color: #00ff00;
+            font-size: 20px;
+            font-weight: bold;
+        }
+    </style>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>🌾 MaiFarm Terminal Stream Test</h1>
+
+    <div class="status" id="status">
+        <strong>Status:</strong> <span id="statusText" class="disconnected">Disconnected</span><br>
+        <strong>Farm ID:</strong> 325dca22-4d8e-4365-bbd5-8a333d44ea7a<br>
+        <strong>Session:</strong> farm-325dca22<br>
+        <strong>Server:</strong> http://localhost:4567
+    </div>
+
+    <div class="controls">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+        <button id="clearBtn">Clear Output</button>
+        <button id="triggerBtn">Trigger Test Event</button>
+    </div>
+
+    <div class="stats">
+        <div class="stat-item">
+            <div class="stat-label">Messages Received</div>
+            <div class="stat-value" id="messageCount">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Bessie 🐄</div>
+            <div class="stat-value" id="agent0Count">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Cluck 🐔</div>
+            <div class="stat-value" id="agent1Count">0</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-label">Wilbur 🐷</div>
+            <div class="stat-value" id="agent2Count">0</div>
+        </div>
+    </div>
+
+    <div class="terminal-output" id="terminal">
+        <div class="terminal-line">Waiting for connection...</div>
+    </div>
+
+    <script>
+        const FARM_ID = '325dca22-4d8e-4365-bbd5-8a333d44ea7a';
+        const SESSION_NAME = 'farm-325dca22';
+        const SERVER_URL = 'http://localhost:4567';
+
+        let socket = null;
+        let messageCount = 0;
+        const agentCounts = { 0: 0, 1: 0, 2: 0 };
+
+        function addLine(text, className = '') {
+            const terminal = document.getElementById('terminal');
+            const line = document.createElement('div');
+            line.className = 'terminal-line ' + className;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+
+            messageCount++;
+            document.getElementById('messageCount').textContent = messageCount;
+        }
+
+        function connect() {
+            addLine('Connecting to WebSocket server...');
+
+            socket = io(SERVER_URL, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000
+            });
+
+            // Connection events
+            socket.on('connect', () => {
+                const statusEl = document.getElementById('statusText');
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'connected';
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+
+                addLine('✓ Connected to server');
+
+                // Join terminal room
+                socket.emit('terminal:join', {
+                    farmId: FARM_ID,
+                    sessionName: SESSION_NAME
+                });
+
+                addLine(`✓ Joined room for farm ${FARM_ID}`);
+            });
+
+            socket.on('disconnect', (reason) => {
+                const statusEl = document.getElementById('statusText');
+                statusEl.textContent = `Disconnected (${reason})`;
+                statusEl.className = 'disconnected';
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+
+                addLine(`⚠ Disconnected: ${reason}`);
+            });
+
+            socket.on('error', (error) => {
+                addLine(`❌ Error: ${error}`, 'error');
+            });
+
+            // Terminal events
+            socket.on('terminal:output', (data) => {
+                const agentId = data.agentId || 0;
+                const output = data.data || data.line || data.output || '[No content]';
+                addLine(`[Agent ${agentId}] ${output}`, `agent-${agentId}`);
+
+                agentCounts[agentId] = (agentCounts[agentId] || 0) + 1;
+                document.getElementById(`agent${agentId}Count`).textContent = agentCounts[agentId];
+            });
+
+            socket.on('terminal:update', (data) => {
+                const agentId = data.agentId || 0;
+                const line = data.line || data.data || '[Update received]';
+                addLine(`[Update ${agentId}] ${line}`, `agent-${agentId}`);
+            });
+
+            socket.on('terminal:status', (data) => {
+                addLine(`📊 Status: ${JSON.stringify(data)}`);
+            });
+
+            socket.on('terminal:heartbeat', (data) => {
+                addLine(`♥ Heartbeat: ${data.timestamp || 'alive'}`);
+            });
+
+            // Generic events
+            socket.on('message', (data) => {
+                addLine(`📨 Message: ${JSON.stringify(data)}`);
+            });
+
+            // Farm-specific events
+            socket.on(`farm:${FARM_ID}:update`, (data) => {
+                addLine(`🌾 Farm update: ${JSON.stringify(data)}`);
+            });
+
+            socket.on(`terminal:${SESSION_NAME}:output`, (data) => {
+                addLine(`📟 Session output: ${data}`);
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.emit('terminal:leave', {
+                    farmId: FARM_ID,
+                    sessionName: SESSION_NAME
+                });
+                socket.close();
+                socket = null;
+                addLine('Disconnected from server');
+            }
+        }
+
+        function clearOutput() {
+            const terminal = document.getElementById('terminal');
+            terminal.innerHTML = '<div class="terminal-line">Terminal cleared</div>';
+            messageCount = 0;
+            agentCounts[0] = agentCounts[1] = agentCounts[2] = 0;
+            document.getElementById('messageCount').textContent = '0';
+            document.getElementById('agent0Count').textContent = '0';
+            document.getElementById('agent1Count').textContent = '0';
+            document.getElementById('agent2Count').textContent = '0';
+        }
+
+        function triggerTestEvent() {
+            if (socket && socket.connected) {
+                addLine('Sending test event...');
+                socket.emit('terminal:test', {
+                    farmId: FARM_ID,
+                    sessionName: SESSION_NAME,
+                    timestamp: new Date().toISOString(),
+                    message: 'Test event from browser'
+                });
+            } else {
+                addLine('❌ Not connected to server');
+            }
+        }
+
+        // Attach event handlers
+        document.getElementById('connectBtn').addEventListener('click', connect);
+        document.getElementById('disconnectBtn').addEventListener('click', disconnect);
+        document.getElementById('clearBtn').addEventListener('click', clearOutput);
+        document.getElementById('triggerBtn').addEventListener('click', triggerTestEvent);
+
+        // Auto-connect on load
+        window.addEventListener('load', () => {
+            setTimeout(connect, 1000);
+        });
+    </script>
+</body>
+</html>

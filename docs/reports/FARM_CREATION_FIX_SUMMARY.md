@@ -87,7 +87,7 @@ curl http://localhost:4567/api/debug/terminal
 ```
 
 4. **Monitor WebSocket connections**:
-Open `test-terminal-comprehensive.html` in a browser to test WebSocket streaming.
+Open `development/manual-tests/browser/test-terminal-comprehensive.html` in a browser to test WebSocket streaming.
 
 ## Premature Farm Completion Issue - FIXED ✅
 

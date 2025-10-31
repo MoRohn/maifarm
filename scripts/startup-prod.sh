@@ -2,13 +2,13 @@
 
 # Kill any existing processes
 echo "Stopping any existing processes..."
-pkill -f "tsx.*server/index.ts" || true
+pkill -f "tsx.*apps/api/src/index.ts" || true
 pkill -f "vite" || true
 sleep 2
 
 # Start the server
 echo "Starting MaiFarm server on port 4567..."
-NODE_ENV=production BYPASS_AUTH=true PORT=4567 npx tsx server/index.ts &
+NODE_ENV=production BYPASS_AUTH=true PORT=4567 npx tsx apps/api/src/index.ts &
 SERVER_PID=$!
 
 # Wait for server to be ready
@@ -27,7 +27,7 @@ done
 
 # Start the client
 echo "Starting Vite development server on port 3000..."
-npx vite &
+npx vite --config apps/dashboard/vite.config.ts &
 CLIENT_PID=$!
 
 echo ""
@@ -43,7 +43,7 @@ cleanup() {
   echo "Stopping servers..."
   kill $SERVER_PID 2>/dev/null || true
   kill $CLIENT_PID 2>/dev/null || true
-  pkill -f "tsx.*server/index.ts" || true
+  pkill -f "tsx.*apps/api/src/index.ts" || true
   pkill -f "vite" || true
   echo "Servers stopped."
   exit 0

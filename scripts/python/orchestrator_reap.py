@@ -152,7 +152,7 @@ class HybridOrchestrator:
         self.debug = debug
         
         # Set up paths
-        self.base_path = Path(os.environ.get("MAIBARN_ROOT", "/tmp/maibarn"))
+        self.base_path = Path(os.environ.get("MAIBARN_ROOT", str(Path.cwd() / "var" / "maibarn")))
         self.workspace_path = self.base_path / "workspaces" / farm_id
         self.coordination_path = self.base_path / "coordination"
         self.harvest_path = self.base_path / "harvests" / farm_id

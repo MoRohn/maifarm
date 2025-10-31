@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
-import { goWildManagerV2 } from '../../server/services/unified/farmService';
-import { agentCoordinatorV2 } from '../../server/services/unified/farmService';
-import { apiConnectionManager } from '../../server/services/apiConnectionManager';
-import { realtimeMetricsService } from '../../server/services/realtimeMetricsService';
-import { websocketManager } from '../../server/websocket/websocketManager';
+import { goWildManagerV2 } from '../../apps/api/src/services/unified/farmService';
+import { agentCoordinatorV2 } from '../../apps/api/src/services/unified/farmService';
+import { apiConnectionManager } from '../../apps/api/src/services/apiConnectionManager';
+import { realtimeMetricsService } from '../../apps/api/src/services/realtimeMetricsService';
+import { websocketManager } from '../../apps/api/src/websocket/websocketManager';
 import { v4 as uuidv4 } from 'uuid';
 
 // Mock WebSocket manager
-jest.mock('../../server/websocket/websocketManager', () => ({
+jest.mock('../../apps/api/src/websocket/websocketManager', () => ({
   websocketManager: {
     broadcast: jest.fn(),
     broadcastToFarm: jest.fn(),
@@ -19,14 +19,14 @@ jest.mock('../../server/websocket/websocketManager', () => ({
 }));
 
 // Mock database
-jest.mock('../../server/database/connection', () => ({
+jest.mock('../../apps/api/src/database/connection', () => ({
   db: {
     query: jest.fn(() => Promise.resolve({ rows: [] }))
   }
 }));
 
 // Mock harvest service
-jest.mock('../../server/services/harvestService', () => ({
+jest.mock('../../apps/api/src/services/harvestService', () => ({
   harvestService: {
     createHarvest: jest.fn(() => Promise.resolve({
       id: uuidv4(),
@@ -37,7 +37,7 @@ jest.mock('../../server/services/harvestService', () => ({
 }));
 
 // Mock barn service
-jest.mock('../../server/services/barnService', () => ({
+jest.mock('../../apps/api/src/services/barnService', () => ({
   barnService: {
     storeItem: jest.fn(() => Promise.resolve({ id: uuidv4() }))
   }

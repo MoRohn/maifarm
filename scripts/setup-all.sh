@@ -219,38 +219,28 @@ setup_redis() {
 setup_python_deps() {
     log_step "Setting up Python dependencies..."
     
-    if command_exists python3; then
+    if command_exists poetry; then
+        log_info "Poetry detected – installing Python dependencies"
+        poetry install --no-root
+        log_success "Poetry environment ready"
+        return
+    fi
+
+    if command_exists python3 && command_exists pip3; then
         PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
-        log_info "Python $PYTHON_VERSION is installed"
-        
-        # Check if pip requirements file exists
+        log_info "Python $PYTHON_VERSION is installed (Poetry not found, falling back to pip)"
+
         if [ -f "requirements.txt" ]; then
-            log_info "Installing Python dependencies..."
+            log_info "Installing Python dependencies from requirements.txt..."
             pip3 install -r requirements.txt
             log_success "Python dependencies installed"
         else
-            log_info "Creating requirements.txt for LLM proxy..."
-            cat > requirements.txt << EOF
-requests>=2.31.0
-flask>=2.3.0
-flask-cors>=4.0.0
-anthropic>=0.20.0
-openai>=1.0.0
-dashscope>=1.0.0
-redis>=4.5.0
-python-dotenv>=1.0.0
-pydantic>=2.0.0
-uvicorn>=0.20.0
-fastapi>=0.100.0
-websockets>=11.0.0
-aioredis>=2.0.0
-EOF
-            pip3 install -r requirements.txt
-            log_success "Python dependencies installed"
+            log_warning "requirements.txt not found – skipping pip install"
+            log_info "Run 'poetry install' once Poetry is available to set up Python helpers"
         fi
     else
-        log_warning "Python3 not found. LLM proxy features may not work."
-        log_info "Install Python3 from: https://python.org"
+        log_warning "Python3 or pip3 not found. LLM proxy features may not work."
+        log_info "Install Python3 from https://python.org or configure Poetry."
     fi
 }
 
@@ -286,7 +276,6 @@ REDIS_PORT=6379
 AI_PROVIDER=claude
 CLAUDE_API_KEY=your-claude-api-key-here
 QWEN_ENABLED=false
-QWEN_API_KEY=your-qwen-api-key-here
 
 # LLM Proxy Configuration
 USE_LLM_PROXY=false
@@ -329,12 +318,14 @@ run_initial_setup() {
     log_step "Running initial application setup..."
     
     # Create necessary directories
-    mkdir -p maibarn/coordination
-    mkdir -p maibarn/harvests/active
-    mkdir -p maibarn/harvests/completed
-    mkdir -p maibarn/workspaces/active
-    mkdir -p maibarn/workspaces/archived
-    mkdir -p maibarn/barn/items
+    mkdir -p var/maibarn/coordination
+    mkdir -p var/maibarn/harvests/active
+    mkdir -p var/maibarn/harvests/completed
+    mkdir -p var/maibarn/workspaces/active
+    mkdir -p var/maibarn/workspaces/archived
+    mkdir -p var/maibarn/logs
+    mkdir -p var/data/storage/barn/items
+    mkdir -p var/data/temp
     mkdir -p logs
     mkdir -p coverage
     mkdir -p reports

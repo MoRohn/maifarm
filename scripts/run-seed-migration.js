@@ -25,7 +25,7 @@ async function runMigration() {
     console.log('🌱 Running Seeds enhancement migration...');
     
     // Read the migration file
-    const migrationPath = path.join(__dirname, '../server/database/migrations/010_enhance_seeds_for_harvest_integration.sql');
+    const migrationPath = path.join(__dirname, '../apps/api/src/database/migrations/010_enhance_seeds_for_harvest_integration.sql');
     const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
     
     // Execute the migration

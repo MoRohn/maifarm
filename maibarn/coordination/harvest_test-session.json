@@ -1,7 +1,0 @@
-{
-  "farm_id": "test-session",
-  "session": "test-session",
-  "provider": "mock",
-  "agents": 1,
-  "finished_at": "2025-08-13T12:06:13.189460"
-}

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MaiFarm UI Connection Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        .glass-morphism {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .status-indicator {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-green-50 to-blue-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <div class="glass-morphism rounded-xl p-6 shadow-lg">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center">
+                            <span class="text-2xl">🌾</span>
+                        </div>
+                        <div>
+                            <h1 class="text-3xl font-bold text-gray-800">MaiFarm</h1>
+                            <p class="text-sm text-gray-600">Multi-Agent Orchestration System</p>
+                        </div>
+                    </div>
+                    <div id="connectionStatus" class="flex items-center space-x-2">
+                        <div class="status-indicator w-3 h-3 bg-yellow-500 rounded-full"></div>
+                        <span class="text-sm text-gray-600">Connecting...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Connection Tests -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <!-- API Connection -->
+            <div class="glass-morphism rounded-xl p-6 shadow-lg">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="mr-2">🔌</span> API Connection
+                </h2>
+                <div id="apiStatus" class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Backend Server</span>
+                        <span id="apiServerStatus" class="text-sm font-medium">Checking...</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Port</span>
+                        <span class="text-sm font-medium">4567</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- WebSocket Connection -->
+            <div class="glass-morphism rounded-xl p-6 shadow-lg">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="mr-2">🔄</span> WebSocket
+                </h2>
+                <div id="wsStatus" class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Connection</span>
+                        <span id="wsConnectionStatus" class="text-sm font-medium">Initializing...</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Events</span>
+                        <span id="wsEventCount" class="text-sm font-medium">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Database Connection -->
+            <div class="glass-morphism rounded-xl p-6 shadow-lg">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <span class="mr-2">💾</span> Database
+                </h2>
+                <div id="dbStatus" class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">PostgreSQL</span>
+                        <span id="pgStatus" class="text-sm font-medium">Checking...</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Redis</span>
+                        <span id="redisStatus" class="text-sm font-medium">Checking...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Farms Dashboard -->
+        <div class="glass-morphism rounded-xl p-6 shadow-lg mb-8">
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <span class="mr-2">🚜</span> Active Farms
+            </h2>
+            <div id="farmsContainer" class="space-y-4">
+                <div class="text-center py-8 text-gray-500">
+                    Loading farms...
+                </div>
+            </div>
+        </div>
+
+        <!-- Real-time Events -->
+        <div class="glass-morphism rounded-xl p-6 shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <span class="mr-2">📡</span> Real-time Events
+            </h2>
+            <div id="eventsContainer" class="space-y-2 max-h-64 overflow-y-auto">
+                <div class="text-sm text-gray-500">Waiting for events...</div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mt-8 flex space-x-4">
+            <button onclick="createTestFarm()" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                Create Test Farm
+            </button>
+            <button onclick="testWebSocket()" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                Test WebSocket
+            </button>
+            <button onclick="refreshConnections()" class="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors">
+                Refresh Status
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let eventCount = 0;
+
+        // Initialize connections
+        async function init() {
+            console.log('Initializing MaiFarm UI Test...');
+
+            // Test API connection
+            await testAPIConnection();
+
+            // Initialize WebSocket
+            initWebSocket();
+
+            // Load farms
+            await loadFarms();
+        }
+
+        async function testAPIConnection() {
+            try {
+                const response = await fetch('http://localhost:4567/api/system/health');
+                const data = await response.json();
+
+                document.getElementById('apiServerStatus').textContent = '✅ Connected';
+                document.getElementById('apiServerStatus').className = 'text-sm font-medium text-green-600';
+
+                // Update database statuses
+                if (data.services) {
+                    const pgService = data.services.find(s => s.name === 'postgresql');
+                    const redisService = data.services.find(s => s.name === 'redis');
+
+                    if (pgService) {
+                        document.getElementById('pgStatus').textContent = pgService.status === 'healthy' ? '✅ Healthy' : '❌ Unhealthy';
+                        document.getElementById('pgStatus').className = `text-sm font-medium ${pgService.status === 'healthy' ? 'text-green-600' : 'text-red-600'}`;
+                    }
+
+                    if (redisService) {
+                        document.getElementById('redisStatus').textContent = redisService.status === 'healthy' ? '✅ Healthy' : '❌ Unhealthy';
+                        document.getElementById('redisStatus').className = `text-sm font-medium ${redisService.status === 'healthy' ? 'text-green-600' : 'text-red-600'}`;
+                    }
+                }
+            } catch (error) {
+                console.error('API connection error:', error);
+                document.getElementById('apiServerStatus').textContent = '❌ Error';
+                document.getElementById('apiServerStatus').className = 'text-sm font-medium text-red-600';
+            }
+        }
+
+        function initWebSocket() {
+            socket = io('http://localhost:4567', {
+                transports: ['websocket', 'polling'],
+                auth: {
+                    userId: 'test-user-' + Date.now()
+                }
+            });
+
+            socket.on('connect', () => {
+                console.log('WebSocket connected');
+                document.getElementById('wsConnectionStatus').textContent = '✅ Connected';
+                document.getElementById('wsConnectionStatus').className = 'text-sm font-medium text-green-600';
+                updateConnectionStatus('connected');
+
+                // Join global room
+                socket.emit('join:room', 'global');
+            });
+
+            socket.on('disconnect', () => {
+                console.log('WebSocket disconnected');
+                document.getElementById('wsConnectionStatus').textContent = '❌ Disconnected';
+                document.getElementById('wsConnectionStatus').className = 'text-sm font-medium text-red-600';
+                updateConnectionStatus('disconnected');
+            });
+
+            // Listen for various events
+            ['farm:created', 'farm:status', 'agent:status', 'agent:updated', 'harvest:ready', 'terminal:output'].forEach(eventName => {
+                socket.on(eventName, (data) => {
+                    addEvent(eventName, data);
+                });
+            });
+        }
+
+        function updateConnectionStatus(status) {
+            const statusEl = document.getElementById('connectionStatus');
+            const indicator = statusEl.querySelector('.status-indicator');
+            const text = statusEl.querySelector('span');
+
+            if (status === 'connected') {
+                indicator.className = 'status-indicator w-3 h-3 bg-green-500 rounded-full';
+                text.textContent = 'Connected';
+            } else if (status === 'disconnected') {
+                indicator.className = 'status-indicator w-3 h-3 bg-red-500 rounded-full';
+                text.textContent = 'Disconnected';
+            } else {
+                indicator.className = 'status-indicator w-3 h-3 bg-yellow-500 rounded-full';
+                text.textContent = 'Connecting...';
+            }
+        }
+
+        function addEvent(type, data) {
+            eventCount++;
+            document.getElementById('wsEventCount').textContent = eventCount;
+
+            const container = document.getElementById('eventsContainer');
+            const eventEl = document.createElement('div');
+            eventEl.className = 'p-2 bg-white bg-opacity-50 rounded text-sm';
+            eventEl.innerHTML = `
+                <div class="flex justify-between">
+                    <span class="font-medium text-blue-600">${type}</span>
+                    <span class="text-gray-500">${new Date().toLocaleTimeString()}</span>
+                </div>
+                <div class="text-gray-700 text-xs mt-1">${JSON.stringify(data, null, 2).substring(0, 100)}...</div>
+            `;
+
+            container.insertBefore(eventEl, container.firstChild);
+
+            // Keep only last 10 events
+            while (container.children.length > 10) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        async function loadFarms() {
+            try {
+                const response = await fetch('http://localhost:4567/api/farms');
+                const data = await response.json();
+
+                const container = document.getElementById('farmsContainer');
+
+                if (data.data && data.data.length > 0) {
+                    container.innerHTML = data.data.map(farm => `
+                        <div class="p-4 bg-white bg-opacity-50 rounded-lg">
+                            <div class="flex justify-between items-start mb-2">
+                                <div>
+                                    <h3 class="font-semibold text-gray-800">${farm.name}</h3>
+                                    <p class="text-sm text-gray-600">${farm.description || 'No description'}</p>
+                                </div>
+                                <span class="px-2 py-1 text-xs rounded-full ${getStatusClass(farm.status)}">
+                                    ${farm.status}
+                                </span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 text-sm mt-3">
+                                <div>
+                                    <span class="text-gray-500">Agents:</span>
+                                    <span class="ml-1 font-medium">${farm.agents ? farm.agents.length : 0}</span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Tasks:</span>
+                                    <span class="ml-1 font-medium">${farm.metrics?.totalTasks || 0}</span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500">Efficiency:</span>
+                                    <span class="ml-1 font-medium">${farm.metrics?.efficiency || 0}%</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-gray-500">
+                            <p>No farms found</p>
+                            <button onclick="createTestFarm()" class="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                                Create Your First Farm
+                            </button>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading farms:', error);
+                document.getElementById('farmsContainer').innerHTML = `
+                    <div class="text-center py-8 text-red-500">
+                        Error loading farms: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function getStatusClass(status) {
+            const classes = {
+                'idle': 'bg-gray-100 text-gray-700',
+                'launching': 'bg-yellow-100 text-yellow-700',
+                'running': 'bg-green-100 text-green-700',
+                'active': 'bg-blue-100 text-blue-700',
+                'completed': 'bg-purple-100 text-purple-700',
+                'failed': 'bg-red-100 text-red-700'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-700';
+        }
+
+        async function createTestFarm() {
+            try {
+                const response = await fetch('http://localhost:4567/api/farms', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: `Test Farm ${Date.now()}`,
+                        description: 'Created from UI test',
+                        config: {
+                            timeout: 3600000,
+                            agentCount: 2
+                        }
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('Farm created successfully!');
+                    await loadFarms();
+                } else {
+                    alert('Error creating farm: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error creating farm: ' + error.message);
+            }
+        }
+
+        function testWebSocket() {
+            if (socket && socket.connected) {
+                socket.emit('test:echo', { message: 'Hello from UI test!', timestamp: Date.now() });
+                addEvent('test:sent', { message: 'Test message sent' });
+            } else {
+                alert('WebSocket not connected');
+            }
+        }
+
+        async function refreshConnections() {
+            await testAPIConnection();
+            await loadFarms();
+        }
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import { defineConfig } from 'cypress'
+import path from 'path'
 
 export default defineConfig({
   e2e: {
@@ -47,9 +48,10 @@ export default defineConfig({
   component: {
     devServer: {
       framework: 'react',
-      bundler: 'vite'
+      bundler: 'vite',
+      viteConfig: path.resolve(__dirname, 'apps/dashboard/vite.config.ts')
     },
-    specPattern: 'src/**/*.cy.{js,jsx,ts,tsx}',
+    specPattern: 'apps/dashboard/src/**/*.cy.{js,jsx,ts,tsx}',
     supportFile: 'cypress/support/component.ts'
   }
 })

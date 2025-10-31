@@ -38,7 +38,7 @@ PGPASSWORD=$DB_PASSWORD psql -U $DB_USER -d postgres -c "GRANT ALL PRIVILEGES ON
 echo "🔄 Running migrations on test database..."
 
 # Run migrations
-for migration in server/database/migrations/*.sql; do
+for migration in apps/api/src/database/migrations/*.sql; do
     if [[ -f "$migration" ]]; then
         filename=$(basename "$migration")
         # Skip rollback and consolidated schema files

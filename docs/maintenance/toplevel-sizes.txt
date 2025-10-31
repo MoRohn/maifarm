@@ -1,0 +1,153 @@
+  0B	./cypress.config.ts
+  0B	./images
+  0B	./jest.config.cjs
+  0B	./packages
+  0B	./recipes
+  0B	./tmux
+4.0K	./CLEANUP_SUMMARY.md
+4.0K	./CONTRIBUTING.md
+4.0K	./CRITICAL_SYSTEM_FAILURE_ANALYSIS.md
+4.0K	./Dockerfile
+4.0K	./LICENSE
+4.0K	./Makefile
+4.0K	./Makefile.tmp
+4.0K	./ORCHESTRATOR_RACE_CONDITION_FIX.md
+4.0K	./QUICK_TEST.md
+4.0K	./TERMINAL_STREAMING_FINAL_STATUS.md
+4.0K	./TERMINAL_STREAMING_FIX_FINAL.md
+4.0K	./TERMINAL_STREAMING_SUCCESS.md
+4.0K	./TERMINAL_STREAMING_VALIDATION.md
+4.0K	./TERMINAL_STREAMING_VALIDATION_REPORT.md
+4.0K	./add-api-key.sh
+4.0K	./analyze-migrations.sh
+4.0K	./data
+4.0K	./debug-xenosync.sh
+4.0K	./disable-ws-debug.js
+4.0K	./docker-compose.yml
+4.0K	./fix-all-imports.sh
+4.0K	./fix-database-columns.sql
+4.0K	./fix-imports.sh
+4.0K	./fix-redis-setex.sh
+4.0K	./fix-schema-issues.sql
+4.0K	./portalocker
+4.0K	./postcss.config.js
+4.0K	./prometheus_client
+4.0K	./pyproject.toml
+4.0K	./requirements-dev.txt
+4.0K	./requirements.txt
+4.0K	./structlog
+4.0K	./tailwind.config.js
+4.0K	./test-farm-create.sh
+4.0K	./test-path-config.js
+4.0K	./test-path-config.mjs
+4.0K	./test-terminal-emit.cjs
+4.0K	./test-terminal-watcher-debug.js
+4.0K	./test-view-modes.sh
+4.0K	./tsconfig.base.json
+4.0K	./tsconfig.json
+4.0K	./validate-farm-config.sh
+8.0K	./AGENTS.md
+8.0K	./ALL_FIXES_APPLIED.md
+8.0K	./ANALYTICS_FIX_SUMMARY.md
+8.0K	./CHANGELOG.md
+8.0K	./COMPLETE_FIX_PLAN.md
+8.0K	./COMPREHENSIVE_FIX_PLAN.md
+8.0K	./CRITICAL_FIXES_ORPHANED_AND_STREAMING.md
+8.0K	./ERROR_FIXES_SUMMARY.md
+8.0K	./FARM_LAUNCH_FIXES_REPORT.md
+8.0K	./FARM_LAUNCH_IMPROVEMENTS.md
+8.0K	./FIXES_VERIFICATION.md
+8.0K	./LIVE_FARM_TEST_FINDINGS.md
+8.0K	./OWNER_CHECKLIST.md
+8.0K	./RELEASE.md
+8.0K	./RUNBOOK.md
+8.0K	./SESSION_NAMING_FIX.md
+8.0K	./SETUP.md
+8.0K	./TERMINAL_FIXES_COMPLETE.md
+8.0K	./TERMINAL_FIX_STATUS.md
+8.0K	./TERMINAL_OPTIMIZATIONS_APPLIED.md
+8.0K	./TERMINAL_STREAMING_FIXED_100_PERCENT.md
+8.0K	./TERMINAL_STREAMING_FIXES.md
+8.0K	./TERMINAL_STREAMING_FIX_COMPLETE.md
+8.0K	./TERMINAL_STREAMING_FIX_STATUS.md
+8.0K	./TERMINAL_STREAMING_SOLUTION.md
+8.0K	./UI_UX_ASSESSMENT_REPORT.md
+8.0K	./UI_UX_IMPROVEMENTS_SUMMARY.md
+8.0K	./WEBSOCKET_STREAMING_COMPLETE.md
+8.0K	./XENOSYNC_FIXES_APPLIED.md
+8.0K	./XENOSYNC_INTEGRATION_ANALYSIS.md
+8.0K	./aiosqlite
+8.0K	./fix-all-database-issues.sql
+8.0K	./fix-api-key-sync.mjs
+8.0K	./fix-redis-v4-api.sh
+8.0K	./test-farm-terminal-e2e.mjs
+8.0K	./test-quicktask.js
+8.0K	./test-real-claude-farm.sh
+8.0K	./test-shutdown-simple.js
+8.0K	./test-streaming-simulation.js
+8.0K	./test-terminal-manual.sh
+8.0K	./test-terminal-simple.cjs
+8.0K	./test-terminal-stream.js
+8.0K	./test-terminal-streaming-final.html
+8.0K	./test-terminal-with-tmux.mjs
+8.0K	./test-websocket-connection.html
+8.0K	./test-websocket-terminal.mjs
+8.0K	./test-xenosync-complete.js
+8.0K	./validate-harvest-fix.sh
+ 12K	./AGENT_PERSISTENCE_ANALYSIS.md
+ 12K	./AGENT_PERSISTENCE_FIX_COMPLETE.md
+ 12K	./BACKEND_OPTIMIZATION_REPORT.md
+ 12K	./CLAUDE_AGENT_VALIDATION_REPORT.md
+ 12K	./DEPLOYMENT_COMPLETE.md
+ 12K	./HARVEST_TERMINAL_ANALYSIS.md
+ 12K	./INTEGRATION_COMPLETE.md
+ 12K	./LIVE_FARM_VALIDATION.md
+ 12K	./PYTHON_ORCHESTRATOR_INTEGRATION.md
+ 12K	./TERMINAL_STREAMING_FIX.md
+ 12K	./maibarn
+ 12K	./package.json
+ 12K	./requirements-lock.txt
+ 12K	./test-all-farm-modes.sh
+ 12K	./test-complete-terminal-streaming.mjs
+ 12K	./test-farm-launch-improvements.sh
+ 12K	./test-quicktask-full.js
+ 12K	./test-shutdown-timing.js
+ 12K	./test-terminal-streaming-comprehensive.js
+ 12K	./test-terminal-streaming-comprehensive.mjs
+ 12K	./test-ui-status.html
+ 12K	./validate-xenosync.mjs
+ 16K	./BACKEND_AUDIT_2025-10-05.md
+ 16K	./BACKEND_AUDIT_2025-10-05_WEBSOCKET_FIX.md
+ 16K	./CLAUDE.md
+ 16K	./FARM_LAUNCH_ANALYSIS.md
+ 16K	./FARM_LAUNCH_ANALYSIS_AND_FIX.md
+ 16K	./FARM_LAUNCH_FIXES.md
+ 16K	./FARM_LAUNCH_ISSUES_ANALYSIS.md
+ 16K	./FARM_LAUNCH_ROBUSTNESS_IMPLEMENTATION.md
+ 16K	./LAUNCH_STANDARDIZATION_COMPLETE.md
+ 16K	./test-realtime-streaming.html
+ 16K	./test-terminal-final-validation.html
+ 16K	./test-terminal-streaming.js
+ 20K	./test-maifarm-ui.html
+ 24K	./README.md
+ 24K	./TERMINAL_STREAMING_FIXES_SUMMARY.md
+ 24K	./server
+ 28K	./poetry.lock
+ 40K	./marketing
+ 52K	./maifarm-demo.db
+124K	./cypress
+188K	./tools
+212K	./ops
+268K	./logs
+448K	./xsync-sessions
+512K	./maifarm-fallback.db
+720K	./run
+856K	./development
+1.1M	./scripts
+1.2M	./package-lock.json
+1.5M	./tests
+ 11M	./docs
+ 25M	./var
+ 53M	./dist
+ 98M	./apps
+1.5G	./node_modules

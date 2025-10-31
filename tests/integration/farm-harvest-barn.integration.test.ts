@@ -7,10 +7,10 @@ import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import { createTestFarm, createTestHarvest, createTestBarnItem } from '../helpers/testFactories';
 
 // Mock the services we'll test
-jest.mock('../../server/services/farmManager');
-jest.mock('../../server/services/harvestService');
-jest.mock('../../server/services/barnService');
-jest.mock('../../server/services/OrchestratorService');
+jest.mock('../../apps/api/src/services/farmManager');
+jest.mock('../../apps/api/src/services/harvestService');
+jest.mock('../../apps/api/src/services/barnService');
+jest.mock('../../apps/api/src/services/OrchestratorService');
 
 describe('Farm → Harvest → Barn Integration', () => {
   let farmManager: any;
@@ -20,10 +20,10 @@ describe('Farm → Harvest → Barn Integration', () => {
 
   beforeAll(async () => {
     // Import mocked services
-    const fm = await import('../../server/services/unified/farmService');
-    const hs = await import('../../server/services/unified/farmService');
-    const bs = await import('../../server/services/unified/farmService');
-    const os = await import('../../server/services/unified/farmService');
+    const fm = await import('../../apps/api/src/services/unified/farmService');
+    const hs = await import('../../apps/api/src/services/unified/farmService');
+    const bs = await import('../../apps/api/src/services/unified/farmService');
+    const os = await import('../../apps/api/src/services/unified/farmService');
     
     farmManager = fm.farmManager;
     harvestService = hs.harvestService;

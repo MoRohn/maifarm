@@ -101,9 +101,9 @@ echo "---------------------------"
 check_file package.json
 check_file tsconfig.json
 check_file vite.config.ts
-check_file server/index.ts
+check_file apps/api/src/index.ts
 check_file src/App.tsx
-check_file server/database/migrations/000_production_consolidated.sql
+check_file apps/api/src/database/migrations/000_production_consolidated.sql
 echo ""
 
 echo "5. Checking Port Availability"

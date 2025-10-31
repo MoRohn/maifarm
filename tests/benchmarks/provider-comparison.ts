@@ -3,8 +3,8 @@
  * Compares performance between Claude Code and OpenAI
  */
 
-import { performanceMonitor } from '../../server/services/unified/stateCoordinator';
-import { contextManager } from '../../server/services/contextManager';
+import { performanceMonitor } from '../../apps/api/src/services/unified/stateCoordinator';
+import { contextManager } from '../../apps/api/src/services/contextManager';
 
 interface BenchmarkTask {
   id: string;

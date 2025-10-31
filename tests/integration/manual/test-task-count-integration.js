@@ -5,8 +5,8 @@
 
 import path from 'path';
 import fs from 'fs/promises';
-import { taskCountService } from './server/services/taskCountService.js';
-import { pathConfig } from './server/config/paths.js';
+import { taskCountService } from '../../../apps/api/src/services/taskCountService.js';
+import { pathConfig } from '../../../apps/api/src/config/paths.js';
 
 // ANSI color codes for terminal output
 const colors = {

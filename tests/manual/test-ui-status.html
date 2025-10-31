@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MaiFarm UI Status Check</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .online {
+            background: #d4edda;
+            color: #155724;
+        }
+        .offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .checking {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .endpoint-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .endpoint-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            transition: transform 0.2s;
+        }
+        .endpoint-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .endpoint-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .endpoint-url {
+            color: #666;
+            font-family: monospace;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+            border-radius: 8px;
+        }
+        .check-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .check-item:last-child {
+            border-bottom: none;
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .warning { color: #ffc107; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>
+                🌾 MaiFarm UI Status
+                <span id="overall-status" class="status-badge checking">Checking...</span>
+            </h1>
+            <div id="status-checks"></div>
+        </div>
+
+        <div class="card">
+            <h1>📊 API Endpoints</h1>
+            <div class="endpoint-grid" id="endpoints"></div>
+        </div>
+
+        <div class="card">
+            <h1>🖼️ Live UI Preview</h1>
+            <iframe id="app-iframe" src="http://localhost:3000"></iframe>
+        </div>
+    </div>
+
+    <script>
+        const checks = [
+            { name: 'Frontend Server', url: 'http://localhost:3000', type: 'frontend' },
+            { name: 'Backend API', url: 'http://localhost:4567/health', type: 'api' },
+            { name: 'Farms Endpoint', url: 'http://localhost:4567/api/farms', type: 'api' },
+            { name: 'Metrics Endpoint', url: 'http://localhost:4567/api/metrics', type: 'api' },
+            { name: 'Seeds Endpoint', url: 'http://localhost:4567/api/seeds', type: 'api' },
+            { name: 'Providers Endpoint', url: 'http://localhost:4567/api/providers', type: 'api' }
+        ];
+
+        const endpoints = [
+            { title: 'Health Check', url: '/health', method: 'GET' },
+            { title: 'List Farms', url: '/api/farms', method: 'GET' },
+            { title: 'Create Farm', url: '/api/farms', method: 'POST' },
+            { title: 'Farm Status', url: '/api/farms/:id', method: 'GET' },
+            { title: 'List Agents', url: '/api/agents', method: 'GET' },
+            { title: 'Metrics', url: '/api/metrics', method: 'GET' },
+            { title: 'Seeds', url: '/api/seeds', method: 'GET' },
+            { title: 'Providers', url: '/api/providers', method: 'GET' },
+            { title: 'Harvest', url: '/api/harvest/:farmId', method: 'GET' },
+            { title: 'Barn Items', url: '/api/barn', method: 'GET' }
+        ];
+
+        async function checkStatus() {
+            const statusDiv = document.getElementById('status-checks');
+            const overallStatus = document.getElementById('overall-status');
+            let allOnline = true;
+            let html = '';
+
+            for (const check of checks) {
+                try {
+                    const response = await fetch(check.url, {
+                        method: 'GET',
+                        mode: 'no-cors' // For frontend check
+                    });
+
+                    // For no-cors, we can't read the response but no error means it's up
+                    html += `<div class="check-item">
+                        <span>${check.name}</span>
+                        <span class="success">✅ Online</span>
+                    </div>`;
+                } catch (error) {
+                    html += `<div class="check-item">
+                        <span>${check.name}</span>
+                        <span class="error">❌ Offline</span>
+                    </div>`;
+                    allOnline = false;
+                }
+            }
+
+            statusDiv.innerHTML = html;
+
+            if (allOnline) {
+                overallStatus.className = 'status-badge online';
+                overallStatus.textContent = 'All Systems Operational';
+            } else {
+                overallStatus.className = 'status-badge offline';
+                overallStatus.textContent = 'Some Services Down';
+            }
+        }
+
+        function renderEndpoints() {
+            const container = document.getElementById('endpoints');
+            let html = '';
+
+            for (const endpoint of endpoints) {
+                const bgColor = endpoint.method === 'GET' ? '#e8f5e9' :
+                              endpoint.method === 'POST' ? '#e3f2fd' : '#fff3e0';
+                const textColor = endpoint.method === 'GET' ? '#2e7d32' :
+                                endpoint.method === 'POST' ? '#1565c0' : '#ef6c00';
+
+                html += `<div class="endpoint-card" style="background: ${bgColor}">
+                    <div class="endpoint-title" style="color: ${textColor}">${endpoint.title}</div>
+                    <div class="endpoint-url">${endpoint.method} ${endpoint.url}</div>
+                    <button onclick="testEndpoint('${endpoint.url}', '${endpoint.method}')"
+                            style="background: ${textColor}; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-top: 8px;">
+                        Test
+                    </button>
+                </div>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        async function testEndpoint(url, method) {
+            const fullUrl = `http://localhost:4567${url}`;
+
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+
+                if (method === 'POST' && url === '/api/farms') {
+                    options.body = JSON.stringify({
+                        name: 'Test Farm',
+                        prompt: 'Test prompt',
+                        numAgents: 2,
+                        provider: 'claude'
+                    });
+                }
+
+                const response = await fetch(fullUrl, options);
+                const data = await response.json();
+
+                alert(`Response from ${url}:\n${JSON.stringify(data, null, 2)}`);
+            } catch (error) {
+                alert(`Error testing ${url}:\n${error.message}`);
+            }
+        }
+
+        // Initial check
+        checkStatus();
+        renderEndpoints();
+
+        // Refresh every 10 seconds
+        setInterval(checkStatus, 10000);
+    </script>
+</body>
+</html>

@@ -7,7 +7,7 @@ This test plan covers the new stability feature that ensures all agents are prop
 
 ### 1. Backend Agent Cleanup
 - **Farm Deletion**: When a farm is deleted, all associated agents are automatically removed
-- **Multi-Claude Process Cleanup**: Stops any running multi_claude.py processes
+- **XenoSync Process Cleanup**: Stops any running xenosync_cli.py processes
 - **Database Cascade**: Foreign key constraint ensures agents are deleted with their farm
 - **In-Memory Cleanup**: AgentManager removes agents from memory tracking
 
@@ -37,7 +37,7 @@ curl -X POST http://localhost:4567/api/farms \
   -H "Content-Type: application/json" \
   -d '{"name": "test-farm", "config": {"maxAgents": 3}}'
 
-# Launch multi-claude agents
+# Launch XenoSync agents
 curl -X POST http://localhost:4567/api/farms/{farmId}/launch \
   -H "Content-Type: application/json" \
   -d '{"numberOfAgents": 3}'
@@ -55,7 +55,7 @@ curl -X DELETE http://localhost:4567/api/farms/{farmId}
 #### Test 1.2: Delete Farm with Multi-Claude Process
 ```bash
 # Create and launch a farm
-# Then delete while multi_claude.py is running
+# Then delete while xenosync_cli.py is running
 ```
 
 **Expected Results:**
@@ -173,7 +173,7 @@ curl -X POST http://localhost:4567/api/agents \
 ## Success Criteria
 
 1. **No Orphaned Agents**: Database never contains agents without valid farms
-2. **Clean Process Termination**: All tmux/multi_claude processes stop on farm deletion
+2. **Clean Process Termination**: All tmux/xenosync_cli processes stop on farm deletion
 3. **UI Consistency**: Frontend always reflects accurate agent state
 4. **Performance**: Cleanup completes within 5 seconds for typical farms
 5. **Error Recovery**: System recovers gracefully from failures

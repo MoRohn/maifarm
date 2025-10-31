@@ -2,7 +2,7 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
-  roots: ['<rootDir>/../../src', '<rootDir>/../../tests', '<rootDir>/../../server'],
+  roots: ['<rootDir>/../../apps/dashboard/src', '<rootDir>/../../tests', '<rootDir>/../../apps/api/src'],
   testMatch: [
     '**/__tests__/**/*.+(ts|tsx|js)',
     '**/?(*.)+(spec|test).+(ts|tsx|js)'
@@ -15,30 +15,31 @@ module.exports = {
   },
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/../../src/$1',
-    '^@components/(.*)$': '<rootDir>/../../src/components/$1',
-    '^@services/(.*)$': '<rootDir>/../../src/services/$1',
-    '^@hooks/(.*)$': '<rootDir>/../../src/hooks/$1',
-    '^@types/(.*)$': '<rootDir>/../../src/types/$1',
-    '^@utils/(.*)$': '<rootDir>/../../src/utils/$1',
-    '^@store/(.*)$': '<rootDir>/../../src/store/$1',
+    '^@/(.*)$': '<rootDir>/../../apps/dashboard/src/$1',
+    '^@components/(.*)$': '<rootDir>/../../apps/dashboard/src/components/$1',
+    '^@services/(.*)$': '<rootDir>/../../apps/dashboard/src/services/$1',
+    '^@hooks/(.*)$': '<rootDir>/../../apps/dashboard/src/hooks/$1',
+    '^@types/(.*)$': '<rootDir>/../../apps/dashboard/src/types/$1',
+    '^@utils/(.*)$': '<rootDir>/../../apps/dashboard/src/utils/$1',
+    '^@store/(.*)$': '<rootDir>/../../apps/dashboard/src/store/$1',
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
     '\\.(jpg|jpeg|png|gif|svg)$': '<rootDir>/../../tests/__mocks__/fileMock.js',
-    '^../../server/(.*)$': '<rootDir>/../../server/$1',
+    '^@shared/(.*)$': '<rootDir>/../../apps/shared/$1',
+    '^../../apps/api/src/(.*)$': '<rootDir>/../../apps/api/src/$1',
     '^.+/apiClient(\\.ts)?$': '<rootDir>/../../tests/__mocks__/apiClient.ts',
     '^.+/websocket(\\.ts)?$': '<rootDir>/../../tests/__mocks__/websocket.ts',
     '^.+/websocketService(\\.ts)?$': '<rootDir>/../../tests/__mocks__/websocket.ts'
   },
-  setupFilesAfterEnv: ['<rootDir>/../../tests/setupTests.ts', '<rootDir>/../../server/tests/setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/../../tests/setupTests.ts', '<rootDir>/../../apps/api/src/tests/setup.ts'],
   collectCoverageFrom: [
-    '<rootDir>/../../src/**/*.{ts,tsx}',
-    '<rootDir>/../../server/**/*.{ts,tsx}',
-    '!<rootDir>/../../src/**/*.d.ts',
-    '!<rootDir>/../../src/types/**/*',
-    '!<rootDir>/../../src/**/*.stories.tsx',
-    '!<rootDir>/../../src/vite-env.d.ts',
-    '!<rootDir>/../../src/main.tsx',
-    '!<rootDir>/../../server/**/*.d.ts'
+    '<rootDir>/../../apps/dashboard/src/**/*.{ts,tsx}',
+    '<rootDir>/../../apps/api/src/**/*.{ts,tsx}',
+    '!<rootDir>/../../apps/dashboard/src/**/*.d.ts',
+    '!<rootDir>/../../apps/dashboard/src/types/**/*',
+    '!<rootDir>/../../apps/dashboard/src/**/*.stories.tsx',
+    '!<rootDir>/../../apps/dashboard/src/vite-env.d.ts',
+    '!<rootDir>/../../apps/dashboard/src/main.tsx',
+    '!<rootDir>/../../apps/api/src/**/*.d.ts'
   ],
   coverageThreshold: {
     global: {

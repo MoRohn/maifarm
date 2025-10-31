@@ -234,7 +234,7 @@ setup_database() {
 run_migrations() {
     log_info "Running database migrations..."
     
-    local migration_dir="server/database/migrations"
+    local migration_dir="apps/api/src/database/migrations"
     
     if [ ! -d "$migration_dir" ]; then
         log_warning "Migration directory not found: $migration_dir"

@@ -1,1 +1,0 @@
-Write a simple hello world program in Python

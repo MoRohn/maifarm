@@ -10,17 +10,17 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
-import { backendInfrastructure } from '../../server/services/backendInfrastructureIntegration';
-import { centralApiManager } from '../../server/services/centralApiManager';
-import { connectionPoolManager } from '../../server/services/connectionPoolManager';
-import { quickTaskServiceV2 } from '../../server/services/unified/quickTaskService';
-import { realtimeMetricsAggregator } from '../../server/services/realtimeMetricsAggregator';
-import { AIProvider } from '../../server/config/aiProviders';
+import { backendInfrastructure } from '../../apps/api/src/services/backendInfrastructureIntegration';
+import { centralApiManager } from '../../apps/api/src/services/centralApiManager';
+import { connectionPoolManager } from '../../apps/api/src/services/connectionPoolManager';
+import { quickTaskServiceV2 } from '../../apps/api/src/services/unified/quickTaskService';
+import { realtimeMetricsAggregator } from '../../apps/api/src/services/realtimeMetricsAggregator';
+import { AIProvider } from '../../apps/api/src/config/aiProviders';
 
 // Mock dependencies
-jest.mock('../../server/database/connection');
-jest.mock('../../server/websocket/websocketManager');
-jest.mock('../../server/utils/logger');
+jest.mock('../../apps/api/src/database/connection');
+jest.mock('../../apps/api/src/websocket/websocketManager');
+jest.mock('../../apps/api/src/utils/logger');
 
 describe('Backend Infrastructure Integration', () => {
   

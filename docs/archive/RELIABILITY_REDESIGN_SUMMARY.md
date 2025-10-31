@@ -76,11 +76,11 @@ This document summarizes the complete redesign of the MaiFarm multi-agent coordi
   - Feature flags for gradual migration
   - Enhanced health monitoring aggregation
 
-#### 6. Python Redis Client (`redis_coordination_client.py` + `multi_claude_v2.py`)
+#### 6. Python Redis Client (`redis_coordination_client.py` + `xenosync_cli_v2.py`)
 - **Purpose**: Python integration with Redis-based coordination
 - **Key Features**:
   - Native Redis coordination client for Python scripts
-  - Enhanced multi_claude_v2.py with Redis integration
+  - Enhanced xenosync_cli_v2.py with Redis integration
   - Conflict detection and resolution
   - Heartbeat management and health monitoring
   - Graceful fallback to legacy mode

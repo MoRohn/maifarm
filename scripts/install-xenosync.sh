@@ -37,11 +37,16 @@ fi
 # Install XenoSync Python dependencies
 echo ""
 echo "Installing XenoSync Python dependencies..."
-cd server/orchestrators/xenosync
+cd apps/api/src/orchestrators/xenosync
 
 # Install requirements
 if [ -f requirements.txt ]; then
-    pip3 install -r requirements.txt
+    if command -v poetry &> /dev/null; then
+        poetry run pip install -r requirements.txt
+    else
+        pip3 install -r requirements.txt
+    fi
+
     if [ $? -eq 0 ]; then
         echo "✓ Python dependencies installed successfully"
     else
@@ -55,8 +60,8 @@ fi
 # Create XenoSync sessions directory
 echo ""
 echo "Setting up XenoSync directories..."
-mkdir -p ../../../maibarn/xenosync-sessions
-mkdir -p ../../../maibarn/xenosync-sessions/coordination
+mkdir -p ../../../var/maibarn/xenosync-sessions
+mkdir -p ../../../var/maibarn/xenosync-sessions/coordination
 echo "✓ XenoSync directories created"
 
 # Test XenoSync module
@@ -65,7 +70,7 @@ echo "Testing XenoSync module..."
 cd ../../..
 python3 -c "
 import sys
-sys.path.insert(0, 'server/orchestrators/xenosync')
+sys.path.insert(0, 'apps/api/src/orchestrators/xenosync')
 try:
     import xenosync
     print('✓ XenoSync module imported successfully')

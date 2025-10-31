@@ -69,6 +69,14 @@ check_system_requirements() {
         log_error "npm not found"
         ((issues++))
     fi
+
+    # Check Poetry (Python dependency management)
+    if command -v poetry &> /dev/null; then
+        POETRY_VERSION=$(poetry --version 2>/dev/null)
+        log_success "Poetry detected ($POETRY_VERSION)"
+    else
+        log_warning "Poetry not found – Python helpers will require manual pip installation"
+    fi
     
     return $issues
 }
@@ -79,6 +87,25 @@ check_databases() {
     
     local issues=0
     
+    # Ensure PostgreSQL CLI is discoverable
+    if ! command -v psql &> /dev/null; then
+        local psql_candidates=(
+            "/opt/homebrew/bin/psql"
+            "/usr/local/bin/psql"
+            "/opt/homebrew/opt/postgresql/bin/psql"
+            "/opt/homebrew/opt/postgresql@15/bin/psql"
+            "/usr/local/opt/postgresql@15/bin/psql"
+        )
+
+        for candidate in "${psql_candidates[@]}"; do
+            if [ -x "$candidate" ]; then
+                export PATH="$(dirname "$candidate"):$PATH"
+                log_info "Detected psql at $candidate (temporarily added to PATH)"
+                break
+            fi
+        done
+    fi
+
     # Check PostgreSQL
     if command -v psql &> /dev/null; then
         if pg_isready &> /dev/null; then
@@ -98,8 +125,8 @@ check_databases() {
             ((issues++))
         fi
     else
-        log_error "PostgreSQL not installed"
-        log_info "Try running: npm run setup:all"
+        log_warning "PostgreSQL CLI not found in PATH"
+        log_info "If Postgres is already installed, ensure 'psql' is available or set PATH before rerunning."
         ((issues++))
     fi
     
@@ -236,15 +263,16 @@ check_permissions() {
     done
     
     # Check maibarn directory permissions
-    if [ -d "maibarn" ]; then
-        if [ -w "maibarn" ]; then
-            log_success "maibarn directory is writable"
+    if [ -d "var/maibarn" ]; then
+        if [ -w "var/maibarn" ]; then
+            log_success "var/maibarn directory is writable"
         else
-            log_error "maibarn directory is not writable"
+            log_error "var/maibarn directory is not writable"
+            log_info "Try: sudo chown -R $(whoami) var/maibarn"
             ((issues++))
         fi
     else
-        log_warning "maibarn directory not found"
+        log_warning "var/maibarn directory not found"
         log_info "Try running: npm run setup:all"
     fi
     
@@ -272,7 +300,7 @@ auto_fix() {
     fi
     
     # Create missing directories
-    dirs=("maibarn/coordination" "maibarn/harvests/active" "maibarn/harvests/completed" "logs" "coverage")
+    dirs=("var/maibarn/coordination" "var/maibarn/harvests/active" "var/maibarn/harvests/completed" "var/maibarn/logs" "coverage")
     for dir in "${dirs[@]}"; do
         if [ ! -d "$dir" ]; then
             mkdir -p "$dir"

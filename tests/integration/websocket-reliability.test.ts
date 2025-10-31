@@ -8,8 +8,8 @@ import { Server } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { io as ClientSocket, Socket as ClientSocketType } from 'socket.io-client';
 import { Redis } from 'ioredis';
-import { WebSocketReliabilityManager } from '../../server/websocket/reliabilityManager';
-import { coordinationService } from '../../server/services/coordinationService';
+import { WebSocketReliabilityManager } from '../../apps/api/src/websocket/reliabilityManager';
+import { coordinationService } from '../../apps/api/src/services/coordinationService';
 
 describe('WebSocket Reliability with Conflict Detection', () => {
   let httpServer: Server;

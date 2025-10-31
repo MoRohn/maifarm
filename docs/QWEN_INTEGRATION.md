@@ -14,22 +14,20 @@ MaiFarm now supports **Qwen3-Coder 480B**, Alibaba's state-of-the-art Mixture-of
 
 ### Option 1: Using Qwen API (Recommended for 480B model)
 
-1. **Get your API key** from [DashScope](https://dashscope.aliyun.com/)
-
-2. **Configure environment**:
+1. **Configure environment**:
    ```bash
-   export QWEN_API_KEY=your-api-key-here
    export AI_PROVIDER=qwen
    ```
+   Provide your DashScope credentials directly to the proxy or service layer you manage; MaiFarm no longer reads dedicated Qwen API keys from the environment.
 
-3. **Start the LLM proxy server**:
+2. **Start the LLM proxy server**:
    ```bash
    npm run proxy:start
    # or
    ./scripts/start-llm-proxy.sh
    ```
 
-4. **Create a farm with Qwen**:
+3. **Create a farm with Qwen**:
    - Go to the MaiFarm dashboard
    - Click "Create Farm"
    - Select "Qwen3-Coder" as the AI Engine
@@ -69,7 +67,6 @@ MaiFarm now supports **Qwen3-Coder 480B**, Alibaba's state-of-the-art Mixture-of
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AI_PROVIDER` | Set to `qwen` to use Qwen | `claude` |
-| `QWEN_API_KEY` | Your DashScope API key | - |
 | `QWEN_MODEL` | Model to use | `qwen-coder-480b` |
 | `QWEN_USE_LOCAL` | Use local Ollama model | `false` |
 | `OLLAMA_MODEL` | Local model name | `qwen2.5-coder:7b` |
@@ -156,15 +153,7 @@ const farm = await farmService.createFarm({
 
 ### Common Issues
 
-#### 1. "Qwen API key not found"
-```bash
-# Set your API key
-export QWEN_API_KEY=your-key-here
-# Or use DASHSCOPE_API_KEY
-export DASHSCOPE_API_KEY=your-key-here
-```
-
-#### 2. "Local model not found"
+#### 1. "Local model not found"
 ```bash
 # Install the model first
 ollama pull qwen2.5-coder:7b
@@ -173,7 +162,7 @@ ollama pull qwen2.5-coder:7b
 ollama list | grep qwen
 ```
 
-#### 3. "LLM Proxy not reachable"
+#### 2. "LLM Proxy not reachable"
 ```bash
 # Start the proxy server
 ./scripts/start-llm-proxy.sh
@@ -234,7 +223,7 @@ response = requests.post(
 import requests
 
 headers = {
-    "Authorization": f"Bearer {QWEN_API_KEY}",
+    "Authorization": "Bearer <your dashscope token>",
     "Content-Type": "application/json"
 }
 

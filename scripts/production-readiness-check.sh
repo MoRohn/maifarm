@@ -123,7 +123,7 @@ check_database() {
     fi
     
     # Check for database backups
-    if [ -d "./backups" ] && [ "$(ls -A ./backups 2>/dev/null)" ]; then
+    if [ -d "./var/backups" ] && [ "$(ls -A ./var/backups 2>/dev/null)" ]; then
         check_pass "Database backup directory exists with backups"
     else
         check_warn "No database backups found"
@@ -152,21 +152,21 @@ check_security() {
     fi
     
     # Check for rate limiting
-    if grep -q "rateLimit" server/middleware/rateLimit.ts 2>/dev/null; then
+    if grep -q "rateLimit" apps/api/src/middleware/rateLimit.ts 2>/dev/null; then
         check_pass "Rate limiting middleware configured"
     else
         check_warn "Rate limiting not configured"
     fi
     
     # Check CORS configuration
-    if grep -q "cors" server/middleware/cors.ts 2>/dev/null; then
+    if grep -q "cors" apps/api/src/middleware/cors.ts 2>/dev/null; then
         check_pass "CORS middleware configured"
     else
         check_fail "CORS not configured - security risk"
     fi
     
     # Check authentication
-    if grep -q "authenticateToken" server/middleware/auth.ts 2>/dev/null; then
+    if grep -q "authenticateToken" apps/api/src/middleware/auth.ts 2>/dev/null; then
         check_pass "Authentication middleware present"
     else
         check_fail "Authentication middleware missing"
@@ -185,14 +185,14 @@ check_performance() {
     fi
     
     # Check for gzip compression
-    if grep -q "compression" server/index.ts 2>/dev/null; then
+    if grep -q "compression" apps/api/src/index.ts 2>/dev/null; then
         check_pass "Compression middleware enabled"
     else
         check_warn "Compression not enabled - impacts performance"
     fi
     
     # Check for clustering
-    if grep -q "cluster" server/index.ts 2>/dev/null; then
+    if grep -q "cluster" apps/api/src/index.ts 2>/dev/null; then
         check_pass "Clustering enabled for multi-core utilization"
     else
         check_info "Clustering not enabled (optional for small deployments)"
@@ -211,23 +211,23 @@ check_isolation() {
     header "5. SECURITY ISOLATION (MAIBARN)"
     
     # Check maibarn directory structure
-    if [ -d "./maibarn" ]; then
+    if [ -d "./var/maibarn" ]; then
         check_pass "Maibarn isolation directory exists"
         
         # Check subdirectories
-        for dir in coordination harvests workspaces terminals barn/items; do
-            if [ -d "./maibarn/$dir" ]; then
-                check_pass "Maibarn/$dir directory present"
+        for dir in coordination "harvests/active" "harvests/completed" "workspaces/active" "workspaces/archived" terminals logs; do
+            if [ -d "./var/maibarn/$dir" ]; then
+                check_pass "var/maibarn/$dir directory present"
             else
-                check_warn "Missing maibarn/$dir directory"
+                check_warn "Missing var/maibarn/$dir directory"
             fi
         done
     else
-        check_fail "Maibarn isolation directory missing - CRITICAL"
+        check_fail "var/maibarn isolation directory missing - CRITICAL"
     fi
     
     # Check path validation
-    if grep -q "isPathSafe" server/config/paths.ts 2>/dev/null; then
+    if grep -q "isPathSafe" apps/api/src/config/paths.ts 2>/dev/null; then
         check_pass "Path validation implemented"
     else
         check_fail "Path validation not implemented - security risk"
@@ -246,21 +246,21 @@ check_monitoring() {
     fi
     
     # Check for structured logging
-    if grep -q "structuredLogger" server/utils/structuredLogger.ts 2>/dev/null; then
+    if grep -q "structuredLogger" apps/api/src/utils/structuredLogger.ts 2>/dev/null; then
         check_pass "Structured logging implemented"
     else
         check_warn "Structured logging not found"
     fi
     
     # Check for health endpoints
-    if grep -q "/health" server/api/health.ts 2>/dev/null; then
+    if grep -q "/health" apps/api/src/api/health.ts 2>/dev/null; then
         check_pass "Health check endpoint present"
     else
         check_fail "No health check endpoint"
     fi
     
     # Check for metrics
-    if grep -q "prometheus" server/monitoring/prometheusExporter.ts 2>/dev/null; then
+    if grep -q "prometheus" apps/api/src/monitoring/prometheusExporter.ts 2>/dev/null; then
         check_pass "Prometheus metrics configured"
     else
         check_info "Prometheus metrics not configured (optional)"
@@ -286,7 +286,7 @@ check_process_management() {
     fi
     
     # Check graceful shutdown
-    if grep -q "SIGTERM" server/index.ts 2>/dev/null && grep -q "SIGINT" server/index.ts 2>/dev/null; then
+    if grep -q "SIGTERM" apps/api/src/index.ts 2>/dev/null && grep -q "SIGINT" apps/api/src/index.ts 2>/dev/null; then
         check_pass "Graceful shutdown handlers present"
     else
         check_fail "Missing graceful shutdown handlers"
@@ -313,7 +313,7 @@ check_tmux_health() {
     fi
     
     # Check cleanup service
-    if grep -q "AgentCleanupService" server/services/agentCleanupService.ts 2>/dev/null; then
+    if grep -q "AgentCleanupService" apps/api/src/services/agentCleanupService.ts 2>/dev/null; then
         check_pass "Agent cleanup service implemented"
     else
         check_fail "Agent cleanup service missing"

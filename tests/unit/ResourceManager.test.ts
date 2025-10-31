@@ -2,7 +2,7 @@
  * Unit tests for ResourceManager
  */
 
-import { ResourceManager, ResourceType } from '../../server/utils/ResourceManager';
+import { ResourceManager, ResourceType } from '../../apps/api/src/utils/ResourceManager';
 
 describe('ResourceManager', () => {
   let manager: ResourceManager;

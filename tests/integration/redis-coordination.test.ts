@@ -5,10 +5,10 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import { Redis } from 'ioredis';
-import { RedisCoordinationStore } from '../../server/services/unified/stateCoordinator';
-import { SessionController } from '../../server/services/sessionController';
-import { AtomicCoordinator } from '../../server/services/atomicCoordinator';
-import { multiClaudeServiceV2 } from '../../server/services/multiClaudeServiceV2';
+import { RedisCoordinationStore } from '../../apps/api/src/services/unified/stateCoordinator';
+import { SessionController } from '../../apps/api/src/services/sessionController';
+import { AtomicCoordinator } from '../../apps/api/src/services/atomicCoordinator';
+import { multiClaudeServiceV2 } from '../../apps/api/src/services/multiClaudeServiceV2';
 
 describe('Redis Coordination System Integration Tests', () => {
   let redis: Redis;

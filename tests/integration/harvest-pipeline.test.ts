@@ -1,16 +1,16 @@
-import { HarvestService } from '../../server/services/unified/farmService';
-import { websocketManager } from '../../server/websocket/websocketManager';
-import { harvestFileCollector } from '../../server/services/unified/farmService';
-import { db } from '../../server/database/client';
-import { logger } from '../../server/utils/logger';
+import { HarvestService } from '../../apps/api/src/services/unified/farmService';
+import { websocketManager } from '../../apps/api/src/websocket/websocketManager';
+import { harvestFileCollector } from '../../apps/api/src/services/unified/farmService';
+import { db } from '../../apps/api/src/database/client';
+import { logger } from '../../apps/api/src/utils/logger';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
 // Mock dependencies
-jest.mock('../../server/websocket/websocketManager');
-jest.mock('../../server/services/harvestFileCollector');
-jest.mock('../../server/database/client');
-jest.mock('../../server/utils/logger');
+jest.mock('../../apps/api/src/websocket/websocketManager');
+jest.mock('../../apps/api/src/services/harvestFileCollector');
+jest.mock('../../apps/api/src/database/client');
+jest.mock('../../apps/api/src/utils/logger');
 jest.mock('child_process');
 
 describe('Harvest Pipeline Integration', () => {

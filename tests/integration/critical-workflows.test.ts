@@ -25,7 +25,7 @@ describe('Critical Workflow Integration Tests', () => {
 
   beforeAll(async () => {
     // Import and setup the server
-    const { createApp } = await import('../../server/index.js');
+    const { createApp } = await import('../../apps/api/src/index.js');
     app = createApp();
     server = app.listen(0); // Random port
     

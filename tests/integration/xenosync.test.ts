@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
-import { xenoSyncService } from '../../server/services/XenoSyncService';
-import { aiProviderManager } from '../../server/config/aiProviders';
+import { xenoSyncService } from '../../apps/api/src/services/XenoSyncService';
+import { aiProviderManager } from '../../apps/api/src/config/aiProviders';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -149,7 +149,7 @@ describe('XenoSync Integration', () => {
 
 describe('XenoSync Prompt Templates', () => {
   it('should have valid prompt templates', () => {
-    const { xenoSyncPromptTemplates } = require('../../server/config/xenosync');
+    const { xenoSyncPromptTemplates } = require('../../apps/api/src/config/xenosync');
     
     expect(xenoSyncPromptTemplates).toBeDefined();
     expect(xenoSyncPromptTemplates['retro-game']).toBeDefined();
@@ -164,7 +164,7 @@ describe('XenoSync Prompt Templates', () => {
   });
 
   it('should map MaiFarm concepts to XenoSync', () => {
-    const { conceptMapping } = require('../../server/config/xenosync');
+    const { conceptMapping } = require('../../apps/api/src/config/xenosync');
     
     expect(conceptMapping.farm).toBe('session');
     expect(conceptMapping.agent).toBe('agent');

@@ -376,7 +376,7 @@ class TimeoutTester {
       );
 
       // Check process cleanup
-      const { stdout: processList } = await execAsync('ps aux | grep -E "(claude|python.*multi_claude)" | grep -v grep || echo "No processes"');
+      const { stdout: processList } = await execAsync('ps aux | grep -E "(claude|python.*xenosync)" | grep -v grep || echo "No processes"');
       const activeProcesses = processList.split('\n').filter(line => line.trim());
 
       // Check coordination files

@@ -78,13 +78,26 @@ def run_cmd(
     """Run a subprocess with consistent defaults and logging."""
     log_cmd = " ".join(shlex.quote(a) for a in args)
     logger.debug("$ %s", log_cmd)
+
+    # Set TMUX_TMPDIR=/tmp for tmux commands to ensure session visibility
+    env = os.environ.copy()
+    if len(args) > 0 and args[0] == "tmux":
+        env["TMUX_TMPDIR"] = "/tmp"
+
     return subprocess.run(
         args,
         check=check,
         capture_output=capture,
         text=True,
         cwd=str(cwd) if cwd else None,
+        env=env,
     )
+
+
+def read_prompt_file(path: str) -> str:
+    """Read the contents of a prompt file."""
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read().strip()
 
 
 def atomic_write_json(path: Path, data: Any) -> None:
@@ -138,6 +151,9 @@ class AgentOrchestrator:
         self.start_time = datetime.now()
         self.shutdown_requested = False
 
+        # Track Claude process PIDs for proper monitoring
+        self.agent_pids: Dict[int, Optional[int]] = {}  # agent_idx -> claude_pid
+
         # Ensure dirs
         self.cfg.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.cfg.coordination_dir.mkdir(parents=True, exist_ok=True)
@@ -154,14 +170,47 @@ class AgentOrchestrator:
         self.shutdown_requested = True
         self.graceful_shutdown()
 
+    def _write_orchestrator_status(self, status: str, panes_ready: List[int] = None, error: str = None) -> None:
+        """Write orchestrator status for Node.js coordination."""
+        if panes_ready is None:
+            panes_ready = []
+
+        status_data = {
+            "status": status,
+            "sessionName": self.cfg.session_name,
+            "farmId": self.cfg.farm_id,
+            "panesCreated": self.cfg.num_agents,
+            "panesReady": panes_ready,
+            "timestamp": datetime.now().isoformat(),
+            "orchestratorPid": os.getpid()
+        }
+
+        if error:
+            status_data["error"] = error
+
+        # Write to coordination directory
+        maibarn_root = Path.cwd() / "var" / "maibarn"
+        coordination_dir = maibarn_root / "coordination"
+        coordination_dir.mkdir(parents=True, exist_ok=True)
+
+        status_file = coordination_dir / f"orchestrator_status_{self.cfg.farm_id}.json"
+        atomic_write_json(status_file, status_data)
+        logger.info("Wrote orchestrator status: %s -> %s", status, status_file)
+
     def run(self) -> None:
         if not check_binary("tmux"):
             logger.error("tmux is required but not found on PATH. Please install tmux.")
             sys.exit(1)
 
+        # Write initial status
+        self._write_orchestrator_status("initializing")
+
         exists = self._session_exists(self.cfg.session_name)
         if not self.cfg.reuse_session:
             self._kill_session_if_exists(self.cfg.session_name)
+
+            # Write status before creating session
+            self._write_orchestrator_status("creating_session")
             self._create_session(self.cfg.session_name, self.cfg.num_agents)
         else:
             if exists:
@@ -216,30 +265,73 @@ class AgentOrchestrator:
         except ValueError:
             return 0
 
+    def _setup_pipe_pane_for_all_panes(self, session: str, num_agents: int) -> None:
+        """Set up pipe-pane for all panes in the session."""
+        terminals_dir = Path.cwd() / "var" / "maibarn" / "terminals" / self.cfg.farm_id
+        terminals_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("Ensuring terminals directory exists: %s", terminals_dir)
+
+        for i in range(num_agents):
+            log_file = terminals_dir / f"agent-{i}.log"
+            pane_target = f"{session}:agents.{i}"
+
+            # Create log file if it doesn't exist
+            if not log_file.exists():
+                log_file.write_text(f"# Terminal output for Agent {i}\n")
+                logger.info("Created log file: %s", log_file)
+
+            # Kill any existing pipe-pane first (idempotent)
+            run_cmd(["tmux", "pipe-pane", "-t", pane_target], capture=True)  # Kill existing
+            time.sleep(0.1)
+
+            # Set up new pipe-pane
+            run_cmd(["tmux", "pipe-pane", "-t", pane_target, "-o", f"cat >> {log_file}"])
+            logger.info("Set up pipe-pane for pane %d -> %s", i, log_file)
+
+            # Send initial marker to confirm pipe-pane is working
+            run_cmd(["tmux", "send-keys", "-t", pane_target, f"echo '[PIPE-PANE] Output capture started for Agent {i}'", "Enter"])
+
     def _ensure_panes(self, session: str, num_agents: int) -> None:
+        """Ensure session has correct number of panes with pipe-pane configured."""
         current = self._get_pane_count(session)
         if current >= num_agents:
+            logger.info("Session already has %d panes (need %d)", current, num_agents)
+            # Even if panes exist, ensure pipe-pane is set up for all
+            self._setup_pipe_pane_for_all_panes(session, num_agents)
             return
+
         logger.info("Adding %d pane(s) to reach %d total", num_agents - current, num_agents)
         for i in range(current, num_agents):
             direction = "-h" if i % 2 else "-v"
             run_cmd(["tmux", "split-window", direction, "-t", f"{session}:agents"])
         run_cmd(["tmux", "select-layout", "-t", f"{session}:agents", "tiled"])  # best-effort
 
+        # Set up pipe-pane for all panes (including existing ones)
+        self._setup_pipe_pane_for_all_panes(session, num_agents)
+
     def _create_session(self, session: str, num_agents: int) -> None:
+        """Create a new tmux session with all panes and pipe-pane configured."""
         logger.info("Creating tmux session '%s' with %d pane(s)", session, num_agents)
+
         cp = run_cmd(["tmux", "new-session", "-d", "-s", session, "-n", "agents"])
         if cp.returncode != 0:
             logger.error("Failed to create tmux session: %s", cp.stderr.strip())
             sys.exit(1)
-        
-        # CRITICAL: Wait for session to be fully created and accessible
-        time.sleep(0.5)  # Brief delay to ensure session is ready
-        
-        # Verify session was created
-        verify_cp = run_cmd(["tmux", "has-session", "-t", session])
-        if verify_cp.returncode != 0:
-            logger.error("Session %s was not created properly", session)
+
+        # Wait for session with proper verification loop
+        session_ready = False
+        for attempt in range(10):
+            verify_cp = run_cmd(["tmux", "has-session", "-t", session])
+            if verify_cp.returncode == 0:
+                # Also verify the agents window exists
+                window_check = run_cmd(["tmux", "list-windows", "-t", session, "-F", "#{window_name}"], capture=True)
+                if window_check.returncode == 0 and "agents" in window_check.stdout:
+                    session_ready = True
+                    break
+            time.sleep(0.5)
+
+        if not session_ready:
+            logger.error("Session %s was not created properly after 5 seconds", session)
             sys.exit(1)
 
         # Create additional panes (we start with 1 pane, need num_agents - 1 more)
@@ -250,44 +342,128 @@ class AgentOrchestrator:
             if cp.returncode != 0:
                 logger.warning("Failed to create pane %d: %s", i, cp.stderr.strip())
                 logger.error("Tmux pane creation failed, expected %d panes but may have fewer", num_agents)
+                continue
+
         run_cmd(["tmux", "select-layout", "-t", f"{session}:agents", "tiled"])  # best-effort
-    
+
+        # Set up pipe-pane for ALL panes using unified method
+        self._setup_pipe_pane_for_all_panes(session, num_agents)
+
+    def _verify_and_recover_pipe_pane(self, pane_index: int, session: str) -> bool:
+        """Verify pipe-pane is active and recover if needed."""
+        terminals_dir = Path.cwd() / "var" / "maibarn" / "terminals" / self.cfg.farm_id
+        log_file = terminals_dir / f"agent-{pane_index}.log"
+        pane = f"{session}:agents.{pane_index}"
+
+        # Check if log file exists
+        if not log_file.exists():
+            logger.warning(f"Log file for pane {pane_index} missing, creating and setting up pipe-pane")
+            log_file.write_text(f"# Terminal output for Agent {pane_index}\n")
+
+        # Get initial file size
+        initial_size = log_file.stat().st_size if log_file.exists() else 0
+
+        # Send a test message
+        test_msg = f"[PIPE-TEST] Verifying output capture for Agent {pane_index} at {datetime.now().isoformat()}"
+        run_cmd(["tmux", "send-keys", "-t", pane, f"echo '{test_msg}'", "Enter"])
+        time.sleep(0.5)
+
+        # Check if file size increased
+        current_size = log_file.stat().st_size if log_file.exists() else 0
+
+        if current_size <= initial_size:
+            logger.warning(f"Pipe-pane for pane {pane_index} not capturing, re-establishing")
+            # Re-establish pipe-pane
+            run_cmd(["tmux", "pipe-pane", "-t", pane, "-o", f"exec cat >> {log_file}"])
+            time.sleep(0.5)
+
+            # Test again
+            run_cmd(["tmux", "send-keys", "-t", pane, f"echo '[PIPE-RECOVERED] Output capture restored for Agent {pane_index}'", "Enter"])
+            time.sleep(0.5)
+
+            final_size = log_file.stat().st_size if log_file.exists() else 0
+            if final_size > current_size:
+                logger.info(f"Successfully recovered pipe-pane for pane {pane_index}")
+                return True
+            else:
+                logger.error(f"Failed to recover pipe-pane for pane {pane_index}")
+                return False
+        else:
+            logger.debug(f"Pipe-pane for pane {pane_index} is working correctly")
+            return True
+
     def _verify_session_ready(self, timeout: int = 30) -> bool:
         """Verify tmux session and panes are ready."""
         start_time = time.time()
-        
+
         logger.info("Verifying tmux session %s is ready with %d panes...", self.cfg.session_name, self.cfg.num_agents)
-        
+
         while time.time() - start_time < timeout:
             # Check session exists
             result = run_cmd(["tmux", "has-session", "-t", self.cfg.session_name])
             if result.returncode != 0:
                 time.sleep(0.5)
                 continue
-                
+
             # Check pane count
             result = run_cmd(["tmux", "list-panes", "-t", f"{self.cfg.session_name}:0", "-F", "#{{pane_index}}"])
             if result.returncode == 0:
                 pane_count = len([line for line in result.stdout.strip().split('\n') if line])
                 if pane_count >= self.cfg.num_agents:
                     logger.info("Session %s verified with %d panes", self.cfg.session_name, pane_count)
-                    
+
+                    # Verify pipe-pane is working for each pane
+                    all_pipes_working = True
+                    for i in range(self.cfg.num_agents):
+                        if not self._verify_and_recover_pipe_pane(i, self.cfg.session_name):
+                            all_pipes_working = False
+
+                    if not all_pipes_working:
+                        logger.warning("Some pipe-panes could not be recovered")
+
                     # Write verification status to coordination
                     status = {
                         "session": self.cfg.session_name,
                         "farm_id": self.cfg.farm_id,
                         "panes_ready": pane_count,
-                        "verified_at": datetime.now().isoformat()
+                        "pipes_verified": all_pipes_working,
+                        "verified_at": datetime.now().isoformat(),
+                        "orchestrator_pid": os.getpid(),
+                        "orchestrator_status": "healthy"
                     }
                     atomic_write_json(self.cfg.coordination_dir / "session_verified.json", status)
+
+                    # Also write orchestrator heartbeat file for monitoring
+                    self._write_heartbeat()
+
+                    # Write ready status with pane list
+                    panes_ready = list(range(pane_count))
+                    self._write_orchestrator_status("ready", panes_ready)
+
                     return True
                 else:
                     logger.debug("Session has %d/%d panes", pane_count, self.cfg.num_agents)
-                    
+
             time.sleep(0.5)
-        
+
         logger.error("Session %s verification timeout after %d seconds", self.cfg.session_name, timeout)
+
+        # Write timeout status
+        self._write_orchestrator_status("timeout", error=f"Session verification timeout after {timeout}s")
+
         return False
+
+    def _write_heartbeat(self) -> None:
+        """Write orchestrator heartbeat for health monitoring."""
+        heartbeat = {
+            "pid": os.getpid(),
+            "session_name": self.cfg.session_name,
+            "farm_id": self.cfg.farm_id,
+            "num_agents": self.cfg.num_agents,
+            "status": "running",
+            "last_heartbeat": datetime.now().isoformat()
+        }
+        atomic_write_json(self.cfg.coordination_dir / "orchestrator_heartbeat.json", heartbeat)
 
     # ------------------------------------------------------------------
     # Steps preparation and assignment
@@ -591,8 +767,8 @@ if __name__ == '__main__':
         
         collab = (
             "Collaboration Rules:\n"
-            "- Read maibarn/coordination/active_agents.json to see peers.\n"
-            "- Use maibarn/coordination/work_claims.json to claim and avoid duplicate work.\n"
+            "- Read var/maibarn/coordination/active_agents.json to see peers.\n"
+            "- Use var/maibarn/coordination/work_claims.json to claim and avoid duplicate work.\n"
             "- Update progress regularly and avoid conflicts.\n\n"
         )
 
@@ -632,42 +808,46 @@ if __name__ == '__main__':
 
     def build_provider_command(self, provider: str, prompt: str, agent_idx: int = 0) -> str:
         """Return a command string to execute the provider with a prompt.
-        
+
         For Claude provider, launches real Claude Code CLI directly.
         For other providers, uses appropriate CLI or fallback.
         """
         agent_name = self.cfg.agent_names[agent_idx] if agent_idx < len(self.cfg.agent_names) else f"Agent {agent_idx + 1}"
-        
+
         # Write prompt to file for agent to read
         prompt_file = self.cfg.coordination_dir / f"agent_{agent_idx}_prompt.txt"
         prompt_file.write_text(prompt, encoding='utf-8')
-        
+
         if provider == "claude":
             # Check for API key
             api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY") or ""
-            
+
             # Check if Claude CLI exists
             claude_bin = check_binary("claude", env_var="CLAUDE_BIN")
-            
+
             # If no Claude CLI or no valid API key, use mock
-            if not claude_bin or not api_key or len(api_key) < 30 or api_key.startswith("test-"):
-                logger.warning(f"No valid API key for Claude agent {agent_idx}")
+            if not claude_bin or not api_key or api_key.startswith("test-"):
+                logger.warning(f"No valid Claude CLI or API key for agent {agent_idx} (CLI: {claude_bin is not None}, API key len: {len(api_key) if api_key else 0})")
                 logger.info(f"Using mock agent with realistic output simulation")
-                
+
                 # Return a marker that tells _launch_agent to use the mock agent
                 # Environment variables will be set separately in _launch_agent
                 return "MOCK_AGENT:simple_mock_agent.py"
-            
+
             # Launch real Claude Code with valid API key and increased memory
             logger.info(f"Launching real Claude Code for agent {agent_idx} ({agent_name}) with valid API key")
-            
-            # CRITICAL FIX: Don't include -p flag or prompt in the command
-            # The prompt will be sent separately using _send_prompt_to_pane method
-            # This avoids the quote> prompt hanging issue entirely
-            
-            # Set NODE_OPTIONS for increased memory allocation per agent
-            node_memory = "4096"  # 4GB per agent workspace
-            return f"NODE_OPTIONS='--max-old-space-size={node_memory}' claude --dangerously-skip-permissions"
+
+            # Set NODE_OPTIONS for reasonable memory allocation per agent
+            # Dynamic memory allocation based on farm mode (defaults to 2GB if not specified)
+            node_memory = os.environ.get('NODE_MEMORY_PER_AGENT', "2048")
+
+            # Store prompt in a persistent file (not temp) in the coordination directory
+            prompt_file_path = self.cfg.coordination_dir / f"agent_{agent_idx}_prompt.txt"
+            prompt_file_path.write_text(prompt, encoding='utf-8')
+            logger.info(f"Wrote prompt for agent {agent_idx} to {prompt_file_path}")
+
+            # Return a marker that signals this needs special handling
+            return f"CLAUDE_LAUNCH:{agent_idx}:{prompt_file_path}:{node_memory}"
             
         elif provider == "openai":
             api_key = os.environ.get("OPENAI_API_KEY") or ""
@@ -704,9 +884,42 @@ if __name__ == '__main__':
         # Send the command to tmux - it should already be properly formatted
         run_cmd(["tmux", "send-keys", "-t", pane, command, "Enter"])
     
+    def _verify_agent_ready(self, pane: str, agent_idx: int, timeout: int = 30) -> bool:
+        """Verify that an agent is ready to receive input.
+
+        Checks for output in the pane to confirm agent has started.
+        Returns True if ready, False if timeout.
+        """
+        start_time = time.time()
+        check_interval = 0.5
+
+        while time.time() - start_time < timeout:
+            # Capture pane content to check if agent has initialized
+            result = run_cmd(["tmux", "capture-pane", "-t", pane, "-p"], capture=True)
+
+            if result.stdout and len(result.stdout.strip()) > 0:
+                # Look for signs that Claude is ready
+                output = result.stdout.lower()
+                if any(indicator in output for indicator in [
+                    "claude", "ready", "started", "initialized",
+                    "welcome", "assistant", "how can i help"
+                ]):
+                    logger.info(f"Agent {agent_idx} is ready (detected output)")
+                    return True
+
+                # Even if we don't see specific keywords, any substantial output is a good sign
+                if len(result.stdout.strip()) > 50:
+                    logger.info(f"Agent {agent_idx} appears ready (output detected)")
+                    return True
+
+            time.sleep(check_interval)
+
+        logger.warning(f"Agent {agent_idx} not ready after {timeout}s timeout")
+        return False
+
     def _send_prompt_to_pane(self, pane: str, prompt: str) -> None:
         """Send a prompt text to a tmux pane (for two-stage launch).
-        
+
         This is used when the provider doesn't support -p flag and we need to
         send the prompt after the agent has initialized.
         """
@@ -724,61 +937,193 @@ if __name__ == '__main__':
         agent_prompt = self.build_agent_prompt(agent_idx)
         command = self.build_provider_command(self.cfg.provider, agent_prompt, agent_idx)
         logger.info("Launching agent %d in %s using provider '%s'", agent_idx + 1, pane, self.cfg.provider)
-        
+
         # SIMPLIFIED: API keys are ONLY from database via parent process
         # Never source workspace .env files - they could contain stale/test keys
         logger.info("Using API keys from database (passed via parent process)")
-        
+
         # Check if this is a mock agent command
         if command.startswith("MOCK_AGENT:"):
             # For mock agents, we need to set environment variables first
             agent_name = self.cfg.agent_names[agent_idx] if agent_idx < len(self.cfg.agent_names) else f"Agent {agent_idx + 1}"
-            
-            # Clear and change directory
+
+            # IMPORTANT: Verify pipe-pane is active BEFORE clearing and setting environment
+            terminals_dir = Path.cwd() / "var" / "maibarn" / "terminals" / self.cfg.farm_id
+            log_file = terminals_dir / f"agent-{agent_idx}.log"
+
+            # Check if log file exists and pipe-pane is set up
+            if not log_file.exists():
+                logger.warning(f"Log file for agent {agent_idx} not found, recreating pipe-pane")
+                log_file.write_text(f"# Terminal output for Agent {agent_idx}\n")
+                run_cmd(["tmux", "pipe-pane", "-t", pane, "-o", f"exec cat >> {log_file}"])
+                time.sleep(0.5)
+
+            # Now clear and set environment (pipe-pane should persist)
             run_cmd(["tmux", "send-keys", "-t", pane, "clear", "Enter"])
+            time.sleep(0.1)  # Small delay after clear
+
             if self.cfg.workspace_dir:
                 run_cmd(["tmux", "send-keys", "-t", pane, f"cd {shlex.quote(str(self.cfg.workspace_dir))}", "Enter"])
-            
+                time.sleep(0.1)
+
             # Set environment variables separately
             run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_ID={agent_idx}", "Enter"])
             run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_NAME={shlex.quote(agent_name)}", "Enter"])
-            run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_PROMPT={shlex.quote(agent_prompt)}", "Enter"])
+            run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_PROMPT={shlex.quote(agent_prompt[:500])}", "Enter"])  # Limit prompt size for env var
             run_cmd(["tmux", "send-keys", "-t", pane, f"export SESSION_NAME={shlex.quote(self.cfg.session_name)}", "Enter"])
             run_cmd(["tmux", "send-keys", "-t", pane, f"export FARM_ID={shlex.quote(self.cfg.farm_id)}", "Enter"])
-            
+            time.sleep(0.2)  # Wait for env vars to be set
+
+            # Verify pipe-pane is still active and re-establish if needed
+            test_msg = f"[AGENT-START] Mock agent {agent_idx} ({agent_name}) initializing..."
+            run_cmd(["tmux", "send-keys", "-t", pane, f"echo '{test_msg}'", "Enter"])
+            time.sleep(0.2)
+
             # Now launch the Python script
             script_dir = Path(__file__).parent.resolve()
             mock_script = script_dir / "simple_mock_agent.py"  # Use simpler mock agent
             run_cmd(["tmux", "send-keys", "-t", pane, f"python3 '{mock_script}' 2>&1", "Enter"])
+
+            # Add a small delay to ensure mock agent starts
+            time.sleep(1)
             
-        elif self.cfg.provider == "claude":
-            # ALWAYS use two-stage launch for Claude to avoid quote> prompt issues
-            # This is more reliable than trying to escape complex prompts
-            self._send_tmux(pane, "claude --dangerously-skip-permissions", clear=True, chdir=self.cfg.workspace_dir)
-            # Wait for Claude to fully initialize before sending prompt
-            # Increased delay for better reliability
-            time.sleep(4)
-            # Send the prompt as a separate command using literal mode
-            self._send_prompt_to_pane(pane, agent_prompt)
-            # Brief delay to ensure prompt is processed
-            time.sleep(0.5)
+        elif command.startswith("CLAUDE_LAUNCH:"):
+            # Special handling for Claude launch with persistent prompt file
+            parts = command.split(":", 3)
+            if len(parts) >= 4:
+                _, agent_id, prompt_file_path, node_memory = parts
+                logger.info(f"Launching Claude agent {agent_idx} with prompt from {prompt_file_path}")
+
+                # Clear pane and set working directory
+                run_cmd(["tmux", "send-keys", "-t", pane, "clear", "Enter"])
+                if self.cfg.workspace_dir:
+                    run_cmd(["tmux", "send-keys", "-t", pane, f"cd {shlex.quote(str(self.cfg.workspace_dir))}", "Enter"])
+                    time.sleep(0.2)
+
+                # Set environment variables FIRST
+                api_key = os.environ.get("ANTHROPIC_API_KEY") or ""
+                if api_key:
+                    run_cmd(["tmux", "send-keys", "-t", pane, f"export ANTHROPIC_API_KEY='{api_key}'", "Enter"])
+                    time.sleep(0.1)
+
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export NODE_OPTIONS='--max-old-space-size={node_memory}'", "Enter"])
+                time.sleep(0.2)
+
+                # Launch Claude in INTERACTIVE mode
+                # CRITICAL FIX: Launch Claude first, then send the prompt via tmux send-keys
+                # This avoids the "Raw mode not supported" error from piping
+                # Use --permission-mode bypassPermissions for sandbox environment
+                claude_cmd = "claude --permission-mode bypassPermissions"
+                run_cmd(["tmux", "send-keys", "-t", pane, claude_cmd, "Enter"])
+
+                # Wait for Claude to fully initialize (it needs time to load)
+                time.sleep(6)
+
+                # Now send the prompt content by simulating typing
+                # Read and send the prompt to the running Claude session
+                prompt_content = read_prompt_file(prompt_file_path)
+                # Use tmux's paste buffer to send multi-line prompts
+                run_cmd(["tmux", "set-buffer", prompt_content])
+                run_cmd(["tmux", "paste-buffer", "-t", pane])
+                # Submit the prompt by sending Enter
+                run_cmd(["tmux", "send-keys", "-t", pane, "Enter"])
+
+                # Wait a bit for Claude to process
+                time.sleep(2)
+
+                # Track the Claude process PID for monitoring
+                self._track_agent_pid(agent_idx, pane)
+
+                if self._verify_agent_ready(pane, agent_idx, timeout=20):
+                    logger.info(f"Claude agent {agent_idx} launched successfully (PID: {self.agent_pids.get(agent_idx, 'unknown')})")
+
+                    # Write success status
+                    status_file = self.cfg.coordination_dir / f"agent_{agent_idx}_status.json"
+                    atomic_write_json(status_file, {
+                        "agent_id": agent_idx,
+                        "status": "active",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                else:
+                    logger.warning(f"Claude agent {agent_idx} may not have started properly")
+
+                    # Write warning status
+                    status_file = self.cfg.coordination_dir / f"agent_{agent_idx}_status.json"
+                    atomic_write_json(status_file, {
+                        "agent_id": agent_idx,
+                    "status": "uncertain",
+                    "warning": "Agent may not have initialized properly",
+                    "timestamp": datetime.now().isoformat()
+                })
         else:
-            # Direct launch with prompt for other providers
+            # Direct launch for other providers and fallback
             self._send_tmux(pane, command, clear=True, chdir=self.cfg.workspace_dir)
+
+    def _track_agent_pid(self, agent_idx: int, pane: str) -> None:
+        """Track the Claude process PID for this agent."""
+        try:
+            # Get the PID of the shell running in the pane
+            result = run_cmd(["tmux", "display-message", "-t", pane, "-p", "#{pane_pid}"], capture=True)
+            if result.returncode == 0 and result.stdout:
+                pane_pid = result.stdout.strip()
+
+                # Find Claude process under this pane's shell
+                # Use pgrep to find the claude process that's a child of the pane's shell
+                claude_result = run_cmd(["pgrep", "-P", pane_pid, "claude"], capture=True)
+                if claude_result.returncode == 0 and claude_result.stdout:
+                    claude_pid = int(claude_result.stdout.strip().split('\n')[0])  # Get first match
+                    self.agent_pids[agent_idx] = claude_pid
+                    logger.info(f"Tracked Claude PID {claude_pid} for agent {agent_idx}")
+                else:
+                    # Claude might not have started yet, will try again in health check
+                    self.agent_pids[agent_idx] = None
+                    logger.debug(f"Claude process not yet visible for agent {agent_idx}")
+            else:
+                self.agent_pids[agent_idx] = None
+                logger.warning(f"Could not get pane PID for agent {agent_idx}")
+        except Exception as e:
+            logger.warning(f"Failed to track PID for agent {agent_idx}: {e}")
+            self.agent_pids[agent_idx] = None
+
+    def _is_process_running(self, pid: Optional[int]) -> bool:
+        """Check if a process with the given PID is running."""
+        if pid is None:
+            return False
+        try:
+            # Check if process exists using ps
+            result = run_cmd(["ps", "-p", str(pid)], capture=True)
+            return result.returncode == 0
+        except:
+            return False
 
     def _monitor_agents(self) -> None:
         logger.info("Writing active agent roster and monitoring runtime…")
         active_agents: List[Dict[str, Any]] = []
         for i in range(self.cfg.num_agents):
             name = self.cfg.agent_names[i] if i < len(self.cfg.agent_names) else f"Agent {i + 1}"
+
+            # Check if agent has a failure status
+            status_file = self.cfg.coordination_dir / f"agent_{i}_status.json"
+            agent_status = "active"
+            if status_file.exists():
+                try:
+                    with open(status_file, 'r') as f:
+                        status_data = json.load(f)
+                        agent_status = status_data.get("status", "active")
+                except:
+                    pass  # Default to active if can't read status
+
             active_agents.append(
                 {
                     "id": f"agent_{i}",
                     "name": name,
                     "farm_id": self.cfg.farm_id,
-                    "status": "active",
+                    "status": agent_status,
                     "started_at": self.start_time.isoformat(),
                     "pane": f"{self.cfg.session_name}:agents.{i}",
+                    "health_check_enabled": True,
+                    "health_check_interval": 30,  # 30 second heartbeat
+                    "health_timeout": 120,  # 2 minute timeout
                 }
             )
         atomic_write_json(self.cfg.coordination_dir / "active_agents.json", active_agents)
@@ -793,27 +1138,189 @@ if __name__ == '__main__':
                 deadline.isoformat(timespec="seconds"),
             )
 
+        # Health check loop
+        # CRITICAL: Add initial delay before first health check to allow agents to initialize
+        # Claude agents take 6-8 seconds to launch, plus prompt processing time
+        # Mock agents initialize faster but still need time for environment setup
+        initial_delay = 30  # 30 seconds - allows Claude to fully initialize
+        health_check_interval = 30  # Check every 30 seconds after first check
+
+        logger.info(f"Waiting {initial_delay}s before first health check to allow agent initialization...")
+        time.sleep(initial_delay)
+        logger.info("Starting health monitoring...")
+
+        last_health_check = time.time()
+
         try:
             while not self.shutdown_requested:
                 if deadline and datetime.now() >= deadline:
                     logger.info("Max runtime reached; requesting shutdown.")
                     break
+
+                # Perform periodic health checks
+                if time.time() - last_health_check > health_check_interval:
+                    self._check_agent_health()
+                    last_health_check = time.time()
+
                 time.sleep(2)
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt detected; shutting down…")
+
+    def _check_agent_health(self) -> None:
+        """Check health of all agents by examining their pane activity AND process status.
+
+        ENHANCED: Write comprehensive health status for backend monitoring.
+        CRITICAL FIX: Monitor actual Claude process, not just pane content.
+        """
+        agent_health_summary = []
+
+        for i in range(self.cfg.num_agents):
+            pane = f"{self.cfg.session_name}:agents.{i}"
+            agent_name = self.cfg.agent_names[i] if i < len(self.cfg.agent_names) else f"Agent {i + 1}"
+
+            # Capture recent pane content
+            result = run_cmd(["tmux", "capture-pane", "-t", pane, "-p", "-S", "-100"], capture=True)
+
+            # Check if pane exists and is responsive
+            pane_exists = run_cmd(["tmux", "list-panes", "-t", pane, "-F", "#{pane_id}"], capture=True).returncode == 0
+
+            # CRITICAL FIX: Check if Claude process is actually running
+            claude_pid = self.agent_pids.get(i)
+            if claude_pid is None:
+                # Try to track the PID if we haven't yet
+                self._track_agent_pid(i, pane)
+                claude_pid = self.agent_pids.get(i)
+
+            process_running = self._is_process_running(claude_pid)
+
+            health_status = {
+                "agent_id": i,
+                "agent_name": agent_name,
+                "pane": pane,
+                "session_name": self.cfg.session_name,
+                "farm_id": self.cfg.farm_id,
+                "timestamp": datetime.now().isoformat(),
+                "pane_exists": pane_exists,
+                "has_output": bool(result.stdout),
+                "output_size": len(result.stdout) if result.stdout else 0,
+                "claude_pid": claude_pid,
+                "process_running": process_running,
+                "status": "healthy" if (pane_exists and process_running) else "warning",
+                "uptime_seconds": (datetime.now() - self.start_time).total_seconds()
+            }
+
+            # Detect potential issues - PROCESS STATUS IS PRIMARY INDICATOR
+            if not pane_exists:
+                health_status["status"] = "dead"
+                health_status["issue"] = "Pane does not exist"
+                logger.error(f"Agent {i} ({agent_name}): Pane does not exist!")
+            elif not process_running and claude_pid is not None:
+                # Claude process has exited - THIS IS THE KEY DETECTION
+                health_status["status"] = "completed"
+                health_status["issue"] = f"Claude process (PID {claude_pid}) has exited"
+                logger.info(f"Agent {i} ({agent_name}): Claude process completed (PID {claude_pid} no longer running)")
+            elif claude_pid is None:
+                # Couldn't track Claude process
+                health_status["status"] = "uncertain"
+                health_status["issue"] = "Could not track Claude process PID"
+                logger.warning(f"Agent {i} ({agent_name}): Unable to track Claude process")
+            elif not result.stdout:
+                health_status["status"] = "stuck"
+                health_status["issue"] = "No recent output detected"
+                logger.warning(f"Agent {i} ({agent_name}): No recent output (may be stuck)")
+            else:
+                # Agent is healthy - check for error patterns
+                if result.stdout and ("error" in result.stdout.lower() or "exception" in result.stdout.lower()):
+                    health_status["status"] = "error"
+                    health_status["issue"] = "Error messages detected in output"
+                    logger.warning(f"Agent {i} ({agent_name}): Error patterns detected in output")
+
+            # Write individual health file
+            health_file = self.cfg.coordination_dir / f"agent_{i}_health.json"
+            atomic_write_json(health_file, health_status)
+
+            agent_health_summary.append(health_status)
+
+        # Write consolidated health summary for efficient backend polling
+        summary_file = self.cfg.coordination_dir / "agents_health_summary.json"
+        atomic_write_json(summary_file, {
+            "farm_id": self.cfg.farm_id,
+            "session_name": self.cfg.session_name,
+            "total_agents": self.cfg.num_agents,
+            "timestamp": datetime.now().isoformat(),
+            "agents": agent_health_summary,
+            "overall_status": self._get_overall_health_status(agent_health_summary)
+        })
+
+        logger.debug(f"Health check complete: {len(agent_health_summary)} agents checked")
+
+    def _get_overall_health_status(self, agent_health: List[Dict]) -> str:
+        """Determine overall health status from individual agent statuses."""
+        statuses = [a["status"] for a in agent_health]
+
+        if any(s == "dead" for s in statuses):
+            return "critical"  # At least one agent is dead
+        elif any(s == "error" for s in statuses):
+            return "degraded"  # Errors detected
+        elif any(s == "stuck" for s in statuses):
+            return "warning"  # Some agents may be stuck
+        elif all(s == "healthy" for s in statuses):
+            return "healthy"  # All agents healthy
+        else:
+            return "unknown"  # Mixed or unclear status
 
     # ------------------------------------------------------------------
     # Outputs & shutdown
     # ------------------------------------------------------------------
     def collect_outputs(self) -> None:
-        # Placeholder: collect logs from agents, summarize, or bundle artifacts
+        """Collect outputs and agent status for harvest."""
+        # Collect final agent status
+        agent_statuses = []
+        for i in range(self.cfg.num_agents):
+            pane = f"{self.cfg.session_name}:agents.{i}"
+            name = self.cfg.agent_names[i] if i < len(self.cfg.agent_names) else f"Agent {i + 1}"
+
+            # Capture final pane content
+            result = run_cmd(["tmux", "capture-pane", "-t", pane, "-p"], capture=True)
+
+            # Check health and status files
+            health_file = self.cfg.coordination_dir / f"agent_{i}_health.json"
+            status_file = self.cfg.coordination_dir / f"agent_{i}_status.json"
+
+            agent_status = {
+                "id": i,
+                "name": name,
+                "pane": pane,
+                "has_output": bool(result.stdout),
+                "output_size": len(result.stdout) if result.stdout else 0,
+                "health": "healthy" if health_file.exists() else "unknown",
+                "status": "completed"
+            }
+
+            if status_file.exists():
+                try:
+                    with open(status_file, 'r') as f:
+                        status_data = json.load(f)
+                        agent_status["status"] = status_data.get("status", "completed")
+                except:
+                    pass
+
+            agent_statuses.append(agent_status)
+
+        # Create comprehensive harvest snapshot
         snapshot = {
             "farm_id": self.cfg.farm_id,
             "session": self.cfg.session_name,
             "provider": self.cfg.provider,
             "agents": self.cfg.num_agents,
+            "agent_statuses": agent_statuses,
+            "started_at": self.start_time.isoformat(),
             "finished_at": datetime.now().isoformat(),
+            "duration_seconds": (datetime.now() - self.start_time).total_seconds(),
+            "workspace_dir": str(self.cfg.workspace_dir),
+            "coordination_dir": str(self.cfg.coordination_dir),
         }
+
         # Always write a coordination snapshot
         out = self.cfg.coordination_dir / f"harvest_{self.cfg.farm_id}.json"
         atomic_write_json(out, snapshot)
@@ -821,13 +1328,33 @@ if __name__ == '__main__':
 
         # If a harvest_id is provided, also save metadata under maibarn/harvests/active/<harvest_id>
         if self.cfg.harvest_id:
-            harvest_dir = Path.cwd() / "maibarn" / "harvests" / "active" / self.cfg.harvest_id
+            harvest_dir = Path.cwd() / "var" / "maibarn" / "harvests" / "active" / self.cfg.harvest_id
             harvest_dir.mkdir(parents=True, exist_ok=True)
             meta_file = harvest_dir / "metadata.json"
             atomic_write_json(meta_file, snapshot)
             logger.info("Wrote harvest metadata: %s", meta_file)
 
     def graceful_shutdown(self) -> None:
+        # Write completion status before shutting down
+        logger.info("Writing completion status for farm %s", self.cfg.farm_id)
+        self._write_orchestrator_status("completed")
+
+        # Clean up health monitoring files to prevent orphaned monitoring
+        logger.info("Cleaning up health monitoring files for farm %s", self.cfg.farm_id)
+        try:
+            for i in range(self.cfg.num_agents):
+                health_file = self.cfg.coordination_dir / f"agent_{i}_health.json"
+                if health_file.exists():
+                    health_file.unlink()
+                    logger.debug(f"Removed health file: {health_file}")
+
+            summary_file = self.cfg.coordination_dir / "agents_health_summary.json"
+            if summary_file.exists():
+                summary_file.unlink()
+                logger.debug(f"Removed health summary file: {summary_file}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up health files: {e}")
+
         if self.cfg.kill_on_exit:
             logger.info("Killing tmux session: %s", self.cfg.session_name)
             run_cmd(["tmux", "kill-session", "-t", self.cfg.session_name])
@@ -960,13 +1487,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument(
         "--workspace-dir",
         type=Path,
-        default=Path.cwd() / "maibarn" / "workspaces" / "active",
+        default=Path.cwd() / "var" / "maibarn" / "workspaces" / "active",
         help="Workspace base dir",
     )
     p.add_argument(
         "--coordination-dir",
         type=Path,
-        default=Path.cwd() / "maibarn" / "coordination",
+        default=Path.cwd() / "var" / "maibarn" / "coordination",
         help="Coordination dir for shared metadata",
     )
 

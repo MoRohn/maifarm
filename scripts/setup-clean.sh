@@ -66,9 +66,9 @@ stop_processes() {
     log_step "Stopping all running processes..."
     
     # Kill MaiFarm processes
-    pkill -f "tsx.*server/index.ts" || true
+    pkill -f "tsx.*apps/api/src/index.ts" || true
     pkill -f "vite" || true
-    pkill -f "node.*server" || true
+    pkill -f "node.*apps/api/src" || true
     
     # Wait for processes to stop
     sleep 2
@@ -131,9 +131,14 @@ clean_logs_reports() {
     log_step "Cleaning logs and reports..."
     
     # Clean logs directory but keep the directory structure
-    if [ -d "logs" ]; then
-        rm -rf logs/*
-        log_success "Cleared logs directory"
+    if [ -d "var/maibarn/logs" ]; then
+        rm -rf var/maibarn/logs/*
+        log_success "Cleared maibarn logs"
+    fi
+
+    if [ -d "var/logs" ]; then
+        rm -rf var/logs/*
+        log_success "Cleared runtime logs"
     fi
     
     # Clean coverage reports
@@ -146,6 +151,11 @@ clean_logs_reports() {
     if [ -d "reports" ]; then
         rm -rf reports
         log_success "Removed reports directory"
+    fi
+
+    if [ -d "var/data/reports" ]; then
+        rm -rf var/data/reports
+        log_success "Removed runtime reports"
     fi
     
     # Clean Cypress artifacts

@@ -3,9 +3,9 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
-import { orchestratorService } from '../../server/services/unified/farmService';
-import { agentHandshakeService } from '../../server/services/agentHandshakeService';
-import { taskQueueManager } from '../../server/services/taskQueueManager';
+import { orchestratorService } from '../../apps/api/src/services/unified/farmService';
+import { agentHandshakeService } from '../../apps/api/src/services/agentHandshakeService';
+import { taskQueueManager } from '../../apps/api/src/services/taskQueueManager';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs/promises';

@@ -1,0 +1,242 @@
+@import './styles/theme.css';
+@import './styles/design-system.css';
+@import './styles/glass.css';
+@import './styles/terminal-professional.css';
+@import './styles/terminal-scrollbar.css';
+@import './styles/terminal-responsive.css';
+@import './styles/harvest-terminal.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prevent white flash on load */
+html {
+  background-color: #0a0a0a;
+  /* Ensure smooth transition when theme is applied */
+  transition: background-color 0.3s ease-in-out;
+}
+
+body {
+  background-color: inherit;
+  min-height: 100vh;
+}
+
+@layer base {
+  :root {
+    /* Light mode colors - vibrant and fresh */
+    --background: 0 0% 100%;  /* Pure white background */
+    --foreground: 222.2 84% 4.9%;
+    --primary: 142 71% 45%;  /* Vibrant farm green */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 91% 60%;  /* Sky blue */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 10% 96.5%;  /* Very light gray */
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 47 96% 53%;  /* Golden yellow accent */
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 32% 91%;
+    --input: 214.3 32% 91%;
+    --ring: 142 71% 45%;
+    --radius: 0.75rem;  /* More rounded corners */
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    
+    /* Additional color variables for compatibility */
+    --color-primary: 142 71% 45%;
+    --color-accent: 47 96% 53%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --primary: 142 71% 45%;  /* Same vibrant green in dark mode */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 91% 60%;  /* Sky blue */
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 47 96% 53%;  /* Golden accent */
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 20%;
+    --input: 217.2 32.6% 20%;
+    --ring: 142 71% 45%;
+    --card: 222.2 84% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 7%;
+    --popover-foreground: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  /* Enhanced Glass Effects */
+  .glass {
+    @apply backdrop-blur-xl bg-gray-50/80 dark:bg-gray-900/80 border border-gray-200/30 dark:border-gray-700/50;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.9) 0%, rgba(245, 245, 245, 0.8) 100%);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+  }
+  
+  .glass-subtle {
+    @apply backdrop-blur-md bg-gray-50/60 dark:bg-gray-900/60 border border-gray-200/20 dark:border-gray-800/30;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.7) 0%, rgba(245, 245, 245, 0.6) 100%);
+  }
+
+  .glass-heavy {
+    @apply backdrop-blur-2xl bg-gray-50/95 dark:bg-gray-900/90 border border-gray-200/40 dark:border-gray-700/60;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.95) 0%, rgba(245, 245, 245, 0.9) 100%);
+    box-shadow: 0 12px 48px 0 rgba(31, 38, 135, 0.08);
+  }
+  
+  /* Card Styles with Depth */
+  .card-base {
+    @apply bg-gray-50 dark:bg-gray-900 rounded-xl shadow-sm hover:shadow-md transition-all duration-300;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .dark .card-base {
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .card-elevated {
+    @apply card-base shadow-lg hover:shadow-xl;
+    transform-style: preserve-3d;
+    transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+  }
+
+  .card-elevated:hover {
+    transform: translateY(-2px) rotateX(2deg);
+  }
+  
+  /* Enhanced Animations */
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .animate-in {
+    animation: animateIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  @keyframes animateIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeInScale {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes shimmerLoad {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  
+  .animate-slideIn {
+    animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  .animate-fadeInScale {
+    animation: fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .animate-spin-slow {
+    animation: spin 3s linear infinite;
+  }
+
+  /* Loading Shimmer Effect */
+  .shimmer-load {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.3),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: shimmerLoad 1.5s infinite;
+  }
+
+  .dark .shimmer-load {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.08),
+      transparent
+    );
+  }
+
+  /* Smooth Scrolling */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+
+  /* Focus Visible Enhancement */
+  .focus-visible-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900;
+  }
+
+  /* Interactive Elements */
+  .interactive {
+    @apply transition-all duration-200 ease-out cursor-pointer select-none;
+  }
+
+  .interactive:active {
+    transform: scale(0.98);
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent;
+  }
+
+  /* Disabled State */
+  .disabled {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
+  }
+}

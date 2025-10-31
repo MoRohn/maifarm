@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MaiFarm Terminal Streaming Test</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            background: #333;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .terminal {
+            background: black;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            min-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 12px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #00ff00;
+            color: black;
+            border: none;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #00cc00;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        .connected { color: #00ff00; }
+        .disconnected { color: #ff0000; }
+    </style>
+</head>
+<body>
+    <h1>🌱 MaiFarm Terminal Streaming Test</h1>
+
+    <div class="status">
+        <div>Status: <span id="status" class="disconnected">Disconnected</span></div>
+        <div>Farm ID: <span id="farmId">c491d474-1375-4872-92da-345c08a8598d</span></div>
+        <div>Session: <span id="sessionName">farm-c491d474</span></div>
+        <div>Messages received: <span id="messageCount">0</span></div>
+    </div>
+
+    <div class="controls">
+        <button onclick="connect()">Connect to WebSocket</button>
+        <button onclick="joinTerminal()">Join Terminal Room</button>
+        <button onclick="testWrite()">Write Test Message</button>
+        <button onclick="startWatcher()">Start File Watcher</button>
+        <button onclick="clearTerminal()">Clear Terminal</button>
+    </div>
+
+    <h3>Terminal Output:</h3>
+    <div id="terminal" class="terminal">Waiting for connection...</div>
+
+    <script>
+        let socket = null;
+        let messageCount = 0;
+        const farmId = 'c491d474-1375-4872-92da-345c08a8598d';
+        const sessionName = 'farm-c491d474';
+
+        function log(msg) {
+            const terminal = document.getElementById('terminal');
+            const timestamp = new Date().toLocaleTimeString();
+            terminal.textContent += `[${timestamp}] ${msg}\n`;
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function connect() {
+            if (socket && socket.connected) {
+                log('Already connected');
+                return;
+            }
+
+            socket = io('http://localhost:4567', {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000
+            });
+
+            socket.on('connect', () => {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'connected';
+                log('✅ Connected to WebSocket server');
+                log('Socket ID: ' + socket.id);
+            });
+
+            socket.on('disconnect', (reason) => {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'disconnected';
+                log('❌ Disconnected: ' + reason);
+            });
+
+            // Listen to ALL events for debugging
+            socket.onAny((eventName, ...args) => {
+                console.log('Event received:', eventName, args);
+                if (eventName === 'terminal:output') {
+                    messageCount++;
+                    document.getElementById('messageCount').textContent = messageCount;
+                    const data = args[0];
+                    log(`📝 Terminal output from agent ${data.agentId}:`);
+                    if (data.lines && Array.isArray(data.lines)) {
+                        data.lines.forEach(line => log(`  ${line}`));
+                    } else if (data.output) {
+                        log(`  ${data.output}`);
+                    }
+                }
+            });
+
+            socket.on('terminal:joined', (data) => {
+                log('✅ Successfully joined terminal room: ' + JSON.stringify(data));
+            });
+
+            socket.on('terminal:test', (data) => {
+                log('🧪 Test message: ' + JSON.stringify(data));
+            });
+
+            socket.on('error', (error) => {
+                log('❌ Socket error: ' + error);
+            });
+        }
+
+        function joinTerminal() {
+            if (!socket || !socket.connected) {
+                log('❌ Not connected to WebSocket');
+                return;
+            }
+
+            log(`Joining terminal room for farm ${farmId}...`);
+
+            // Try multiple join variations
+            socket.emit('terminal:join', {
+                sessionId: sessionName,
+                sessionName: sessionName,
+                farmId: farmId
+            });
+
+            // Also join farm room
+            socket.emit('farm:join', { farmId: farmId });
+
+            log('Join requests sent');
+        }
+
+        async function testWrite() {
+            const timestamp = new Date().toISOString();
+            const testMessage = `[TEST] Manual test at ${timestamp}`;
+
+            // Write to all agent logs
+            for (let i = 0; i < 5; i++) {
+                const logFile = `/Users/rohnspringfield/maifarm/var/maibarn/terminals/${farmId}/agent-${i}.log`;
+                try {
+                    const response = await fetch('http://localhost:4567/api/test/write-log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            file: logFile,
+                            content: testMessage + ` (Agent ${i + 1})\n`
+                        })
+                    });
+
+                    if (response.ok) {
+                        log(`✅ Wrote test message to agent-${i}.log`);
+                    } else {
+                        // Fallback: use bash command through API
+                        log(`⚠️ Direct write failed, trying bash command for agent-${i}`);
+                    }
+                } catch (error) {
+                    log(`❌ Failed to write to agent-${i}: ${error.message}`);
+                }
+            }
+        }
+
+        async function startWatcher() {
+            log('Starting file watcher for farm...');
+
+            try {
+                const response = await fetch('http://localhost:4567/api/terminal/watch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        farmId: farmId,
+                        sessionName: sessionName
+                    })
+                });
+
+                if (response.ok) {
+                    log('✅ File watcher started');
+                } else {
+                    log('❌ Failed to start file watcher: ' + response.statusText);
+                }
+            } catch (error) {
+                log('❌ Error starting file watcher: ' + error.message);
+            }
+        }
+
+        function clearTerminal() {
+            document.getElementById('terminal').textContent = '';
+            log('Terminal cleared');
+        }
+
+        // Auto-connect on page load
+        setTimeout(() => {
+            log('Auto-connecting...');
+            connect();
+            setTimeout(() => {
+                if (socket && socket.connected) {
+                    joinTerminal();
+                }
+            }, 1000);
+        }, 500);
+    </script>
+</body>
+</html>

@@ -2,7 +2,7 @@
  * Unit tests for AsyncLock manager
  */
 
-import { AsyncLock } from '../../server/utils/AsyncLock';
+import { AsyncLock } from '../../apps/api/src/utils/AsyncLock';
 
 describe('AsyncLock', () => {
   let lock: AsyncLock;
