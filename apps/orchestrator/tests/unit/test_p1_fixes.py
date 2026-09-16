@@ -183,6 +183,7 @@ class TestP1_3_RunEngineInlineTaskTracking:
         request = RunRequest(
             run_id="test-run",
             session_id="test-session",
+            agent_id="test-agent",
             prompt="test prompt",
         )
         await engine.enqueue(request)
@@ -206,6 +207,7 @@ class TestP1_3_RunEngineInlineTaskTracking:
         request = RunRequest(
             run_id="test-run",
             session_id="test-session",
+            agent_id="test-agent",
             prompt="test prompt",
         )
         await engine.enqueue(request)
@@ -232,6 +234,7 @@ class TestP1_3_RunEngineInlineTaskTracking:
             request = RunRequest(
                 run_id=f"test-run-{i}",
                 session_id="test-session",
+                agent_id="test-agent",
                 prompt="test prompt",
             )
             await engine.enqueue(request)
@@ -269,9 +272,13 @@ class TestP1_3_RunEngineInlineTaskTracking:
         request = RunRequest(
             run_id="test-run",
             session_id="test-session",
+            agent_id="test-agent",
             prompt="test prompt",
         )
         await engine.enqueue(request)
+
+        # Let the task start running so it can observe cancellation
+        await asyncio.sleep(0.01)
 
         # Stop should cancel and await
         await engine.stop()
@@ -309,6 +316,7 @@ class TestP1_Integration:
         request = RunRequest(
             run_id="test-run",
             session_id="test-session",
+            agent_id="test-agent",
             prompt="test prompt",
         )
         await engine.enqueue(request)
