@@ -5,7 +5,6 @@ import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
 import { register, collectDefaultMetrics } from 'prom-client';
 import os from 'os';
-import { taskCountService } from '../services/taskCountService';
 import { 
   validateMetricsRequest, 
   sanitizeMetricsMiddleware 
@@ -384,7 +383,7 @@ router.get('/summary', authenticateToken, apiRateLimits.read, async (req, res) =
   }
 });
 
-import { metricsCollector } from '../services/unified/stateCoordinator';
+import { metricsCollector } from '../monitoring/metricsCollector';
 
 // GET /api/metrics/system - Get system resource information
 router.get('/system', apiRateLimits.read, async (req, res) => {

@@ -638,9 +638,9 @@ export class ConnectionPoolManager extends EventEmitter {
     const quotas: Record<AIProvider, number> = {
       [AIProvider.CLAUDE]: 100000, // Tokens per minute
       [AIProvider.OPENAI]: 90000,
-      [AIProvider.QWEN]: 120000,
-      [AIProvider.QWEN_LOCAL]: Infinity,
-      [AIProvider.GPT_OSS]: Infinity
+      [AIProvider.LLAMA]: 120000,
+      [AIProvider.GPT_OSS]: Infinity,
+      [AIProvider.GROK]: 100000
     };
     return quotas[provider] || 100000;
   }

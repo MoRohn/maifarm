@@ -9,6 +9,9 @@ import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import { logger } from '../utils/logger';
 import { getTmuxPaneRef } from '../utils/tmuxHelpers';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 const execAsync = promisify(exec);
 
@@ -153,7 +156,7 @@ export class MaiBarn {
   }
 
   // PERFORMANCE FIX: Cache farmManager import and add session cleanup throttling
-  private static farmManagerCache: any = null;
+  private static farmManagerCache: { getAllFarms: () => Promise<Array<{ id: string; status?: string }>> } | null = null;
   private static lastCleanupTime = 0;
   private static readonly CLEANUP_THROTTLE_MS = 60000; // Only run cleanup once per minute
 
@@ -175,17 +178,29 @@ export class MaiBarn {
       const allSessions = await this.getAllSessions();
       const relevantSessions = this.filterRelevantSessions(allSessions, includeAll);
       
-      // PERFORMANCE FIX: Cache farmManager import to avoid dynamic import overhead
       if (!this.farmManagerCache) {
-        const { farmManager } = await import('./farmManager');
-        this.farmManagerCache = farmManager;
+        try {
+          const dynamicRequire = eval('require') as any;
+          const farmModule = dynamicRequire('./unified/farmService');
+          const resolved = farmModule?.farmService ?? farmModule?.default ?? farmModule;
+
+          if (resolved && typeof resolved.getAllFarms === 'function') {
+            this.farmManagerCache = resolved;
+          } else {
+            logger.warn('[MaiBarn] farmService module missing getAllFarms; skipping active farm detection');
+          }
+        } catch (error) {
+          logger.warn('[MaiBarn] Unable to load farmService for cleanup checks:', error);
+        }
       }
-      
-      const allFarms = await this.farmManagerCache.getAllFarms();
-      const activeFarms = allFarms.filter(f => 
+
+      const allFarms: Array<{ id: string; status?: string }> = this.farmManagerCache
+        ? await this.farmManagerCache.getAllFarms().catch(() => [])
+        : [];
+      const activeFarms = allFarms.filter(f =>
         f.status === 'active' || f.status === 'running' || f.status === 'launching'
       );
-      const activeFarmIds = new Set(activeFarms.map(f => f.id));
+      const activeFarmIds = new Set<string>(activeFarms.map(f => f.id));
       
       for (const session of relevantSessions) {
         // Check if this session belongs to an active farm
@@ -275,24 +290,24 @@ export class MaiBarn {
           metadata.taskId = sessionName.replace(/^quick[_-]/, '');
         }
         
-        return {
-          id: sessionName,
-          sessionName,
-          farmId: extractedFarmId,
-          paneCount,
-          windowName: metadata.isQuickTask ? 'quicktask' : 'agents',
-          active: true,
-          status: 'running',
-          createdAt: new Date(createdTime).toISOString(),
-          agents: Array.from({ length: paneCount }, (_, i) => ({
-            id: i,
-            sessionId: sessionName,
-            paneId: `${sessionName}:${i}`,
-            status: 'ready',
-            commandHistory: []
-          })),
-          metadata
-        };
+       return {
+         id: sessionName,
+         sessionName,
+         farmId: extractedFarmId,
+         paneCount,
+         windowName: metadata.isQuickTask ? 'quicktask' : 'agents',
+         active: true,
+         status: 'running',
+         createdAt: new Date(createdTime).toISOString(),
+         agents: Array.from({ length: paneCount }, (_, i) => ({
+           id: i,
+           sessionId: sessionName,
+           paneId: `${sessionName}:${i}`,
+           status: 'ready',
+           commandHistory: []
+         })),
+         metadata
+        } as SessionDetails;
       } catch (error) {
         logger.error(`[MaiBarn] Error getting details for session ${sessionName}:`, error);
         return null;
@@ -433,7 +448,7 @@ export class MaiBarn {
         '-p',
         '-S', `-${lines}`
       ], {
-        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
       });
 
       let output = '';
@@ -493,7 +508,7 @@ export class MaiBarn {
         command.trim(),
         'C-m'
       ], {
-        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
       });
       
       sendProcess.on('exit', (code) => {

@@ -6,6 +6,7 @@ export * from '../../../shared/types/unified';
 // Keep existing specialized exports
 export * from './security';
 export * from './reporting';
+export * from './plugins';
 // Selectively export harvest types that don't conflict with unified
 export type { 
   HarvestResult,

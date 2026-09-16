@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { aiProviderManager, AIProvider, AIProviderConfig } from '../config/aiProviders';
-import { openaiService } from './openaiService';
+import { engineGateway } from './engineGateway';
+import type { ChatMessage, ChatRequest, ChatResponse } from '../engines';
+import { EngineExecutionError } from '../engines/errors';
 
 /**
  * AI Proxy Service
@@ -48,86 +50,105 @@ export class AIProxy extends EventEmitter {
     return aiProviderManager.getProvider(defaultProvider);
   }
 
+  private resolveEngineKey(provider: AIProviderConfig): string {
+    switch (provider.provider) {
+      case AIProvider.OPENAI:
+        return 'openai';
+      case AIProvider.CLAUDE:
+      default:
+        return 'claude-code';
+    }
+  }
+
+  private buildChatRequest(request: UnifiedAIRequest): ChatRequest {
+    const chatMessages: ChatMessage[] = [];
+    let system: string | undefined;
+
+    for (const message of request.messages) {
+      if (message.role === 'system' && !system) {
+        system = message.content;
+        continue;
+      }
+
+      chatMessages.push({
+        role: message.role,
+        content: message.content
+      });
+    }
+
+    const metadata = request.metadata
+      ? Object.fromEntries(
+          Object.entries(request.metadata).map(([key, value]) => [key, value === undefined ? '' : String(value)])
+        )
+      : undefined;
+
+    return {
+      system,
+      messages: chatMessages,
+      temperature: request.temperature,
+      max_tokens: request.maxTokens,
+      metadata
+    };
+  }
+
+  private normalizeContent(content: ChatResponse['content'], toolCalls?: ChatResponse['tool_calls']): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (content && 'json' in content) {
+      return JSON.stringify(content.json);
+    }
+    if (toolCalls && toolCalls.length > 0) {
+      return JSON.stringify(toolCalls[0].arguments ?? {});
+    }
+    return '';
+  }
+
+  private toUnifiedResponse(
+    provider: AIProviderConfig,
+    response: ChatResponse,
+    metadata?: UnifiedAIRequest['metadata']
+  ): UnifiedAIResponse {
+    const content = this.normalizeContent(response.content, response.tool_calls);
+
+    return {
+      content,
+      model: (response.raw as any)?.model ?? provider.model,
+      provider: provider.provider === AIProvider.OPENAI ? 'openai' : 'claude',
+      usage: response.usage
+        ? {
+            promptTokens: response.usage.prompt_tokens ?? 0,
+            completionTokens: response.usage.completion_tokens ?? 0,
+            totalTokens:
+              response.usage.total_tokens ??
+              (response.usage.prompt_tokens ?? 0) + (response.usage.completion_tokens ?? 0)
+          }
+        : undefined,
+      metadata
+    };
+  }
+
   /**
    * Send a unified request to the active AI provider
    */
   async sendRequest(request: UnifiedAIRequest, providerOverride?: AIProvider): Promise<UnifiedAIResponse> {
     const provider = this.resolveProvider(providerOverride);
 
-    switch (provider.provider) {
-      case AIProvider.OPENAI:
-        return this.sendOpenAIRequest(request, provider);
-      case AIProvider.CLAUDE:
-        return this.sendClaudeRequest(request, provider);
-      default:
-        throw new Error(`Unsupported provider: ${provider.provider}`);
-    }
-  }
-
-  private async sendOpenAIRequest(
-    request: UnifiedAIRequest,
-    provider: AIProviderConfig
-  ): Promise<UnifiedAIResponse> {
-    if (!provider.apiKey) {
-      throw new Error('OpenAI provider is not configured');
-    }
-
-    if (!openaiService.isConfigured()) {
-      openaiService.updateConfiguration(provider.apiKey, provider.model);
-    }
+    const engineKey = this.resolveEngineKey(provider);
+    const chatRequest = this.buildChatRequest(request);
 
     try {
-      const response = await openaiService.chat(request.messages, {
-        maxTokens: request.maxTokens || provider.maxTokens,
-        temperature: request.temperature || provider.temperature
+      const response = await engineGateway.chat(chatRequest, {
+        engineKey,
+        model: provider.model
       });
-
-      const message = response?.choices?.[0]?.message?.content || '';
-
-      return {
-        content: message,
-        model: response?.model || provider.model,
-        provider: 'openai',
-        usage: response?.usage ? {
-          promptTokens: response.usage.prompt_tokens || 0,
-          completionTokens: response.usage.completion_tokens || 0,
-          totalTokens: response.usage.total_tokens || 0
-        } : undefined,
-        metadata: request.metadata
-      };
-    } catch (error: any) {
-      const message = error?.message || 'OpenAI request failed';
-      throw new Error(message);
+      return this.toUnifiedResponse(provider, response, request.metadata);
+    } catch (error) {
+      if (error instanceof EngineExecutionError) {
+        throw new Error(error.message);
+      }
+      throw error;
     }
-  }
-
-  /**
-   * Send request to Claude (placeholder - would integrate with actual Claude API)
-   */
-  private async sendClaudeRequest(
-    request: UnifiedAIRequest,
-    provider: AIProviderConfig
-  ): Promise<UnifiedAIResponse> {
-    // In a real implementation, this would call the Claude API
-    // For now, we'll simulate the response format
-    console.log('Claude request:', request);
-
-    // Simulate Claude API call
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          content: `[Claude Mock Response] Processing request with ${request.messages.length} messages`,
-          model: provider.model || 'claude-3-sonnet',
-          provider: 'claude',
-          usage: {
-            promptTokens: 100,
-            completionTokens: 50,
-            totalTokens: 150
-          },
-          metadata: request.metadata
-        });
-      }, 1000);
-    });
   }
 
   /**
@@ -140,52 +161,29 @@ export class AIProxy extends EventEmitter {
     providerOverride?: AIProvider
   ): Promise<void> {
     const provider = this.resolveProvider(providerOverride);
+    const engineKey = this.resolveEngineKey(provider);
+    const chatRequest = this.buildChatRequest(request);
 
-    switch (provider.provider) {
-      case AIProvider.OPENAI:
-        await this.streamOpenAIRequest(request, onChunk, provider);
-        break;
-      case AIProvider.CLAUDE:
-        await this.streamClaudeRequest(request, onChunk, provider);
-        break;
-      default:
-        throw new Error(`Unsupported provider for streaming: ${provider.provider}`);
-    }
+    try {
+      const stream = await engineGateway.stream(chatRequest, {
+        engineKey,
+        model: provider.model
+      });
 
-    if (onComplete) {
-      onComplete();
-    }
-  }
+      for await (const event of stream) {
+        if (event.type === 'token') {
+          onChunk(event.value);
+        }
+      }
 
-  private async streamOpenAIRequest(
-    request: UnifiedAIRequest,
-    onChunk: (chunk: string) => void,
-    provider: AIProviderConfig
-  ): Promise<void> {
-    const response = await this.sendOpenAIRequest(request, provider);
-    const words = response.content.split(' ');
-
-    for (const word of words) {
-      await new Promise(resolve => setTimeout(resolve, 40));
-      onChunk(word + ' ');
-    }
-  }
-
-  /**
-   * Stream request to Claude (placeholder)
-   */
-  private async streamClaudeRequest(
-    request: UnifiedAIRequest,
-    onChunk: (chunk: string) => void,
-    _provider: AIProviderConfig
-  ): Promise<void> {
-    // Simulate streaming for Claude
-    const mockResponse = '[Claude Mock Stream] This is a simulated streaming response...';
-    const words = mockResponse.split(' ');
-
-    for (const word of words) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      onChunk(word + ' ');
+      if (onComplete) {
+        onComplete();
+      }
+    } catch (error) {
+      if (error instanceof EngineExecutionError) {
+        throw new Error(error.message);
+      }
+      throw error;
     }
   }
 

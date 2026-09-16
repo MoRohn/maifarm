@@ -9,15 +9,16 @@ export interface Harvest {
   type: 'app' | 'tool' | 'script' | 'workflow' | 'other'; // Type of harvest
   status: 'processing' | 'ready' | 'archived' | 'failed';
   createdAt: Date;
-  completedAt?: Date;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
   useCount: number; // Number of times this harvest has been used
   
   // Summary of the farm's work
   summary: {
     description: string;
-    totalFiles: number;           // New: Total files to generate
-    filesGenerated: number;       // New: Files successfully generated
-    filesFailed: number;          // New: Files that failed to generate
+    totalFiles?: number;           // New: Total files to generate
+    filesGenerated?: number;       // New: Files successfully generated
+    filesFailed?: number;          // New: Files that failed to generate
     totalTasks: number;           // Legacy: Keep for compatibility
     completedTasks: number;       // Legacy: Maps to filesGenerated
     failedTasks: number;          // Legacy: Maps to filesFailed
@@ -45,6 +46,7 @@ export interface Harvest {
   
   // Yield produced (files, reports, etc.)
   yield: HarvestYield[];
+  artifacts?: HarvestYield[]; // Legacy alias from older API responses
   
   // Quality metrics
   quality: {
@@ -81,16 +83,17 @@ export interface HarvestResult {
 
 export interface HarvestInsight {
   id: string;
-  type: 'discovery' | 'pattern' | 'recommendation' | 'warning' | 'summary';
-  title: string;
-  description: string;
-  importance: 'low' | 'medium' | 'high' | 'critical';
-  source: {
+  type?: 'discovery' | 'pattern' | 'recommendation' | 'warning' | 'summary';
+  title?: string;
+  description?: string;
+  content?: string;
+  importance?: 'low' | 'medium' | 'high' | 'critical';
+  source?: {
     agentId?: string;
     agentName?: string;
     taskId?: string;
   };
-  relatedResults: string[]; // IDs of related HarvestResults
+  relatedResults?: string[]; // IDs of related HarvestResults
   timestamp: Date;
 }
 
@@ -131,21 +134,25 @@ export interface HarvestExport {
   includeInsights?: boolean;
   includeYield?: boolean;
   includeArtifacts?: boolean; // Legacy support - maps to includeYield
+  includeMetrics?: boolean;
   customTemplate?: string;
+  template?: string;
 }
 
 export interface HarvestSummary {
   id: string;
   farmName: string;
   completedAt: Date;
-  totalFiles: number;          // New: Primary metric
-  filesGenerated: number;      // New: Files successfully created
-  totalTasks: number;          // Legacy: Keep for compatibility
-  successRate: number;         // Now based on farm success, not task completion
-  overallQuality: number;
-  topInsights: HarvestInsight[];
-  yieldCount: number;
-  tags: string[];
+  totalFiles?: number;          // New: Primary metric
+  filesGenerated?: number;      // New: Files successfully created
+  totalTasks?: number;          // Legacy: Keep for compatibility
+  successRate?: number;         // Now based on farm success, not task completion
+  overallQuality?: number;
+  qualityScore?: number;
+  artifactCount?: number;
+  topInsights?: HarvestInsight[];
+  yieldCount?: number;
+  tags?: string[];
   farmerTemplateId?: string;
   farmerTemplateName?: string;
 }

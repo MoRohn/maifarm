@@ -54,6 +54,7 @@ interface ActiveWatch {
   timer: NodeJS.Timeout;
   resolve: (status: OrchestratorStatusData) => void;
   reject: (error: Error) => void;
+  pollInterval?: NodeJS.Timeout; // Added: polling fallback
 }
 
 export class OrchestratorBridge extends EventEmitter {
@@ -247,11 +248,11 @@ export class OrchestratorBridge extends EventEmitter {
 
     watcher.on('add', checkAndResolve);
     watcher.on('change', checkAndResolve);
-    watcher.on('error', (error) => {
+    watcher.on('error', (error: unknown) => {
       logger.error(LogCategory.FARM, `Watcher error for farm ${farmId}:`, error);
       clearTimeout(timer);
       this.cleanupWatch(farmId);
-      reject(error);
+      reject(error instanceof Error ? error : new Error(String(error)));
     });
 
     this.activeWatches.set(farmId, {
@@ -336,6 +337,7 @@ export class OrchestratorBridge extends EventEmitter {
 
   /**
    * Cleanup watch for a farm
+   * Handles both regular watches and completion-${farmId} watches
    */
   private cleanupWatch(farmId: string): void {
     const watch = this.activeWatches.get(farmId);
@@ -343,10 +345,52 @@ export class OrchestratorBridge extends EventEmitter {
       try {
         watch.watcher.close();
         clearTimeout(watch.timer);
+        // FIX: Also clear pollInterval if present
+        if (watch.pollInterval) {
+          clearInterval(watch.pollInterval);
+        }
       } catch (error) {
         logger.debug(LogCategory.FARM, `Error cleaning up watch for farm ${farmId}:`, error);
       }
       this.activeWatches.delete(farmId);
+    }
+
+    // FIX: Also clean up completion-specific watches
+    const completionKey = `completion-${farmId}`;
+    const completionWatch = this.activeWatches.get(completionKey);
+    if (completionWatch) {
+      try {
+        completionWatch.watcher.close();
+        clearTimeout(completionWatch.timer);
+        if (completionWatch.pollInterval) {
+          clearInterval(completionWatch.pollInterval);
+        }
+      } catch (error) {
+        logger.debug(LogCategory.FARM, `Error cleaning up completion watch for farm ${farmId}:`, error);
+      }
+      this.activeWatches.delete(completionKey);
+    }
+  }
+
+  /**
+   * Public method to stop completion monitoring for a farm
+   * Called when farm lifecycle ends through any means (completion, failure, timeout)
+   */
+  stopCompletionMonitoring(farmId: string): void {
+    const completionKey = `completion-${farmId}`;
+    const watch = this.activeWatches.get(completionKey);
+    if (watch) {
+      try {
+        watch.watcher.close();
+        if (watch.pollInterval) {
+          clearInterval(watch.pollInterval);
+        }
+        clearTimeout(watch.timer);
+        logger.info(LogCategory.FARM, `Stopped completion monitoring for farm ${farmId}`);
+      } catch (error) {
+        logger.debug(LogCategory.FARM, `Error stopping completion monitoring for farm ${farmId}:`, error);
+      }
+      this.activeWatches.delete(completionKey);
     }
   }
 
@@ -383,6 +427,7 @@ export class OrchestratorBridge extends EventEmitter {
   /**
    * Start monitoring for orchestrator completion
    * This continuously watches the status file and emits 'completed' event when agents finish
+   * Uses dual-mode detection: file watcher (primary) + polling fallback (every 5s)
    */
   async monitorForCompletion(farmId: string): Promise<void> {
     const coordinationDir = path.join(
@@ -391,7 +436,37 @@ export class OrchestratorBridge extends EventEmitter {
     );
     const statusFile = path.join(coordinationDir, `orchestrator_status_${farmId}.json`);
 
-    logger.info(LogCategory.FARM, `Starting completion monitoring for farm ${farmId}`);
+    logger.info(LogCategory.FARM, `Starting completion monitoring for farm ${farmId} (dual-mode: watcher + polling)`);
+
+    let completionHandled = false; // Prevent duplicate emissions
+
+    const handleCompletion = (status: OrchestratorStatusData, source: 'watcher' | 'polling') => {
+      if (completionHandled) {
+        return; // Already handled
+      }
+      completionHandled = true;
+
+      logger.info(LogCategory.FARM,
+        `Orchestrator completed for farm ${farmId} (detected via ${source}) - triggering harvest collection`
+      );
+
+      // Emit completion event for farm service to handle
+      this.emit('orchestrator-completed', { farmId, status });
+
+      // Cleanup both watcher and polling
+      const watch = this.activeWatches.get(`completion-${farmId}`);
+      if (watch) {
+        try {
+          watch.watcher.close();
+          if (watch.pollInterval) {
+            clearInterval(watch.pollInterval);
+          }
+        } catch (error) {
+          logger.debug(LogCategory.FARM, `Error cleaning up completion monitoring for farm ${farmId}:`, error);
+        }
+        this.activeWatches.delete(`completion-${farmId}`);
+      }
+    };
 
     const watcher = watch(statusFile, {
       persistent: true,
@@ -408,16 +483,7 @@ export class OrchestratorBridge extends EventEmitter {
         const status = JSON.parse(content) as OrchestratorStatusData;
 
         if (status.status === OrchestratorStatus.COMPLETED) {
-          logger.info(LogCategory.FARM,
-            `Orchestrator completed for farm ${farmId} - triggering harvest collection`
-          );
-
-          // Emit completion event for farm service to handle
-          this.emit('orchestrator-completed', { farmId, status });
-
-          // Cleanup watcher
-          watcher.close();
-          this.activeWatches.delete(`completion-${farmId}`);
+          handleCompletion(status, 'watcher');
         }
       } catch (error: any) {
         if (error.code !== 'ENOENT') {
@@ -430,19 +496,39 @@ export class OrchestratorBridge extends EventEmitter {
     watcher.on('change', checkCompletion);
     watcher.on('error', (error) => {
       logger.error(LogCategory.FARM, `Completion watcher error for farm ${farmId}:`, error);
-      watcher.close();
-      this.activeWatches.delete(`completion-${farmId}`);
+      // Don't cleanup here - let polling continue as fallback
     });
 
-    // Store watcher for cleanup
+    // Polling fallback: Check status file every 5 seconds
+    const pollInterval = setInterval(async () => {
+      if (completionHandled) {
+        clearInterval(pollInterval);
+        return;
+      }
+
+      try {
+        const status = await this.getOrchestratorStatus(farmId);
+        if (status?.status === OrchestratorStatus.COMPLETED) {
+          handleCompletion(status, 'polling');
+        }
+      } catch (error) {
+        // Silent failure - watcher might still work
+        logger.debug(LogCategory.FARM, `Polling check failed for farm ${farmId}:`, error);
+      }
+    }, 5000);
+
+    // Store watcher and polling interval for cleanup
     this.activeWatches.set(`completion-${farmId}`, {
       farmId,
       watcher,
       statusFile,
       timer: setTimeout(() => {}, 0), // Dummy timer
       resolve: () => {},
-      reject: () => {}
+      reject: () => {},
+      pollInterval
     });
+
+    logger.debug(LogCategory.FARM, `Completion monitoring active for farm ${farmId}: watcher + 5s polling`);
   }
 }
 

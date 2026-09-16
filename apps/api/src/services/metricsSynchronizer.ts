@@ -608,7 +608,8 @@ class MetricsSynchronizer extends EventEmitter {
       
       const data = await redis.get(this.REDIS_KEY);
       if (data) {
-        const parsed = JSON.parse(data);
+        const dataStr = typeof data === 'string' ? data : data.toString();
+        const parsed = JSON.parse(dataStr);
         this.metrics = parsed.metrics;
         this.metricsVersion = parsed.version;
         this.uniqueAgentIds = new Set(parsed.uniqueAgents);

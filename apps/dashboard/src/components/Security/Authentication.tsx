@@ -14,17 +14,19 @@ import {
 import { clsx } from 'clsx';
 import { AuthCredentials, AuthResponse } from '@/types/security';
 import { useAuthentication } from '@/hooks/useAuthentication';
+import { useAuth } from '@/hooks/useAuth';
 
 interface AuthenticationProps {
   onSuccess?: (response: AuthResponse) => void;
   className?: string;
 }
 
-export const Authentication: React.FC<AuthenticationProps> = ({ 
+export const Authentication: React.FC<AuthenticationProps> = ({
   onSuccess,
-  className 
+  className
 }) => {
   const { login, isLoading, error } = useAuthentication();
+  // REMOVED: Development bypass - all users must authenticate properly
   const [mode, setMode] = useState<'login' | 'mfa'>('login');
   const [showPassword, setShowPassword] = useState(false);
   const [credentials, setCredentials] = useState<AuthCredentials>({
@@ -34,9 +36,11 @@ export const Authentication: React.FC<AuthenticationProps> = ({
   });
   const [mfaCode, setMfaCode] = useState('');
 
+  // REMOVED: Development bypass availability check - all users must authenticate properly
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (mode === 'login') {
       const response = await login(credentials);
       if (response?.user?.mfaEnabled) {
@@ -51,6 +55,8 @@ export const Authentication: React.FC<AuthenticationProps> = ({
       }
     }
   };
+
+  // REMOVED: Development bypass handler - all users must authenticate properly
 
   const passwordStrength = calculatePasswordStrength(credentials.password);
 
@@ -122,7 +128,7 @@ export const Authentication: React.FC<AuthenticationProps> = ({
                 {/* Password Input */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Password
+                    Password <span className="text-xs text-gray-500 dark:text-gray-400">(optional for passwordless accounts)</span>
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -139,8 +145,7 @@ export const Authentication: React.FC<AuthenticationProps> = ({
                         'placeholder-gray-500 dark:placeholder-gray-400',
                         'transition-all duration-200'
                       )}
-                      placeholder="••••••••"
-                      required
+                      placeholder="Leave blank for passwordless login"
                     />
                     <button
                       type="button"
@@ -150,7 +155,7 @@ export const Authentication: React.FC<AuthenticationProps> = ({
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
-                  
+
                   {/* Password Strength Indicator */}
                   {credentials.password && (
                     <PasswordStrengthIndicator strength={passwordStrength} />
@@ -276,6 +281,8 @@ export const Authentication: React.FC<AuthenticationProps> = ({
             )}
           </motion.button>
         </form>
+
+        {/* REMOVED: Development bypass mode - all users must authenticate properly */}
 
         {/* Footer */}
         <div className="px-8 pb-8">

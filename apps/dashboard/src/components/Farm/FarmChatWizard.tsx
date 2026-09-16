@@ -4,10 +4,11 @@ import { PromptEnhancer } from '../Chat/PromptEnhancer';
 import { api } from '@/services/apiClient';
 import { toast } from 'react-hot-toast';
 import { useFarmStore } from '@/store/farmStore';
-import { Rocket, Sparkles, X, Sprout } from 'lucide-react';
+import { Rocket, Sparkles, X, Sprout, Plus, Minus, Clock, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { FarmInputField } from './FarmInputField';
+import { SeedApplier } from '../Seeds/SeedApplier';
 
 interface FarmChatWizardProps {
   isOpen: boolean;
@@ -25,9 +26,22 @@ export const FarmChatWizard: React.FC<FarmChatWizardProps> = ({
   const [selectedEnhancements, setSelectedEnhancements] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [farmId, setFarmId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Array<{ id: string; type: 'assistant' | 'user'; content: string }>>([]); 
-  
+  const [messages, setMessages] = useState<Array<{ id: string; type: 'assistant' | 'user'; content: string }>>([]);
+
+  // Farm configuration state
+  const [agentCount, setAgentCount] = useState(3);
+  const [durationMinutes, setDurationMinutes] = useState(60); // Default 1 hour
+  const [appliedSeedIds, setAppliedSeedIds] = useState<string[]>([]); // Seeds to apply to farm
+
   const { addFarm, fetchFarms } = useFarmStore();
+
+  // Duration options in minutes
+  const durationOptions = [
+    { label: '30 min', value: 30 },
+    { label: '1 hour', value: 60 },
+    { label: '2 hours', value: 120 },
+    { label: '4 hours', value: 240 },
+  ];
 
   // Reset when modal opens
   useEffect(() => {
@@ -36,6 +50,9 @@ export const FarmChatWizard: React.FC<FarmChatWizardProps> = ({
       setUserPrompt('');
       setEnhancedPrompt('');
       setSelectedEnhancements([]);
+      setAgentCount(3);
+      setDurationMinutes(60);
+      setAppliedSeedIds([]); // Reset applied seeds
       setMessages([{
         id: 'greeting',
         type: 'assistant',
@@ -139,7 +156,7 @@ export const FarmChatWizard: React.FC<FarmChatWizardProps> = ({
         prompt: enhancedPrompt || userPrompt,
         mode: 'freestyle',
         constraints: {
-          maxAgents: 3,
+          maxAgents: agentCount,
           context: 'Creating a new AI agent farm for collaborative development'
         },
         enhancePrompt: false // Already enhanced if needed
@@ -188,39 +205,55 @@ export const FarmChatWizard: React.FC<FarmChatWizardProps> = ({
       const farmPayload = {
         name: farmName,
         description: enhancedPrompt || userPrompt,
-        config: yamlContent,
+        prompt: enhancedPrompt || userPrompt,
         type: 'collaborative',
+        mode: 'harvest', // Standard farm mode
         status: 'launching',
         orchestratorType: 'multiClaude',
-        timeout: 3600, // 1 hour default
-        autoScale: false
+        timeout: durationMinutes * 60, // Convert minutes to seconds
+        numberOfAgents: agentCount,
+        yamlContent: yamlContent, // YAML content as separate field
+        config: {
+          maxAgents: agentCount,
+          timeout: durationMinutes * 60,
+          yaml: yamlContent,
+          autoScale: false
+        },
+        autoScale: false,
+        autoIncubate: true, // Enable incubation by default for chat wizard
+        // Seeds context injection (Feature A: Seeds can Seed a Farm)
+        appliedSeedIds: appliedSeedIds.length > 0 ? appliedSeedIds : undefined
       };
       
       console.log('[FarmChatWizard] Creating farm with name:', farmName);
       const createResponse = await api.post('/api/farms', farmPayload);
       console.log('[FarmChatWizard] Farm creation response:', createResponse.status);
 
-      if (createResponse.data?.id) {
+      // CRITICAL FIX: Check success flag and access data correctly
+      // API returns { success: boolean, data: Farm, message: string }
+      const responseData = createResponse.data;
+      if (responseData?.success && responseData?.data?.id) {
         hasCompleted = true;
-        const newFarmId = createResponse.data.id;
+        const newFarmId = responseData.data.id;
         setFarmId(newFarmId);
-
-        // Add to store before navigation
-        await addFarm(createResponse.data);
+        await addFarm(responseData.data); // Add the farm data, not the full response
         await fetchFarms();
-
+        
         toast.success('🚀 Farm launching!');
-
-        // Close modal first to prevent any conflicts
-        onClose();
-
-        // Small delay to ensure modal is closed before navigation
+        
+        // Navigate through concept explainer first
+        const transitionUrl = `/farm/${newFarmId}/transition/farm`;
+        navigate(transitionUrl);
+        
+        // Close modal after navigation
         setTimeout(() => {
-          // Navigate through concept explainer
-          const transitionUrl = `/farm/${newFarmId}/transition/farm`;
-          console.log('[FarmChatWizard] Navigating to:', transitionUrl);
-          navigate(transitionUrl);
-        }, 150);
+          onClose();
+        }, 100);
+      } else if (!responseData?.success) {
+        hasCompleted = true;
+        // Handle failure response - get error message from API
+        const errorMsg = responseData?.error?.message || responseData?.message || 'Farm creation failed';
+        throw new Error(errorMsg);
       } else {
         hasCompleted = true;
         throw new Error('Farm creation did not return an ID. Please try again.');
@@ -283,26 +316,28 @@ export const FarmChatWizard: React.FC<FarmChatWizardProps> = ({
         className="relative w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <Sprout className="w-6 h-6 text-green-600 dark:text-green-400" />
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <Sprout className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  Create New Farm
+                </h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Multi-agent collaboration for complex tasks
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                Create New Farm
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Let's farm something amazing
-              </p>
-            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
         </div>
 
         {/* Chat Messages */}
@@ -351,28 +386,116 @@ export const FarmChatWizard: React.FC<FarmChatWizardProps> = ({
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="mt-6 flex justify-center"
+              className="mt-6 space-y-6"
             >
-              <button
-                onClick={launchFarm}
-                disabled={isProcessing}
-                className="group relative px-8 py-4 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl font-semibold text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-200"
-              >
-                <span className="flex items-center space-x-3">
-                  {isProcessing ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
-                      <span>Launching...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Rocket className="w-5 h-5 group-hover:animate-bounce" />
-                      <span>Launch Farm</span>
-                      <Sparkles className="w-5 h-5" />
-                    </>
-                  )}
-                </span>
-              </button>
+              {/* Farm Configuration Controls */}
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 space-y-4">
+                {/* Agent Count Control */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                      <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">Agents</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Number of AI agents</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setAgentCount(prev => Math.max(2, prev - 1))}
+                      disabled={agentCount <= 2}
+                      className={clsx(
+                        "w-8 h-8 flex items-center justify-center rounded-lg transition-all",
+                        agentCount <= 2
+                          ? "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
+                          : "bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800"
+                      )}
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="w-10 text-center font-semibold text-gray-900 dark:text-white text-lg">
+                      {agentCount}
+                    </span>
+                    <button
+                      onClick={() => setAgentCount(prev => Math.min(10, prev + 1))}
+                      disabled={agentCount >= 10}
+                      className={clsx(
+                        "w-8 h-8 flex items-center justify-center rounded-lg transition-all",
+                        agentCount >= 10
+                          ? "bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed"
+                          : "bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-800"
+                      )}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Duration Control */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                      <Clock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">Duration</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Maximum runtime</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    {durationOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => setDurationMinutes(option.value)}
+                        className={clsx(
+                          "px-3 py-1.5 text-sm font-medium rounded-lg transition-all",
+                          durationMinutes === option.value
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Seed Applier - Feature A: Seeds can Seed a Farm */}
+              <div className="mt-4">
+                <SeedApplier
+                  selectedSeedIds={appliedSeedIds}
+                  onSeedsChange={setAppliedSeedIds}
+                  mode="harvest"
+                  engine="claude"
+                  maxSeeds={5}
+                />
+              </div>
+
+              {/* Launch Button */}
+              <div className="flex justify-center">
+                <button
+                  onClick={launchFarm}
+                  disabled={isProcessing}
+                  className="group relative px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-semibold text-lg shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-200"
+                >
+                  <span className="flex items-center space-x-3">
+                    {isProcessing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                        <span>Launching...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Rocket className="w-5 h-5 group-hover:animate-bounce" />
+                        <span>Launch Farm</span>
+                        <Sparkles className="w-5 h-5" />
+                      </>
+                    )}
+                  </span>
+                </button>
+              </div>
             </motion.div>
           )}
         </div>
@@ -382,9 +505,9 @@ export const FarmChatWizard: React.FC<FarmChatWizardProps> = ({
           <div className="border-t border-gray-200 dark:border-gray-700">
             {/* Info tip */}
             <div className="px-6 pt-4">
-              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 flex items-center space-x-2">
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 flex items-center space-x-2">
                 <span className="text-lg">🌾</span>
-                <p className="text-sm text-green-800 dark:text-green-200">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
                   Farms use multiple AI agents working together
                 </p>
               </div>

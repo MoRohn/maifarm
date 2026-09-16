@@ -2,18 +2,19 @@ import {
   AuthCredentials, 
   AuthResponse, 
   AuthUser,
-  Session,
+  Role,
   Permission,
   AuditLog,
   EncryptedData,
   ApiKey
 } from '@/types/security';
 import { websocketService } from './websocket';
-import * as bcrypt from 'bcryptjs';
+import { authAPI } from '@/utils/authFetch';
 
 class SecurityService {
   private currentUser: AuthUser | null = null;
   private sessionToken: string | null = null;
+  private refreshTokenValue: string | null = null;
   public userRefreshToken: string | null = null;
   private permissions: Map<string, Permission> = new Map();
   private encryptionKey: CryptoKey | null = null;
@@ -25,8 +26,14 @@ class SecurityService {
 
   private async initializeEncryption() {
     try {
-      // Generate or load encryption key
-      const storedKey = localStorage.getItem('maifarm_encryption_key');
+      // Generate or load encryption key - wrapped for iOS Safari private browsing
+      let storedKey: string | null = null;
+      try {
+        storedKey = localStorage.getItem('maifarm_encryption_key');
+      } catch (storageError) {
+        console.warn('[SecurityService] localStorage unavailable for encryption key:', storageError);
+      }
+
       if (storedKey) {
         this.encryptionKey = await this.importKey(storedKey);
       } else {
@@ -47,9 +54,14 @@ class SecurityService {
       ['encrypt', 'decrypt']
     );
 
-    // Export and store key
-    const exportedKey = await crypto.subtle.exportKey('jwk', key);
-    localStorage.setItem('maifarm_encryption_key', JSON.stringify(exportedKey));
+    // Export and store key - wrapped for iOS Safari private browsing
+    try {
+      const exportedKey = await crypto.subtle.exportKey('jwk', key);
+      localStorage.setItem('maifarm_encryption_key', JSON.stringify(exportedKey));
+    } catch (storageError) {
+      // Key stays in memory only for this session in private browsing
+      console.warn('[SecurityService] localStorage unavailable, encryption key in memory only:', storageError);
+    }
 
     return key;
   }
@@ -77,6 +89,7 @@ class SecurityService {
           this.currentUser = session.user;
           this.sessionToken = session.token;
           this.userRefreshToken = session.refreshToken;
+          this.refreshTokenValue = session.refreshToken;
           this.loadPermissions(session.user.permissions);
         } else {
           this.clearSession();
@@ -104,9 +117,16 @@ class SecurityService {
   private clearSession() {
     this.currentUser = null;
     this.sessionToken = null;
-    this.refreshToken = null;
+    this.refreshTokenValue = null;
+    this.userRefreshToken = null;
     this.permissions.clear();
-    localStorage.removeItem('maifarm_session');
+
+    try {
+      localStorage.removeItem('maifarm_session');
+    } catch (storageError) {
+      // Already cleared from memory in private browsing
+      console.warn('[SecurityService] localStorage unavailable during session clear:', storageError);
+    }
   }
 
   // Authentication methods
@@ -116,23 +136,25 @@ class SecurityService {
 
   public async register(credentials: AuthCredentials & { email: string; name: string }): Promise<AuthResponse> {
     try {
-      const hashedPassword = await this.hashPassword(credentials.password);
-      
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...credentials,
-          password: hashedPassword
-        })
+      // Use enhanced auth fetch with retry logic
+      const response = await authAPI.post('/api/auth/register', {
+        ...credentials,
+        password: credentials.password
       });
 
-      const data = await response.json();
+      // Handle error responses
+      if (!response.success) {
+        console.error('[SecurityService] Registration failed:', response);
+        return response as AuthResponse;
+      }
+
+      const data = response as any;
 
       if (data.success && data.user) {
         this.currentUser = data.user;
         this.sessionToken = data.accessToken;
-        this.refreshToken = data.refreshToken;
+        this.refreshTokenValue = data.refreshToken || null;
+        this.userRefreshToken = data.refreshToken || null;
         this.loadPermissions(data.user?.permissions);
 
         this.logAuditEvent('register', 'authentication', true);
@@ -154,25 +176,25 @@ class SecurityService {
 
   public async login(credentials: AuthCredentials): Promise<AuthResponse> {
     try {
-      // Hash password before sending
-      const hashedPassword = await this.hashPassword(credentials.password);
-      
-      // Send login request
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...credentials,
-          password: hashedPassword
-        })
+      // Use enhanced auth fetch with retry logic
+      const response = await authAPI.post('/api/auth/login', {
+        ...credentials,
+        password: credentials.password
       });
 
-      const data = await response.json();
+      // Handle error responses
+      if (!response.success) {
+        console.error('[SecurityService] Login failed:', response);
+        return response as AuthResponse;
+      }
+
+      const data = response as any;
 
       if (data.success && data.user) {
         this.currentUser = data.user;
         this.sessionToken = data.accessToken;
-        this.refreshToken = data.refreshToken;
+        this.refreshTokenValue = data.refreshToken || null;
+        this.userRefreshToken = data.refreshToken || null;
         this.loadPermissions(data.user?.permissions);
 
         // Store session if remember me is enabled
@@ -183,7 +205,12 @@ class SecurityService {
             refreshToken: data.refreshToken,
             expiresAt: new Date(Date.now() + (data.expiresIn || 3600) * 1000)
           };
-          localStorage.setItem('maifarm_session', JSON.stringify(session));
+          try {
+            localStorage.setItem('maifarm_session', JSON.stringify(session));
+          } catch (storageError) {
+            // Session remains in memory only in private browsing
+            console.warn('[SecurityService] localStorage unavailable, session in memory only:', storageError);
+          }
         }
 
         // Log successful login
@@ -191,7 +218,7 @@ class SecurityService {
 
         // Connect WebSocket with auth token
         if (websocketService && typeof websocketService.connect === 'function') {
-          websocketService.connect(`http://localhost:4567?token=${data.accessToken}`);
+          websocketService.connect();
         }
       }
 
@@ -228,7 +255,7 @@ class SecurityService {
   }
 
   public async refreshToken(token?: string): Promise<AuthResponse> {
-    const tokenToUse = token || this.refreshToken;
+    const tokenToUse = token || this.refreshTokenValue || this.userRefreshToken;
     if (!tokenToUse) {
       return { success: false, error: 'No refresh token available' };
     }
@@ -244,7 +271,8 @@ class SecurityService {
 
       if (data.success) {
         this.sessionToken = data.accessToken;
-        this.refreshToken = data.refreshToken;
+        this.refreshTokenValue = data.refreshToken || null;
+        this.userRefreshToken = data.refreshToken || null;
         if (data.user) {
           this.currentUser = data.user;
           this.loadPermissions(data.user?.permissions);
@@ -371,11 +399,6 @@ class SecurityService {
     return new TextDecoder().decode(decryptedBuffer);
   }
 
-  private async hashPassword(password: string): Promise<string> {
-    const salt = await bcrypt.genSalt(10);
-    return bcrypt.hash(password, salt);
-  }
-
   // Audit logging
   private async logAuditEvent(
     action: string, 
@@ -480,13 +503,22 @@ class SecurityService {
     throw new Error(result.error || 'Authentication failed');
   }
 
-  public async register(credentials: AuthCredentials): Promise<void> {
+  /**
+   * Legacy registration flow used by the auth store. Keeps behavior without
+   * stomping the primary register implementation above.
+   */
+  public async registerBasic(credentials: AuthCredentials): Promise<void> {
+    // Send register request - let Vite proxy handle the routing
     const response = await fetch('/api/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      credentials: 'include', // Include cookies for CORS
       body: JSON.stringify({
         ...credentials,
-        password: await this.hashPassword(credentials.password)
+        password: credentials.password
       })
     });
 
@@ -496,7 +528,68 @@ class SecurityService {
     }
   }
 
-  public async logoutWithToken(token: string): Promise<void> {
+  public async bypassForDevelopment(): Promise<AuthResponse> {
+    const devBypassAvailable = Boolean(import.meta.env?.DEV || import.meta.env?.VITE_ENABLE_DEV_BYPASS === 'true');
+    if (!devBypassAvailable) {
+      return {
+        success: false,
+        error: 'Bypass available in development only'
+      };
+    }
+
+    const adminRole: Role = {
+      id: 'dev-admin-role',
+      name: 'Admin',
+      description: 'Development administrator bypass role',
+      permissions: [],
+      priority: 1
+    };
+
+    const mockUser: AuthUser = {
+      id: 'dev-admin',
+      username: 'dev-admin',
+      email: 'developer@maifarm.local',
+      roles: [adminRole],
+      permissions: [],
+      lastLogin: new Date(),
+      mfaEnabled: false,
+      sessionToken: 'dev-bypass-token',
+      refreshToken: 'dev-bypass-refresh'
+    };
+
+    this.currentUser = mockUser;
+    this.sessionToken = mockUser.sessionToken || 'dev-bypass-token';
+    this.userRefreshToken = mockUser.refreshToken || 'dev-bypass-refresh';
+    this.refreshTokenValue = this.userRefreshToken;
+    this.loadPermissions(mockUser.permissions);
+
+    const session = {
+      user: mockUser,
+      token: this.sessionToken,
+      refreshToken: this.userRefreshToken,
+      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000)
+    };
+    try {
+      localStorage.setItem('maifarm_session', JSON.stringify(session));
+    } catch (storageError) {
+      // Session remains in memory only in private browsing
+      console.warn('[SecurityService] localStorage unavailable for dev bypass, session in memory only:', storageError);
+    }
+
+    if (websocketService && typeof websocketService.connect === 'function') {
+      websocketService.connect();
+    }
+
+    return {
+      success: true,
+      user: mockUser,
+      accessToken: this.sessionToken || undefined,
+      refreshToken: this.userRefreshToken || undefined,
+      expiresIn: 12 * 60 * 60
+    };
+  }
+
+  public async logoutWithToken(_token: string): Promise<void> {
     // This is for the authStore compatibility
     await this.logout();
   }

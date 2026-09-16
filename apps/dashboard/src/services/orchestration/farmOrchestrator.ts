@@ -361,7 +361,7 @@ class FarmOrchestrator {
       const farm: Farm = {
         id: farmId,
         name: request.name,
-        description!: request.description,
+        description: request.description,
         status: 'launching',
         template,
         agents: [],

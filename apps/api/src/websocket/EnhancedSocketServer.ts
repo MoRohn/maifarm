@@ -132,18 +132,26 @@ export class EnhancedWebSocketServer {
           return next(new Error('Too many connections from this IP'));
         }
 
-        // Authentication (simplified for local mode)
-        if (process.env.BYPASS_AUTH === 'true') {
-          socket.userId = socket.handshake.auth.userId || 'local-user';
-          socket.roles = ['admin', 'user'];
-          socket.permissions = ['*'];
-        } else {
-          // Implement proper JWT validation here
-          const token = socket.handshake.auth.token;
-          if (!token) {
-            return next(new Error('Authentication required'));
-          }
-          // Validate token and set user info
+        // REMOVED: Auth bypass mode - all WebSocket connections must authenticate properly
+        // Require JWT validation
+        const token = socket.handshake.auth.token;
+        if (!token) {
+          return next(new Error('Authentication required'));
+        }
+
+        // Validate JWT token
+        try {
+          const jwt = require('jsonwebtoken');
+          const JWT_SECRET = process.env.JWT_SECRET || 'maifarm-secret-key-change-in-production';
+          const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+          // Set user info from decoded token
+          socket.userId = decoded.userId || decoded.sub;
+          socket.roles = decoded.roles || ['user'];
+          socket.permissions = decoded.permissions || [];
+        } catch (jwtError) {
+          logger.error('JWT validation failed for WebSocket:', jwtError);
+          return next(new Error('Invalid authentication token'));
         }
 
         next();

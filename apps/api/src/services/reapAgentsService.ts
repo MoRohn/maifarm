@@ -20,11 +20,10 @@ import { aiProviderManager } from '../config/aiProviders';
 import { pathConfig } from '../config/paths';
 import { fileManager } from './fileManagerService';
 import { workspaceManager } from './workspaceManager';
-import { taskCountService } from './taskCountService';
 import { tmuxHealthManager } from './tmuxHealthManager';
 import { harvestSessionCache } from './harvestSessionCache';
 import { harvestSessionBroadcaster } from './harvestSessionBroadcaster';
-import { terminalStreamService } from './terminalStreamService';
+import { unifiedTerminalStreamService } from './UnifiedTerminalStreamService';
 import { logger } from '../utils/logger';
 import { getFarmAgentName } from '../utils/farmAgentNames';
 import { db } from '../database/connection';
@@ -33,7 +32,7 @@ import { db } from '../database/connection';
 interface ReapAgentConfig {
   farmId: string;
   numAgents: number;
-  provider: 'claude' | 'openai' | 'qwen' | 'ollama';
+  provider: 'claude' | 'openai' | 'llama' | 'ollama';
   workspacePath: string;
   barnPath: string;
   coordinationPath: string;
@@ -95,7 +94,7 @@ interface ReapLaunchOptions {
   contextFiles?: string[];
   debug?: boolean;
   timeout?: number;
-  provider?: 'claude' | 'openai' | 'qwen' | 'ollama';
+  provider?: 'claude' | 'openai' | 'llama' | 'ollama';
   enableSubAgents?: boolean;
   subAgentTypes?: string[];
   enableMemory?: boolean;
@@ -424,8 +423,8 @@ class ReapAgentsService extends EventEmitter {
         this.parseAgentOutput(reapProcess, line);
       }
 
-      // Stream to terminal
-      terminalStreamService.streamOutput(reapProcess.farmId, output);
+      // Terminal streaming is handled automatically by UnifiedTerminalStreamService
+      // via file watching and pipe-pane - no manual streaming needed
     });
 
     // Handle stderr

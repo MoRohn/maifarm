@@ -51,14 +51,14 @@ router.post('/agents-launching', async (req: Request, res: Response) => {
       logger.info(`[XenoSync API] Pre-registered session ${sessionName} with terminal service`);
 
       // Also register with terminal stream service for accurate agent counting
-      const { terminalStreamService } = await import('../services/terminalStreamService');
-      terminalStreamService.registerPendingSession(
+      const { unifiedTerminalStreamService } = await import('../services/UnifiedTerminalStreamService');
+      unifiedTerminalStreamService.registerFarmSession(
         farmId,
+        sessionName,
         numAgents,
-        windowTarget || 'agents',
-        sessionName
+        windowTarget || 'agents'
       );
-      logger.info(`[XenoSync API] Pre-registered session with terminal stream service for ${numAgents} agents`);
+      logger.info(`[XenoSync API] Pre-registered session with unified terminal stream service for ${numAgents} agents`);
     } catch (error) {
       logger.warn('[XenoSync API] Failed to pre-register session:', error);
     }

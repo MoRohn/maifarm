@@ -6,55 +6,67 @@
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0ea5e9",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
-      "src": "/icons/icon-72x72.png",
-      "sizes": "72x72",
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-96x96.png",
-      "sizes": "96x96",
+      "src": "/apple-touch-icon.png",
+      "sizes": "120x120",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-128x128.png",
-      "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-144x144.png",
-      "sizes": "144x144",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-152x152.png",
+      "src": "/apple-touch-icon.png",
       "sizes": "152x152",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-192x192.png",
+      "src": "/apple-touch-icon.png",
+      "sizes": "167x167",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-light-bkgd.svg",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/svg+xml",
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-384x384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "/maifarm-icon-light-bkgd.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-512x512.png",
+      "src": "/maifarm-icon-light-bkgd.svg",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-dark-bkgd.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-dark-bkgd.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-dark-bkgd.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ],
   "shortcuts": [
@@ -65,20 +77,22 @@
       "url": "/farms/new",
       "icons": [
         {
-          "src": "/icons/new-farm-96x96.png",
-          "sizes": "96x96"
+          "src": "/maifarm-icon-forest-walk-light.svg",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
         }
       ]
     },
     {
-      "name": "Go Wild Mode",
-      "short_name": "Go Wild",
-      "description": "Launch autonomous exploration mode",
-      "url": "/go-wild",
+      "name": "Open Barn",
+      "short_name": "Barn",
+      "description": "Review collected harvests",
+      "url": "/barn",
       "icons": [
         {
-          "src": "/icons/go-wild-96x96.png",
-          "sizes": "96x96"
+          "src": "/maifarm-icon-ocean-breeze-light.svg",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
         }
       ]
     }

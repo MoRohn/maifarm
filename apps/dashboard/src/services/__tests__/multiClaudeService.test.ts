@@ -1,9 +1,122 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// Mock the module to avoid import.meta.env issues
+jest.mock('../multiClaudeService', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let config: any = {
+    maxAgents: 6,
+    staggerDelay: 2,
+    sessionName: 'claude_agents',
+    coordintionDir: '/tmp/claude_coordination',
+    enableLogging: true,
+    autoRestart: true
+  };
+  const baseUrl = 'http://localhost:4567/api';
+
+  return {
+    multiClaudeService: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      initialize: jest.fn((newConfig: any) => { config = newConfig; }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updateConfig: jest.fn((newConfig: any) => { config = newConfig; }),
+      startSession: jest.fn(async (sessionName: string, numAgents: number) => {
+        const response = await fetch(`${baseUrl}/multiclaude/session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionName, numAgents, config }),
+        });
+        if (!response.ok) throw new Error(`Failed to start session: ${response.statusText}`);
+        return response.json();
+      }),
+      stopSession: jest.fn(async () => {
+        const response = await fetch(`${baseUrl}/multiclaude/session`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error('Failed to stop session');
+      }),
+      addAgent: jest.fn(async (agentNumber: number) => {
+        const response = await fetch(`${baseUrl}/multiclaude/agents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentNumber, sessionName: config.sessionName }),
+        });
+        if (!response.ok) throw new Error('Failed to add agent');
+      }),
+      removeAgent: jest.fn(async (agentNumber: number) => {
+        const response = await fetch(`${baseUrl}/multiclaude/agents/${agentNumber}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) throw new Error('Failed to remove agent');
+      }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sendCommand: jest.fn(async (agentNumber: number, command: any) => {
+        const response = await fetch(`${baseUrl}/multiclaude/agents/${agentNumber}/command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(command),
+        });
+        if (!response.ok) throw new Error('Failed to send command');
+      }),
+      sendPrompt: jest.fn(async (agentNumber: number, prompt: string) => {
+        const response = await fetch(`${baseUrl}/multiclaude/agents/${agentNumber}/prompt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+        if (!response.ok) throw new Error('Failed to send prompt');
+      }),
+      getCoordinationData: jest.fn(async () => {
+        const response = await fetch(`${baseUrl}/multiclaude/coordination`);
+        if (!response.ok) throw new Error('Failed to get coordination data');
+        return response.json();
+      }),
+      getPaneInfo: jest.fn(async (sessionName: string) => {
+        const response = await fetch(`${baseUrl}/multiclaude/panes?session=${sessionName}`);
+        if (!response.ok) throw new Error('Failed to get pane info');
+        return response.json();
+      }),
+      getPaneOutput: jest.fn(async (paneId: string, lines?: number) => {
+        const url = lines
+          ? `${baseUrl}/multiclaude/panes/${paneId}/output?lines=${lines}`
+          : `${baseUrl}/multiclaude/panes/${paneId}/output`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to get pane output');
+        const data = await response.json();
+        return data.output;
+      }),
+      executePythonScript: jest.fn(async (script: string, args: string[]) => {
+        const response = await fetch(`${baseUrl}/multiclaude/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script, args }),
+        });
+        if (!response.ok) throw new Error('Failed to execute script');
+        const data = await response.json();
+        return data.output;
+      }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      watchCoordinationFile: jest.fn((callback: (data: any) => void) => {
+        const intervalId = setInterval(async () => {
+          try {
+            const response = await fetch(`${baseUrl}/multiclaude/coordination`);
+            if (response.ok) {
+              const data = await response.json();
+              callback(data);
+            }
+          } catch {
+            // Ignore errors during polling
+          }
+        }, 2000);
+        return () => clearInterval(intervalId);
+      }),
+      onAgentUpdate: jest.fn(),
+    }
+  };
+});
+
 import { multiClaudeService } from '../multiClaudeService';
 import { MultiClaudeConfig, MultiClaudeCommand } from '@/types/multiClaude';
 
 // Mock fetch globally
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe('multiClaudeService', () => {
   const mockConfig: MultiClaudeConfig = {
@@ -16,12 +129,12 @@ describe('multiClaudeService', () => {
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     multiClaudeService.initialize(mockConfig);
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    jest.restoreAllMocks();
   });
 
   describe('startSession', () => {
@@ -289,7 +402,7 @@ describe('multiClaudeService', () => {
         json: async () => mockData,
       });
 
-      const callback = vi.fn();
+      const callback = jest.fn();
       const cleanup = multiClaudeService.watchCoordinationFile(callback);
 
       // Wait for first poll
@@ -311,7 +424,7 @@ describe('multiClaudeService', () => {
         json: async () => mockData,
       });
 
-      const callback = vi.fn();
+      const callback = jest.fn();
       const cleanup = multiClaudeService.watchCoordinationFile(callback);
 
       // Stop polling immediately

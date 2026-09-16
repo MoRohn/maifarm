@@ -186,7 +186,7 @@ router.post('/calculate', async (req: Request, res: Response) => {
     const cost = costTrackingService.calculateCost(usage);
     
     // Also calculate alternative provider cost
-    const alternativeProvider = provider === AIProvider.CLAUDE ? AIProvider.QWEN : AIProvider.CLAUDE;
+    const alternativeProvider = provider === AIProvider.CLAUDE ? AIProvider.LLAMA : AIProvider.CLAUDE;
     const alternativeCost = costTrackingService.calculateAlternativeCost(usage, alternativeProvider);
 
     res.json({

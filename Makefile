@@ -15,14 +15,7 @@ RUFF := $(PYTHON_BIN) -m ruff
 MYPY := $(PYTHON_BIN) -m mypy
 PYTEST := $(PYTHON_BIN) -m pytest
 UVICORN := $(PYTHON_BIN) -m uvicorn
-UVICORN_APP := $(shell $(PYTHON_BIN) - <<'PY'
-import importlib.util
-target = "maifarm.apps.orchestrator.main:app"
-if importlib.util.find_spec("maifarm.apps.orchestrator.main") is None:
-    target = "apps.orchestrator.main:app"
-print(target, end="")
-PY
-)
+UVICORN_APP ?= apps.orchestrator.main:app
 
 .PHONY: install install-poetry ensure-dev-tools lint format typecheck test dev build docker-build docker-run clean ci ci-docker
 
@@ -36,13 +29,7 @@ install-poetry:
 	$(POETRY) install
 
 ensure-dev-tools:
-	@missing="$$($(PYTHON_BIN) - <<'PY'
-import importlib.util
-packages = ("ruff", "mypy")
-missing = [pkg for pkg in packages if importlib.util.find_spec(pkg) is None]
-print(" ".join(missing))
-PY
-)"; \
+	@missing="$$($(PYTHON_BIN) -c 'import importlib.util as u; print(" ".join(p for p in ("ruff", "mypy") if u.find_spec(p) is None))')"; \
 	if [ -n "$$missing" ]; then \
 		echo "Installing $${missing} from $(DEV_REQUIREMENTS)"; \
 		$(PIP) install -r $(DEV_REQUIREMENTS); \
@@ -64,10 +51,10 @@ dev:
 	$(UVICORN) $(UVICORN_APP) --host 0.0.0.0 --port 8000 --reload
 
 build:
-	@if command -v docker >/dev/null 2>&1 && { [ -S /var/run/docker.sock ] || [ -S $$HOME/.docker/run/docker.sock ]; }; then \\
-		docker build -t maifarm-orchestrator .; \\
-	else \\
-		echo "Docker socket unavailable; skipping container build."; \\
+	@if command -v docker >/dev/null 2>&1 && { [ -S /var/run/docker.sock ] || [ -S $$HOME/.docker/run/docker.sock ]; }; then \
+		docker build -t maifarm-orchestrator .; \
+	else \
+		echo "Docker socket unavailable; skipping container build."; \
 	fi
 
 docker-build:

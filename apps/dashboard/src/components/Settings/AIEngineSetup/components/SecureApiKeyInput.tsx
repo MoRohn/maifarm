@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  EyeIcon, 
-  EyeSlashIcon, 
-  ClipboardDocumentIcon, 
+import {
+  EyeIcon,
+  EyeSlashIcon,
+  ClipboardDocumentIcon,
   CheckIcon,
   KeyIcon,
-  ShieldCheckIcon,
+  LockClosedIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 
@@ -130,7 +130,7 @@ export const SecureApiKeyInput: React.FC<SecureApiKeyInputProps> = ({
                 animate={{ scale: 1 }}
                 className="flex items-center gap-1 text-green-600 dark:text-green-400"
               >
-                <ShieldCheckIcon className="w-4 h-4" />
+                <LockClosedIcon className="w-4 h-4" />
                 <span className="text-xs">Verified</span>
               </motion.div>
             )}

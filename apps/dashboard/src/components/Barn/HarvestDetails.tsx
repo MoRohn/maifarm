@@ -20,6 +20,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { toast } from 'react-hot-toast';
 import { Harvest } from '@/types/barn';
 
 interface HarvestDetailsProps {
@@ -34,52 +35,95 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
   const handleDownloadItem = async (yieldId: string, fileName: string) => {
     try {
       const response = await fetch(`/api/barn/items/${harvest.id}/yield/${yieldId}/download`);
-      if (!response.ok) throw new Error('Download failed');
-      
+      if (!response.ok) {
+        const errorText = response.status === 404
+          ? 'File not found'
+          : `Download failed (${response.status})`;
+        throw new Error(errorText);
+      }
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } finally {
+        // Always cleanup the blob URL to prevent memory leaks on iOS
+        window.URL.revokeObjectURL(url);
+      }
     } catch (error) {
       console.error('Failed to download yield item:', error);
+      // UX FIX: Use toast instead of alert() - doesn't block user interaction
+      toast.error(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
   
   const handleDownloadAll = async () => {
     try {
       const response = await fetch(`/api/barn/items/${harvest.id}/download-all`);
-      if (!response.ok) throw new Error('Download failed');
-      
+      if (!response.ok) {
+        const errorText = response.status === 404
+          ? 'No files found to download'
+          : `Download failed (${response.status})`;
+        throw new Error(errorText);
+      }
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${harvest.name.replace(/[^a-z0-9]/gi, '_')}_yield.zip`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(harvest.name || 'harvest').replace(/[^a-z0-9]/gi, '_')}_yield.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } finally {
+        // Always cleanup the blob URL to prevent memory leaks on iOS
+        window.URL.revokeObjectURL(url);
+      }
     } catch (error) {
       console.error('Failed to download all yield items:', error);
+      // UX FIX: Use toast instead of alert() - doesn't block user interaction
+      toast.error(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
   
+  // Use complete class strings for Tailwind - dynamic class construction doesn't work with purging
   const typeConfig = {
-    app: { icon: Package, color: 'blue' },
-    tool: { icon: Wrench, color: 'green' },
-    script: { icon: Code, color: 'purple' },
-    workflow: { icon: FileText, color: 'orange' },
-    other: { icon: FileText, color: 'gray' }
+    app: {
+      icon: Package,
+      bgClass: 'bg-blue-100 dark:bg-blue-900/30',
+      textClass: 'text-blue-600 dark:text-blue-400'
+    },
+    tool: {
+      icon: Wrench,
+      bgClass: 'bg-green-100 dark:bg-green-900/30',
+      textClass: 'text-green-600 dark:text-green-400'
+    },
+    script: {
+      icon: Code,
+      bgClass: 'bg-purple-100 dark:bg-purple-900/30',
+      textClass: 'text-purple-600 dark:text-purple-400'
+    },
+    workflow: {
+      icon: FileText,
+      bgClass: 'bg-orange-100 dark:bg-orange-900/30',
+      textClass: 'text-orange-600 dark:text-orange-400'
+    },
+    other: {
+      icon: FileText,
+      bgClass: 'bg-gray-100 dark:bg-gray-900/30',
+      textClass: 'text-gray-600 dark:text-gray-400'
+    }
   };
 
   // Ensure we have a valid type, fallback to 'other' if undefined or invalid
   const harvestType = (harvest.type && harvest.type in typeConfig) ? harvest.type : 'other';
-  const config = typeConfig[harvestType];
+  const config = typeConfig[harvestType as keyof typeof typeConfig];
   const Icon = config.icon;
 
   return (
@@ -93,33 +137,30 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <div className={clsx(
-              'p-3 rounded-apple',
-              `bg-${config.color}-100 dark:bg-${config.color}-900/30`
-            )}>
-              <Icon className={clsx('w-6 h-6', `text-${config.color}-600 dark:text-${config.color}-400`)} />
+            <div className={clsx('p-3 rounded-apple', config.bgClass)}>
+              <Icon className={clsx('w-6 h-6', config.textClass)} />
             </div>
             <div>
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {harvest.name}
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                {harvest.type.charAt(0).toUpperCase() + harvest.type.slice(1)} • v{harvest.version}
+                {harvestType.charAt(0).toUpperCase() + harvestType.slice(1)} • v{harvest.version}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 touch-manipulation"
           >
-            <X className="w-5 h-5" />
+            <X className="w-6 h-6" />
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6 p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 p-4 lg:p-6">
         {/* Left Column - Details */}
-        <div className="col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6">
           {/* Description */}
           <div>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -142,37 +183,37 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
                   <span className="text-sm">Agents</span>
                 </div>
                 <p className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {harvest.metadata.agentCount}
+                  {harvest.metadata?.agentCount ?? 0}
                 </p>
               </div>
-              
+
               <div className="bg-gray-50 dark:bg-gray-800 rounded-apple p-4">
                 <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400 mb-1">
                   <Clock className="w-4 h-4" />
                   <span className="text-sm">Duration</span>
                 </div>
                 <p className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {Math.round(harvest.metadata.duration / 60)}m
+                  {Math.round((harvest.metadata?.duration ?? 0) / 60)}m
                 </p>
               </div>
-              
+
               <div className="bg-gray-50 dark:bg-gray-800 rounded-apple p-4">
                 <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400 mb-1">
                   <Star className="w-4 h-4" />
                   <span className="text-sm">Success Rate</span>
                 </div>
                 <p className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {harvest.metadata.successRate}%
+                  {harvest.metadata?.successRate ?? 0}%
                 </p>
               </div>
-              
+
               <div className="bg-gray-50 dark:bg-gray-800 rounded-apple p-4">
                 <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400 mb-1">
                   <Cpu className="w-4 h-4" />
                   <span className="text-sm">CPU Usage</span>
                 </div>
                 <p className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {harvest.metadata.resourceUsage?.cpu || 0}%
+                  {harvest.metadata?.resourceUsage?.cpu ?? 0}%
                 </p>
               </div>
             </div>
@@ -195,7 +236,7 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
               )}
             </div>
             <div className="space-y-2">
-              {harvest.yield && harvest.yield.length > 0 ? (
+              {harvest.yield?.length ? (
                 harvest.yield.map((yieldItem) => (
                   <div
                     key={yieldItem.id}
@@ -221,7 +262,7 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
                           {yieldItem.name}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {yieldItem.location || yieldItem.path} • {formatFileSize(yieldItem.size)}
+                          {yieldItem.location || yieldItem.path || 'No path'} • {formatFileSize(yieldItem.size)}
                         </p>
                       </div>
                     </button>
@@ -245,7 +286,7 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
           </div>
 
           {/* Configuration */}
-          {harvest.config.yaml && (
+          {harvest.config?.yaml && (
             <div>
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 YAML Configuration
@@ -311,14 +352,29 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Created</span>
                 <span className="font-medium text-gray-900 dark:text-white">
-                  {new Date(harvest.createdAt).toLocaleDateString()}
+                  {(() => {
+                    if (!harvest.createdAt) return 'Unknown';
+                    try {
+                      const date = new Date(harvest.createdAt);
+                      return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString();
+                    } catch {
+                      return 'Unknown';
+                    }
+                  })()}
                 </span>
               </div>
               {harvest.lastUsedAt && (
                 <div className="flex justify-between">
                   <span className="text-gray-600 dark:text-gray-400">Last Used</span>
                   <span className="font-medium text-gray-900 dark:text-white">
-                    {new Date(harvest.lastUsedAt).toLocaleDateString()}
+                    {(() => {
+                      try {
+                        const date = new Date(harvest.lastUsedAt);
+                        return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString();
+                      } catch {
+                        return 'Unknown';
+                      }
+                    })()}
                   </span>
                 </div>
               )}
@@ -326,13 +382,13 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
           </div>
 
           {/* Dependencies */}
-          {harvest.config.dependencies && harvest.config.dependencies.length > 0 && (
+          {harvest.config?.dependencies && harvest.config?.dependencies.length > 0 && (
             <div>
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 Dependencies
               </h3>
               <div className="space-y-1">
-                {harvest.config.dependencies.map((dep) => (
+                {harvest.config?.dependencies?.map((dep) => (
                   <div
                     key={dep}
                     className="text-sm text-gray-600 dark:text-gray-400 font-mono"
@@ -349,10 +405,12 @@ export const HarvestDetails: React.FC<HarvestDetailsProps> = ({ harvest, onClose
   );
 };
 
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
+function formatFileSize(bytes: number | undefined | null): string {
+  if (bytes === undefined || bytes === null || bytes === 0 || isNaN(bytes)) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  // Guard against negative or invalid index
+  const safeIndex = Math.max(0, Math.min(i, sizes.length - 1));
+  return parseFloat((bytes / Math.pow(k, safeIndex)).toFixed(2)) + ' ' + sizes[safeIndex];
 }

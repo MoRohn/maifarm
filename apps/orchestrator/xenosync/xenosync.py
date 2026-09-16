@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -46,24 +47,7 @@ class FileClaim:
         Returns:
             Path to stored CAS object
         """
-        import os
-        temp_file = self.path.with_name(f".{self.path.name}.tmp")
-        temp_file.write_bytes(data)
-        # Ensure data is synced to disk before atomic rename (WSL2 safety)
-        with open(temp_file, 'rb') as f:
-            os.fsync(f.fileno())
-
-        # Atomic rename
-        temp_file.replace(self.path)
-
-        # Fsync directory to ensure rename is durable
-        dir_fd = os.open(self.path.parent, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-
-        return self.store.store_bytes(data)
+        return await asyncio.to_thread(self._write_bytes_sync, data)
 
     async def write_text(self, data: str) -> Path:
         return await self.write_bytes(data.encode())
@@ -114,6 +98,26 @@ class FileClaim:
         # No merge needed
         return await self.write_bytes(new_data)
 
+    def _write_bytes_sync(self, data: bytes) -> Path:
+        """Perform the blocking write + fsync operations off the event loop."""
+        import os
+
+        temp_file = self.path.with_name(f".{self.path.name}.tmp")
+        temp_file.write_bytes(data)
+
+        with open(temp_file, "rb") as f:
+            os.fsync(f.fileno())
+
+        temp_file.replace(self.path)
+
+        dir_fd = os.open(self.path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+
+        return self.store.store_bytes(data)
+
 
 class XenoSyncManager:
     def __init__(self, settings: AppSettings) -> None:
@@ -124,7 +128,8 @@ class XenoSyncManager:
         self._lock = asyncio.Lock()
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._running = False
-        self._lock_wait_times: list[float] = []  # Track lock wait metrics
+        sample_cap = getattr(settings, "xenosync_lock_wait_samples", 500)
+        self._lock_wait_times: deque[float] = deque(maxlen=max(1, sample_cap))
         self._merge_conflict_count = 0
 
     async def start_heartbeat(self) -> None:
@@ -208,7 +213,8 @@ class XenoSyncManager:
             await self._emit_event("xenosync.lock_released", target, owner)
 
     async def subscribe(self) -> asyncio.Queue[XenoSyncEvent]:
-        queue: asyncio.Queue[XenoSyncEvent] = asyncio.Queue()
+        maxsize = max(1, getattr(self._settings, "xenosync_event_queue_size", 256))
+        queue: asyncio.Queue[XenoSyncEvent] = asyncio.Queue(maxsize=maxsize)
         async with self._lock:
             self._event_subscribers.append(queue)
         return queue
@@ -220,7 +226,16 @@ class XenoSyncManager:
         async with self._lock:
             subscribers = list(self._event_subscribers)
         for queue in subscribers:
-            queue.put_nowait(event)
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                # Drop oldest event for slow subscribers to keep stream moving
+                try:
+                    _ = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                finally:
+                    queue.put_nowait(event)
         _logger.debug("xenosync_event", event_type=event_type, path=str(path), owner=owner, detail=detail or {})
 
     async def get_debug_state(self) -> dict[str, Any]:

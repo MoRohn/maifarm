@@ -171,7 +171,7 @@ export class RealtimeMetricsAggregator extends EventEmitter {
       'cost.total',
       'cost.claude',
       'cost.openai',
-      'cost.qwen'
+      'cost.llama'
     ];
     
     for (const metric of metrics) {
@@ -569,7 +569,7 @@ export class RealtimeMetricsAggregator extends EventEmitter {
    * Calculate average latency across providers
    */
   private calculateAverageLatency(aggregated: Record<string, MetricSeries>): number {
-    const providers = [AIProvider.CLAUDE, AIProvider.OPENAI, AIProvider.QWEN];
+    const providers = [AIProvider.CLAUDE, AIProvider.OPENAI, AIProvider.LLAMA];
     let totalLatency = 0;
     let count = 0;
     
@@ -589,7 +589,7 @@ export class RealtimeMetricsAggregator extends EventEmitter {
    */
   private getProviderMetrics(aggregated: Record<string, MetricSeries>): Record<AIProvider, number> {
     const result: any = {};
-    const providers = [AIProvider.CLAUDE, AIProvider.OPENAI, AIProvider.QWEN];
+    const providers = [AIProvider.CLAUDE, AIProvider.OPENAI, AIProvider.LLAMA];
     
     for (const provider of providers) {
       // Count provider-specific requests from metadata
@@ -629,9 +629,9 @@ export class RealtimeMetricsAggregator extends EventEmitter {
     return {
       [AIProvider.CLAUDE]: (aggregated['cost.claude']?.aggregations?.sum || 0) / 100,
       [AIProvider.OPENAI]: (aggregated['cost.openai']?.aggregations?.sum || 0) / 100,
-      [AIProvider.QWEN]: (aggregated['cost.qwen']?.aggregations?.sum || 0) / 100,
-      [AIProvider.QWEN_LOCAL]: 0,
-      [AIProvider.GPT_OSS]: 0
+      [AIProvider.LLAMA]: (aggregated['cost.llama']?.aggregations?.sum || 0) / 100,
+      [AIProvider.GPT_OSS]: 0,
+      [AIProvider.GROK]: (aggregated['cost.grok']?.aggregations?.sum || 0) / 100
     };
   }
   

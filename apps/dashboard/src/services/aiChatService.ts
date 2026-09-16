@@ -266,7 +266,7 @@ Focus on creating well-structured, scalable farm configurations.`;
   }
 
   // Generate YAML from current context
-  async generateYAML(): Promise<string> {
+  async generateYAML(): Promise<{ yaml: string; source: 'service' | 'fallback' }> {
     try {
       const response = await api.post('/api/yaml/generate-from-context', {
         context: this.context,
@@ -275,14 +275,16 @@ Focus on creating well-structured, scalable farm configurations.`;
       });
 
       if (response.data.yaml) {
-        this.updateContext({ yamlConfig: response.data.yaml });
-        return response.data.yaml;
+        this.updateContext({ yamlConfig: response.data.yaml, yamlSource: 'service' });
+        return { yaml: response.data.yaml, source: 'service' };
       }
 
       throw new Error('Failed to generate YAML');
     } catch (error) {
       console.error('YAML generation error:', error);
-      throw error;
+      const fallbackYAML = this.buildFallbackYAML();
+      this.updateContext({ yamlConfig: fallbackYAML, yamlSource: 'fallback' });
+      return { yaml: fallbackYAML, source: 'fallback' };
     }
   }
 
@@ -396,6 +398,81 @@ Focus on creating well-structured, scalable farm configurations.`;
     this.conversationHistory = [];
     this.context = { mode: this.context.mode };
     this.cancelStream();
+  }
+
+  private buildFallbackYAML(): string {
+    const summary = (this.getConversationSummary() || '').trim();
+    const {
+      mode,
+      taskDescription,
+      finalPrompt,
+      numberOfAgents,
+      creativityLevel,
+      timeoutMinutes,
+      focusAreas,
+      attachments
+    } = this.context;
+
+    const prompt = (finalPrompt || taskDescription || summary || 'Describe the objective and desired outcome here.').trim();
+    const formattedPrompt = prompt.replace(/\r?\n/g, '\n      ');
+
+    const agentCount = numberOfAgents || (mode === 'quick-task' ? 1 : mode === 'go-wild' ? 4 : 5);
+    const timeout = timeoutMinutes || (mode === 'quick-task' ? 5 : 30);
+    const creativity = creativityLevel || (mode === 'go-wild' ? 80 : 45);
+
+    const agentLines: string[] = [];
+    for (let i = 0; i < agentCount; i += 1) {
+      const role = mode === 'go-wild' ? 'creative-specialist' : mode === 'new-farm' ? 'project-specialist' : 'focused-executor';
+      const responsibility = mode === 'quick-task'
+        ? 'Deliver the requested output efficiently.'
+        : 'Own assigned deliverables and keep the team informed.';
+      agentLines.push(`  - name: Agent ${i + 1}`);
+      agentLines.push(`    role: ${role}`);
+      agentLines.push('    responsibilities:');
+      agentLines.push(`      - ${responsibility}`);
+    }
+
+    const lines: string[] = [];
+    lines.push('version: 1');
+    lines.push(`mode: ${mode}`);
+    lines.push('task:');
+    lines.push('  summary: |');
+    lines.push(`      ${formattedPrompt}`);
+    lines.push('  constraints:');
+    lines.push(`    - total_time: ${timeout} minutes`);
+    lines.push(`    - creativity_level: ${creativity}%`);
+    lines.push('  focus_areas:');
+    lines.push(`    - ${(focusAreas && focusAreas.length ? focusAreas.join(', ') : 'General completion')}`);
+    lines.push('  reference_files:');
+    if (attachments && attachments.length > 0) {
+      attachments.forEach(file => lines.push(`    - ${file.name}`));
+    } else {
+      lines.push('    - none');
+    }
+    lines.push('agents:');
+    if (agentLines.length > 0) {
+      lines.push(...agentLines);
+    } else {
+      lines.push('  - name: Agent 1');
+      lines.push('    role: focused-executor');
+      lines.push('    responsibilities:');
+      lines.push('      - Deliver the requested output efficiently.');
+    }
+    lines.push('coordination:');
+    lines.push(`  strategy: ${mode === 'quick-task' ? 'single-agent-direct' : mode === 'go-wild' ? 'parallel-exploration' : 'multi-agent-collaboration'}`);
+    lines.push('  cadences:');
+    lines.push(`    - progress: ${mode === 'quick-task' ? 'on-start-and-complete' : 'every 15 minutes'}`);
+    lines.push('    - integration: continuous');
+    lines.push('outputs:');
+    lines.push('  - format: harvest');
+    lines.push('    requirements:');
+    lines.push('      - production_ready: true');
+    lines.push('      - include_documentation: true');
+    lines.push('metadata:');
+    lines.push("  generated_by: 'fallback-yaml-builder'");
+    lines.push(`  generated_at: '${new Date().toISOString()}'`);
+
+    return lines.join('\n');
   }
 }
 

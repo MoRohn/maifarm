@@ -2,7 +2,10 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  displayName?: string;
+  username?: string;
   avatar?: string;
+  avatarUrl?: string;
   roles: Role[];
   permissions: Permission[];
   createdAt: Date;
@@ -10,8 +13,15 @@ export interface User {
   lastLogin?: Date;
   mfaEnabled?: boolean;
   isActive?: boolean;
+  isAdmin?: boolean;
   sessionToken?: string;
   notifications?: Notification[];
+  farms?: any[];
+  harvests?: any[];
+  preferences?: Record<string, any>;
+  credits?: number;
+  tier?: string;
+  setupCompletedAt?: string | Date | null;
 }
 
 // Alias for backwards compatibility
@@ -63,8 +73,18 @@ export interface LoginInput {
 export interface RegisterInput {
   email: string;
   name: string;
-  password: string;
+  password?: string;
   confirmPassword?: string;
+  authMode?: 'password' | 'passwordless';
+}
+
+export interface ProfileUpdateInput {
+  name?: string;
+  displayName?: string;
+  username?: string;
+  email?: string;
+  avatar?: string | null;
+  preferences?: Record<string, any>;
 }
 
 export interface AuthToken {
@@ -88,15 +108,23 @@ export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isBootstrapping: boolean;
   error: string | null;
 }
 
+export interface AuthFlowOptions {
+  redirectTo?: string | null;
+}
+
 export interface AuthContextType extends AuthState {
-  login: (credentials: LoginCredentials) => Promise<void>;
+  login: (credentials: LoginCredentials, options?: AuthFlowOptions) => Promise<void>;
+  register: (input: RegisterInput, options?: AuthFlowOptions) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
+  updateProfile: (updates: ProfileUpdateInput) => Promise<void>;
   checkPermission: (resource: string, action: string) => boolean;
   hasRole: (roleName: string) => boolean;
+  bypassForDevelopment?: () => Promise<User | null>;
 }
 
 export enum AuthActions {

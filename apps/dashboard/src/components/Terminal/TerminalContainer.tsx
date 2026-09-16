@@ -26,7 +26,9 @@ export const TerminalContainer: React.FC<TerminalContainerProps> = ({
   defaultViewMode = 'grid',
   showHeader = true,
   showControls = true,
-  maxHeight = '600px',
+  // Responsive max height using clamp() with CSS viewport variable fallback
+  // Mobile: min 200px, Desktop: max 600px, scales with viewport
+  maxHeight = 'clamp(200px, calc(var(--full-vh, 60vh) * 0.5), 600px)',
   autoConnect = true
 }) => {
   const [viewMode, setViewMode] = useState<TerminalViewMode>({
@@ -244,10 +246,11 @@ export const TerminalContainer: React.FC<TerminalContainerProps> = ({
   return (
     <div 
       className={containerClasses}
-      style={{ 
-        height: isFullscreen ? '100vh' : '100%',
+      style={{
+        // CRITICAL FIX: Use CSS variable for accurate viewport height on iOS Safari
+        height: isFullscreen ? 'var(--full-vh, 100vh)' : '100%',
         maxHeight: isFullscreen ? 'none' : '100%',
-        minHeight: isFullscreen ? '100vh' : '400px'
+        minHeight: isFullscreen ? 'var(--full-vh, 100vh)' : '400px'
       }}
     >
       {/* Header */}

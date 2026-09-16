@@ -157,7 +157,8 @@ export const productionConfig: ProductionConfig = {
   },
 
   logging: {
-    level: (process.env.LOG_LEVEL as LogLevel) || (isProduction ? LogLevel.INFO : LogLevel.DEBUG),
+    // Use defensive fallback to avoid undefined LogLevel during test module loading
+    level: (process.env.LOG_LEVEL as unknown as LogLevel) || (isProduction ? (LogLevel?.INFO ?? 2) : (LogLevel?.DEBUG ?? 3)),
     enableFileLogging: process.env.ENABLE_FILE_LOGGING === 'true',
     logDirectory: process.env.LOG_DIRECTORY || './logs',
     maxFileSize: process.env.LOG_MAX_FILE_SIZE || '20m',

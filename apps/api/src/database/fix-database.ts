@@ -8,11 +8,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const _currentFilePath = fileURLToPath(import.meta.url);
+const _currentDirPath = path.dirname(_currentFilePath);
 
 // Load environment variables
-dotenv.config({ path: path.join(__dirname, '../../.env.development') });
+dotenv.config({ path: path.join(_currentDirPath, '../../.env.development') });
 
 /**
  * Comprehensive database fix utility

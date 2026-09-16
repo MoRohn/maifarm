@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  TrashIcon,
+import { 
+  TrashIcon, 
   ExclamationTriangleIcon,
   FolderIcon,
   DocumentIcon,
@@ -13,7 +13,6 @@ import {
 import { clsx } from 'clsx';
 import { api } from '@/services/apiClient';
 import { toast } from 'react-hot-toast';
-import { useFarmStore } from '@/store/farmStore';
 
 interface StorageInfo {
   totalFiles: number;
@@ -43,9 +42,6 @@ export const MaiBarnReset: React.FC = () => {
       sessionsKilled: number;
     };
   } | null>(null);
-
-  // Get fetchFarms from farm store to refresh sidebar
-  const { fetchFarms } = useFarmStore();
 
   useEffect(() => {
     fetchStorageInfo();
@@ -117,31 +113,14 @@ export const MaiBarnReset: React.FC = () => {
     setIsResetting(true);
     try {
       const response = await api.maibarn.reset({ includeDatabase });
-
+      
       if (response?.data?.success) {
         setResetResult(response.data);
         toast.success('MaiBarn has been reset successfully');
-
-        // Refresh storage info and farms list after reset
-        setTimeout(async () => {
+        
+        // Refresh storage info after reset
+        setTimeout(() => {
           fetchStorageInfo();
-
-          // Refresh the farms list in the sidebar navigation
-          try {
-            await fetchFarms();
-            console.log('[MaiBarnReset] Farms list refreshed successfully after reset');
-
-            // Show success message if database was cleaned
-            if (includeDatabase && response.data.databaseCleanup) {
-              toast.success('Farms list updated - all farms removed', {
-                duration: 3000,
-                icon: '✅'
-              });
-            }
-          } catch (err) {
-            console.error('Failed to refresh farms list after reset:', err);
-            toast.error('Failed to refresh farms list - please reload the page');
-          }
         }, 1000);
       } else {
         const errorMessage = response?.data?.message || 'Failed to reset MaiBarn - unknown error';

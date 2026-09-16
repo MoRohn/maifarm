@@ -2,6 +2,9 @@
  * Session Cleanup Service
  * Handles cleanup of orphaned tmux sessions, terminal processes, and workspace resources
  * Critical for preventing resource leaks in production
+ *
+ * IMPORTANT: This service coordinates with terminal streaming services to prevent
+ * race conditions where files are deleted while still being watched.
  */
 
 import * as fs from 'fs/promises';
@@ -12,6 +15,31 @@ import { EventEmitter } from 'events';
 import { logger, LogCategory } from '../utils/logger';
 import { pathConfig } from '../config/paths';
 import { websocketManager } from '../websocket/websocketManager';
+
+// Import terminal streaming services for coordination
+// Using dynamic imports to avoid circular dependencies
+let unifiedTerminalStreamService: any = null;
+let terminalFileWatcherService: any = null;
+
+const getTerminalServices = async () => {
+  if (!unifiedTerminalStreamService) {
+    try {
+      const module = await import('./UnifiedTerminalStreamService');
+      unifiedTerminalStreamService = module.unifiedTerminalStreamService;
+    } catch {
+      // Service not available, continue without it
+    }
+  }
+  if (!terminalFileWatcherService) {
+    try {
+      const module = await import('./terminalFileWatcherService');
+      terminalFileWatcherService = module.terminalFileWatcherService;
+    } catch {
+      // Service not available, continue without it
+    }
+  }
+  return { unifiedTerminalStreamService, terminalFileWatcherService };
+};
 
 const execAsync = promisify(exec);
 
@@ -236,7 +264,40 @@ class SessionCleanupService extends EventEmitter {
   }
 
   /**
+   * Check if farm is protected by ShutdownCoordinator
+   * CRITICAL: Prevents cleanup of farms that are actively running and scheduled for graceful shutdown
+   */
+  private async checkFarmProtected(farmId: string, sessionName: string): Promise<boolean> {
+    try {
+      // Check if shutdown is scheduled for this farm
+      const { shutdownCoordinator } = await import('./shutdownCoordinator');
+
+      // Try to match with both short and full farm IDs
+      // Session names are "farm-{short-id}" so we need to check both formats
+      const sessionShortId = sessionName.replace(/^farm-/, '');
+
+      // Check if shutdown is scheduled (which means farm is protected until timeout)
+      if (shutdownCoordinator.isShutdownScheduled(farmId)) {
+        logger.debug(LogCategory.SYSTEM, `Farm ${farmId} is protected by scheduled shutdown`);
+        return true;
+      }
+
+      // Also check with short ID in case of mismatch
+      if (sessionShortId !== farmId && shutdownCoordinator.isShutdownScheduled(sessionShortId)) {
+        logger.debug(LogCategory.SYSTEM, `Farm ${sessionShortId} is protected by scheduled shutdown`);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      logger.warn(LogCategory.SYSTEM, `Failed to check farm protection for ${farmId}:`, error);
+      return true; // Assume protected on error to avoid accidental cleanup
+    }
+  }
+
+  /**
    * Identify orphaned sessions
+   * CRITICAL: Enhanced to respect farm protection and proper UUID matching
    */
   private async identifyOrphanedSessions(
     sessions: SessionInfo[],
@@ -247,23 +308,32 @@ class SessionCleanupService extends EventEmitter {
     const now = Date.now();
 
     for (const session of sessions) {
+      // CRITICAL: Check if farm is protected by ShutdownCoordinator FIRST
+      const isProtected = await this.checkFarmProtected(session.farmId, session.sessionName);
+      if (isProtected) {
+        logger.debug(LogCategory.SYSTEM,
+          `Session ${session.sessionName} is protected, skipping cleanup`
+        );
+        continue;
+      }
+
       // Check if session is too old
       const age = now - session.lastActivity.getTime();
       if (age > maxAge) {
         session.orphaned = true;
         orphaned.push(session);
-        logger.info(LogCategory.SYSTEM, 
+        logger.info(LogCategory.SYSTEM,
           `Session ${session.sessionName} orphaned: age ${Math.round(age / 1000 / 60)} minutes`
         );
         continue;
       }
 
-      // Check if farm exists in database
+      // Check if farm exists in database (now handles short IDs properly)
       const farmExists = await this.checkFarmExists(session.farmId);
       if (!farmExists) {
         session.orphaned = true;
         orphaned.push(session);
-        logger.info(LogCategory.SYSTEM, 
+        logger.info(LogCategory.SYSTEM,
           `Session ${session.sessionName} orphaned: farm ${session.farmId} not found`
         );
         continue;
@@ -273,7 +343,7 @@ class SessionCleanupService extends EventEmitter {
       if (session.pids.length === 0) {
         session.orphaned = true;
         orphaned.push(session);
-        logger.info(LogCategory.SYSTEM, 
+        logger.info(LogCategory.SYSTEM,
           `Session ${session.sessionName} orphaned: no running processes`
         );
       }
@@ -284,18 +354,38 @@ class SessionCleanupService extends EventEmitter {
 
   /**
    * Check if farm exists in database
+   * CRITICAL: Handles both short IDs (from session names) and full UUIDs
    */
   private async checkFarmExists(farmId: string): Promise<boolean> {
     try {
       // Accept both UUIDs and legacy string IDs (prefixed with "test-" etc.)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const query = uuidRegex.test(farmId)
-        ? 'SELECT 1 FROM farms WHERE id = $1'
-        : 'SELECT 1 FROM farms WHERE id::text = $1 OR tmux_session = $1';
+      const isFullUUID = uuidRegex.test(farmId);
+
+      let query: string;
+      let params: string[];
+
+      if (isFullUUID) {
+        // Full UUID - query directly
+        query = 'SELECT 1 FROM farms WHERE id = $1';
+        params = [farmId];
+      } else {
+        // Short ID from session name (first 8 chars) - use LIKE pattern
+        // Session names are "farm-{first-8-chars}" so farmId is already the short version
+        query = 'SELECT 1 FROM farms WHERE id::text LIKE $1';
+        params = [`${farmId}%`]; // Match any farm ID starting with this short ID
+      }
 
       const { db } = await import('../database/connection');
-      const result = await db.query(query, [farmId]);
-      return result.rows.length > 0;
+      const result = await db.query(query, params);
+
+      if (result.rows.length > 0) {
+        logger.debug(LogCategory.SYSTEM, `Farm ${farmId} exists in database`);
+        return true;
+      }
+
+      logger.debug(LogCategory.SYSTEM, `Farm ${farmId} not found in database`);
+      return false;
     } catch (error) {
       logger.error(LogCategory.SYSTEM, `Failed to check farm existence: ${farmId}`, error);
       return true; // Assume exists on error to avoid accidental cleanup
@@ -338,6 +428,10 @@ class SessionCleanupService extends EventEmitter {
 
   /**
    * Clean up old terminal outputs
+   *
+   * CRITICAL FIX: Coordinates with terminal streaming services to stop
+   * watchers BEFORE deleting files. This prevents the race condition where
+   * file watchers try to read from deleted files.
    */
   private async cleanupTerminalOutputs(options: CleanupOptions): Promise<{
     filesDeleted: number;
@@ -349,32 +443,78 @@ class SessionCleanupService extends EventEmitter {
     const maxAge = this.TERMINAL_OUTPUT_MAX_AGE;
     const now = Date.now();
 
+    // Get terminal services for coordination
+    const { unifiedTerminalStreamService: uts, terminalFileWatcherService: tfw } =
+      await getTerminalServices();
+
     try {
       const files = await fs.readdir(terminalDir);
 
       for (const file of files) {
         const filePath = path.join(terminalDir, file);
-        const fileStat = await fs.stat(filePath);
+        let fileStat;
+
+        try {
+          fileStat = await fs.stat(filePath);
+        } catch (err) {
+          // File may have been deleted by another process
+          logger.debug(LogCategory.SYSTEM, `File already gone during cleanup: ${file}`);
+          continue;
+        }
+
         const age = now - fileStat.mtimeMs;
 
         if (age > maxAge) {
+          // Extract farmId from file/directory name (format: {farmId} or {farmId}/agent-*.log)
+          const farmId = file.includes('-') ? file : file.replace('.log', '').replace('agent-', '');
+
           if (!options.dryRun) {
-            stats.spaceReclaimed += fileStat.size;
-            if (fileStat.isDirectory()) {
-              await fs.rm(filePath, { recursive: true, force: true });
-            } else {
-              await fs.unlink(filePath);
+            // CRITICAL: Stop any active watchers BEFORE deleting the file
+            // This prevents ENOENT errors in the watcher callbacks
+            try {
+              if (uts && typeof uts.stopAllStreamsByFarmId === 'function') {
+                await uts.stopAllStreamsByFarmId(farmId);
+                logger.debug(LogCategory.SYSTEM, `Stopped terminal streams for farm ${farmId} before cleanup`);
+              }
+              if (tfw && typeof tfw.stopWatching === 'function') {
+                await tfw.stopWatching(farmId);
+                logger.debug(LogCategory.SYSTEM, `Stopped file watchers for farm ${farmId} before cleanup`);
+              }
+            } catch (watcherError) {
+              // Log but don't fail cleanup if watcher stop fails
+              logger.warn(LogCategory.SYSTEM, `Failed to stop watchers before cleanup: ${watcherError}`);
             }
-            stats.filesDeleted++;
-            logger.debug(LogCategory.SYSTEM, `Deleted old terminal output: ${file}`);
+
+            // Small delay to let watchers fully close
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            stats.spaceReclaimed += fileStat.size;
+
+            try {
+              if (fileStat.isDirectory()) {
+                await fs.rm(filePath, { recursive: true, force: true });
+              } else {
+                await fs.unlink(filePath);
+              }
+              stats.filesDeleted++;
+              logger.debug(LogCategory.SYSTEM, `Deleted old terminal output: ${file}`);
+            } catch (deleteError) {
+              // Handle race condition where file was deleted by another process
+              const errCode = (deleteError as any)?.code;
+              if (errCode === 'ENOENT') {
+                logger.debug(LogCategory.SYSTEM, `File already deleted: ${file}`);
+              } else {
+                logger.warn(LogCategory.SYSTEM, `Failed to delete ${file}: ${deleteError}`);
+              }
+            }
           } else {
             logger.info(LogCategory.SYSTEM, `[DRY RUN] Would delete terminal output: ${file}`);
             stats.filesDeleted++;
             stats.spaceReclaimed += fileStat.size;
           }
+        }
       }
-    }
-  } catch (error) {
+    } catch (error) {
       logger.warn(LogCategory.SYSTEM, 'Failed to cleanup terminal outputs:', error);
     }
 

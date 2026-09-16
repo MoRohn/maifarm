@@ -1,22 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
-import { 
-  KeyIcon, 
-  SparklesIcon,
+import {
   PaintBrushIcon,
-  AdjustmentsHorizontalIcon,
+  LockClosedIcon,
+  ServerIcon,
+  InformationCircleIcon,
+  UserCircleIcon,
+  SparklesIcon,
+  BookOpenIcon,
   TrashIcon,
-  ServerIcon
 } from '@heroicons/react/24/outline';
 import ThemeSettings from './ThemeSettings';
-import GoWildSettings from './GoWildSettings';
-import BehaviorSettings from './BehaviorSettings';
 import AIProviderSettings from './AIProviderSettings';
+import UserProfile from './UserProfile';
+import SecuritySettings from './SecuritySettings';
+import AboutSettings from './AboutSettings';
 import { MaiBarnReset } from './MaiBarnReset';
+import AIEngineStatusIndicator from './AIEngineStatusIndicator';
 import { useUserStore } from '@/store/userStore';
 import { useAIPreferences } from '@/hooks/useAIPreferences';
 import { useThemeStore } from '@/store/themeStore';
+import { useSettingsStore } from '@/store/settingsStore';
+import { useToast } from '@/hooks/useToast';
 
 interface SettingsTab {
   id: string;
@@ -28,12 +34,24 @@ interface SettingsTab {
 
 const SettingsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState('theme');
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [pendingChanges, setPendingChanges] = useState<Record<string, any>>({});
+  const [activeTab, setActiveTab] = useState('profile');
   const { preferences } = useUserStore();
   const { aiSuggestions, acceptSuggestion, dismissSuggestion } = useAIPreferences();
   const themeStore = useThemeStore();
+  const toast = useToast();
+  const {
+    settings,
+    loadSettings,
+    saveSettings,
+    resetSettings,
+    loading,
+    loaded,
+    dirty,
+    saving,
+    error
+  } = useSettingsStore();
+  const hydratePreferences = useUserStore((state) => state.hydratePreferences);
+  const hasHydratedRef = useRef(false);
 
   // Handle tab from URL query parameter
   useEffect(() => {
@@ -43,15 +61,40 @@ const SettingsPage: React.FC = () => {
       const mappedTab = tabParam === 'ai' ? 'aiProvider' : tabParam;
       setActiveTab(mappedTab);
       // Remove the query parameter after reading it
-      searchParams.delete('tab');
-      setSearchParams(searchParams, { replace: true });
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('tab');
+      setSearchParams(newParams, { replace: true });
     }
-  }, [searchParams, setSearchParams]);
+  }, [searchParams.get('tab'), setSearchParams]);
+  
+  useEffect(() => {
+    if (!loaded && !loading) {
+      void loadSettings();
+    }
+  }, [loaded, loading, loadSettings]);
+
+  useEffect(() => {
+    if (loaded && !hasHydratedRef.current) {
+      hasHydratedRef.current = true;
+      hydratePreferences({
+        notifications: settings.user?.notifications as any,
+        language: settings.user?.language?.current ?? 'en'
+      });
+    }
+  }, [loaded]);
   
   // Check for any unsaved changes (local or from theme store)
-  const hasAnyUnsavedChanges = hasUnsavedChanges || (activeTab === 'theme' && themeStore.hasUnsavedChanges);
+  const hasAnyUnsavedChanges = dirty || (activeTab === 'theme' && themeStore.hasUnsavedChanges);
 
-  const tabs: SettingsTab[] = [
+  // Memoize tabs array to prevent recreation on every render
+  const tabs: SettingsTab[] = useMemo(() => [
+    {
+      id: 'profile',
+      label: 'Profile',
+      icon: UserCircleIcon,
+      component: UserProfile,
+      aiRecommended: false
+    },
     {
       id: 'theme',
       label: 'Appearance',
@@ -61,80 +104,62 @@ const SettingsPage: React.FC = () => {
     },
     {
       id: 'aiProvider',
-      label: 'AI Engine & Keys',
+      label: 'AI Engine Setup',
       icon: ServerIcon,
       component: AIProviderSettings,
       aiRecommended: aiSuggestions.some(s => s.category === 'ai')
     },
     {
-      id: 'behavior',
-      label: 'Behavior',
-      icon: AdjustmentsHorizontalIcon,
-      component: BehaviorSettings,
+      id: 'security',
+      label: 'Security',
+      icon: LockClosedIcon,
+      component: SecuritySettings,
       aiRecommended: false
     },
     {
-      id: 'goWild',
-      label: 'Go Wild',
-      icon: SparklesIcon,
-      component: GoWildSettings,
-      aiRecommended: aiSuggestions.some(s => s.category === 'exploration')
-    },
-    {
-      id: 'maibarnReset',
+      id: 'dataReset',
       label: 'Data Reset',
       icon: TrashIcon,
       component: MaiBarnReset,
       aiRecommended: false
+    },
+    {
+      id: 'about',
+      label: 'About',
+      icon: InformationCircleIcon,
+      component: AboutSettings,
+      aiRecommended: false
     }
-  ];
+  ], [aiSuggestions]);
 
-  const activeTabData = tabs.find(tab => tab.id === activeTab);
-  const ActiveComponent = activeTabData?.component || ThemeSettings;
+  // Memoize active component to prevent recalculation
+  const ActiveComponent = useMemo(() => {
+    const activeTabData = tabs.find(tab => tab.id === activeTab);
+    return activeTabData?.component || ThemeSettings;
+  }, [activeTab, tabs]);
 
-  const handleSave = () => {
-    // Apply all pending changes
-    console.log('Saving changes:', pendingChanges);
-    
-    // Save theme changes if on theme tab
+  const handleSave = async () => {
     if (activeTab === 'theme' && themeStore.hasUnsavedChanges) {
-      themeStore.saveChanges();
+      await themeStore.saveChanges();
     }
-    
-    // Apply other pending changes
-    // This would typically involve calling API endpoints or updating store
-    Object.entries(pendingChanges).forEach(([key, value]) => {
-      // Handle other settings saves here
-      console.log(`Saving ${key}:`, value);
-    });
-    
-    // Reset state after saving
-    setHasUnsavedChanges(false);
-    setPendingChanges({});
-    
-    // Show success notification
-    console.log('Settings saved successfully');
+
+    try {
+      await saveSettings();
+      toast.success('Settings saved');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save settings';
+      toast.error(message);
+    }
   };
 
   const handleCancel = () => {
-    // Reset all pending changes
-    setHasUnsavedChanges(false);
-    setPendingChanges({});
-    
-    // Discard theme changes if on theme tab
     if (activeTab === 'theme' && themeStore.hasUnsavedChanges) {
       themeStore.discardChanges();
     }
-    
-    console.log('Changes cancelled');
-  };
 
-  const handleSettingChange = (settingKey: string, value: any) => {
-    setPendingChanges(prev => ({
-      ...prev,
-      [settingKey]: value
-    }));
-    setHasUnsavedChanges(true);
+    resetSettings();
+    // Reset hydration flag to allow re-hydration on next settings load
+    hasHydratedRef.current = false;
   };
 
   return (
@@ -145,7 +170,7 @@ const SettingsPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center space-x-3">
-                <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">
                   Settings
                 </h1>
                 {hasAnyUnsavedChanges && (
@@ -179,6 +204,12 @@ const SettingsPage: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* AI Engine Status Indicator */}
+        <AIEngineStatusIndicator
+          className="mb-6"
+          onChangeEngine={() => setActiveTab('aiProvider')}
+        />
+
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar */}
           <nav className="w-full lg:w-64 flex-shrink-0 space-y-1">
@@ -221,7 +252,7 @@ const SettingsPage: React.FC = () => {
             >
               <div className="p-6">
               {/* AI Suggestions Banner */}
-              {aiSuggestions.some(s => s.category === activeTab) && (
+            {aiSuggestions.some(s => s.category === activeTab) && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -266,7 +297,13 @@ const SettingsPage: React.FC = () => {
                 </motion.div>
               )}
 
-              <ActiveComponent onChange={handleSettingChange} />
+              {loading && !loaded ? (
+                <div className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                  Loading settings…
+                </div>
+              ) : (
+                <ActiveComponent />
+              )}
               </div>
             </motion.div>
 
@@ -291,14 +328,21 @@ const SettingsPage: React.FC = () => {
                     ? 'bg-purple-600 hover:bg-purple-700 text-white hover:shadow-md'
                     : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-default'
                 }`}
-                disabled={!hasAnyUnsavedChanges}
+                disabled={!hasAnyUnsavedChanges || saving}
               >
-                {hasAnyUnsavedChanges ? 'Save Changes' : 'All Changes Saved'}
+                {saving ? 'Saving…' : hasAnyUnsavedChanges ? 'Save Changes' : 'All Changes Saved'}
               </button>
             </motion.div>
           </main>
         </div>
       </div>
+      {error && (
+        <div className="px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-4xl rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+            {error}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

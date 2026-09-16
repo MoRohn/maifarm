@@ -57,12 +57,54 @@ router.post('/', upload.array('files', 5), requirePermission(['farms:create']), 
     const uploadedFiles = req.files as Express.Multer.File[];
     const userId = (req as any).user?.id || 'system';
 
-    if (!prompt) {
+    // FIX: Comprehensive input validation for GoWild parameters
+    const validationErrors: string[] = [];
+
+    // Prompt validation
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+      validationErrors.push('Exploration prompt is required and must be a non-empty string');
+    } else if (prompt.length > 10000) {
+      validationErrors.push('Prompt must be less than 10000 characters');
+    }
+
+    // Timeout validation (30 seconds to 6 hours)
+    const parsedTimeout = Number(timeout);
+    if (isNaN(parsedTimeout) || parsedTimeout < 30 || parsedTimeout > 21600) {
+      validationErrors.push('Timeout must be a number between 30 and 21600 seconds (30 seconds to 6 hours)');
+    }
+
+    // MaxAgents validation (1-20 for GoWild)
+    const parsedMaxAgents = Number(maxAgents);
+    if (isNaN(parsedMaxAgents) || parsedMaxAgents < 1 || parsedMaxAgents > 20) {
+      validationErrors.push('maxAgents must be a number between 1 and 20');
+    }
+
+    // Creativity level validation (1-10)
+    const parsedCreativity = Number(creativityLevel);
+    if (isNaN(parsedCreativity) || parsedCreativity < 1 || parsedCreativity > 10) {
+      validationErrors.push('creativityLevel must be a number between 1 and 10');
+    }
+
+    // Boundaries validation
+    if (!Array.isArray(boundaries)) {
+      validationErrors.push('Boundaries must be an array');
+    } else if (boundaries.length > 50) {
+      validationErrors.push('Maximum 50 boundaries allowed');
+    } else if (boundaries.some(b => typeof b !== 'string' || b.length > 500)) {
+      validationErrors.push('Each boundary must be a string of max 500 characters');
+    }
+
+    // AutoScale validation
+    if (typeof autoScale !== 'boolean' && autoScale !== 'true' && autoScale !== 'false') {
+      validationErrors.push('autoScale must be a boolean');
+    }
+
+    if (validationErrors.length > 0) {
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Exploration prompt is required'
+          message: validationErrors.join('; ')
         }
       };
       return res.status(400).json(response);
@@ -104,6 +146,7 @@ router.post('/', upload.array('files', 5), requirePermission(['farms:create']), 
       name: farmName,
       description: prompt,
       type: 'autonomous',
+      mode: 'go_wild', // CRITICAL: Set mode to go_wild, not harvest
       provider: 'claude', // GoWild primarily uses Claude
       config: {
         maxAgents: validatedAgentCount,

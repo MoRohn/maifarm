@@ -3,8 +3,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const _currentFilePath = fileURLToPath(import.meta.url);
+const _currentDirPath = path.dirname(_currentFilePath);
 
 interface MigrationStatus {
   name: string;
@@ -106,7 +106,7 @@ export class RobustMigrationRunner {
   }
 
   private async discoverMigrations(): Promise<string[]> {
-    const migrationsDir = path.join(__dirname, 'migrations');
+    const migrationsDir = path.join(_currentDirPath, 'migrations');
     const entries = await fs.readdir(migrationsDir);
 
     const filtered = entries.filter((file) => /^(\d+)_.*\.sql$/.test(file));
@@ -130,7 +130,7 @@ export class RobustMigrationRunner {
       await this.markMigrationRunning(filename, version);
 
       // Read migration file
-      const filePath = path.join(__dirname, 'migrations', filename);
+      const filePath = path.join(_currentDirPath, 'migrations', filename);
       const sql = await fs.readFile(filePath, 'utf-8');
 
       // Calculate checksum for idempotency

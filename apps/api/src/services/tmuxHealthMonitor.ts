@@ -285,7 +285,7 @@ export class TmuxHealthMonitor extends EventEmitter {
     
     try {
       const { stdout } = await execAsync(
-        'tmux list-sessions -F "#{session_name}:#{session_id}:#{session_windows}:#{session_created}" 2>/dev/null || echo ""'
+        'TMUX_TMPDIR=/tmp tmux list-sessions -F "#{session_name}:#{session_id}:#{session_windows}:#{session_created}" 2>/dev/null || echo ""'
       );
       
       if (stdout.trim()) {
@@ -312,7 +312,7 @@ export class TmuxHealthMonitor extends EventEmitter {
   private async getSessionPaneCount(sessionName: string): Promise<number> {
     try {
       const { stdout } = await execAsync(
-        `tmux list-panes -t "${sessionName}:0" -F "#{pane_index}" 2>/dev/null | wc -l`
+        `TMUX_TMPDIR=/tmp tmux list-panes -t "${sessionName}:0" -F "#{pane_index}" 2>/dev/null | wc -l`
       );
       return parseInt(stdout.trim()) || 0;
     } catch (error) {

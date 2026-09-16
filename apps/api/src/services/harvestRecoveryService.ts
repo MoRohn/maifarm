@@ -84,10 +84,12 @@ export class HarvestRecoveryService extends EventEmitter {
       });
     }
     
-    // Listen for health manager events
-    tmuxHealthManager.on('session:critical', (data: any) => {
-      this.queueRecovery(data.farmId, data.sessionName, 'dead_session');
-    });
+    // Listen for health manager events (if event emitter is supported)
+    if (tmuxHealthManager && typeof (tmuxHealthManager as any).on === 'function') {
+      (tmuxHealthManager as any).on('session:critical', (data: any) => {
+        this.queueRecovery(data.farmId, data.sessionName, 'dead_session');
+      });
+    }
   }
   
   /**
@@ -345,16 +347,11 @@ export class HarvestRecoveryService extends EventEmitter {
         
         // Also stop any terminal monitoring for this farm's session
         try {
-          const { terminalStreamService } = await import('./terminalStreamService');
+          const { unifiedTerminalStreamService } = await import('./UnifiedTerminalStreamService');
           const { terminalOutputWatcher } = await import('./terminalOutputWatcher');
-          
-          await terminalStreamService.stopStreaming(task.sessionName);
+
+          await unifiedTerminalStreamService.stopFarm(farmId);
           terminalOutputWatcher.stopWatching(task.sessionName);
-          
-          // Also try quick task session format
-          const quickSessionName = task.sessionName.replace('farm-', 'quick_');
-          await terminalStreamService.stopStreaming(quickSessionName);
-          terminalOutputWatcher.stopWatching(quickSessionName);
         } catch (cleanupError) {
           logger.debug(`[HarvestRecovery] Error cleaning up monitoring for ${task.sessionName}:`, cleanupError);
         }

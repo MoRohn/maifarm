@@ -6,7 +6,8 @@
 
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { farmService, FarmMode, FarmConfig } from './farmService';
+import { farmService, FarmConfig } from './farmService';
+import { FarmMode } from '../../types/farm';
 import { stateCoordinator, EntityType, StateEvent } from './stateCoordinator';
 import { websocketHub } from './websocketHub';
 import { terminalService } from './terminalService';

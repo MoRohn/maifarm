@@ -45,7 +45,8 @@ class TerminalFileWatcherService {
    */
   async watchFarm(farmId: string, sessionName: string): Promise<void> {
     // Get the terminals directory path
-    const terminalsBasePath = getPath('TERMINALS_DIR') || path.join(pathConfig.getPath('MAIBARN_DIR'), 'terminals');
+    // CRITICAL FIX: Use MAIBARN_ROOT instead of non-existent MAIBARN_DIR
+    const terminalsBasePath = getPath('TERMINALS_DIR') || path.join(pathConfig.getPath('MAIBARN_ROOT'), 'terminals');
 
     logger.info(LogCategory.TERMINAL, `watchFarm called with farmId: "${farmId}", sessionName: "${sessionName}"`);
     logger.info(LogCategory.TERMINAL, `terminalsBasePath: ${terminalsBasePath}`);
@@ -490,6 +491,20 @@ class TerminalFileWatcherService {
       }
     }
     return false;
+  }
+
+  /**
+   * Force check for updates for a specific farm
+   * This triggers the watcher to read the latest content immediately
+   */
+  async checkForUpdates(farmId: string): Promise<void> {
+    // Find all watchers for this farm and trigger their update handlers
+    for (const [filePath, watchedFile] of this.watchers.entries()) {
+      if (watchedFile.farmId === farmId) {
+        // Emit a change event to trigger processing
+        this.emit('file:check', { farmId, filePath });
+      }
+    }
   }
 }
 

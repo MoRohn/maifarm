@@ -1,0 +1,150 @@
+<svg viewBox="0 0 1290 2796" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#064e3b"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e293b"/>
+      <stop offset="100%" style="stop-color:#0f172a"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#059669"/>
+      <stop offset="100%" style="stop-color:#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1290" height="2796" fill="url(#bgGrad)"/>
+
+  <!-- Status bar area -->
+  <rect x="0" y="0" width="1290" height="120" fill="rgba(0,0,0,0.3)"/>
+  <text x="80" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="42" font-weight="600">9:41</text>
+  <text x="1210" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="42" text-anchor="end">100%</text>
+
+  <!-- Header -->
+  <text x="645" y="220" fill="white" font-family="SF Pro Display, -apple-system" font-size="72" font-weight="700" text-anchor="middle">MaiFarm</text>
+  <text x="645" y="290" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="38" text-anchor="middle">Multi-Agent AI Orchestration</text>
+
+  <!-- Quick Actions Section -->
+  <text x="80" y="420" fill="#f1f5f9" font-family="SF Pro Display, -apple-system" font-size="48" font-weight="600">Quick Actions</text>
+
+  <!-- Quick Action Cards -->
+  <g transform="translate(80, 480)">
+    <!-- Quick Task -->
+    <rect width="350" height="200" rx="24" fill="url(#greenGrad)"/>
+    <text x="40" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="56">&#x26A1;</text>
+    <text x="40" y="140" fill="white" font-family="SF Pro Display, -apple-system" font-size="40" font-weight="600">Quick Task</text>
+    <text x="40" y="175" fill="rgba(255,255,255,0.8)" font-family="SF Pro Display, -apple-system" font-size="28">5-min tasks</text>
+  </g>
+
+  <g transform="translate(465, 480)">
+    <!-- New Farm -->
+    <rect width="350" height="200" rx="24" fill="#3b82f6"/>
+    <text x="40" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="56">&#x1F331;</text>
+    <text x="40" y="140" fill="white" font-family="SF Pro Display, -apple-system" font-size="40" font-weight="600">New Farm</text>
+    <text x="40" y="175" fill="rgba(255,255,255,0.8)" font-family="SF Pro Display, -apple-system" font-size="28">Multi-agent</text>
+  </g>
+
+  <g transform="translate(850, 480)">
+    <!-- Go Wild -->
+    <rect width="350" height="200" rx="24" fill="#8b5cf6"/>
+    <text x="40" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="56">&#x1F680;</text>
+    <text x="40" y="140" fill="white" font-family="SF Pro Display, -apple-system" font-size="40" font-weight="600">Go Wild</text>
+    <text x="40" y="175" fill="rgba(255,255,255,0.8)" font-family="SF Pro Display, -apple-system" font-size="28">Explore freely</text>
+  </g>
+
+  <!-- Active Farms Section -->
+  <text x="80" y="800" fill="#f1f5f9" font-family="SF Pro Display, -apple-system" font-size="48" font-weight="600">Active Farms</text>
+
+  <!-- Farm Card 1 -->
+  <g transform="translate(80, 860)">
+    <rect width="1130" height="280" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <rect x="30" y="30" width="80" height="80" rx="16" fill="#059669"/>
+    <text x="70" y="90" fill="white" font-family="SF Pro Display, -apple-system" font-size="48" text-anchor="middle">&#x1F33E;</text>
+    <text x="140" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="44" font-weight="600">Code Refactor Farm</text>
+    <text x="140" y="130" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="32">3 agents working</text>
+    <!-- Progress bar -->
+    <rect x="140" y="160" width="800" height="16" rx="8" fill="#1e293b"/>
+    <rect x="140" y="160" width="520" height="16" rx="8" fill="url(#greenGrad)"/>
+    <text x="140" y="220" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="600">65% Complete</text>
+    <text x="940" y="220" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="32" text-anchor="end">~12 min left</text>
+  </g>
+
+  <!-- Farm Card 2 -->
+  <g transform="translate(80, 1180)">
+    <rect width="1130" height="280" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <rect x="30" y="30" width="80" height="80" rx="16" fill="#3b82f6"/>
+    <text x="70" y="90" fill="white" font-family="SF Pro Display, -apple-system" font-size="48" text-anchor="middle">&#x1F4DD;</text>
+    <text x="140" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="44" font-weight="600">Research Pipeline</text>
+    <text x="140" y="130" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="32">5 agents working</text>
+    <!-- Progress bar -->
+    <rect x="140" y="160" width="800" height="16" rx="8" fill="#1e293b"/>
+    <rect x="140" y="160" width="280" height="16" rx="8" fill="#3b82f6"/>
+    <text x="140" y="220" fill="#3b82f6" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="600">35% Complete</text>
+    <text x="940" y="220" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="32" text-anchor="end">~28 min left</text>
+  </g>
+
+  <!-- Recent Harvests -->
+  <text x="80" y="1600" fill="#f1f5f9" font-family="SF Pro Display, -apple-system" font-size="48" font-weight="600">Recent Harvests</text>
+
+  <g transform="translate(80, 1660)">
+    <rect width="540" height="180" rx="20" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <text x="30" y="60" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="36">&#x2714;</text>
+    <text x="80" y="60" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="500">API Integration</text>
+    <text x="30" y="110" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="28">Completed 2h ago</text>
+    <text x="30" y="150" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="28">12 files generated</text>
+  </g>
+
+  <g transform="translate(670, 1660)">
+    <rect width="540" height="180" rx="20" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <text x="30" y="60" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="36">&#x2714;</text>
+    <text x="80" y="60" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="500">Bug Analysis</text>
+    <text x="30" y="110" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="28">Completed 5h ago</text>
+    <text x="30" y="150" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="28">3 issues found</text>
+  </g>
+
+  <!-- Stats Section -->
+  <g transform="translate(80, 1920)">
+    <rect width="1130" height="200" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <g transform="translate(100, 40)">
+      <text y="50" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="64" font-weight="700">147</text>
+      <text y="100" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="28">Tasks Completed</text>
+    </g>
+    <g transform="translate(450, 40)">
+      <text y="50" fill="#3b82f6" font-family="SF Pro Display, -apple-system" font-size="64" font-weight="700">23</text>
+      <text y="100" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="28">Active Farms</text>
+    </g>
+    <g transform="translate(750, 40)">
+      <text y="50" fill="#8b5cf6" font-family="SF Pro Display, -apple-system" font-size="64" font-weight="700">89%</text>
+      <text y="100" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="28">Success Rate</text>
+    </g>
+  </g>
+
+  <!-- Bottom Nav -->
+  <g transform="translate(0, 2580)">
+    <rect width="1290" height="216" fill="#0f172a"/>
+    <g transform="translate(130, 50)">
+      <rect width="140" height="70" rx="35" fill="url(#greenGrad)"/>
+      <text x="70" y="50" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F3E0;</text>
+    </g>
+    <g transform="translate(380, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F331;</text>
+    </g>
+    <g transform="translate(580, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F33E;</text>
+    </g>
+    <g transform="translate(780, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F4E6;</text>
+    </g>
+    <g transform="translate(1000, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x2699;</text>
+    </g>
+  </g>
+
+  <!-- Feature callout -->
+  <g transform="translate(645, 2350)">
+    <text y="0" fill="white" font-family="SF Pro Display, -apple-system" font-size="52" font-weight="700" text-anchor="middle">Your AI Command Center</text>
+    <text y="60" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">Orchestrate multiple AI agents effortlessly</text>
+  </g>
+</svg>

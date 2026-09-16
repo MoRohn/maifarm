@@ -5,14 +5,57 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { terminalService } from '../services/unified/terminalService';
 import { getTmuxPaneRef } from '../utils/tmuxHelpers';
 import { pathConfig } from '../config/paths';
-
-// Create sessionCache facade
-const sessionCache = {
-  get: (key: string) => terminalService.getFromCache(key),
-  set: (key: string, value: any) => terminalService.setInCache(key, value),
-  clear: () => terminalService.clearCache()
-};
 import { backgroundCleanupService } from '../services/backgroundCleanupService';
+
+// Create proper in-memory session cache with TTL support
+class SessionCache {
+  private cache = new Map<string, { value: any; expires: number }>();
+
+  get(key: string): any {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expires) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: any, ttlMs: number = 5000): void {
+    this.cache.set(key, {
+      value,
+      expires: Date.now() + ttlMs
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  invalidatePattern(pattern: RegExp): void {
+    for (const key of this.cache.keys()) {
+      if (pattern.test(key)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  getStats(): { size: number; keys: string[] } {
+    // Clean expired entries first
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expires) {
+        this.cache.delete(key);
+      }
+    }
+    return {
+      size: this.cache.size,
+      keys: Array.from(this.cache.keys())
+    };
+  }
+}
+
+const sessionCache = new SessionCache();
 
 const router = Router();
 const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
@@ -49,20 +92,31 @@ router.get('/sessions', async (req: AuthRequest, res: Response) => {
     });
     
     // List all tmux sessions that look like farm or claude_agents sessions
-    const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}:#{session_created}:#{session_windows}']);
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
+    const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}:#{session_created}:#{session_windows}'], {
+      env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
+    });
     let output = '';
     let errorOutput = '';
-    
+
+    // CRITICAL: Add error handler for spawn failures
+    listSessions.on('error', (error) => {
+      console.error('[Terminal API] Failed to spawn tmux list-sessions:', error.message);
+      errorOutput = error.message;
+    });
+
     listSessions.stdout?.on('data', (data: Buffer) => {
       output += data.toString();
     });
-    
+
     listSessions.stderr?.on('data', (data: Buffer) => {
       errorOutput += data.toString();
     });
-    
+
     const exitCode = await new Promise<number>(resolve => {
       listSessions.on('exit', (code) => resolve(code || 0));
+      // Timeout safety: resolve after 10 seconds even if process hangs
+      setTimeout(() => resolve(1), 10000);
     });
     
     if (exitCode !== 0) {
@@ -143,20 +197,30 @@ router.get('/sessions/:id', async (req: AuthRequest, res: Response) => {
     const { id: sessionName } = req.params;
     
     // Check if session exists
-    const checkSession = spawn('tmux', ['has-session', '-t', sessionName]);
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
+    const checkSession = spawn('tmux', ['has-session', '-t', sessionName], {
+      env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
+    });
+    checkSession.on('error', (error) => {
+      console.error('[Terminal API] Failed to spawn tmux has-session:', error.message);
+    });
     const sessionExists = await new Promise<boolean>(resolve => {
       checkSession.on('exit', (code) => resolve(code === 0));
+      setTimeout(() => resolve(false), 5000);
     });
-    
+
     if (!sessionExists) {
       return res.status(404).json({
         success: false,
         error: 'Terminal session not found'
       });
     }
-    
+
     // Get session details
-    const getSessionInfo = spawn('tmux', ['display-message', '-t', sessionName, '-p', '#{session_created}:#{session_windows}']);
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
+    const getSessionInfo = spawn('tmux', ['display-message', '-t', sessionName, '-p', '#{session_created}:#{session_windows}'], {
+      env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
+    });
     let sessionOutput = '';
     
     getSessionInfo.stdout?.on('data', (data: Buffer) => {
@@ -165,12 +229,18 @@ router.get('/sessions/:id', async (req: AuthRequest, res: Response) => {
     
     await new Promise(resolve => getSessionInfo.on('exit', resolve));
     
-    const [createdTime, windowCount] = sessionOutput.trim().split(':');
-    
+    const parts = sessionOutput.trim().split(':');
+    const createdTime = parts[0] ?? '0';
+    const windowCount = parts[1] ?? '1';
+
     // Get pane count and extract farm ID using MaiBarn
     const paneCount = await MaiBarn.getPaneCount(sessionName);
     const farmId = MaiBarn.extractFarmId(sessionName);
-    
+
+    // Safely parse created time, default to now if invalid
+    const parsedTime = parseInt(createdTime, 10);
+    const createdAtMs = isNaN(parsedTime) ? Date.now() : parsedTime * 1000;
+
     const sessionDetails = {
       id: sessionName,
       sessionName,
@@ -179,7 +249,7 @@ router.get('/sessions/:id', async (req: AuthRequest, res: Response) => {
       windowName: 'agents',
       active: true,
       status: 'running',
-      createdAt: new Date(parseInt(createdTime) * 1000).toISOString(),
+      createdAt: new Date(createdAtMs).toISOString(),
       agents: Array.from({ length: paneCount }, (_, i) => ({
         id: i,
         sessionId: sessionName,
@@ -220,7 +290,9 @@ router.post('/sessions', async (req: AuthRequest, res: Response) => {
     const effectiveSessionName = sessionName || `farm_${farmId}`;
     
     // Create new tmux session with multiple panes
-    const createSession = spawn('tmux', ['new-session', '-d', '-s', effectiveSessionName, '-x', '120', '-y', '40']);
+    const createSession = spawn('tmux', ['new-session', '-d', '-s', effectiveSessionName, '-x', '120', '-y', '40'], {
+      env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+    });
     
     const sessionCreated = await new Promise<boolean>(resolve => {
       createSession.on('exit', (code) => resolve(code === 0));
@@ -235,11 +307,15 @@ router.post('/sessions', async (req: AuthRequest, res: Response) => {
     
     // Create additional panes for agents
     for (let i = 1; i < agentCount; i++) {
-      const splitPane = spawn('tmux', ['split-window', '-t', `${effectiveSessionName}:0`, '-h']);
+      const splitPane = spawn('tmux', ['split-window', '-t', `${effectiveSessionName}:0`, '-h'], {
+        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+      });
       await new Promise(resolve => splitPane.on('exit', resolve));
-      
+
       // Rebalance panes
-      const rebalance = spawn('tmux', ['select-layout', '-t', `${effectiveSessionName}:0`, 'tiled']);
+      const rebalance = spawn('tmux', ['select-layout', '-t', `${effectiveSessionName}:0`, 'tiled'], {
+        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+      });
       await new Promise(resolve => rebalance.on('exit', resolve));
     }
     
@@ -282,7 +358,9 @@ router.delete('/sessions/:id', async (req: AuthRequest, res: Response) => {
     const { id: sessionName } = req.params;
     
     // Kill the tmux session
-    const killSession = spawn('tmux', ['kill-session', '-t', sessionName]);
+    const killSession = spawn('tmux', ['kill-session', '-t', sessionName], {
+      env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+    });
     
     const sessionKilled = await new Promise<boolean>(resolve => {
       killSession.on('exit', (code) => resolve(code === 0));
@@ -334,18 +412,21 @@ router.get('/output', async (req: AuthRequest, res: Response) => {
     const paneIndex = parseInt(pane as string) || 0;
     
     // Check if session exists
-    const checkSession = spawn('tmux', ['has-session', '-t', session]);
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
+    const checkSession = spawn('tmux', ['has-session', '-t', session], {
+      env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
+    });
     const sessionExists = await new Promise<boolean>(resolve => {
       checkSession.on('exit', (code) => resolve(code === 0));
     });
-    
+
     if (!sessionExists) {
       return res.status(404).json({
         success: false,
         error: 'Terminal session not found'
       });
     }
-    
+
     let paneRef: string;
     try {
       paneRef = await getTmuxPaneRef(session, paneIndex);
@@ -423,20 +504,23 @@ router.post('/command', async (req: AuthRequest, res: Response) => {
     }
     
     const paneIndex = parseInt(pane) || 0;
-    
+
     // Check if session exists
-    const checkSession = spawn('tmux', ['has-session', '-t', session]);
-    const sessionExists = await new Promise<boolean>(resolve => {
-      checkSession.on('exit', (code) => resolve(code === 0));
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
+    const checkSession2 = spawn('tmux', ['has-session', '-t', session], {
+      env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
     });
-    
+    const sessionExists = await new Promise<boolean>(resolve => {
+      checkSession2.on('exit', (code) => resolve(code === 0));
+    });
+
     if (!sessionExists) {
       return res.status(404).json({
         success: false,
         error: 'Terminal session not found'
       });
     }
-    
+
     let paneRef: string;
     try {
       paneRef = await getTmuxPaneRef(session, paneIndex);

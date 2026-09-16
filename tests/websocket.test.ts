@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+// Jest test - converted from Vitest
 import { io, Socket } from 'socket.io-client';
 import { Server } from 'http';
 import express from 'express';

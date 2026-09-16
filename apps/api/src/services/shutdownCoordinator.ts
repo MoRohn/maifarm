@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
-import { logger } from '../utils/logger';
-import { 
-  GRACEFUL_SHUTDOWN_PERIOD, 
+import { logger, LogCategory } from '../utils/logger';
+import {
+  GRACEFUL_SHUTDOWN_PERIOD,
   QUICK_TASK_TIMEOUT,
   calculateGracefulShutdownTime,
   getGracePeriod,
@@ -11,6 +11,10 @@ import {
 import { harvestService } from './unified/harvestService';
 import { websocketManager } from '../websocket/websocketManager';
 import { orchestratorService } from './unified/orchestratorService';
+import { activityParser } from './activityParser';
+import { yieldDetectionService } from './YieldDetectionService';
+import { farmerGroupService } from './FarmerGroupService';
+import { lockManager } from '../utils/AsyncLock';
 
 export type ShutdownMode = 'quick-task' | 'farm' | 'gowild';
 export type ShutdownReason = 'timeout' | 'user_request' | 'completion';
@@ -46,7 +50,8 @@ export interface ShutdownResult {
 class ShutdownCoordinator extends EventEmitter {
   private activeShutdowns: Map<string, NodeJS.Timeout> = new Map();
   private isShuttingDown: boolean = false;
-  private shutdownLocks: Map<string, Promise<void>> = new Map(); // Mutex for preventing race conditions
+  // REMOVED: shutdownLocks Map - now using lockManager from AsyncLock utility
+  // This provides proper mutex semantics without TOCTOU race conditions
   private shutdownInProgress: Set<string> = new Set(); // Track farms currently shutting down
 
   constructor() {
@@ -56,53 +61,88 @@ class ShutdownCoordinator extends EventEmitter {
 
   /**
    * Setup SIGINT/SIGTERM handlers for graceful shutdown (like orchestrator.py)
+   * ASYNC ERROR FIX: Properly handle async operations in signal handlers
    */
   private setupSignalHandlers(): void {
-    const handleSignal = (signal: string) => {
+    const handleSignal = async (signal: string) => {
       if (this.isShuttingDown) return;
-      
-      logger.info(`[ShutdownCoordinator] ${signal} received - initiating graceful shutdown`);
+
+      logger.info(LogCategory.SYSTEM, `[ShutdownCoordinator] ${signal} received - initiating graceful shutdown`);
       this.isShuttingDown = true;
-      
-      // Trigger graceful shutdown for all active farms
-      this.activeShutdowns.forEach((timer, farmId) => {
-        clearTimeout(timer);
-        this.executeGracefulShutdown({
-          mode: 'farm',
-          farmId,
-          userId: 'system',
-          reason: 'user_request'
-        });
+
+      // ASYNC ERROR FIX: Collect all farm IDs first to avoid mutation during iteration
+      const farmIds = Array.from(this.activeShutdowns.keys());
+
+      // Trigger graceful shutdown for all active farms with proper error handling
+      const shutdownPromises = farmIds.map(async (farmId) => {
+        const timer = this.activeShutdowns.get(farmId);
+        if (timer) {
+          clearTimeout(timer);
+        }
+
+        try {
+          await this.executeGracefulShutdown({
+            mode: 'farm',
+            farmId,
+            userId: 'system',
+            reason: 'user_request'
+          });
+        } catch (error) {
+          // ASYNC ERROR FIX: Log but don't rethrow - we want to try all farms
+          logger.error(LogCategory.SYSTEM, `[ShutdownCoordinator] Failed to shutdown farm ${farmId} during ${signal}:`, error);
+        }
+      });
+
+      // Wait for all shutdowns to complete (with their own error handling)
+      await Promise.allSettled(shutdownPromises);
+      logger.info(LogCategory.SYSTEM, `[ShutdownCoordinator] All farm shutdowns processed for ${signal}`);
+    };
+
+    // ASYNC ERROR FIX: Wrap async handler to catch unhandled rejections
+    const safeHandleSignal = (signal: string) => {
+      handleSignal(signal).catch((error) => {
+        logger.error(LogCategory.SYSTEM, `[ShutdownCoordinator] Critical error during ${signal} handling:`, error);
       });
     };
 
     // Handle CTRL+C like orchestrator.py
-    process.once('SIGINT', () => handleSignal('SIGINT'));
-    process.once('SIGTERM', () => handleSignal('SIGTERM'));
+    process.once('SIGINT', () => safeHandleSignal('SIGINT'));
+    process.once('SIGTERM', () => safeHandleSignal('SIGTERM'));
   }
 
   /**
    * Schedule a graceful shutdown for a farm/task
    * This sets up the timer to trigger shutdown 30s before the ultimate timeout
+   * CRITICAL FIX: Uses AsyncLock to prevent race conditions (TOCTOU vulnerability)
    */
   async scheduleShutdown(config: ShutdownConfig): Promise<void> {
-    const { mode, farmId, userId, timeout } = config;
+    const { farmId } = config;
+    const lockResource = `shutdown:${farmId}`;
+    const lockHolder = `scheduler:${Date.now()}`;
 
-    // Implement mutex lock to prevent race conditions
-    if (this.shutdownLocks.has(farmId)) {
-      logger.warn(`[ShutdownCoordinator] Waiting for existing shutdown operation to complete for farm ${farmId}`);
-      await this.shutdownLocks.get(farmId);
-    }
-
-    // Create a new lock for this operation
-    const lockPromise = this._scheduleShutdownWithLock(config);
-    this.shutdownLocks.set(farmId, lockPromise);
+    // CRITICAL FIX: Use proper mutex lock instead of manual while loop
+    // The previous implementation had a TOCTOU race condition where multiple
+    // coroutines could pass the while check simultaneously when a lock was released
+    let releaseLock: (() => void) | undefined;
 
     try {
-      await lockPromise;
+      // Acquire lock with 60 second timeout (long enough for shutdown operations)
+      releaseLock = await lockManager.acquire(lockResource, lockHolder, 60000);
+      logger.debug(LogCategory.SYSTEM, `[ShutdownCoordinator] Lock acquired for farm ${farmId.substring(0, 8)}`);
+
+      // Now we have exclusive access - execute the shutdown scheduling
+      await this._scheduleShutdownWithLock(config);
+
+    } catch (error) {
+      // Lock acquisition failed (timeout or queue full)
+      logger.error(LogCategory.SYSTEM, `[ShutdownCoordinator] Failed to acquire lock for farm ${farmId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     } finally {
-      // Clean up the lock after operation completes
-      this.shutdownLocks.delete(farmId);
+      // Always release the lock when done
+      if (releaseLock) {
+        releaseLock();
+        logger.debug(LogCategory.SYSTEM, `[ShutdownCoordinator] Lock released for farm ${farmId.substring(0, 8)}`);
+      }
     }
   }
 
@@ -132,14 +172,17 @@ class ShutdownCoordinator extends EventEmitter {
       gracefulShutdownTime = totalTimeoutMs; // Start shutdown at timeout, not before
     } else {
       // Farm and GoWild: Shutdown starts AT the configured timeout
-      if (!timeout) {
-        logger.error(`[ShutdownCoordinator] No timeout provided for ${mode} mode`);
-        return;
+      if (!timeout || timeout <= 0) {
+        logger.error(`[ShutdownCoordinator] CRITICAL: No valid timeout provided for ${mode} mode, defaulting to 1 hour`);
+        totalTimeoutMs = 3600000; // 1 hour in ms as safe default
+      } else if (timeout < 60000 && timeout > 60) {
+        // If timeout is < 1 minute but > 60, likely in seconds (common mistake)
+        logger.warn(`[ShutdownCoordinator] Timeout ${timeout} seems to be in seconds, converting to ms`);
+        totalTimeoutMs = timeout * 1000;
+      } else {
+        // FIXED: Always expect milliseconds from all callers
+        totalTimeoutMs = timeout;
       }
-
-      // FIXED: Always expect milliseconds from all callers
-      // This eliminates ambiguity and prevents timeout bugs
-      totalTimeoutMs = timeout;
 
       // CRITICAL: Cap timeout to prevent 32-bit overflow in setTimeout (max ~24.8 days)
       const MAX_TIMEOUT_MS = 2147483647; // Maximum 32-bit signed integer
@@ -148,7 +191,7 @@ class ShutdownCoordinator extends EventEmitter {
         totalTimeoutMs = MAX_TIMEOUT_MS;
       }
 
-      logger.info(`[ShutdownCoordinator] Timeout set to ${totalTimeoutMs}ms (${Math.round(totalTimeoutMs / 1000)}s) for ${mode} mode`);
+      logger.info(`[ShutdownCoordinator] Timeout set to ${totalTimeoutMs}ms (${Math.round(totalTimeoutMs / 1000)}s = ${Math.round(totalTimeoutMs / 60000)} minutes) for ${mode} mode`);
 
       // UPDATED: Start shutdown AT the timeout mark, not 30s before
       gracefulShutdownTime = totalTimeoutMs; // Give agents full time, then shutdown
@@ -160,16 +203,16 @@ class ShutdownCoordinator extends EventEmitter {
       gracefulShutdownTime = 10000; // Use 10 second minimum
     }
     
-    // CRITICAL DEBUG: Log exact timer values
-    console.log(`\n🔍 SHUTDOWN TIMER DEBUG 🔍`);
-    console.log(`Mode: ${mode}`);
-    console.log(`Farm ID: ${farmId}`);
-    console.log(`Timeout provided: ${timeout} milliseconds`);
-    console.log(`Total timeout (ms): ${totalTimeoutMs}ms`);
-    console.log(`Graceful shutdown delay (ms): ${gracefulShutdownTime}ms`);
-    console.log(`Timer will fire in: ${gracefulShutdownTime / 1000} seconds from now`);
-    console.log(`Current time: ${new Date().toISOString()}`);
-    console.log(`Timer will fire at: ${new Date(Date.now() + gracefulShutdownTime).toISOString()}\n`);
+    // Log timer configuration
+    logger.debug('[ShutdownCoordinator] Timer configuration', {
+      mode,
+      farmId: farmId.substring(0, 8),
+      timeoutMs: totalTimeoutMs,
+      shutdownDelayMs: gracefulShutdownTime,
+      shutdownDelaySeconds: Math.round(gracefulShutdownTime / 1000),
+      scheduledAt: new Date().toISOString(),
+      willFireAt: new Date(Date.now() + gracefulShutdownTime).toISOString()
+    });
     
     logger.info(`[ShutdownCoordinator] CRITICAL: Scheduling ${mode} shutdown for ${farmId}:`, {
       totalTimeout: `${totalTimeoutMs / 1000}s`,
@@ -179,26 +222,51 @@ class ShutdownCoordinator extends EventEmitter {
       farmId: farmId
     });
     
-    // CRITICAL: Log that this farm should NOT be cleaned up until timeout
-    console.log(`\n🚨 FARM PROTECTION ACTIVATED 🚨`);
-    console.log(`Farm ID: ${farmId}`);
-    console.log(`Session Name: farm-${farmId.substring(0, 8)}`);
-    console.log(`Protected Until: ${new Date(Date.now() + totalTimeoutMs).toISOString()}`);
-    console.log(`Graceful Shutdown Starts: ${new Date(Date.now() + gracefulShutdownTime).toISOString()}`);
-    console.log(`DO NOT KILL THIS SESSION BEFORE TIMEOUT!\n`);
+    // Log farm protection details
+    logger.info('[ShutdownCoordinator] Farm protection activated', {
+      farmId: farmId.substring(0, 8),
+      sessionName: `farm-${farmId.substring(0, 8)}`,
+      protectedUntil: new Date(Date.now() + totalTimeoutMs).toISOString(),
+      shutdownStartsAt: new Date(Date.now() + gracefulShutdownTime).toISOString(),
+      note: 'Farm is protected from cleanup until timeout expires'
+    });
     
-    // Set timer for graceful shutdown (30s before timeout)
-    const shutdownTimer = setTimeout(async () => {
-      logger.info(`[ShutdownCoordinator] TIMEOUT REACHED: Initiating graceful shutdown for ${farmId} (${mode})`);
-      console.log(`\n⏰ TIMEOUT TRIGGERED FOR FARM ${farmId} ⏰`);
-      console.log(`Expected timeout time: ${new Date().toISOString()}`);
-      console.log(`Mode: ${mode}, Reason: timeout`);
-      console.log(`Beginning graceful shutdown process...\n`);
-      
-      await this.executeGracefulShutdown({
-        ...config,
-        reason: 'timeout'
-      });
+    // ASYNC ERROR FIX: Set timer for graceful shutdown with proper error handling
+    // setTimeout with async callback can throw unhandled promise rejections
+    const shutdownTimer = setTimeout(() => {
+      // FIX: Wrap entire callback in try-catch to handle synchronous errors
+      try {
+        logger.info(LogCategory.SYSTEM, '[ShutdownCoordinator] Timeout reached, initiating graceful shutdown', {
+          farmId: farmId.substring(0, 8),
+          mode,
+          reason: 'timeout',
+          triggeredAt: new Date().toISOString()
+        });
+
+        // ASYNC ERROR FIX: Wrap async operation in .catch() to prevent unhandled rejection
+        this.executeGracefulShutdown({
+          ...config,
+          reason: 'timeout'
+        }).catch((error) => {
+          logger.error(LogCategory.SYSTEM, `[ShutdownCoordinator] Failed to execute scheduled shutdown for farm ${farmId}:`, error);
+          // Emit error event for monitoring
+          this.emit('shutdown:error', {
+            farmId,
+            mode,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date()
+          });
+        });
+      } catch (syncError) {
+        // Handle synchronous errors in the callback
+        logger.error(LogCategory.SYSTEM, `[ShutdownCoordinator] Synchronous error in shutdown timer for farm ${farmId}:`, syncError);
+        this.emit('shutdown:error', {
+          farmId,
+          mode,
+          error: syncError instanceof Error ? syncError.message : String(syncError),
+          timestamp: new Date()
+        });
+      }
     }, gracefulShutdownTime);
     
     this.activeShutdowns.set(farmId, shutdownTimer);
@@ -216,6 +284,9 @@ class ShutdownCoordinator extends EventEmitter {
   /**
    * Execute graceful shutdown immediately
    * Used for user-requested or completion-based shutdowns
+   *
+   * CRITICAL: Uses try/finally to ensure cleanup ALWAYS happens,
+   * preventing zombie farms that can never be shut down again.
    */
   async executeGracefulShutdown(config: ShutdownConfig): Promise<ShutdownResult> {
     const startTime = new Date();
@@ -238,32 +309,27 @@ class ShutdownCoordinator extends EventEmitter {
       };
     }
 
-    // Mark this farm as shutting down
+    // Mark this farm as shutting down - MUST be cleaned up in finally
     this.shutdownInProgress.add(farmId);
     const { mode, userId, reason, harvestId, agentIds } = config;
-    
-    // CRITICAL DEBUG: Log who called this
-    console.log(`\n🚨 EXECUTE GRACEFUL SHUTDOWN CALLED 🚨`);
-    console.log(`Farm ID: ${farmId}`);
-    console.log(`Mode: ${mode}`);
-    console.log(`Reason: ${reason}`);
-    console.log(`Called at: ${startTime.toISOString()}`);
-    console.log(`Stack trace:`);
-    console.trace();
-    
-    logger.info(`[ShutdownCoordinator] Starting graceful shutdown for ${farmId}`, {
+
+    // Log shutdown execution details
+    logger.info('[ShutdownCoordinator] Executing graceful shutdown', {
+      farmId: farmId.substring(0, 8),
       mode,
       reason,
-      harvestId
+      harvestId,
+      startedAt: startTime.toISOString()
     });
-    
+
     // Cancel any scheduled shutdown since we're doing it now
     this.cancelShutdown(farmId);
-    
+
     const errors: string[] = [];
     let filesCollected = false;
     let barnStored = false;
-    
+    let result: ShutdownResult;
+
     try {
       // Step 1: Notify via WebSocket that shutdown is starting
       websocketManager.broadcast('farm:graceful_shutdown_started', {
@@ -272,12 +338,12 @@ class ShutdownCoordinator extends EventEmitter {
         reason,
         timestamp: startTime
       });
-      
+
       // Step 2: Send closing prompt to agents to collect their work
       if (mode !== 'quick-task' || agentIds?.length) {
         try {
           await this.sendClosingPrompts(farmId, mode, reason, agentIds);
-          
+
           // Wait for agents to process closing prompt
           await new Promise(resolve => setTimeout(resolve, AGENT_CLOSING_PROMPT_TIMEOUT));
         } catch (error) {
@@ -285,10 +351,10 @@ class ShutdownCoordinator extends EventEmitter {
           logger.warn(`[ShutdownCoordinator] Continuing shutdown despite closing prompt error:`, error);
         }
       }
-      
+
       // Step 3: Collect files from agents
       try {
-        const fileCollection = await this.collectFiles(farmId, harvestId, mode);
+        const fileCollection = await this.collectFiles(farmId, mode, harvestId);
         filesCollected = fileCollection.success;
         if (!fileCollection.success) {
           errors.push(`File collection failed: ${fileCollection.error}`);
@@ -297,10 +363,22 @@ class ShutdownCoordinator extends EventEmitter {
         logger.error(`[ShutdownCoordinator] File collection failed for ${farmId}:`, error);
         errors.push(`File collection error: ${error}`);
       }
-      
+
+      // Step 3.5: Link yield items to harvest
+      // CRITICAL FIX: Must link yield items to harvest BEFORE barn storage
+      // Without this, yield items have NULL harvest_id and barn displays empty harvests
+      const effectiveHarvestId = harvestId || `harvest-${farmId}`;
+      try {
+        await yieldDetectionService.linkYieldItemsToHarvest(farmId, effectiveHarvestId);
+        logger.info(`[ShutdownCoordinator] Linked yield items to harvest ${effectiveHarvestId} for farm ${farmId}`);
+      } catch (error) {
+        logger.warn(`[ShutdownCoordinator] Failed to link yield items to harvest for ${farmId}:`, error);
+        // Don't fail the entire flow - continue with barn storage
+      }
+
       // Step 4: Store in Barn
       try {
-        const barnResult = await this.storeInBarn(farmId, harvestId, mode);
+        const barnResult = await this.storeInBarn(farmId, mode, harvestId);
         barnStored = barnResult.success;
         if (!barnResult.success) {
           errors.push(`Barn storage failed: ${barnResult.error}`);
@@ -309,61 +387,74 @@ class ShutdownCoordinator extends EventEmitter {
         logger.error(`[ShutdownCoordinator] Barn storage failed for ${farmId}:`, error);
         errors.push(`Barn storage error: ${error}`);
       }
-      
+
       // Step 5: Update farm/task status
-      await this.updateStatus(farmId, mode, reason);
-      
+      try {
+        await this.updateStatus(farmId, mode, reason);
+      } catch (error) {
+        logger.error(`[ShutdownCoordinator] Status update failed for ${farmId}:`, error);
+        errors.push(`Status update error: ${error}`);
+      }
+
       // Step 6: Clean up resources
-      await this.cleanupResources(farmId, mode);
-      
+      try {
+        await this.cleanupResources(farmId, mode);
+      } catch (error) {
+        logger.error(`[ShutdownCoordinator] Resource cleanup failed for ${farmId}:`, error);
+        errors.push(`Resource cleanup error: ${error}`);
+      }
+
     } catch (error) {
       logger.error(`[ShutdownCoordinator] Shutdown failed for ${farmId}:`, error);
       errors.push(`General shutdown error: ${error}`);
+    } finally {
+      // CRITICAL: ALWAYS clean up the shutdown lock to prevent zombie farms
+      // This runs even if an error was thrown above
+      this.shutdownInProgress.delete(farmId);
+
+      const endTime = new Date();
+      const durationMs = endTime.getTime() - startTime.getTime();
+
+      // Build result object
+      result = {
+        success: filesCollected && barnStored && errors.length === 0,
+        filesCollected,
+        barnStored,
+        errors: errors.length > 0 ? errors : undefined,
+        timing: {
+          shutdownStarted: startTime,
+          shutdownCompleted: endTime,
+          durationMs,
+          gracePeriodUsed: durationMs
+        }
+      };
+
+      // Emit completion event (even on failure)
+      this.emit('shutdown:completed', {
+        farmId,
+        mode,
+        reason,
+        result
+      });
+
+      websocketManager.broadcast('farm:graceful_shutdown_completed', {
+        farmId,
+        mode,
+        reason,
+        result,
+        timestamp: endTime
+      });
+
+      logger.info(`[ShutdownCoordinator] Shutdown completed for ${farmId}`, {
+        success: result.success,
+        duration: `${durationMs / 1000}s`,
+        filesCollected,
+        barnStored,
+        errorCount: errors.length
+      });
     }
-    
-    const endTime = new Date();
-    const durationMs = endTime.getTime() - startTime.getTime();
-    
-    // Emit completion event
-    const result: ShutdownResult = {
-      success: filesCollected && barnStored && errors.length === 0,
-      filesCollected,
-      barnStored,
-      errors: errors.length > 0 ? errors : undefined,
-      timing: {
-        shutdownStarted: startTime,
-        shutdownCompleted: endTime,
-        durationMs,
-        gracePeriodUsed: durationMs
-      }
-    };
-    
-    this.emit('shutdown:completed', {
-      farmId,
-      mode,
-      reason,
-      result
-    });
-    
-    websocketManager.broadcast('farm:graceful_shutdown_completed', {
-      farmId,
-      mode,
-      reason,
-      result,
-      timestamp: endTime
-    });
-    
-    logger.info(`[ShutdownCoordinator] Shutdown completed for ${farmId}`, {
-      success: result.success,
-      duration: `${durationMs / 1000}s`,
-      filesCollected,
-      barnStored
-    });
 
-    // Clean up shutdown tracking to allow future shutdowns
-    this.shutdownInProgress.delete(farmId);
-
-    return result;
+    return result!;
   }
 
   /**
@@ -375,16 +466,64 @@ class ShutdownCoordinator extends EventEmitter {
       clearTimeout(timer);
       this.activeShutdowns.delete(farmId);
       logger.info(`[ShutdownCoordinator] Cancelled scheduled shutdown for ${farmId}`);
-      
+
       this.emit('shutdown:cancelled', { farmId });
     }
   }
 
   /**
+   * Trigger immediate shutdown for a farm
+   * Used when a farm needs to be stopped immediately (e.g., user cancellation)
+   */
+  async triggerShutdown(farmId: string): Promise<void> {
+    logger.info(`[ShutdownCoordinator] Triggering immediate shutdown for farm ${farmId}`);
+
+    // Cancel any scheduled shutdown first
+    this.cancelShutdown(farmId);
+
+    // Execute graceful shutdown immediately
+    try {
+      await this.executeGracefulShutdown({
+        mode: 'farm', // Default mode
+        farmId,
+        userId: 'system', // System-triggered shutdown
+        timeout: 30000, // 30 second grace period
+        reason: 'user_request'
+      });
+    } catch (error) {
+      logger.error(`[ShutdownCoordinator] Failed to trigger shutdown for farm ${farmId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Check if shutdown is scheduled for a farm
+   * CRITICAL: Checks both full farm ID and short farm ID for compatibility
    */
   isShutdownScheduled(farmId: string): boolean {
-    return this.activeShutdowns.has(farmId);
+    // Check exact match first
+    if (this.activeShutdowns.has(farmId)) {
+      return true;
+    }
+
+    // If farmId is a short ID (8 chars), check if any full UUID starts with it
+    if (farmId.length === 8 || farmId.length < 36) {
+      for (const scheduledFarmId of this.activeShutdowns.keys()) {
+        if (scheduledFarmId.startsWith(farmId)) {
+          return true;
+        }
+      }
+    }
+
+    // If farmId is a full UUID, check if its short version is scheduled
+    if (farmId.length === 36) {
+      const shortId = farmId.substring(0, 8);
+      if (this.activeShutdowns.has(shortId)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -434,34 +573,135 @@ class ShutdownCoordinator extends EventEmitter {
   }
 
   /**
-   * Collect files from agents
+   * Collect files from agents and complete the harvest
+   * AUTO-RECOVERY: Creates harvest if missing, ensuring yield generation never fails
    */
   private async collectFiles(
-    farmId: string, 
-    harvestId?: string,
-    mode: ShutdownMode
+    farmId: string,
+    mode: ShutdownMode,
+    harvestId?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!harvestId) {
-        logger.warn(`[ShutdownCoordinator] No harvestId for ${farmId}, skipping file collection`);
-        return { success: false, error: 'No harvest ID provided' };
+      let effectiveHarvestId = harvestId;
+
+      // AUTO-RECOVERY: If no harvestId provided, create one
+      if (!effectiveHarvestId) {
+        logger.warn(`[ShutdownCoordinator] No harvestId for ${farmId} - creating recovery harvest`);
+
+        try {
+          // Get farm info for harvest creation
+          const { db } = await import('../database/connection');
+          const farmResult = await db.query(
+            'SELECT name, created_by FROM farms WHERE id = $1',
+            [farmId]
+          );
+          const farmName = farmResult.rows[0]?.name || `Farm ${farmId.substring(0, 8)}`;
+          const userId = farmResult.rows[0]?.created_by || 'system';
+
+          const recoveryHarvest = await harvestService.startHarvest({
+            farmId,
+            name: `Recovery Harvest - ${farmName}`,
+            metadata: { createdBy: userId, recovery: true }
+          });
+
+          effectiveHarvestId = recoveryHarvest.id;
+          logger.info(`[ShutdownCoordinator] Created recovery harvest ${effectiveHarvestId} for farm ${farmId}`);
+
+          // Broadcast recovery event
+          websocketManager.broadcast('harvest:auto-recovery', {
+            farmId,
+            harvestId: effectiveHarvestId,
+            reason: 'Missing harvestId during shutdown',
+            timestamp: new Date()
+          });
+        } catch (recoveryError) {
+          logger.error(`[ShutdownCoordinator] Failed to create recovery harvest:`, recoveryError);
+          return {
+            success: false,
+            error: `No harvest ID and recovery failed: ${recoveryError}`
+          };
+        }
       }
-      
-      // Use timeout for file collection
-      const collectionPromise = harvestService.collectFiles(
-        farmId,
-        harvestId
-      );
-      
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('File collection timeout')), FILE_COLLECTION_TIMEOUT);
-      });
-      
-      await Promise.race([collectionPromise, timeoutPromise]);
-      
-      return { success: true };
+
+      logger.info(`[ShutdownCoordinator] Starting harvest collection for harvest ${effectiveHarvestId}`);
+
+      // collectHarvest gathers terminal output and workspace artifacts,
+      // then internally calls completeHarvest with yield items populated
+      // DO NOT call completeHarvest again - it's already called inside collectHarvest
+      const collectionPromise = harvestService.collectHarvest(effectiveHarvestId);
+
+      // FIX: Use timeout with graceful handling - don't abandon collection, just log warning
+      // This ensures partial results are still saved even if collection takes longer than expected
+      let timedOut = false;
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        logger.warn(`[ShutdownCoordinator] Harvest collection taking longer than ${FILE_COLLECTION_TIMEOUT}ms, continuing...`);
+      }, FILE_COLLECTION_TIMEOUT);
+
+      // FIX: Track collection success to properly report errors to caller
+      let collectionSucceeded = true;
+      let collectionErrorMessage: string | undefined;
+
+      try {
+        await collectionPromise;
+        clearTimeout(timeoutId);
+        if (timedOut) {
+          logger.info(`[ShutdownCoordinator] Harvest collection eventually completed for ${effectiveHarvestId} (exceeded timeout)`);
+        } else {
+          logger.info(`[ShutdownCoordinator] Harvest collection completed for ${effectiveHarvestId}`);
+        }
+      } catch (collectionError) {
+        clearTimeout(timeoutId);
+        collectionSucceeded = false;
+        collectionErrorMessage = String(collectionError);
+        logger.error(`[ShutdownCoordinator] Harvest collection failed for ${effectiveHarvestId}:`, collectionError);
+        // Continue with shutdown to try incubation, but mark as failed
+      }
+
+      // OPTIONAL AUTO-INCUBATION: Start incubation if farm has auto-incubate enabled
+      try {
+        const { incubationService } = await import('./IncubationService');
+        const incubationSessionId = await incubationService.maybeStartIncubation(
+          farmId,
+          effectiveHarvestId
+        );
+
+        if (incubationSessionId) {
+          logger.info(
+            `[ShutdownCoordinator] Auto-incubation started for farm ${farmId}: session ${incubationSessionId}`
+          );
+
+          // Broadcast incubation start event
+          websocketManager.broadcast('incubation:auto-started', {
+            farmId,
+            harvestId: effectiveHarvestId,
+            sessionId: incubationSessionId,
+            timestamp: new Date()
+          });
+        } else {
+          logger.debug(
+            `[ShutdownCoordinator] Auto-incubate disabled or not applicable for farm ${farmId}`
+          );
+        }
+      } catch (incubationError) {
+        // Don't fail harvest if incubation fails - it's optional
+        logger.warn(
+          `[ShutdownCoordinator] Auto-incubation failed for farm ${farmId}, continuing without incubation:`,
+          incubationError
+        );
+      }
+
+      // FIX: Return proper success status based on collection result
+      if (collectionSucceeded) {
+        return { success: true };
+      } else {
+        return {
+          success: false,
+          error: collectionErrorMessage || 'Harvest collection failed with unknown error'
+        };
+      }
     } catch (error) {
-      logger.error(`[ShutdownCoordinator] File collection failed:`, error);
+      logger.error(`[ShutdownCoordinator] Harvest collection failed:`, error);
       return { success: false, error: String(error) };
     }
   }
@@ -471,8 +711,8 @@ class ShutdownCoordinator extends EventEmitter {
    */
   private async storeInBarn(
     farmId: string,
-    harvestId?: string,
-    mode: ShutdownMode
+    mode: ShutdownMode,
+    harvestId?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
       if (!harvestId) {
@@ -481,7 +721,9 @@ class ShutdownCoordinator extends EventEmitter {
 
       const { barnService } = await import('./unified/barnService');
 
-      const harvest = harvestService.getHarvestById(harvestId);
+      // FIX: Use getHarvestById which doesn't require userId
+      // This allows barn storage to work even without the original user context
+      const harvest = await harvestService.getHarvestById(harvestId);
       if (!harvest) {
         return { success: false, error: `Harvest ${harvestId} not found` };
       }
@@ -515,15 +757,77 @@ class ShutdownCoordinator extends EventEmitter {
       const { db } = await import('../database/connection');
       
       const status = reason === 'timeout' ? 'failed' :  // Changed from 'timeout' to 'failed'
-                     reason === 'user_request' ? 'stopped' : 
+                     reason === 'user_request' ? 'stopped' :
                      'completed';
-      
-      await db.query(
-        'UPDATE farms SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+
+      // FIX: Prevent status regression - only update if farm is not already in a terminal state
+      // This prevents race conditions where orchestrator.py already marked farm as completed
+      const result = await db.query(
+        `UPDATE farms SET status = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND status NOT IN ('completed', 'terminated', 'failed')
+         RETURNING status`,
         [status, farmId]
       );
-      
+
+      if (result.rowCount === 0) {
+        // Farm was already in terminal state, check what it is
+        const currentResult = await db.query('SELECT status FROM farms WHERE id = $1', [farmId]);
+        const currentStatus = currentResult.rows[0]?.status || 'unknown';
+        logger.info(`[ShutdownCoordinator] Farm ${farmId} already in terminal state '${currentStatus}', skipping status update to '${status}'`);
+        return;
+      }
+
       logger.info(`[ShutdownCoordinator] Updated ${farmId} status to ${status}`);
+
+      // CRITICAL FIX: Broadcast status change to frontend
+      // Without this, UI never learns that farm completed/failed/stopped
+      const statusPayload = {
+        farmId,
+        status,
+        reason,
+        mode,
+        timestamp: new Date(),
+        source: 'shutdown_coordinator'
+      };
+
+      websocketManager.broadcast('farm:status', statusPayload);
+      websocketManager.broadcastToFarm(farmId, 'farm:status', statusPayload);
+
+      // Also emit more specific event for UI state machines
+      if (status === 'completed') {
+        websocketManager.broadcast('farm:completed', statusPayload);
+        websocketManager.broadcastToFarm(farmId, 'farm:completed', statusPayload);
+      } else if (status === 'failed') {
+        websocketManager.broadcast('farm:failed', statusPayload);
+        websocketManager.broadcastToFarm(farmId, 'farm:failed', statusPayload);
+      }
+
+      logger.info(`[ShutdownCoordinator] Broadcast farm:status event for ${farmId} -> ${status}`);
+
+      // Record farmer template statistics if farm was created from a template
+      try {
+        const farmResult = await db.query(
+          'SELECT farmer_template_id, created_at FROM farms WHERE id = $1',
+          [farmId]
+        );
+        const farmData = farmResult.rows[0];
+
+        if (farmData?.farmer_template_id) {
+          const completionTimeSeconds = farmData.created_at
+            ? Math.floor((Date.now() - new Date(farmData.created_at).getTime()) / 1000)
+            : undefined;
+
+          await farmerGroupService.recordFarmCompletion(
+            farmData.farmer_template_id,
+            status === 'completed',
+            completionTimeSeconds
+          );
+          logger.info(`[ShutdownCoordinator] Recorded farmer stats for template ${farmData.farmer_template_id}`);
+        }
+      } catch (statsError) {
+        // Don't fail shutdown if stats recording fails
+        logger.warn(`[ShutdownCoordinator] Failed to record farmer stats:`, statsError);
+      }
     } catch (error) {
       logger.error(`[ShutdownCoordinator] Failed to update status:`, error);
     }
@@ -536,6 +840,22 @@ class ShutdownCoordinator extends EventEmitter {
     try {
       // Clean up farm resources
       const sessionName = `farm-${farmId.substring(0, 8)}`;
+
+      // Clean up activity parser session data
+      try {
+        activityParser.cleanupSession(sessionName);
+        logger.info(`[ShutdownCoordinator] Cleaned up activity parser for session ${sessionName}`);
+      } catch (error) {
+        logger.warn(`[ShutdownCoordinator] Failed to cleanup activity parser:`, error);
+      }
+
+      // Clean up yield detection service data
+      try {
+        yieldDetectionService.cleanupFarm(farmId);
+        logger.info(`[ShutdownCoordinator] Cleaned up yield detection for farm ${farmId}`);
+      } catch (error) {
+        logger.warn(`[ShutdownCoordinator] Failed to cleanup yield detection:`, error);
+      }
 
       // TODO: Unregister farm from active farms when agentCleanupService has the method
       // try {
@@ -563,13 +883,12 @@ class ShutdownCoordinator extends EventEmitter {
       
       // Clean up any remaining timers
       this.cancelShutdown(farmId);
-      
-      console.log(`\n✅ FARM CLEANUP COMPLETED ✅`);
-      console.log(`Farm ID: ${farmId}`);
-      console.log(`Session: ${sessionName} killed`);
-      console.log(`Cleanup time: ${new Date().toISOString()}\n`);
-      
-      logger.info(`[ShutdownCoordinator] Successfully cleaned up resources for ${farmId}`);
+
+      logger.info('[ShutdownCoordinator] Farm cleanup completed', {
+        farmId: farmId.substring(0, 8),
+        sessionName,
+        completedAt: new Date().toISOString()
+      });
     } catch (error) {
       logger.error(`[ShutdownCoordinator] Resource cleanup failed for ${farmId}:`, error);
     }
@@ -607,10 +926,43 @@ Ensure all your outputs are saved before shutdown completes, especially any file
     if (!timer) {
       return { scheduled: false };
     }
-    
+
     // Note: We can't get exact time remaining from setTimeout
     // This would need additional tracking if precise timing is needed
     return { scheduled: true };
+  }
+
+  /**
+   * Force harvest collection for recovery scenarios
+   * PUBLIC METHOD: Used by farmRecoveryService for stuck/orphaned farm recovery
+   * This ensures harvest collection goes through the coordinator with proper locking
+   */
+  async forceCollectHarvest(farmId: string, harvestId?: string): Promise<{
+    success: boolean;
+    harvestId?: string;
+    error?: string;
+  }> {
+    logger.info(`[ShutdownCoordinator] Force collecting harvest for farm ${farmId}`, { harvestId });
+
+    try {
+      // If harvestId provided, use it; otherwise collectFiles will create a recovery harvest
+      const result = await this.collectFiles(farmId, 'farm', harvestId);
+
+      if (result.success) {
+        // Try to store in barn as well
+        const actualHarvestId = harvestId || result.error; // collectFiles may have created a new ID
+        if (harvestId) {
+          await this.storeInBarn(farmId, 'farm', harvestId);
+        }
+        return { success: true, harvestId };
+      } else {
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`[ShutdownCoordinator] Force harvest collection failed for farm ${farmId}:`, error);
+      return { success: false, error: errorMessage };
+    }
   }
 }
 

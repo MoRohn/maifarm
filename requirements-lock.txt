@@ -359,7 +359,6 @@ PyVirtualDisplay==3.0
 PyYAML==6.0.2
 pyzmq==27.0.0
 # Editable install with no version control (qeaf==0.1.0)
--e /Users/rohnspringfield/maifarm/server/orchestrators/xenosync/xsync-sessions/xenosync-57c3c03a/workspace/final-project
 referencing==0.36.2
 regex==2024.11.6
 requests==2.32.4

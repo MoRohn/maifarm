@@ -127,7 +127,7 @@ try {
   await new Promise(resolve => setTimeout(resolve, 2000));
 
   for (let i = 0; i < 3; i++) {
-    const filePath = `/Users/rohnspringfield/maifarm/var/maibarn/terminals/${farmId}/agent-${i}.log`;
+    const filePath = `${process.env.MAIFARM_ROOT || process.cwd()}/var/maibarn/terminals/${farmId}/agent-${i}.log`;
     try {
       const content = await readFile(filePath, 'utf8');
       if (content.length > 0) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Package,
@@ -15,19 +15,21 @@ import { Harvest } from '@/types/harvest';
 import { Tooltip } from '../common/Tooltip';
 import { YieldCard } from './YieldCard';
 import { InsightsPanel } from './InsightsPanel';
-import { SeedCreator } from './SeedCreator';
 import { HarvestResults } from './HarvestResults';
 import { HarvestHeadlineSummary } from './HarvestHeadlineSummary';
 import { HarvestCompletionAnimation } from './HarvestCompletionAnimation';
-import { SaveSeedModal } from './SaveSeedModal';
 import { SeedQuickAction } from '../Seeds/SeedQuickAction';
-import { YieldPreviewModal } from './YieldPreviewModal';
+
+// Lazy load modal components for better initial bundle performance
+const SeedCreator = lazy(() => import('./SeedCreator').then(m => ({ default: m.SeedCreator })));
+const SaveSeedModal = lazy(() => import('./SaveSeedModal').then(m => ({ default: m.SaveSeedModal })));
+const YieldPreviewModal = lazy(() => import('./YieldPreviewModal').then(m => ({ default: m.YieldPreviewModal })));
 import { harvestService } from '@/services/harvestService';
 import { farmService } from '@/services/farmService';
 import { mapAgentNamesInHarvest } from '@/utils/agentNameMapper';
 import { useActivityStore } from '@/store/activityStore';
-import { useWebSocket } from '@/hooks/useWebSocket';
 import { format } from 'date-fns';
+import { ModelVisualizationPanel } from '@/components/Farm';
 
 interface HarvestDashboardProps {
   farmId: string;
@@ -50,66 +52,13 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
   const [showCompletionAnimation, setShowCompletionAnimation] = useState(false);
   const [realtimeAgents, setRealtimeAgents] = useState<any[]>([]);
   const [previewYieldItem, setPreviewYieldItem] = useState<any>(null);
-  const { socket, isConnected } = useWebSocket();
 
-  // Subscribe to terminal WebSocket events for real-time updates
+  // Track harvest ID in a ref to avoid stale closure issues while preventing useEffect re-runs
+  const harvestIdRef = React.useRef<string | null>(null);
+
   useEffect(() => {
-    if (!socket || !isConnected || !farmId) {
-      console.warn('[HarvestDashboard] Cannot subscribe to terminal - missing dependencies');
-      return;
-    }
-
-    console.log('[HarvestDashboard] Subscribing to terminal updates for farm:', farmId);
-
-    // Join the terminal session room using farmId
-    socket.emit('terminal:join_session', {
-      sessionId: `farm-${farmId.substring(0, 8)}`,
-      farmId
-    });
-
-    // Request cached terminal output
-    setTimeout(() => {
-      socket.emit('terminal:request_cached', {
-        sessionId: `farm-${farmId.substring(0, 8)}`,
-        farmId
-      });
-    }, 100);
-
-    // Poll for terminal output every 3 seconds
-    const pollInterval = setInterval(() => {
-      socket.emit('terminal:request_output', {
-        sessionId: `farm-${farmId.substring(0, 8)}`,
-        farmId
-      });
-    }, 3000);
-
-    // Handle terminal output updates
-    const handleTerminalOutput = (data: any) => {
-      console.log('[HarvestDashboard] Received terminal output:', data);
-      // Terminal output is now flowing - harvest will auto-refresh via other subscriptions
-    };
-
-    // Handle agent status updates
-    const handleAgentInfo = (data: any) => {
-      console.log('[HarvestDashboard] Received agent info:', data);
-      if (data.agents) {
-        setRealtimeAgents(data.agents);
-      }
-    };
-
-    socket.on('terminal:output', handleTerminalOutput);
-    socket.on('terminal:agent_info', handleAgentInfo);
-
-    return () => {
-      clearInterval(pollInterval);
-      socket.off('terminal:output', handleTerminalOutput);
-      socket.off('terminal:agent_info', handleAgentInfo);
-      socket.emit('terminal:leave_session', {
-        sessionId: `farm-${farmId.substring(0, 8)}`,
-        farmId
-      });
-    };
-  }, [socket, isConnected, farmId]);
+    harvestIdRef.current = harvest?.id || null;
+  }, [harvest?.id]);
 
   useEffect(() => {
     loadHarvest();
@@ -120,7 +69,8 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
     // Subscribe to WebSocket events
     const unsubscribeHarvest = harvestService.onHarvestUpdate((update) => {
       console.log('Harvest update received:', update);
-      if (update.harvestId === harvest?.id) {
+      // Use ref to avoid dependency on harvest?.id which causes re-subscription loops
+      if (update.harvestId === harvestIdRef.current) {
         setHarvest(prev => ({ ...prev!, ...update }));
       }
     });
@@ -145,7 +95,7 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
           description: `Harvest for "${farmName}" has been successfully completed`,
           farmId: farmId,
           metadata: {
-            harvestId: harvest?.id,
+            harvestId: harvestIdRef.current,
             completedAt: new Date().toISOString()
           }
         });
@@ -158,7 +108,7 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
       unsubscribeAgents();
       unsubscribeCompleted();
     };
-  }, [farmId, harvest?.id]);
+  }, [farmId, farmName, celebrating]); // Removed harvest?.id - use ref instead
 
   const loadHarvest = async () => {
     try {
@@ -314,9 +264,9 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Header - More compact */}
+      {/* Header */}
       <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <motion.div
@@ -412,58 +362,46 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
         </div>
       </div>
 
-      {/* Compact Header Stats */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+      {/* Simplified Header Stats */}
+      <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 py-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="flex flex-wrap gap-4 items-center justify-center text-sm text-gray-600 dark:text-gray-400"
+          className="flex flex-wrap gap-6 items-center justify-center mb-4 text-sm text-gray-600 dark:text-gray-400"
         >
           <div className="flex items-center space-x-2">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{harvest.summary?.filesGenerated || harvest.summary?.completedTasks || 0} files</span>
+            <span>{harvest.summary?.filesGenerated || harvest.summary?.completedTasks || 0} files generated</span>
           </div>
           <div className="flex items-center space-x-2">
             <Clock className="w-4 h-4 text-blue-600" />
-            <span>{Math.floor((harvest.summary?.duration || 0) / 60)}m {(harvest.summary?.duration || 0) % 60}s</span>
+            <span>{Math.floor((harvest.summary?.duration || 0) / 60)}m {(harvest.summary?.duration || 0) % 60}s duration</span>
           </div>
           <div className="flex items-center space-x-2">
             <TrendingUp className="w-4 h-4 text-purple-600" />
-            <span>{harvest.summary?.efficiency || 0}%</span>
+            <span>{harvest.summary?.efficiency || 0}% efficiency</span>
           </div>
         </motion.div>
 
-      </div>
-
-      {/* Main Content Container with better spacing */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Headline Summary - Compact */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <HarvestHeadlineSummary harvest={harvest} />
-        </motion.div>
-
-        {/* Yielded Items - Compact Grid */}
+        {/* Yielded Items Section - Moved to Top */}
         {harvest.yield && harvest.yield.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
+            className="mb-8"
           >
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
               Yielded Items
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {harvest.yield.map((yieldItem, index) => (
                 <motion.div
                   key={yieldItem.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.05 * index }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * index }}
                 >
                   <YieldCard
                     yieldItem={yieldItem}
@@ -475,57 +413,79 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
             </div>
           </motion.div>
         )}
+      </div>
 
-        {/* Content Sections */}
-        <div className="space-y-6">
-          {/* Insights Panel - Compact */}
+        {/* Headline Summary Section - Moved up with reduced margins */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="mb-6"
+        >
+          <HarvestHeadlineSummary harvest={harvest} />
+        </motion.div>
+
+        {/* Main Content - Single Consolidated View */}
+        <div className="space-y-8">
+          {/* Model Visualization Panel - Model-First Reasoning */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+          >
+            <ModelVisualizationPanel
+              farmId={farmId}
+              defaultExpanded={false}
+              compact={true}
+            />
+          </motion.div>
+
+          {/* Insights Panel */}
           {harvest.insights && harvest.insights.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
             >
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-600" />
-                AI Insights
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                AI Insights & Discoveries
               </h2>
               <InsightsPanel insights={harvest.insights} />
             </motion.div>
           )}
 
-          {/* Results Section - Compact */}
+          {/* Results Section */}
           {harvest.results && harvest.results.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
             >
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+              <div className="flex items-center space-x-2 mb-4">
                 <Zap className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                Key Results
-              </h2>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Key Results</h2>
+              </div>
               <HarvestResults harvest={harvest} view={view} />
             </motion.div>
           )}
           
-          {/* Empty State - Compact */}
-          {(!harvest.insights || harvest.insights.length === 0) &&
-           (!harvest.results || harvest.results.length === 0) &&
+          {/* Empty State */}
+          {(!harvest.insights || harvest.insights.length === 0) && 
+           (!harvest.results || harvest.results.length === 0) && 
            (!harvest.yield || harvest.yield.length === 0) && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 text-center"
+              className="bg-gray-50 dark:bg-gray-800 rounded-apple-xl p-8 text-center"
             >
-              <Sparkles className="w-10 h-10 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                No insights or results yet. Check back soon.
+              <Sparkles className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+              <p className="text-gray-600 dark:text-gray-400">
+                No insights or results generated yet. The harvest may still be processing or completed without outputs.
               </p>
             </motion.div>
           )}
         </div>
-      </div>
 
       {/* Completion Animation - Inline Mode */}
       <AnimatePresence>
@@ -540,29 +500,33 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Save Seed Modal - Classic */}
+      {/* Save Seed Modal - Classic (lazy loaded) */}
       <AnimatePresence>
         {showSeedModal && (
-          <SaveSeedModal
-            harvest={harvest}
-            onClose={() => setShowSeedModal(false)}
-            onSave={() => {
-              setShowSeedModal(false);
-              // Show success notification
-            }}
-          />
+          <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent" /></div>}>
+            <SaveSeedModal
+              harvest={harvest}
+              onClose={() => setShowSeedModal(false)}
+              onSave={() => {
+                setShowSeedModal(false);
+                // Show success notification
+              }}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
 
-      {/* Seed Creator Modal - Enhanced */}
+      {/* Seed Creator Modal - Enhanced (lazy loaded) */}
       <AnimatePresence>
         {showSeedCreator && (
-          <SeedCreator
-            harvest={harvest}
-            isOpen={showSeedCreator}
-            onClose={() => setShowSeedCreator(false)}
-            onSave={handleSaveSeed}
-          />
+          <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent" /></div>}>
+            <SeedCreator
+              harvest={harvest}
+              isOpen={showSeedCreator}
+              onClose={() => setShowSeedCreator(false)}
+              onSave={handleSaveSeed}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
 
@@ -579,15 +543,17 @@ export const HarvestDashboard: React.FC<HarvestDashboardProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Yield Preview Modal */}
+      {/* Yield Preview Modal (lazy loaded) */}
       <AnimatePresence>
         {previewYieldItem && (
-          <YieldPreviewModal
-            yieldItem={previewYieldItem}
-            harvestId={harvest?.id}
-            onClose={() => setPreviewYieldItem(null)}
-            onDownload={handleYieldDownload}
-          />
+          <Suspense fallback={<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent" /></div>}>
+            <YieldPreviewModal
+              yieldItem={previewYieldItem}
+              harvestId={harvest?.id}
+              onClose={() => setPreviewYieldItem(null)}
+              onDownload={handleYieldDownload}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
     </div>

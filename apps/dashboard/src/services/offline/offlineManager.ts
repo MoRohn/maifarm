@@ -223,10 +223,14 @@ export class OfflineManager {
       'Content-Type': 'application/json',
     };
 
-    // Get auth token if available
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    // Get auth token if available - safe for iOS Safari private browsing
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    } catch (storageError) {
+      console.warn('[OfflineManager] localStorage unavailable for auth token:', storageError);
     }
 
     await offlineStorage.queueForSync({

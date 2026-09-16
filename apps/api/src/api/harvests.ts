@@ -4,7 +4,7 @@ import { authenticateToken, requirePermission } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
 import { v4 as uuidv4 } from 'uuid';
-import { Harvest, HarvestArtifact } from '../../src/types/barn';
+import { Harvest } from '../../shared/types/unified';
 import fs from 'fs/promises';
 import path from 'path';
 import { WebSocketManager } from '../websocket/websocketManager';
@@ -69,7 +69,8 @@ router.get('/', apiRateLimits.read, async (req, res) => {
         'SELECT COUNT(*) FROM harvests WHERE created_by = $1',
         [userId]
       );
-      const total = parseInt(countResult.rows[0].count);
+      // FIX: Add defensive check for rows[0] access
+      const total = countResult.rows[0] ? parseInt(countResult.rows[0].count || '0') : 0;
 
       const harvests = result.rows.map(row => ({
         id: row.id,
@@ -108,8 +109,8 @@ router.get('/', apiRateLimits.read, async (req, res) => {
     } catch (dbError) {
       // Database not available - fall back to harvestService
       console.log('[HarvestAPI] Database unavailable, using harvestService fallback');
-      
-      const inMemoryHarvests = harvestService.getAllHarvests(userId);
+
+      const inMemoryHarvests = await harvestService.getUserHarvests(userId);
       let filteredHarvests = inMemoryHarvests;
 
       // Apply filters

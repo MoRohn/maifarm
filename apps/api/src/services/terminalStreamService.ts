@@ -57,8 +57,8 @@ class TerminalStreamService extends EventEmitter {
   private readonly tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
   private readonly DEFAULT_OPTIONS: StreamOptions = {
-    bufferSize: 100,
-    flushInterval: 100,
+    bufferSize: 10, // Minimal buffering for near-instant delivery
+    flushInterval: 10, // 10ms for sub-frame delivery (60fps = 16ms)
     maxRetries: 3,
     retryDelay: 1000
   };
@@ -227,8 +227,10 @@ class TerminalStreamService extends EventEmitter {
 
   private async listSessionPanes(sessionName: string): Promise<Array<{ windowIndex: string; paneIndex: string }>> {
     return new Promise(resolve => {
+      // FIX: Add timeout to prevent hanging if tmux is stuck
       exec(
         `TMUX_TMPDIR="${this.tmuxTmpDir}" tmux list-panes -a -F '#{session_name} #{window_index} #{pane_index}' | grep '^${sessionName} ' || true`,
+        { timeout: 10000 },  // 10 second timeout
         (error, stdout) => {
           if (error || !stdout.trim()) {
             resolve([]);
@@ -407,13 +409,20 @@ class TerminalStreamService extends EventEmitter {
         return null;
       }
 
-      const buffer = Buffer.alloc(fileSize - stream.lastPosition);
+      // FIX: Limit buffer size to prevent OOM on large files
+      const MAX_READ_CHUNK_SIZE = 65536; // 64KB max per read
+      const bytesToRead = Math.min(fileSize - stream.lastPosition, MAX_READ_CHUNK_SIZE);
+      const buffer = Buffer.alloc(bytesToRead);
       const fd = await fs.open(stream.outputPath, 'r');
 
-      await fd.read(buffer, 0, buffer.length, stream.lastPosition);
-      await fd.close();
+      try {
+        await fd.read(buffer, 0, buffer.length, stream.lastPosition);
+      } finally {
+        // FIX: Ensure file descriptor is always closed
+        await fd.close();
+      }
 
-      stream.lastPosition = fileSize;
+      stream.lastPosition += bytesToRead;
 
       return buffer.toString('utf-8');
 
@@ -439,12 +448,13 @@ class TerminalStreamService extends EventEmitter {
     }
 
     // Flush if buffer is full or set timer to flush
-    if (buffer.length >= (options.bufferSize || 100)) {
+    // CLAUDE.md specifies: terminal latency < 50ms, 10ms flush interval
+    if (buffer.length >= (options.bufferSize || 10)) {
       this.flushBuffer(streamKey);
     } else {
       const timer = setTimeout(() => {
         this.flushBuffer(streamKey);
-      }, options.flushInterval || 100);
+      }, options.flushInterval || 10);
       this.flushTimers.set(streamKey, timer);
     }
   }

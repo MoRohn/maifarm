@@ -137,6 +137,19 @@ class OrchestratorConfig:
     stagger_seconds: int = 0
     reuse_session: bool = False
     kill_on_exit: bool = True
+    # Model-First Reasoning + Causal Models (arxiv 2512.14474, arxiv 2512.07796)
+    problem_model: Optional[Dict[str, Any]] = None
+    causal_model: Optional[Dict[str, Any]] = None
+    verify_outputs: bool = False
+    # Seeds Context (Feature A: Seeds can seed a Farm)
+    applied_seeds: List[Dict[str, Any]] = field(default_factory=list)
+    seeds_text_snapshot: Optional[str] = None
+    # Blerbz Plugins Integration (inference-confidenz, inference-continuez, inference-planz)
+    plugins_enabled: bool = True
+    confidenz_enabled: bool = True
+    continuez_enabled: bool = True
+    continuez_threshold: int = 80  # 0-99, auto-continue if confidence >= threshold
+    planz_enabled: bool = False  # Enable for GoWild mode pre-planning
 
 
 # --------------------------------------------------------------------------------------
@@ -200,6 +213,8 @@ class AgentOrchestrator:
     def run(self) -> None:
         if not check_binary("tmux"):
             logger.error("tmux is required but not found on PATH. Please install tmux.")
+            # CRITICAL FIX: Write failed status before exiting
+            self._write_orchestrator_status("failed", error="tmux not found on PATH")
             sys.exit(1)
 
         # Write initial status
@@ -316,6 +331,8 @@ class AgentOrchestrator:
         cp = run_cmd(["tmux", "new-session", "-d", "-s", session, "-n", "agents"])
         if cp.returncode != 0:
             logger.error("Failed to create tmux session: %s", cp.stderr.strip())
+            # CRITICAL FIX: Write failed status before exiting
+            self._write_orchestrator_status("failed", error=f"Failed to create tmux session: {cp.stderr.strip()}")
             sys.exit(1)
 
         # Wait for session with proper verification loop
@@ -332,6 +349,8 @@ class AgentOrchestrator:
 
         if not session_ready:
             logger.error("Session %s was not created properly after 5 seconds", session)
+            # CRITICAL FIX: Write failed status before exiting
+            self._write_orchestrator_status("failed", error=f"Session {session} was not created properly after 5 seconds")
             sys.exit(1)
 
         # Create additional panes (we start with 1 pane, need num_agents - 1 more)
@@ -711,6 +730,212 @@ if __name__ == '__main__':
         )
 
     # ------------------------------------------------------------------
+    # Model-First Reasoning context (arxiv 2512.14474)
+    # ------------------------------------------------------------------
+    def _build_problem_model_context(self, agent_idx: int, agent_name: str) -> str:
+        """Build context injection from problem model for Model-First Reasoning."""
+        model = self.cfg.problem_model
+        if not model:
+            return ""
+
+        lines = [
+            "## Problem Model Context (Model-First Reasoning)\n",
+            "You are working within an explicitly modeled problem domain.\n",
+            "Work ONLY within the bounds of this model. If you encounter something\n",
+            "not in the model, STOP and extend the model first.\n\n"
+        ]
+
+        # Entities relevant to this agent
+        entities = model.get("entities", [])
+        if entities:
+            lines.append("### Entities in Scope:\n")
+            for entity in entities[:10]:  # Limit to avoid prompt bloat
+                etype = entity.get("type", "other")
+                name = entity.get("name", "Unknown")
+                desc = entity.get("description", "")
+                lines.append(f"- [{etype}] {name}: {desc}\n")
+            lines.append("\n")
+
+        # Actions assigned to this agent
+        actions = model.get("actions", [])
+        assigned_actions = [a for a in actions if a.get("assignedAgent") == f"agent-{agent_idx}"]
+        if assigned_actions:
+            lines.append("### Your Assigned Actions:\n")
+            for action in assigned_actions:
+                name = action.get("name", "Unknown")
+                desc = action.get("description", "")
+                priority = action.get("priority", 5)
+                lines.append(f"- [{priority}] {name}: {desc}\n")
+                # Show preconditions
+                preconds = action.get("preconditions", [])
+                if preconds:
+                    lines.append("    Preconditions:\n")
+                    for pc in preconds[:3]:
+                        var = pc.get("variable", "?")
+                        op = pc.get("operator", "eq")
+                        val = pc.get("value", "?")
+                        lines.append(f"      - {var} {op} {val}\n")
+                # Show effects
+                effects = action.get("effects", [])
+                if effects:
+                    lines.append("    Effects:\n")
+                    for ef in effects[:3]:
+                        var = ef.get("variable", "?")
+                        op = ef.get("operation", "set")
+                        val = ef.get("value", "?")
+                        lines.append(f"      - {var} := {op}({val})\n")
+            lines.append("\n")
+
+        # Constraints
+        constraints = model.get("constraints", [])
+        if constraints:
+            lines.append("### Constraints to Follow:\n")
+            for constraint in constraints[:5]:
+                ctype = constraint.get("type", "logical")
+                desc = constraint.get("description", "")
+                severity = constraint.get("severity", "warning")
+                lines.append(f"- [{ctype}/{severity}] {desc}\n")
+            lines.append("\n")
+
+        # Goals
+        goals = model.get("goals", [])
+        if goals:
+            lines.append("### Goals to Achieve:\n")
+            for goal in goals:
+                desc = goal.get("description", "")
+                priority = goal.get("priority", 5)
+                lines.append(f"- [priority={priority}] {desc}\n")
+            lines.append("\n")
+
+        return "".join(lines)
+
+    # ------------------------------------------------------------------
+    # Causal Model context (arxiv 2512.07796 - DEMOCRITUS)
+    # ------------------------------------------------------------------
+    def _build_causal_model_context(self, agent_idx: int, agent_name: str) -> str:
+        """Build context injection from causal model for intelligent task ordering."""
+        model = self.cfg.causal_model
+        if not model:
+            return ""
+
+        lines = [
+            "## Causal Ordering Context (DEMOCRITUS)\n",
+            "Task execution follows this causal order. Do NOT start a task\n",
+            "until ALL its dependencies are complete.\n\n"
+        ]
+
+        # Task order from topological sort
+        task_order = model.get("topologicalOrder", [])
+        if task_order:
+            lines.append("### Task Execution Order:\n")
+            for i, task in enumerate(task_order[:15], 1):
+                lines.append(f"  {i}. {task}\n")
+            lines.append("\n")
+
+        # Dependencies from graph edges
+        graph = model.get("graph", {})
+        edges = graph.get("edges", [])
+        if edges:
+            lines.append("### Key Dependencies:\n")
+            # Group by target (effect)
+            deps_by_target = {}
+            for edge in edges[:20]:
+                source = edge.get("source", "?")
+                target = edge.get("target", "?")
+                rel = edge.get("relationship", "requires")
+                if target not in deps_by_target:
+                    deps_by_target[target] = []
+                deps_by_target[target].append((source, rel))
+
+            for target, sources in list(deps_by_target.items())[:10]:
+                dep_strs = [f"{src} ({rel})" for src, rel in sources]
+                lines.append(f"- {target} requires: {', '.join(dep_strs)}\n")
+            lines.append("\n")
+
+        # Conflicts (if any unresolved)
+        conflicts = model.get("conflicts", [])
+        unresolved = [c for c in conflicts if not c.get("resolved", False)]
+        if unresolved:
+            lines.append("### CAUTION - Unresolved Conflicts:\n")
+            for conflict in unresolved[:3]:
+                desc = conflict.get("description", "Unknown conflict")
+                ctype = conflict.get("type", "unknown")
+                lines.append(f"- [{ctype}] {desc}\n")
+            lines.append("Proceed with caution and report if you encounter these.\n\n")
+
+        # Is DAG?
+        is_dag = graph.get("isDAG", True)
+        if not is_dag:
+            lines.append("### WARNING: Circular dependencies detected!\n")
+            cycles = graph.get("cycles", [])
+            if cycles:
+                for cycle in cycles[:2]:
+                    lines.append(f"- Cycle: {' -> '.join(cycle[:5])}...\n")
+            lines.append("You may need to break cycles manually.\n\n")
+
+        return "".join(lines)
+
+    # ------------------------------------------------------------------
+    # Seeds Context (Feature A: Seeds can seed a Farm)
+    # ------------------------------------------------------------------
+    def _build_seeds_context(self) -> str:
+        """Build the [SEEDS] section for context injection.
+
+        Seeds are injected at the TOP of the context to shape the farm's
+        behavior across all agents and all modes.
+        """
+        # First check if we have a pre-assembled snapshot from the backend
+        if self.cfg.seeds_text_snapshot:
+            logger.info("Using seeds_text_snapshot from backend")
+            return self.cfg.seeds_text_snapshot + "\n\n"
+
+        # Build from applied_seeds list
+        seeds = self.cfg.applied_seeds
+        if not seeds:
+            return ""
+
+        lines = ["[SEEDS]", ""]
+
+        for i, seed in enumerate(seeds, 1):
+            seed_name = seed.get("name", f"Seed {i}")
+            seed_prompt = seed.get("seedPrompt") or seed.get("seed_prompt") or seed.get("description", "")
+            seed_category = seed.get("category", "")
+            seed_version = seed.get("version", 1)
+            success_checklist = seed.get("successChecklist") or seed.get("success_checklist", [])
+            safety_notes = seed.get("safetyNotes") or seed.get("safety_notes", "")
+
+            lines.append(f"# Seed {i}: {seed_name}")
+            if seed_category:
+                lines.append(f"# Category: {seed_category}")
+            if seed_version and seed_version > 1:
+                lines.append(f"# Version: {seed_version}")
+            lines.append("")
+            lines.append(seed_prompt)
+            lines.append("")
+
+            # Add success checklist if present
+            if success_checklist and isinstance(success_checklist, list):
+                lines.append("Success Criteria:")
+                for item in success_checklist:
+                    lines.append(f"  - {item}")
+                lines.append("")
+
+            # Add safety notes if present
+            if safety_notes:
+                lines.append(f"Safety Notes: {safety_notes}")
+                lines.append("")
+
+            # Separator between seeds
+            if i < len(seeds):
+                lines.append("---")
+                lines.append("")
+
+        lines.append("[/SEEDS]")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
     # Prompt and provider command construction
     # ------------------------------------------------------------------
     def build_agent_prompt(self, agent_idx: int) -> str:
@@ -788,14 +1013,31 @@ if __name__ == '__main__':
                         "Assigned Tasks (Static):\n" + bullet + "\n\n"
                     )
 
-        # Combine all parts
+        # Seeds context injection (Feature A: Seeds can seed a Farm)
+        # Seeds are injected at the TOP of the context
+        seeds_context_text = self._build_seeds_context()
+
+        # Model-First Reasoning context injection (arxiv 2512.14474)
+        model_context_text = ""
+        if self.cfg.problem_model:
+            model_context_text = self._build_problem_model_context(agent_idx, agent_name)
+
+        # Causal Model context injection (arxiv 2512.07796 - DEMOCRITUS)
+        causal_context_text = ""
+        if self.cfg.causal_model:
+            causal_context_text = self._build_causal_model_context(agent_idx, agent_name)
+
+        # Combine all parts - Seeds go at the TOP to shape overall behavior
         full_prompt = (
-            header + 
-            capabilities_text + 
+            seeds_context_text +  # Seeds at TOP of context
+            header +
+            capabilities_text +
+            model_context_text +  # Problem model context
+            causal_context_text +  # Causal ordering context
             yaml_tasks_text +  # Include YAML-defined tasks
-            collab + 
-            steps_text + 
-            (self._collab_instructions(agent_name) if self.cfg.collaborative else "") + 
+            collab +
+            steps_text +
+            (self._collab_instructions(agent_name) if self.cfg.collaborative else "") +
             self.cfg.prompt.strip()
         )
         
@@ -854,11 +1096,40 @@ if __name__ == '__main__':
             if not api_key:
                 logger.warning(f"No OpenAI API key for agent {agent_idx}")
                 return f"echo '[MOCK] Agent {agent_idx} ({agent_name}) - No OpenAI key'; sleep 999999"
-            
+
             # OpenAI doesn't have an official CLI like Claude, so we'll use a mock
             # In production, this could use a custom OpenAI CLI wrapper
             return f"echo '[OpenAI] Agent {agent_idx} ({agent_name}) starting...'; sleep 999999"
-            
+
+        elif provider == "grok":
+            # Grok (xAI) AI engine - uses xAI API
+            api_key = os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY") or ""
+            if not api_key or api_key.startswith("test-"):
+                logger.warning(f"No valid Grok API key for agent {agent_idx}")
+                return f"echo '[MOCK] Agent {agent_idx} ({agent_name}) - No Grok key'; sleep 999999"
+
+            # Write prompt to file for Grok agent
+            prompt_file_path = self.cfg.coordination_dir / f"agent_{agent_idx}_prompt.txt"
+            prompt_file_path.write_text(prompt, encoding='utf-8')
+            logger.info(f"Grok agent {agent_idx} ({agent_name}) using xAI API")
+
+            # Return marker for Grok launch (similar pattern to GPT-OSS)
+            # In production, this could use a custom Grok CLI wrapper or direct API calls
+            return f"GROK_LAUNCH:{agent_idx}:{prompt_file_path}:{agent_name}"
+
+        elif provider == "gpt-oss":
+            # GPT-OSS local AI engine - uses local API server
+            gpt_oss_host = os.environ.get("GPT_OSS_HOST", "http://localhost:8000")
+            gpt_oss_backend = os.environ.get("GPT_OSS_BACKEND", "mini")
+
+            # Write prompt to file for GPT-OSS agent
+            prompt_file_path = self.cfg.coordination_dir / f"agent_{agent_idx}_prompt.txt"
+            prompt_file_path.write_text(prompt, encoding='utf-8')
+            logger.info(f"GPT-OSS agent {agent_idx} ({agent_name}) using backend: {gpt_oss_backend}")
+
+            # Return marker for GPT-OSS launch
+            return f"GPT_OSS_LAUNCH:{agent_idx}:{prompt_file_path}:{agent_name}"
+
         else:  # mock or unknown provider
             logger.info(f"Using mock provider for agent {agent_idx}")
             # Use 'sleep 999999' instead of 'sleep infinity' for macOS compatibility
@@ -1009,26 +1280,17 @@ if __name__ == '__main__':
                 run_cmd(["tmux", "send-keys", "-t", pane, f"export NODE_OPTIONS='--max-old-space-size={node_memory}'", "Enter"])
                 time.sleep(0.2)
 
-                # Launch Claude in INTERACTIVE mode
-                # CRITICAL FIX: Launch Claude first, then send the prompt via tmux send-keys
-                # This avoids the "Raw mode not supported" error from piping
-                # Use --permission-mode bypassPermissions for sandbox environment
-                claude_cmd = "claude --permission-mode bypassPermissions"
+                # Launch Claude with prompt inline using -p flag
+                # CRITICAL FIX: Use -p flag to provide prompt directly (avoids interactive mode hang)
+                # This ensures Claude starts processing immediately instead of waiting for input
+                # Use --dangerously-skip-permissions for sandbox environment
+                prompt_content = read_prompt_file(prompt_file_path)
+
+                # Build command with properly quoted prompt
+                claude_cmd = f"claude --dangerously-skip-permissions -p {shlex.quote(prompt_content)}"
                 run_cmd(["tmux", "send-keys", "-t", pane, claude_cmd, "Enter"])
 
-                # Wait for Claude to fully initialize (it needs time to load)
-                time.sleep(6)
-
-                # Now send the prompt content by simulating typing
-                # Read and send the prompt to the running Claude session
-                prompt_content = read_prompt_file(prompt_file_path)
-                # Use tmux's paste buffer to send multi-line prompts
-                run_cmd(["tmux", "set-buffer", prompt_content])
-                run_cmd(["tmux", "paste-buffer", "-t", pane])
-                # Submit the prompt by sending Enter
-                run_cmd(["tmux", "send-keys", "-t", pane, "Enter"])
-
-                # Wait a bit for Claude to process
+                # Wait for Claude to start processing (reduced from 8s total to 2s)
                 time.sleep(2)
 
                 # Track the Claude process PID for monitoring
@@ -1055,6 +1317,133 @@ if __name__ == '__main__':
                     "warning": "Agent may not have initialized properly",
                     "timestamp": datetime.now().isoformat()
                 })
+
+        elif command.startswith("GROK_LAUNCH:"):
+            # Special handling for Grok (xAI) launch
+            parts = command.split(":", 3)
+            if len(parts) >= 4:
+                _, agent_id, prompt_file_path, agent_name = parts
+                logger.info(f"Launching Grok agent {agent_idx} ({agent_name}) with prompt from {prompt_file_path}")
+
+                # Verify pipe-pane is active
+                terminals_dir = Path.cwd() / "var" / "maibarn" / "terminals" / self.cfg.farm_id
+                log_file = terminals_dir / f"agent-{agent_idx}.log"
+                if not log_file.exists():
+                    log_file.parent.mkdir(parents=True, exist_ok=True)
+                    log_file.write_text(f"# Terminal output for Grok Agent {agent_idx}\n")
+                    run_cmd(["tmux", "pipe-pane", "-t", pane, "-o", f"exec cat >> {log_file}"])
+                    time.sleep(0.3)
+
+                # Clear pane and set working directory
+                run_cmd(["tmux", "send-keys", "-t", pane, "clear", "Enter"])
+                if self.cfg.workspace_dir:
+                    run_cmd(["tmux", "send-keys", "-t", pane, f"cd {shlex.quote(str(self.cfg.workspace_dir))}", "Enter"])
+                    time.sleep(0.2)
+
+                # Set environment variables for Grok
+                grok_api_key = os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY") or ""
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export GROK_API_KEY='{grok_api_key}'", "Enter"])
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export XAI_API_KEY='{grok_api_key}'", "Enter"])
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_ID={agent_idx}", "Enter"])
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_NAME={shlex.quote(agent_name)}", "Enter"])
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export FARM_ID={shlex.quote(self.cfg.farm_id)}", "Enter"])
+                time.sleep(0.2)
+
+                # Launch Grok agent - using mock agent for now (Grok CLI not available yet)
+                # In production, this would use a custom Grok CLI or API wrapper
+                script_dir = Path(__file__).parent.resolve()
+                grok_script = script_dir / "grok_agent.py"
+
+                if grok_script.exists():
+                    run_cmd(["tmux", "send-keys", "-t", pane,
+                            f"python3 '{grok_script}' --prompt-file '{prompt_file_path}' 2>&1", "Enter"])
+                else:
+                    # Fallback: Use mock agent with Grok-style output
+                    logger.warning(f"Grok agent script not found, using mock agent")
+                    fallback_cmd = (
+                        f"echo '[GROK] Agent {agent_idx} ({agent_name}) starting...' && "
+                        f"echo '[GROK] Connecting to xAI API at https://api.x.ai/v1...' && "
+                        f"echo '[GROK] Ready to process tasks with Grok-2 model' && "
+                        f"sleep 999999"
+                    )
+                    run_cmd(["tmux", "send-keys", "-t", pane, fallback_cmd, "Enter"])
+
+                time.sleep(1)
+                logger.info(f"Grok agent {agent_idx} ({agent_name}) launched")
+
+                # Write status
+                status_file = self.cfg.coordination_dir / f"agent_{agent_idx}_status.json"
+                atomic_write_json(status_file, {
+                    "agent_id": agent_idx,
+                    "agent_name": agent_name,
+                    "provider": "grok",
+                    "status": "active",
+                    "timestamp": datetime.now().isoformat()
+                })
+
+        elif command.startswith("GPT_OSS_LAUNCH:"):
+            # Special handling for GPT-OSS launch with local API
+            parts = command.split(":", 3)
+            if len(parts) >= 4:
+                _, agent_id, prompt_file_path, agent_name = parts
+                logger.info(f"Launching GPT-OSS agent {agent_idx} ({agent_name}) with prompt from {prompt_file_path}")
+
+                # Verify pipe-pane is active
+                terminals_dir = Path.cwd() / "var" / "maibarn" / "terminals" / self.cfg.farm_id
+                log_file = terminals_dir / f"agent-{agent_idx}.log"
+                if not log_file.exists():
+                    log_file.parent.mkdir(parents=True, exist_ok=True)
+                    log_file.write_text(f"# Terminal output for GPT-OSS Agent {agent_idx}\n")
+                    run_cmd(["tmux", "pipe-pane", "-t", pane, "-o", f"exec cat >> {log_file}"])
+                    time.sleep(0.3)
+
+                # Clear pane and set working directory
+                run_cmd(["tmux", "send-keys", "-t", pane, "clear", "Enter"])
+                if self.cfg.workspace_dir:
+                    run_cmd(["tmux", "send-keys", "-t", pane, f"cd {shlex.quote(str(self.cfg.workspace_dir))}", "Enter"])
+                    time.sleep(0.2)
+
+                # Set environment variables for GPT-OSS
+                gpt_oss_host = os.environ.get("GPT_OSS_HOST", "http://localhost:8000")
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export GPT_OSS_HOST='{gpt_oss_host}'", "Enter"])
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_ID={agent_idx}", "Enter"])
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export AGENT_NAME={shlex.quote(agent_name)}", "Enter"])
+                run_cmd(["tmux", "send-keys", "-t", pane, f"export FARM_ID={shlex.quote(self.cfg.farm_id)}", "Enter"])
+                time.sleep(0.2)
+
+                # Launch GPT-OSS agent Python script
+                script_dir = Path(__file__).parent.resolve()
+                gpt_oss_script = script_dir / "gpt_oss_agent.py"
+
+                if gpt_oss_script.exists():
+                    run_cmd(["tmux", "send-keys", "-t", pane,
+                            f"python3 '{gpt_oss_script}' --prompt-file '{prompt_file_path}' 2>&1", "Enter"])
+                else:
+                    # Fallback: echo agent info and use curl to call GPT-OSS API
+                    logger.warning(f"GPT-OSS agent script not found, using basic fallback")
+                    fallback_cmd = (
+                        f"echo '[GPT-OSS] Agent {agent_idx} ({agent_name}) starting...' && "
+                        f"echo '[GPT-OSS] Connecting to GPT-OSS server...' && "
+                        f"curl -s -X POST http://localhost:8000/v1/chat/completions "
+                        f"-H 'Content-Type: application/json' "
+                        f"-d '{{\"model\":\"openai/gpt-oss-20b\",\"messages\":[{{\"role\":\"user\",\"content\":\"Hello\"}}]}}' "
+                        f"&& echo '[GPT-OSS] Task complete' && sleep 999999"
+                    )
+                    run_cmd(["tmux", "send-keys", "-t", pane, fallback_cmd, "Enter"])
+
+                time.sleep(1)
+                logger.info(f"GPT-OSS agent {agent_idx} ({agent_name}) launched")
+
+                # Write status
+                status_file = self.cfg.coordination_dir / f"agent_{agent_idx}_status.json"
+                atomic_write_json(status_file, {
+                    "agent_id": agent_idx,
+                    "agent_name": agent_name,
+                    "provider": "gpt-oss",
+                    "status": "active",
+                    "timestamp": datetime.now().isoformat()
+                })
+
         else:
             # Direct launch for other providers and fallback
             self._send_tmux(pane, command, clear=True, chdir=self.cfg.workspace_dir)
@@ -1095,6 +1484,150 @@ if __name__ == '__main__':
             return result.returncode == 0
         except:
             return False
+
+    # ------------------------------------------------------------------
+    # Blerbz Plugins: Confidence Scoring (inference-confidenz)
+    # ------------------------------------------------------------------
+    def _extract_confidence_from_output(self, output: str) -> Optional[int]:
+        """Extract confidence score from agent terminal output.
+
+        Looks for patterns like:
+        - "CZ 87%" (inference-confidenz format)
+        - "Confidenz: 87%"
+        - "Confidence: 87%"
+
+        Returns confidence score 0-99, or None if not found.
+        """
+        if not output or not self.cfg.plugins_enabled or not self.cfg.confidenz_enabled:
+            return None
+
+        # Match inference-confidenz output format: "CZ 87%" or "CZ87%"
+        patterns = [
+            r"CZ\s*(\d{1,2})%",           # CZ 87% or CZ87%
+            r"Confidenz:\s*(\d{1,2})%",   # Confidenz: 87%
+            r"Confidence:\s*(\d{1,2})%",  # Confidence: 87%
+            r"\[CZ\]\s*(\d{1,2})%",       # [CZ] 87%
+        ]
+
+        # Search from the end of output (most recent score)
+        lines = output.strip().split('\n')
+        for line in reversed(lines[-50:]):  # Check last 50 lines
+            for pattern in patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    score = int(match.group(1))
+                    if 0 <= score <= 99:
+                        return score
+
+        return None
+
+    def _calculate_heuristic_confidence(self, output: str) -> int:
+        """Calculate confidence heuristically when no explicit score is present.
+
+        Uses the inference-confidenz algorithm:
+        - Positive indicators: completion markers, definitive language, code blocks
+        - Negative indicators: hedging, errors, questions, incomplete markers
+
+        Returns a score 0-99.
+        """
+        if not output:
+            return 50  # Neutral default
+
+        score = 50  # Start at neutral
+
+        # Positive indicators (increase confidence)
+        positive_patterns = [
+            (r'\b(completed|done|finished|successfully|success)\b', 5),
+            (r'\b(will|is|has|definitely|certainly|clearly)\b', 2),
+            (r'```', 3),  # Code blocks indicate concrete implementation
+            (r'^\d+\.', 2),  # Numbered lists indicate structured response
+            (r'✓|✅|✔', 3),  # Checkmarks
+        ]
+
+        # Negative indicators (decrease confidence)
+        negative_patterns = [
+            (r'\b(might|could|possibly|maybe|uncertain|unsure)\b', -3),
+            (r'\b(error|failed|warning|problem|issue)\b', -5),
+            (r'\?$', -2),  # Questions at end of lines
+            (r'\b(TODO|FIXME|hack|placeholder|TBD)\b', -4),
+            (r'\b(I\'m not sure|I don\'t know)\b', -5),
+        ]
+
+        # Check output (last 1000 chars for efficiency)
+        check_text = output[-1000:].lower()
+
+        for pattern, delta in positive_patterns:
+            matches = len(re.findall(pattern, check_text, re.IGNORECASE | re.MULTILINE))
+            score += min(matches * delta, 15)  # Cap contribution
+
+        for pattern, delta in negative_patterns:
+            matches = len(re.findall(pattern, check_text, re.IGNORECASE | re.MULTILINE))
+            score += max(matches * delta, -15)  # Cap contribution
+
+        # Clamp to valid range
+        return max(0, min(99, score))
+
+    def _get_confidence_level(self, score: int) -> str:
+        """Convert confidence score to level (high/medium/low)."""
+        if score >= 75:
+            return "high"
+        elif score >= 40:
+            return "medium"
+        else:
+            return "low"
+
+    def _write_confidence_data(self, agent_idx: int, confidence: int, heuristic: bool = False) -> None:
+        """Write confidence data to coordination file for backend pickup."""
+        agent_name = self.cfg.agent_names[agent_idx] if agent_idx < len(self.cfg.agent_names) else f"Agent {agent_idx + 1}"
+
+        confidence_data = {
+            "farm_id": self.cfg.farm_id,
+            "agent_id": agent_idx,
+            "agent_name": agent_name,
+            "score": confidence,
+            "level": self._get_confidence_level(confidence),
+            "heuristic": heuristic,
+            "timestamp": datetime.now().isoformat(),
+            "continuez_threshold": self.cfg.continuez_threshold,
+            "should_auto_continue": confidence >= self.cfg.continuez_threshold
+        }
+
+        # Write to agent-specific confidence file
+        confidence_file = self.cfg.coordination_dir / f"agent_{agent_idx}_confidence.json"
+        atomic_write_json(confidence_file, confidence_data)
+
+        # Also write to farm-level confidence summary
+        self._update_farm_confidence_summary(agent_idx, confidence_data)
+
+        logger.debug(f"Agent {agent_idx} confidence: {confidence}% ({self._get_confidence_level(confidence)})")
+
+    def _update_farm_confidence_summary(self, agent_idx: int, confidence_data: Dict) -> None:
+        """Update the farm-level confidence summary with latest agent score."""
+        summary_file = self.cfg.coordination_dir / "confidence_summary.json"
+
+        # Load existing summary or create new
+        if summary_file.exists():
+            try:
+                with open(summary_file, 'r') as f:
+                    summary = json.load(f)
+            except:
+                summary = {"farm_id": self.cfg.farm_id, "agents": {}}
+        else:
+            summary = {"farm_id": self.cfg.farm_id, "agents": {}}
+
+        # Update agent entry
+        summary["agents"][str(agent_idx)] = confidence_data
+        summary["updated_at"] = datetime.now().isoformat()
+
+        # Calculate farm-wide averages
+        scores = [a["score"] for a in summary["agents"].values() if "score" in a]
+        if scores:
+            summary["average_score"] = sum(scores) / len(scores)
+            summary["min_score"] = min(scores)
+            summary["max_score"] = max(scores)
+            summary["overall_level"] = self._get_confidence_level(int(summary["average_score"]))
+
+        atomic_write_json(summary_file, summary)
 
     def _monitor_agents(self) -> None:
         logger.info("Writing active agent roster and monitoring runtime…")
@@ -1145,6 +1678,18 @@ if __name__ == '__main__':
         initial_delay = 30  # 30 seconds - allows Claude to fully initialize
         health_check_interval = 30  # Check every 30 seconds after first check
 
+        # ENHANCED: Progress checkpoint prompts for extended sessions (> 1 hour)
+        # Send status request every 30 minutes to track progress on long tasks
+        progress_checkpoint_interval = 1800  # 30 minutes
+        last_progress_checkpoint = time.time()
+        is_extended_session = self.cfg.max_runtime and self.cfg.max_runtime >= 3600  # >= 1 hour
+
+        if is_extended_session:
+            logger.info(
+                "Extended session detected (%d seconds). Progress checkpoints enabled every 30 minutes.",
+                self.cfg.max_runtime
+            )
+
         logger.info(f"Waiting {initial_delay}s before first health check to allow agent initialization...")
         time.sleep(initial_delay)
         logger.info("Starting health monitoring...")
@@ -1162,9 +1707,81 @@ if __name__ == '__main__':
                     self._check_agent_health()
                     last_health_check = time.time()
 
+                # ENHANCED: Send progress checkpoint prompts for extended sessions
+                if is_extended_session and time.time() - last_progress_checkpoint > progress_checkpoint_interval:
+                    self._send_progress_checkpoint()
+                    last_progress_checkpoint = time.time()
+
                 time.sleep(2)
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt detected; shutting down…")
+
+    def _send_progress_checkpoint(self) -> None:
+        """Send progress checkpoint prompts to all agents for extended session tracking.
+
+        For sessions > 1 hour, periodically request status updates to track progress
+        and detect stuck agents early.
+        """
+        elapsed_minutes = int((datetime.now() - self.start_time).total_seconds() / 60)
+        logger.info(f"Sending progress checkpoint at {elapsed_minutes} minutes...")
+
+        # Progress checkpoint prompt - concise to not disrupt agent flow
+        checkpoint_prompt = (
+            f"[CHECKPOINT {elapsed_minutes}min] /status Please provide a brief status update:\n"
+            "1. Current task\n"
+            "2. Progress % (0-100)\n"
+            "3. Any blockers?\n"
+            "Continue working after responding."
+        )
+
+        # Write checkpoint to coordination file for backend to pick up
+        checkpoint_data = {
+            "type": "progress_checkpoint",
+            "farm_id": self.cfg.farm_id,
+            "session_name": self.cfg.session_name,
+            "elapsed_minutes": elapsed_minutes,
+            "timestamp": datetime.now().isoformat(),
+            "prompt": checkpoint_prompt,
+            "agents": []
+        }
+
+        # Send to each active agent pane via tmux
+        for i in range(self.cfg.num_agents):
+            pane = f"{self.cfg.session_name}:agents.{i}"
+            agent_name = self.cfg.agent_names[i] if i < len(self.cfg.agent_names) else f"Agent {i + 1}"
+
+            try:
+                # Check if agent is still running
+                if not self._is_process_running(self.agent_pids.get(i)):
+                    logger.debug(f"Skipping checkpoint for agent {i} - not running")
+                    continue
+
+                # Send the checkpoint prompt via tmux send-keys
+                # Use a gentle nudge that won't interrupt mid-task
+                result = run_cmd([
+                    "tmux", "send-keys", "-t", pane,
+                    f"\n# Progress checkpoint at {elapsed_minutes} minutes\n",
+                    "Enter"
+                ], capture=True)
+
+                if result.returncode == 0:
+                    checkpoint_data["agents"].append({
+                        "agent_id": i,
+                        "agent_name": agent_name,
+                        "pane": pane,
+                        "status": "checkpoint_sent"
+                    })
+                    logger.debug(f"Sent checkpoint to agent {i} ({agent_name})")
+                else:
+                    logger.warning(f"Failed to send checkpoint to agent {i}")
+
+            except Exception as e:
+                logger.warning(f"Error sending checkpoint to agent {i}: {e}")
+
+        # Write checkpoint status for backend monitoring
+        checkpoint_file = self.cfg.coordination_dir / "last_checkpoint.json"
+        atomic_write_json(checkpoint_file, checkpoint_data)
+        logger.info(f"Progress checkpoint sent to {len(checkpoint_data['agents'])} agents")
 
     def _check_agent_health(self) -> None:
         """Check health of all agents by examining their pane activity AND process status.
@@ -1235,22 +1852,64 @@ if __name__ == '__main__':
                     health_status["issue"] = "Error messages detected in output"
                     logger.warning(f"Agent {i} ({agent_name}): Error patterns detected in output")
 
+            # BLERBZ PLUGINS: Extract and track confidence scores
+            if self.cfg.plugins_enabled and self.cfg.confidenz_enabled and result.stdout:
+                # Try to extract explicit confidence score from output
+                confidence = self._extract_confidence_from_output(result.stdout)
+                heuristic = False
+
+                if confidence is None:
+                    # Fall back to heuristic calculation
+                    confidence = self._calculate_heuristic_confidence(result.stdout)
+                    heuristic = True
+
+                # Add confidence to health status
+                health_status["confidence_score"] = confidence
+                health_status["confidence_level"] = self._get_confidence_level(confidence)
+                health_status["confidence_heuristic"] = heuristic
+                health_status["continuez_threshold"] = self.cfg.continuez_threshold
+                health_status["should_auto_continue"] = confidence >= self.cfg.continuez_threshold
+
+                # Write confidence data for backend pickup
+                self._write_confidence_data(i, confidence, heuristic)
+
             # Write individual health file
             health_file = self.cfg.coordination_dir / f"agent_{i}_health.json"
             atomic_write_json(health_file, health_status)
 
             agent_health_summary.append(health_status)
 
+        # Calculate farm-wide confidence stats if plugins enabled
+        confidence_stats = None
+        if self.cfg.plugins_enabled and self.cfg.confidenz_enabled:
+            scores = [a.get("confidence_score") for a in agent_health_summary if a.get("confidence_score") is not None]
+            if scores:
+                confidence_stats = {
+                    "average": round(sum(scores) / len(scores), 1),
+                    "min": min(scores),
+                    "max": max(scores),
+                    "overall_level": self._get_confidence_level(int(sum(scores) / len(scores))),
+                    "continuez_threshold": self.cfg.continuez_threshold,
+                    "agents_above_threshold": sum(1 for s in scores if s >= self.cfg.continuez_threshold),
+                    "plugins_enabled": True
+                }
+
         # Write consolidated health summary for efficient backend polling
         summary_file = self.cfg.coordination_dir / "agents_health_summary.json"
-        atomic_write_json(summary_file, {
+        summary_data = {
             "farm_id": self.cfg.farm_id,
             "session_name": self.cfg.session_name,
             "total_agents": self.cfg.num_agents,
             "timestamp": datetime.now().isoformat(),
             "agents": agent_health_summary,
             "overall_status": self._get_overall_health_status(agent_health_summary)
-        })
+        }
+
+        # Add confidence stats if available
+        if confidence_stats:
+            summary_data["confidence"] = confidence_stats
+
+        atomic_write_json(summary_file, summary_data)
 
         logger.debug(f"Health check complete: {len(agent_health_summary)} agents checked")
 
@@ -1474,7 +2133,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--num-agents", type=int, default=2, help="Number of agents to launch (>=1)")
     p.add_argument(
         "--provider",
-        choices=["claude", "openai", "mock"],
+        choices=["claude", "openai", "gpt-oss", "mock"],
         default=os.environ.get("AI_PROVIDER", "mock"),
         help="Agent provider",
     )
@@ -1510,8 +2169,28 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--bundle-steps", dest="bundle_steps", type=int, help="Static assignment bundle size per agent (non-collaborative)")
     p.add_argument("--collaborative", action="store_true", help="Enable collaborative step-claiming via coordination files")
 
+    # Model-First Reasoning + Causal Models (arxiv 2512.14474, arxiv 2512.07796)
+    p.add_argument("--problem-model", type=Path, help="Path to problem model JSON file (Model-First Reasoning)")
+    p.add_argument("--causal-model", type=Path, help="Path to causal model JSON file (DEMOCRITUS)")
+    p.add_argument("--verify-outputs", action="store_true", help="Verify agent outputs against problem model")
+
+    # Seeds context injection (Feature A: Seeds can Seed a Farm)
+    p.add_argument("--applied-seeds", type=Path, help="Path to JSON file with applied seeds array")
+    p.add_argument("--seeds-text-snapshot", help="Pre-assembled seeds text to inject at top of context")
+
     p.add_argument("--debug", action="store_true", help="Enable debug logging")
     p.add_argument("--fast-launch", action="store_true", help="Enable fast launch mode (skip checks, minimal delays)")
+
+    # Blerbz Plugins Configuration (inference-confidenz, inference-continuez, inference-planz)
+    p.add_argument("--plugins-enabled", action="store_true", default=True, help="Enable all blerbz plugins")
+    p.add_argument("--no-plugins", action="store_true", help="Disable all blerbz plugins")
+    p.add_argument("--confidenz-enabled", action="store_true", default=True, help="Enable confidence scoring (inference-confidenz)")
+    p.add_argument("--no-confidenz", action="store_true", help="Disable confidence scoring")
+    p.add_argument("--continuez-enabled", action="store_true", default=True, help="Enable auto-continuation (inference-continuez)")
+    p.add_argument("--no-continuez", action="store_true", help="Disable auto-continuation")
+    p.add_argument("--continuez-threshold", type=int, default=80, help="Confidence threshold for auto-continuation (0-99)")
+    p.add_argument("--planz-enabled", action="store_true", help="Enable planning workflow (inference-planz)")
+    p.add_argument("--planz-prelaunch", action="store_true", help="Run pre-launch survey for GoWild mode")
 
     ns = p.parse_args(argv)
     if ns.debug:
@@ -1527,7 +2206,18 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
-    
+
+    # DEBUG: Log environment variables received by orchestrator
+    logger.info("=" * 80)
+    logger.info("ORCHESTRATOR ENVIRONMENT DEBUG")
+    logger.info("=" * 80)
+    logger.info(f"AI_PROVIDER: {os.environ.get('AI_PROVIDER', 'NOT SET')}")
+    logger.info(f"ANTHROPIC_API_KEY: {'SET (length: ' + str(len(os.environ.get('ANTHROPIC_API_KEY', ''))) + ')' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}")
+    logger.info(f"CLAUDE_API_KEY: {'SET (length: ' + str(len(os.environ.get('CLAUDE_API_KEY', ''))) + ')' if os.environ.get('CLAUDE_API_KEY') else 'NOT SET'}")
+    logger.info(f"OPENAI_API_KEY: {'SET (length: ' + str(len(os.environ.get('OPENAI_API_KEY', ''))) + ')' if os.environ.get('OPENAI_API_KEY') else 'NOT SET'}")
+    logger.info(f"Command args provider: {args.provider}")
+    logger.info("=" * 80)
+
     # Check for API key but don't exit - use mock if not available
     provider = args.provider or os.environ.get("AI_PROVIDER", "claude")
     use_mock = False
@@ -1568,6 +2258,81 @@ def main(argv: Optional[List[str]] = None) -> None:
     session = args.session or f"farm-{uuid.uuid4().hex[:8]}"
     farm_id = args.farm_id or session
 
+    # Load Model-First Reasoning problem model if provided
+    problem_model = None
+    if args.problem_model and args.problem_model.exists():
+        try:
+            with args.problem_model.open("r", encoding="utf-8") as f:
+                problem_model = json.load(f)
+            logger.info(f"Loaded problem model from {args.problem_model}")
+        except Exception as e:
+            logger.warning(f"Failed to load problem model: {e}")
+
+    # Load DEMOCRITUS causal model if provided
+    causal_model = None
+    if args.causal_model and args.causal_model.exists():
+        try:
+            with args.causal_model.open("r", encoding="utf-8") as f:
+                causal_model = json.load(f)
+            logger.info(f"Loaded causal model from {args.causal_model}")
+        except Exception as e:
+            logger.warning(f"Failed to load causal model: {e}")
+
+    # Auto-detect models from coordination directory if not explicitly provided
+    coord_dir = args.coordination_dir.resolve()
+    if not problem_model and (coord_dir / "problem_model.json").exists():
+        try:
+            with (coord_dir / "problem_model.json").open("r", encoding="utf-8") as f:
+                problem_model = json.load(f)
+            logger.info("Auto-loaded problem model from coordination directory")
+        except Exception as e:
+            logger.debug(f"Could not auto-load problem model: {e}")
+
+    if not causal_model and (coord_dir / "causal_model.json").exists():
+        try:
+            with (coord_dir / "causal_model.json").open("r", encoding="utf-8") as f:
+                causal_model = json.load(f)
+            logger.info("Auto-loaded causal model from coordination directory")
+        except Exception as e:
+            logger.debug(f"Could not auto-load causal model: {e}")
+
+    # Load applied seeds (Feature A: Seeds can Seed a Farm)
+    applied_seeds: List[Dict[str, Any]] = []
+    seeds_text_snapshot: Optional[str] = None
+
+    if args.applied_seeds and args.applied_seeds.exists():
+        try:
+            with args.applied_seeds.open("r", encoding="utf-8") as f:
+                applied_seeds = json.load(f)
+            logger.info(f"Loaded {len(applied_seeds)} applied seeds from {args.applied_seeds}")
+        except Exception as e:
+            logger.warning(f"Failed to load applied seeds: {e}")
+
+    # Also check coordination directory for seeds
+    if not applied_seeds and (coord_dir / "applied_seeds.json").exists():
+        try:
+            with (coord_dir / "applied_seeds.json").open("r", encoding="utf-8") as f:
+                applied_seeds = json.load(f)
+            logger.info("Auto-loaded applied seeds from coordination directory")
+        except Exception as e:
+            logger.debug(f"Could not auto-load applied seeds: {e}")
+
+    # Get seeds text snapshot from args or coordination directory
+    if args.seeds_text_snapshot:
+        seeds_text_snapshot = args.seeds_text_snapshot
+    elif (coord_dir / "seeds_text_snapshot.txt").exists():
+        try:
+            seeds_text_snapshot = (coord_dir / "seeds_text_snapshot.txt").read_text(encoding="utf-8")
+            logger.info("Auto-loaded seeds text snapshot from coordination directory")
+        except Exception as e:
+            logger.debug(f"Could not auto-load seeds text snapshot: {e}")
+
+    # Determine plugin configuration from CLI args
+    plugins_enabled = args.plugins_enabled and not args.no_plugins
+    confidenz_enabled = args.confidenz_enabled and not args.no_confidenz
+    continuez_enabled = args.continuez_enabled and not args.no_continuez
+    continuez_threshold = max(0, min(99, args.continuez_threshold))  # Clamp to 0-99
+
     cfg = OrchestratorConfig(
         session_name=session,
         farm_id=farm_id,
@@ -1587,6 +2352,19 @@ def main(argv: Optional[List[str]] = None) -> None:
         stagger_seconds=0 if args.fast_launch else args.stagger,  # No stagger in fast-launch mode
         reuse_session=args.reuse_session,
         kill_on_exit=not args.no_kill_on_exit,
+        # Model-First Reasoning + Causal Models
+        problem_model=problem_model,
+        causal_model=causal_model,
+        verify_outputs=args.verify_outputs,
+        # Seeds context injection (Feature A)
+        applied_seeds=applied_seeds,
+        seeds_text_snapshot=seeds_text_snapshot,
+        # Blerbz Plugins Integration
+        plugins_enabled=plugins_enabled,
+        confidenz_enabled=confidenz_enabled,
+        continuez_enabled=continuez_enabled,
+        continuez_threshold=continuez_threshold,
+        planz_enabled=args.planz_enabled,
     )
 
     # Warn if YAML had fewer names than agents
@@ -1598,9 +2376,21 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     orchestrator = AgentOrchestrator(cfg)
     logger.info(
-        "Farm ID: %s | Session: %s | Provider: %s | Agents: %d | Harvest: %s",
+        "Farm ID: %s | Session: %s | Provider: %s | Agents: %d | Harvest: %s | Seeds: %d",
         cfg.farm_id, cfg.session_name, cfg.provider, cfg.num_agents, cfg.harvest_id or "-",
+        len(cfg.applied_seeds) if cfg.applied_seeds else 0,
     )
+    # Log plugin configuration
+    if cfg.plugins_enabled:
+        logger.info(
+            "Plugins: confidenz=%s (threshold=%d%%) | continuez=%s | planz=%s",
+            "ON" if cfg.confidenz_enabled else "OFF",
+            cfg.continuez_threshold,
+            "ON" if cfg.continuez_enabled else "OFF",
+            "ON" if cfg.planz_enabled else "OFF",
+        )
+    else:
+        logger.info("Plugins: DISABLED")
     orchestrator.run()
 
 

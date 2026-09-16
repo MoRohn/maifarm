@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { farmersService } from '../services/farmersService';
+import { farmerGroupService } from '../services/FarmerGroupService';
 import { orchestratorService } from '../services/unified/orchestratorService';
 import { yamlGenerator } from '../services/yamlGenerator';
 import { v4 as uuidv4 } from 'uuid';
+import { AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -233,85 +235,111 @@ router.post('/:id/generate-yaml', async (req: Request, res: Response) => {
 
 // Launch a farm directly from a farmer template
 router.post('/:id/launch', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  console.log(`[Farmers] Launch request for farmer template: ${id}`);
+
   try {
-    const { id } = req.params;
-    const { 
-      farmName, 
-      description, 
-      userPrompt = '', 
-      maxAgents, 
+    const authReq = req as AuthRequest;
+    const {
+      farmName,
+      description,
+      userPrompt = '',
+      maxAgents,
       yamlContent,
-      customizations = {} 
+      customizations = {}
     } = req.body;
 
+    console.log(`[Farmers] Request body:`, {
+      farmName,
+      description: description?.substring(0, 50),
+      userPromptLength: userPrompt?.length,
+      maxAgents,
+      hasYaml: !!yamlContent
+    });
+
+    // Step 1: Get farmer template
     const template = await farmersService.getFarmerById(id);
-    
+
     if (!template) {
+      console.error(`[Farmers] Template not found: ${id}`);
       return res.status(404).json({
         success: false,
-        error: 'Farmer template not found'
+        error: `Farmer template "${id}" not found`
       });
     }
 
-    // Use provided YAML or generate it from template
+    console.log(`[Farmers] Found template: ${template.title}`);
+
+    // Step 2: Get or generate YAML
     let customizedYaml = yamlContent;
-    let result = null;
     if (!customizedYaml) {
-      result = await farmersService.useFarmer(id);
-      customizedYaml = result.customizedYaml;
-      if (userPrompt) {
-        customizedYaml = customizedYaml.replace(
-          /\{\{USER_PROMPT\}\}/g,
-          userPrompt
-        );
+      console.log(`[Farmers] Generating YAML for template ${id}`);
+      try {
+        const result = await farmersService.useFarmer(id);
+        customizedYaml = result.customizedYaml;
+        if (userPrompt) {
+          customizedYaml = customizedYaml.replace(
+            /\{\{USER_PROMPT\}\}/g,
+            userPrompt
+          );
+        }
+      } catch (yamlError) {
+        console.error('[Farmers] YAML generation failed:', yamlError);
+        throw new Error(`Failed to generate YAML configuration: ${yamlError instanceof Error ? yamlError.message : String(yamlError)}`);
       }
     }
 
-    // First, create the farm record in the database using farmService
-    const { farmService } = await import('../services/unified/farmService');
-    const farm = await farmService.createFarm({
-      name: farmName || `${template.title} Farm`,
-      description: description || `Farm created from ${template.title} farmer template`,
-      type: template.config?.coordination === 'collaborative' ? 'collaborative' : 'sequential',
-      config: {
-        maxAgents: Math.min(maxAgents || template.config?.maxAgents || 3, 8),
+    // Step 3: Create and launch farm
+    console.log(`[Farmers] Creating and launching farm`);
+    // Use SYSTEM_UUIDS.GUEST for unauthenticated users (database expects UUID format)
+    const { SYSTEM_UUIDS } = await import('../utils/systemUuids');
+    const userId = authReq.user?.userId || authReq.user?.id || SYSTEM_UUIDS.GUEST;
+    const numberOfAgents = Math.min(maxAgents || template.config?.maxAgents || 3, 8);
+    const prompt = template.initial_prompt?.replace(/\{\{USER_PROMPT\}\}/g, userPrompt || 'Please help me with my task.') || userPrompt || 'Please help me with my task.';
+
+    let farm;
+    try {
+      const { farmService } = await import('../services/unified/farmService');
+      farm = await farmService.createFarm({
+        name: farmName || `${template.title} Farm`,
+        description: description || `Farm created from ${template.title} farmer template`,
+        numberOfAgents,
+        prompt,
+        yamlContent: customizedYaml,
         autoScale: template.config?.autoScale || false,
         timeout: template.config?.timeout || 3600,
-        yaml: customizedYaml
-      },
-      userId: 'maifarm-user', // TODO: get from auth middleware
-      createdBy: 'maifarm-user',
-      farmerTemplateId: id,
-      farmerTemplateName: template.title
-    });
+        userId,
+        createdBy: userId,
+        farmerTemplateId: id,
+        farmerTemplateName: template.title,
+        collaborative: template.config?.coordination === 'collaborative',
+        staggerDelay: template.config?.stagger || 10,
+        provider: 'claude'  // Use Claude provider (has proper CLI implementation)
+      });
+    } catch (dbError) {
+      console.error('[Farmers] Farm creation/launch failed:', dbError);
+      throw new Error(`Failed to create farm: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
+    }
 
-    // Use the actual farm ID from the database
-    const farmId = farm.id;
+    // farmService.createFarm returns LaunchResult with farmId, not id
+    const farmId = farm.farmId;
+    console.log(`[Farmers] Farm record created with ID: ${farmId}`);
 
-    // Prepare launch options from farmer template
-    const launchOptions = {
-      farmId,
-      name: farmName || `${template.title} Farm`,
-      description: description || `Farm created from ${template.title} farmer template`,
-      numberOfAgents: Math.min(maxAgents || template.config?.maxAgents || 3, 8),
-      prompt: template.initial_prompt?.replace(/\{\{USER_PROMPT\}\}/g, userPrompt || 'Please help me with my task.') || userPrompt || 'Please help me with my task.',
-      yamlContent: customizedYaml,
-      steps: template.steps || [],
-      collaborative: template.config?.coordination === 'collaborative',
-      staggerDelay: template.config?.stagger || 10,
-      provider: 'claude' as const,
-      farmerTemplateId: id,
-      farmerTemplateName: template.title
-    };
+    // Note: farmService.createFarm already handles the full launch internally
+    // (it calls launchWithRetry which starts the agents). No need for separate launch.
 
-    // Launch the farm
-    await orchestratorService.launchFarm(launchOptions);
-    
-    // Update farmer usage stats
-    await farmersService.updateFarmerStats(id, {
-      totalUses: (await farmersService.getFarmerStats(id))?.totalUses ?? 0 + 1,
-      lastUsed: new Date()
-    });
+    // Step 4: Update farmer usage stats in database
+    try {
+      await farmerGroupService.recordFarmerUsage(id, numberOfAgents);
+
+      // Also track user-specific usage if authenticated
+      if (userId && userId !== 'guest') {
+        await farmerGroupService.recordUserUsage(userId, id);
+      }
+    } catch (statsError) {
+      // Don't fail the request if stats update fails
+      console.warn('[Farmers] Failed to update stats:', statsError);
+    }
 
     console.log(`[Farmers] Successfully launched farm ${farmId} from template ${id}`);
 
@@ -322,17 +350,26 @@ router.post('/:id/launch', async (req: Request, res: Response) => {
         template: template,
         yaml: customizedYaml,
         launchOptions: {
-          name: launchOptions.name,
-          numberOfAgents: launchOptions.numberOfAgents,
-          collaborative: launchOptions.collaborative
+          name: farmName || `${template.title} Farm`,
+          numberOfAgents,
+          collaborative: template.config?.coordination === 'collaborative'
         }
       }
     });
   } catch (error) {
-    console.error('Error launching farm from farmer template:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    const errorStack = error instanceof Error ? error.stack : '';
+
+    console.error(`[Farmers] Error launching farm from template ${id}:`, {
+      message: errorMessage,
+      stack: errorStack,
+      error
+    });
+
     res.status(500).json({
       success: false,
-      error: 'Failed to launch farm from farmer template'
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? errorStack : undefined
     });
   }
 });
@@ -341,7 +378,7 @@ router.post('/:id/launch', async (req: Request, res: Response) => {
 router.get('/meta/categories', async (req: Request, res: Response) => {
   try {
     const categories = await farmersService.getCategories();
-    
+
     res.json({
       success: true,
       data: categories
@@ -351,6 +388,51 @@ router.get('/meta/categories', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch categories'
+    });
+  }
+});
+
+// Health check endpoint
+router.get('/meta/health', async (req: Request, res: Response) => {
+  try {
+    const healthStatus = await farmersService.getHealthStatus();
+
+    const isHealthy = healthStatus.isInitialized &&
+                      healthStatus.loadedFarmers > 0 &&
+                      !healthStatus.hasError;
+
+    res.status(isHealthy ? 200 : 503).json({
+      success: isHealthy,
+      data: healthStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error getting farmers health status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve health status'
+    });
+  }
+});
+
+// Force re-initialization endpoint (for recovery)
+router.post('/meta/reinitialize', async (req: Request, res: Response) => {
+  try {
+    console.log('[Farmers API] Force re-initialization requested');
+    await farmersService.forceReinitialization();
+
+    const healthStatus = await farmersService.getHealthStatus();
+
+    res.json({
+      success: healthStatus.isInitialized,
+      message: 'FarmersService re-initialized',
+      data: healthStatus
+    });
+  } catch (error) {
+    console.error('Error re-initializing farmers service:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to re-initialize farmers service'
     });
   }
 });

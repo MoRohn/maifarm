@@ -25,9 +25,21 @@ const LocalModelSettings: React.FC = () => {
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [customPath, setCustomPath] = useState('');
+  // FIX: Track mounted state and pending timeout for cleanup
+  const mountedRef = React.useRef(true);
+  const pendingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    mountedRef.current = true;
     checkOllamaStatus();
+    return () => {
+      mountedRef.current = false;
+      // Clean up any pending timeout on unmount
+      if (pendingTimeoutRef.current) {
+        clearTimeout(pendingTimeoutRef.current);
+        pendingTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   const checkOllamaStatus = async () => {
@@ -39,13 +51,13 @@ const LocalModelSettings: React.FC = () => {
       if (data.success) {
         setOllamaStatus(data.data);
         
-        // Auto-select best Qwen model if available
-        if (data.data.qwenModelInstalled && data.data.availableModels.length > 0) {
-          const qwenModel = data.data.availableModels.find((m: any) => 
-            m.name.toLowerCase().includes('qwen')
+        // Auto-select best Llama model if available
+        if (data.data.llamaModelInstalled && data.data.availableModels.length > 0) {
+          const llamaModel = data.data.availableModels.find((m: any) => 
+            m.name.toLowerCase().includes('llama')
           );
-          if (qwenModel) {
-            setSelectedModel(qwenModel.name);
+          if (llamaModel) {
+            setSelectedModel(llamaModel.name);
           }
         }
       }
@@ -105,7 +117,7 @@ const LocalModelSettings: React.FC = () => {
       const result = await response.json();
       
       if (result.success) {
-        showSuccess('Local Qwen model configured successfully!');
+        showSuccess('Local Llama model configured successfully!');
         await checkOllamaStatus(); // Refresh status
       } else {
         showError('Failed to configure local model');
@@ -158,7 +170,16 @@ const LocalModelSettings: React.FC = () => {
       
       if (result.success) {
         showSuccess('Ollama service started successfully');
-        setTimeout(checkOllamaStatus, 2000);
+        // FIX: Track timeout for cleanup and check mounted state
+        if (pendingTimeoutRef.current) {
+          clearTimeout(pendingTimeoutRef.current);
+        }
+        pendingTimeoutRef.current = setTimeout(() => {
+          pendingTimeoutRef.current = null;
+          if (mountedRef.current) {
+            checkOllamaStatus();
+          }
+        }, 2000);
       } else {
         showError(result.message || 'Failed to start Ollama');
       }
@@ -181,7 +202,7 @@ const LocalModelSettings: React.FC = () => {
                 Local Model Configuration
               </h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                Configure local Qwen models via Ollama for private, offline AI capabilities
+                Configure local Llama models via Ollama for private, offline AI capabilities
               </p>
             </div>
             <button
@@ -273,14 +294,14 @@ const LocalModelSettings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Qwen Model Status */}
+              {/* Llama Model Status */}
               <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Download className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <span className="text-sm font-medium">Qwen Model</span>
+                  <span className="text-sm font-medium">Llama Model</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {ollamaStatus.qwenModelInstalled ? (
+                  {ollamaStatus.llamaModelInstalled ? (
                     <>
                       <CheckCircle className="w-5 h-5 text-green-500" />
                       <span className="text-sm text-green-600 dark:text-green-400">Installed</span>
@@ -346,7 +367,7 @@ const LocalModelSettings: React.FC = () => {
                       </p>
                     </div>
                   </div>
-                  {model.name.includes('qwen') && (
+                  {model.name.includes('llama') && (
                     <span className="text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
                       Recommended
                     </span>
@@ -421,8 +442,8 @@ const LocalModelSettings: React.FC = () => {
                   curl -fsSL https://ollama.ai/install.sh | sh
                 </code>
                 <code className="block text-xs text-gray-600 dark:text-gray-400 font-mono p-2 bg-white dark:bg-gray-800 rounded">
-                  # Pull recommended Qwen model<br />
-                  ollama pull qwen2.5-coder:7b
+                  # Pull recommended Llama model<br />
+                  ollama pull llama2.5-coder:7b
                 </code>
                 <code className="block text-xs text-gray-600 dark:text-gray-400 font-mono p-2 bg-white dark:bg-gray-800 rounded">
                   # Start Ollama service<br />

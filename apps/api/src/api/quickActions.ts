@@ -5,8 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { authenticateToken } from '../middleware/auth';
 import { farmCreationRateLimit } from '../middleware/rateLimiter';
 import { getService } from '../services/unified/ServiceRegistry';
-import { FarmMode, farmService, FarmConfig } from '../services/unified/farmService';
+import { farmService, FarmConfig } from '../services/unified/farmService';
 import { aiProviderManager, AIProvider } from '../config/aiProviders';
+import { FarmMode } from '../types/farm';
 import { ApiResponse } from '../types/api';
 import { websocketManager } from '../websocket/websocketManager';
 import { logger } from '../utils/logger';
@@ -314,7 +315,7 @@ router.post('/go-wild', farmCreationRateLimit.middleware(), upload.array('files'
       description: trimmedPrompt,
       mode: FarmMode.GO_WILD,
       provider,
-      numberOfAgents: Math.max(2, Math.min(20, agentCount || 5)),
+      numberOfAgents: Math.max(3, Math.min(20, agentCount || 5)), // GoWild requires min 3 agents per CLAUDE.md
       prompt: trimmedPrompt,
       timeout: timeoutMs,
       userId,

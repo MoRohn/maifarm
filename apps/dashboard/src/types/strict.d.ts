@@ -68,7 +68,7 @@ export interface StrictAgent {
   readonly farmId: UUID;
   readonly name: NonEmptyString;
   readonly status: AgentStatusType;
-  readonly type: 'claude' | 'openai' | 'qwen' | 'ollama';
+  readonly type: 'claude' | 'openai' | 'llama' | 'ollama';
   readonly health?: StrictAgentHealth;
   readonly resources?: StrictAgentResources;
   readonly metrics?: DeepReadonly<AgentMetrics>;
@@ -115,7 +115,7 @@ export interface FarmConfig {
   readonly environment?: DeepReadonly<Record<string, string>>;
 }
 
-export type AIProvider = 'claude' | 'openai' | 'qwen' | 'ollama' | 'mock';
+export type AIProvider = 'claude' | 'openai' | 'llama' | 'ollama' | 'mock';
 
 // Strict Harvest types
 export interface StrictHarvest {
@@ -212,7 +212,7 @@ export function validateAgent(agent: unknown): agent is StrictAgent {
     isUUID(a.farmId) &&
     isNonEmptyString(a.name) &&
     isAgentStatus(a.status) &&
-    ['claude', 'openai', 'qwen', 'ollama'].includes(a.type) &&
+    ['claude', 'openai', 'llama', 'ollama'].includes(a.type) &&
     isTimestamp(a.createdAt)
   );
 }

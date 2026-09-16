@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { EyeIcon, EyeSlashIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
 
 interface APIKeyValidatorProps {
-  provider: 'claude' | 'openai' | 'qwen';
+  provider: 'claude' | 'openai' | 'llama';
   value: string;
   onChange: (value: string) => void;
   onValidate: () => Promise<boolean>;
@@ -30,7 +30,7 @@ export const APIKeyValidator: React.FC<APIKeyValidatorProps> = ({
     switch (provider) {
       case 'claude': return 'sk-ant-';
       case 'openai': return 'sk-';
-      case 'qwen': return 'sk-';
+      case 'llama': return 'sk-';
       default: return '';
     }
   };
@@ -39,7 +39,7 @@ export const APIKeyValidator: React.FC<APIKeyValidatorProps> = ({
     switch (provider) {
       case 'claude': return { icon: '🌾', message: 'Plant your Claude seeds' };
       case 'openai': return { icon: '🚜', message: 'Fuel your GPT tractor' };
-      case 'qwen': return { icon: '🌱', message: 'Cultivate your Qwen garden' };
+      case 'llama': return { icon: '🌱', message: 'Cultivate your Llama garden' };
       default: return { icon: '🔑', message: 'Enter your key' };
     }
   };

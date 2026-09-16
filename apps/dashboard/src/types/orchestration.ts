@@ -109,6 +109,7 @@ export interface FarmSetupRequest {
   description?: string
   configuration?: Partial<FarmTemplate['configuration']>
   autoStart: boolean
+  autoPauseOnClose?: boolean
 }
 
 export interface FarmSetupProgress {

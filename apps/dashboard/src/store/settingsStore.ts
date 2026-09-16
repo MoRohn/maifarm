@@ -1,45 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { 
-  Settings,
-  ThemeConfig, 
-  NotificationPreferences, 
-  IntegrationConfig, 
-  FarmTemplate,
-  AINotificationSuggestion 
-} from '@/types/settings';
-
-// Use Settings interface from types/settings.ts
-
-interface AgentConfiguration {
-  maxConcurrentAgents?: number;
-  maxAgents: number;
-  staggerTime: number;
-  defaultTimeout: number;
-  retryAttempts?: number;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-  autoRestart: boolean;
-  healthCheckInterval?: number;
-  resourceLimits?: {
-    cpuThreshold: number;
-    memoryThreshold: number;
-    diskThreshold: number;
-  };
-  communicationProtocol?: 'websocket' | 'http' | 'grpc';
-  parallelExecution: boolean;
-  memoryLimit: number;
-  cpuLimit: number;
-  enableLogging: boolean;
-  coordinationMode: 'centralized' | 'distributed' | 'hybrid';
-  taskAllocation: 'round-robin' | 'load-balanced';
-  failoverStrategy: 'restart' | 'reassign' | 'skip';
-  // New agent modes
-  agentMode: 'default' | 'supercharge' | 'ultrafarmer';
-  defaultInterval: number; // in minutes
-}
+import type { Settings, ThemeConfig, IntegrationConfig, FarmTemplate } from '@/types/settings';
+import { settingsService } from '@/services/settingsService';
+import { deepMerge, mergeWithDefaults } from '@/utils/deepMerge';
+import { AgentConfiguration } from '@/types/agentSettings';
 
 interface OrchestratorConfiguration {
-  type: 'xenosync'; // XenoSync is the only orchestrator
+  type: 'xenosync';
   xenosync?: {
     enabled: boolean;
     defaultMode: 'parallel' | 'collaborative';
@@ -51,52 +18,80 @@ interface OrchestratorConfiguration {
   };
 }
 
-interface SettingsStore {
-  // Legacy settings object for compatibility
+interface NotificationChannelConfig {
+  email: boolean;
+  push: boolean;
+  inApp: boolean;
+}
+
+interface NotificationTypeConfig {
+  enabled: boolean;
+  channels: NotificationChannelConfig;
+}
+
+export interface NotificationSettingsState {
+  enabled: boolean;
+  sound: boolean;
+  desktop: boolean;
+  email: {
+    enabled: boolean;
+    address: string;
+    frequency: 'immediate' | 'hourly' | 'daily' | 'weekly';
+  };
+  quietHours: {
+    enabled: boolean;
+    start: string;
+    end: string;
+  };
+  types: {
+    farmStart: NotificationTypeConfig;
+    farmComplete: NotificationTypeConfig;
+    agentError: NotificationTypeConfig;
+    resourceAlert: NotificationTypeConfig;
+    aiDiscovery: NotificationTypeConfig;
+  };
+}
+
+interface SettingsStoreState {
   settings: Settings;
-  updateSettings: (updates: Partial<Settings>) => void;
-  
-  // Theme
+  serverSnapshot: Settings;
+  integrations: IntegrationConfig[];
+  templates: FarmTemplate[];
+  agentConfig: AgentConfiguration;
+  orchestratorConfig: OrchestratorConfiguration;
+  notifications: NotificationSettingsState;
   theme: ThemeConfig;
   customThemes: ThemeConfig[];
-  setTheme: (theme: ThemeConfig) => void;
-  saveCustomTheme: (theme: ThemeConfig) => void;
-  
-  // Notifications
-  notifications: NotificationPreferences;
-  setNotifications: (notifications: NotificationPreferences) => void;
-  aiSuggestions: AINotificationSuggestion[];
-  
-  // Integrations
-  integrations: IntegrationConfig[];
-  addIntegration: (integration: IntegrationConfig) => void;
-  updateIntegration: (id: string, updates: Partial<IntegrationConfig>) => void;
-  removeIntegration: (id: string) => void;
-  
-  // Templates
-  templates: FarmTemplate[];
-  addTemplate: (template: FarmTemplate) => void;
-  removeTemplate: (id: string) => void;
-  
-  // Language
   language: string;
-  setLanguage: (language: string) => void;
-  
-  // AI Assistance
   aiAssistance: {
     enabled: boolean;
     suggestionLevel: 'minimal' | 'moderate' | 'aggressive';
     learningEnabled: boolean;
   };
-  setAIAssistance: (settings: Partial<SettingsStore['aiAssistance']>) => void;
-  
-  // Agent Configuration
-  agentConfig: AgentConfiguration;
+
+  loading: boolean;
+  loaded: boolean;
+  saving: boolean;
+  dirty: boolean;
+  error: string | null;
+
+  updateSettings: (updates: Partial<Settings>) => void;
   updateAgentConfig: (config: Partial<AgentConfiguration>) => void;
-  
-  // Orchestrator Configuration
-  orchestratorConfig: OrchestratorConfiguration;
   updateOrchestratorConfig: (config: Partial<OrchestratorConfiguration>) => void;
+  setNotifications: (prefs: NotificationSettingsState) => void;
+  addIntegration: (integration: IntegrationConfig) => void;
+  updateIntegration: (id: string, updates: Partial<IntegrationConfig>) => void;
+  removeIntegration: (id: string) => void;
+  addTemplate: (template: FarmTemplate) => void;
+  removeTemplate: (id: string) => void;
+  setLanguage: (language: string) => void;
+  setAIAssistance: (settings: Partial<SettingsStoreState['aiAssistance']>) => void;
+  saveCustomTheme: (theme: ThemeConfig) => void;
+  setTheme: (theme: ThemeConfig) => void;
+
+  loadSettings: () => Promise<void>;
+  saveSettings: () => Promise<void>;
+  resetSettings: () => void;
 }
 
 const defaultAgentConfig: AgentConfiguration = {
@@ -122,13 +117,13 @@ const defaultAgentConfig: AgentConfiguration = {
   taskAllocation: 'load-balanced',
   failoverStrategy: 'restart',
   agentMode: 'default',
-  defaultInterval: 10, // 10 minutes default
+  defaultInterval: 10,
 };
 
 const defaultOrchestratorConfig: OrchestratorConfiguration = {
-  type: 'xenosync', // XenoSync is the only orchestrator
+  type: 'xenosync',
   xenosync: {
-    enabled: true, // Always enabled
+    enabled: true,
     defaultMode: 'parallel',
     minAgents: 2,
     maxAgents: 20,
@@ -138,28 +133,30 @@ const defaultOrchestratorConfig: OrchestratorConfiguration = {
   }
 };
 
-// Helper function to get GPU count (mock implementation)
-const getGPUCount = (): number => {
-  // In a real implementation, this would detect GPU hardware
-  // For now, return a reasonable default based on typical systems
-  return 4; // Mock GPU count
-};
-
-// Helper function to calculate max agents based on mode
-export const calculateMaxAgents = (mode: 'default' | 'supercharge' | 'ultrafarmer'): number => {
-  switch (mode) {
-    case 'default':
-      return 8;
-    case 'supercharge':
-      return 10;
-    case 'ultrafarmer':
-      return Math.min(getGPUCount() * 2, 16); // 2 agents per GPU, max 16
-    default:
-      return 8;
+const defaultNotifications: NotificationSettingsState = {
+  enabled: true,
+  sound: true,
+  desktop: true,
+  email: {
+    enabled: false,
+    address: '',
+    frequency: 'immediate'
+  },
+  quietHours: {
+    enabled: false,
+    start: '22:00',
+    end: '08:00'
+  },
+  types: {
+    farmStart: { enabled: true, channels: { email: false, push: true, inApp: true } },
+    farmComplete: { enabled: true, channels: { email: true, push: true, inApp: true } },
+    agentError: { enabled: true, channels: { email: false, push: true, inApp: true } },
+    resourceAlert: { enabled: true, channels: { email: false, push: false, inApp: true } },
+    aiDiscovery: { enabled: true, channels: { email: false, push: true, inApp: true } }
   }
 };
 
-const defaultTheme: ThemeConfig = {
+const defaultThemeConfig: ThemeConfig = {
   id: 'light',
   name: 'Light',
   mode: 'light',
@@ -173,18 +170,8 @@ const defaultTheme: ThemeConfig = {
   },
 };
 
-const defaultNotifications: NotificationPreferences = {
-  types: {
-    farmStart: { enabled: true, channels: { email: false, push: true, inApp: true } },
-    farmComplete: { enabled: true, channels: { email: true, push: true, inApp: true } },
-    agentError: { enabled: true, channels: { email: false, push: true, inApp: true } },
-    resourceAlert: { enabled: true, channels: { email: false, push: false, inApp: true } },
-    aiDiscovery: { enabled: true, channels: { email: false, push: true, inApp: true } },
-  },
-};
-
 const defaultSettings: Settings = {
-  aiProvider: 'claude', // Default AI provider
+  aiProvider: 'claude',  // Default to Claude with Opus 4.5 model
   user: {
     theme: {
       mode: 'system',
@@ -195,25 +182,7 @@ const defaultSettings: Settings = {
       reducedMotion: false,
       highContrast: false,
     },
-    notifications: {
-      enabled: true,
-      sound: true,
-      desktop: true,
-      email: {
-        enabled: false,
-        address: '',
-        frequency: 'immediate',
-      },
-      triggers: {
-        farmComplete: true,
-        farmError: true,
-        agentError: true,
-        lowCredits: true,
-        systemUpdate: true,
-        aiSuggestions: true,
-        aiDiscovery: true,
-      },
-    },
+    notifications: defaultNotifications,
     language: {
       current: 'en',
       autoDetect: true,
@@ -257,7 +226,7 @@ const defaultSettings: Settings = {
       offlineQueueEnabled: true,
     },
     behavior: {
-      autoPauseOnClose: true, // Default ON
+      autoPauseOnClose: true,
       runInBackground: false,
       showBackgroundIndicator: true,
     },
@@ -268,90 +237,317 @@ const defaultSettings: Settings = {
     externalServices: [],
   },
   templates: [],
+  agentConfig: defaultAgentConfig,
+  orchestratorConfig: defaultOrchestratorConfig,
+  aiAssistance: {
+    enabled: true,
+    suggestionLevel: 'moderate',
+    learningEnabled: true,
+  },
 };
 
-export const useSettingsStore = create<SettingsStore>()(
+function mapNotificationsToSettings(prefs: NotificationSettingsState): NotificationSettingsState {
+  return {
+    enabled: prefs.enabled,
+    sound: prefs.sound,
+    desktop: prefs.desktop,
+    email: { ...prefs.email },
+    quietHours: { ...prefs.quietHours },
+    types: {
+      farmStart: { ...prefs.types.farmStart, channels: { ...prefs.types.farmStart.channels } },
+      farmComplete: { ...prefs.types.farmComplete, channels: { ...prefs.types.farmComplete.channels } },
+      agentError: { ...prefs.types.agentError, channels: { ...prefs.types.agentError.channels } },
+      resourceAlert: { ...prefs.types.resourceAlert, channels: { ...prefs.types.resourceAlert.channels } },
+      aiDiscovery: { ...prefs.types.aiDiscovery, channels: { ...prefs.types.aiDiscovery.channels } },
+    }
+  };
+}
+
+const createState = () => ({
+  settings: defaultSettings,
+  serverSnapshot: defaultSettings,
+  integrations: defaultSettings.integrations.externalServices ?? [],
+  templates: defaultSettings.templates ?? [],
+  agentConfig: defaultAgentConfig,
+  orchestratorConfig: defaultOrchestratorConfig,
+  notifications: defaultNotifications,
+  theme: defaultThemeConfig,
+  customThemes: [] as ThemeConfig[],
+  language: defaultSettings.user.language?.current ?? 'en',
+  aiAssistance: defaultSettings.aiAssistance ?? {
+    enabled: true,
+    suggestionLevel: 'moderate',
+    learningEnabled: true,
+  },
+  loading: false,
+  loaded: false,
+  saving: false,
+  dirty: false,
+  error: null as string | null,
+});
+
+export const useSettingsStore = create<SettingsStoreState>()(
   persist(
     (set, get) => ({
-      // Legacy settings object
-      settings: defaultSettings,
-      
-      updateSettings: (updates) => set((state) => ({
-        settings: { ...state.settings, ...updates },
-        // Also update individual properties for backward compatibility
-        theme: (updates as any).theme || state.theme,
-        notifications: (updates as any).notifications || state.notifications,
-        language: (updates as any).language || state.language,
-        aiAssistance: (updates as any).aiAssistance || state.aiAssistance,
-      })),
-      
-      // Theme
-      theme: defaultTheme,
-      customThemes: [],
-      setTheme: (theme) => set({ 
-        theme,
-        settings: { ...get().settings, theme: theme as any }
-      }),
-      saveCustomTheme: (theme) => set((state) => ({
-        customThemes: [...state.customThemes, theme],
-      })),
-      
-      // Notifications
-      notifications: defaultNotifications,
-      setNotifications: (notifications) => set({ notifications }),
-      aiSuggestions: [],
-      
-      // Integrations
-      integrations: [],
-      addIntegration: (integration) => set((state) => ({
-        integrations: [...state.integrations, integration],
-      })),
-      updateIntegration: (id, updates) => set((state) => ({
-        integrations: state.integrations.map((i) =>
-          i.id === id ? { ...i, ...updates } : i
-        ),
-      })),
-      removeIntegration: (id) => set((state) => ({
-        integrations: state.integrations.filter((i) => i.id !== id),
-      })),
-      
-      // Templates
-      templates: [],
-      addTemplate: (template) => set((state) => ({
-        templates: [...state.templates, template],
-      })),
-      removeTemplate: (id) => set((state) => ({
-        templates: state.templates.filter((t) => t.id !== id),
-      })),
-      
-      // Language
-      language: 'en',
-      setLanguage: (language) => set({ language }),
-      
-      // AI Assistance
-      aiAssistance: {
-        enabled: true,
-        suggestionLevel: 'moderate',
-        learningEnabled: true,
+      ...createState(),
+
+      updateSettings: (updates) => {
+        const merged = deepMerge(get().settings, updates);
+        set({ settings: merged, dirty: true });
       },
-      setAIAssistance: (settings) => set((state) => ({
-        aiAssistance: { ...state.aiAssistance, ...settings },
-      })),
-      
-      // Agent Configuration
-      agentConfig: defaultAgentConfig,
-      updateAgentConfig: (updates) => set((state) => ({
-        agentConfig: { ...state.agentConfig, ...updates },
-      })),
-      
-      // Orchestrator Configuration
-      orchestratorConfig: defaultOrchestratorConfig,
-      updateOrchestratorConfig: (updates) => set((state) => ({
-        orchestratorConfig: { ...state.orchestratorConfig, ...updates },
-      })),
+
+      updateAgentConfig: (config) => {
+        const updated = { ...get().agentConfig, ...config };
+        set({
+          agentConfig: updated,
+          settings: deepMerge(get().settings, { agentConfig: updated }),
+          dirty: true
+        });
+      },
+
+      updateOrchestratorConfig: (config) => {
+        const updated = mergeWithDefaults(get().orchestratorConfig, config);
+        set({
+          orchestratorConfig: updated,
+          settings: deepMerge(get().settings, { orchestratorConfig: updated }),
+          dirty: true
+        });
+      },
+
+      setNotifications: (prefs) => {
+        const mapped = mapNotificationsToSettings(prefs);
+        set({
+          notifications: mapped,
+          settings: deepMerge(get().settings, { user: { notifications: mapped } }),
+          dirty: true
+        });
+      },
+
+      addIntegration: (integration) => {
+        const updated = [...get().integrations, integration];
+        set({
+          integrations: updated,
+          settings: deepMerge(get().settings, {
+            integrations: {
+              externalServices: updated
+            }
+          }),
+          dirty: true
+        });
+      },
+
+      updateIntegration: (id, updates) => {
+        const updated = get().integrations.map((integration) =>
+          integration.id === id ? { ...integration, ...updates } : integration
+        );
+        set({
+          integrations: updated,
+          settings: deepMerge(get().settings, {
+            integrations: {
+              externalServices: updated
+            }
+          }),
+          dirty: true
+        });
+      },
+
+      removeIntegration: (id) => {
+        const updated = get().integrations.filter((integration) => integration.id !== id);
+        set({
+          integrations: updated,
+          settings: deepMerge(get().settings, {
+            integrations: {
+              externalServices: updated
+            }
+          }),
+          dirty: true
+        });
+      },
+
+      addTemplate: (template) => {
+        const updated = [...get().templates, template];
+        set({
+          templates: updated,
+          settings: deepMerge(get().settings, { templates: updated }),
+          dirty: true
+        });
+      },
+
+      removeTemplate: (id) => {
+        const updated = get().templates.filter((template) => template.id !== id);
+        set({
+          templates: updated,
+          settings: deepMerge(get().settings, { templates: updated }),
+          dirty: true
+        });
+      },
+
+      setLanguage: (language) => {
+        set({
+          language,
+          settings: deepMerge(get().settings, {
+            user: {
+              language: {
+                ...(get().settings.user.language ?? {}),
+                current: language
+              }
+            }
+          }),
+          dirty: true
+        });
+      },
+
+      setAIAssistance: (updates) => {
+        const merged = {
+          ...get().aiAssistance,
+          ...updates,
+        };
+        set({
+          aiAssistance: merged,
+          settings: deepMerge(get().settings, {
+            aiAssistance: merged,
+            user: {
+              aiAssistant: {
+                ...(get().settings.user.aiAssistant ?? {}),
+                ...updates,
+              }
+            }
+          }),
+          dirty: true
+        });
+      },
+
+      saveCustomTheme: (theme) => {
+        const updated = [...get().customThemes, theme];
+        set({ customThemes: updated, dirty: true });
+      },
+
+      setTheme: (theme) => {
+        set({ theme });
+      },
+
+      loadSettings: async () => {
+        set({ loading: true, error: null });
+        try {
+          const remote = await settingsService.getAll();
+          const uiSettings = remote.ui as Partial<Settings> | undefined;
+          const merged = mergeWithDefaults(defaultSettings, uiSettings);
+
+          const agentConfig = mergeWithDefaults(defaultAgentConfig, (merged as any).agentConfig);
+          const orchestratorConfig = mergeWithDefaults(defaultOrchestratorConfig, (merged as any).orchestratorConfig);
+          const notifications = mapNotificationsToSettings((merged.user?.notifications as NotificationSettingsState) || defaultNotifications);
+          const integrations = merged.integrations?.externalServices ?? [];
+          const templates = merged.templates ?? [];
+          const language = merged.user?.language?.current ?? 'en';
+          const aiAssistance = merged.aiAssistance ?? defaultSettings.aiAssistance;
+
+          set({
+            settings: merged,
+            serverSnapshot: merged,
+            agentConfig,
+            orchestratorConfig,
+            notifications,
+            integrations,
+            templates,
+            language,
+            aiAssistance,
+            loading: false,
+            loaded: true,
+            dirty: false,
+            error: null
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to load settings';
+          set({ loading: false, error: message });
+        }
+      },
+
+      saveSettings: async () => {
+        const state = get();
+        set({ saving: true, error: null });
+        try {
+          const payload: Settings = deepMerge(state.settings, {
+            agentConfig: state.agentConfig,
+            orchestratorConfig: state.orchestratorConfig,
+            integrations: {
+              ...(state.settings.integrations ?? {}),
+              externalServices: state.integrations
+            },
+            templates: state.templates,
+            aiAssistance: state.aiAssistance,
+            user: {
+              ...(state.settings.user ?? {}),
+              notifications: state.notifications,
+              language: {
+                ...(state.settings.user?.language ?? {}),
+                current: state.language
+              },
+              aiAssistant: {
+                ...(state.settings.user?.aiAssistant ?? {}),
+                enabled: state.aiAssistance.enabled,
+                suggestions: state.aiAssistance.suggestionLevel !== 'minimal',
+                autoOptimize: state.aiAssistance.suggestionLevel === 'aggressive',
+                creativityLevel: state.settings.user?.aiAssistant?.creativityLevel ?? 50,
+                learningEnabled: state.aiAssistance.learningEnabled
+              }
+            }
+          });
+
+          await settingsService.update('ui', payload);
+          set({
+            serverSnapshot: payload,
+            settings: payload,
+            saving: false,
+            dirty: false
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to save settings';
+          set({ saving: false, error: message });
+          throw error;
+        }
+      },
+
+      resetSettings: () => {
+        const snapshot = get().serverSnapshot;
+        set({
+          settings: snapshot,
+          agentConfig: snapshot.agentConfig ?? defaultAgentConfig,
+          orchestratorConfig: snapshot.orchestratorConfig ?? defaultOrchestratorConfig,
+          notifications: mapNotificationsToSettings((snapshot.user?.notifications as NotificationSettingsState) ?? defaultNotifications),
+          integrations: snapshot.integrations?.externalServices ?? [],
+          templates: snapshot.templates ?? [],
+          language: snapshot.user?.language?.current ?? 'en',
+          aiAssistance: snapshot.aiAssistance ?? defaultSettings.aiAssistance,
+          dirty: false
+        });
+      }
     }),
     {
       name: 'maifarm-settings',
+      partialize: (state) => ({
+        settings: state.settings,
+        serverSnapshot: state.serverSnapshot,
+        agentConfig: state.agentConfig,
+        orchestratorConfig: state.orchestratorConfig,
+        notifications: state.notifications,
+        theme: state.theme,
+        integrations: state.integrations,
+        templates: state.templates,
+        language: state.language,
+        aiAssistance: state.aiAssistance
+      })
     }
   )
 );
+
+export const calculateMaxAgents = (mode: AgentConfiguration['agentMode']) => {
+  switch (mode) {
+    case 'supercharge':
+      return 10;
+    case 'ultrafarmer':
+      return 16;
+    case 'default':
+    default:
+      return 8;
+  }
+};

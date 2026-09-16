@@ -46,9 +46,9 @@ const riskProfiles = {
   aggressive: {
     label: 'Aggressive',
     icon: Sparkles,
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-50',
-    borderColor: 'border-purple-200',
+    color: 'text-burnt-600',
+    bgColor: 'bg-burnt-50',
+    borderColor: 'border-burnt-200',
     description: 'Pushes boundaries, explores novel solutions'
   },
   wild: {
@@ -144,7 +144,7 @@ export const BoundaryControls: React.FC<BoundaryControlsProps> = ({
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Creativity Level
             </label>
-            <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
+            <span className="text-sm font-semibold text-burnt-600 dark:text-burnt-400">
               {boundaries.creativityLevel}%
             </span>
           </div>
@@ -175,7 +175,7 @@ export const BoundaryControls: React.FC<BoundaryControlsProps> = ({
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Exploration Depth
             </label>
-            <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
+            <span className="text-sm font-semibold text-burnt-600 dark:text-burnt-400">
               Level {boundaries.explorationDepth}
             </span>
           </div>
@@ -242,7 +242,7 @@ export const BoundaryControls: React.FC<BoundaryControlsProps> = ({
                 checked={boundaries.taskGeneration.allowParallel}
                 onChange={(e) => handleTaskGenerationChange({ allowParallel: e.target.checked })}
                 disabled={isExploring}
-                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500
+                className="w-4 h-4 text-burnt-600 rounded focus:ring-burnt-500
                          disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <span className="text-sm text-gray-600 dark:text-gray-400">Allow parallel exploration</span>
@@ -254,7 +254,7 @@ export const BoundaryControls: React.FC<BoundaryControlsProps> = ({
                 checked={boundaries.taskGeneration.requireApproval}
                 onChange={(e) => handleTaskGenerationChange({ requireApproval: e.target.checked })}
                 disabled={isExploring}
-                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500
+                className="w-4 h-4 text-burnt-600 rounded focus:ring-burnt-500
                          disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <span className="text-sm text-gray-600 dark:text-gray-400">Require approval for new tasks</span>
@@ -281,7 +281,7 @@ export const BoundaryControls: React.FC<BoundaryControlsProps> = ({
                   checked={boundaries.constraints[key as keyof ExplorationBoundaries['constraints']]}
                   onChange={(e) => handleConstraintsChange({ [key]: e.target.checked })}
                   disabled={isExploring}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500
+                  className="w-4 h-4 text-burnt-600 rounded focus:ring-burnt-500
                            disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>

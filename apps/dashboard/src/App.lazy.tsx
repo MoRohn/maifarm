@@ -3,8 +3,8 @@ import { Toaster } from 'react-hot-toast'
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { DashboardLayout } from './components/layouts/DashboardLayout'
 import { Dashboard } from './components/Dashboard/Dashboard'
-import { ErrorBoundary } from './components/common/ErrorBoundary'
-import { GlobalErrorBoundary } from './components/common/GlobalErrorBoundary'
+import { ErrorBoundary } from './components/common/ErrorBoundary.tsx'
+import { GlobalErrorBoundary } from './components/common/GlobalErrorBoundary.tsx'
 import { useThemeStore } from './store/themeStore'
 import { AuthProvider } from './hooks/useAuth'
 import { ThemeProvider } from './components/common/ThemeProvider'
@@ -12,6 +12,7 @@ import BackgroundIndicator from './components/common/BackgroundIndicator'
 import { ApiErrorDisplay } from './components/common/ApiErrorDisplay'
 import { setupHMRHandler } from './utils/hmrHandler'
 import { wsManager } from './services/websocket/singletonManager'
+import SafeErrorPage from './components/ErrorPage/SafeErrorPage'
 
 // Lazy load heavy components
 const FarmersPage = lazy(() => import('./components/Farmers/FarmersPage').then(m => ({ default: m.FarmersPage })))
@@ -23,7 +24,6 @@ const HarvestPage = lazy(() => import('./components/Harvest/HarvestPage').then(m
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage'))
 const Analytics = lazy(() => import('./components/Analytics/Analytics'))
 const MultiClaudeManager = lazy(() => import('./components/MultiClaude/MultiClaudeManager').then(m => ({ default: m.MultiClaudeManager })))
-const SafeErrorPage = lazy(() => import('./components/ErrorPage/SafeErrorPage'))
 const Calculator = lazy(() => import('./components/Calculator/Calculator').then(m => ({ default: m.Calculator })))
 const CommandPalette = lazy(() => import('./components/common/CommandPalette').then(m => ({ default: m.CommandPalette })))
 

@@ -1,18 +1,21 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Users, 
-  Zap
+import {
+  Users,
+  Zap,
+  Star,
+  TrendingUp
 } from 'lucide-react';
-import { FarmerTemplate } from '@/types/farmers';
+import { FarmerTemplate, FarmerDbStats } from '@/types/farmers';
 
 interface FarmerCardProps {
   farmer: FarmerTemplate;
+  stats?: FarmerDbStats | null;
   onClick: () => void;
   onUse: () => void;
 }
 
-export const FarmerCard: React.FC<FarmerCardProps> = ({ farmer, onClick, onUse }) => {
+export const FarmerCard: React.FC<FarmerCardProps> = ({ farmer, stats, onClick, onUse }) => {
   const getCategoryInfo = (category: string) => {
     const categoryData = {
       startup: { 
@@ -85,11 +88,11 @@ export const FarmerCard: React.FC<FarmerCardProps> = ({ farmer, onClick, onUse }
           >
             <span className="text-2xl">{agentAvatar}</span>
           </motion.div>
-          <div>
-            <h3 className="font-bold text-lg text-gray-900 dark:text-white mb-1">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-lg text-gray-900 dark:text-white mb-1 truncate">
               {farmer.title}
             </h3>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
               <span className={`text-sm font-medium ${complexityInfo.color}`}>
                 {complexityInfo.icon} {complexityInfo.label}
               </span>
@@ -97,10 +100,47 @@ export const FarmerCard: React.FC<FarmerCardProps> = ({ farmer, onClick, onUse }
               <span className="text-xs text-gray-600 dark:text-gray-400 capitalize">
                 {farmer.category}
               </span>
+              {/* Rating display */}
+              {stats && stats.ratingCount > 0 && (
+                <>
+                  <span className="text-xs text-gray-500">•</span>
+                  <div className="flex items-center space-x-1">
+                    <Star className="w-3.5 h-3.5 fill-yellow-400 text-yellow-400" />
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      {stats.avgRating.toFixed(1)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      ({stats.ratingCount})
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
 
+        {/* Stats badges */}
+        {stats && stats.totalUses > 0 && (
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1 px-2 py-1 bg-white/60 dark:bg-gray-800/60 rounded-full">
+              <TrendingUp className="w-3 h-3 text-gray-500" />
+              <span className="text-xs text-gray-600 dark:text-gray-400">
+                {stats.totalUses} uses
+              </span>
+            </div>
+            {stats.successRate >= 0 && (
+              <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                stats.successRate >= 80
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  : stats.successRate >= 50
+                  ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                  : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+              }`}>
+                {stats.successRate.toFixed(0)}% success
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Description */}

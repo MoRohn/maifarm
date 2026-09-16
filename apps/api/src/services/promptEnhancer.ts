@@ -121,6 +121,145 @@ Output a structured plan that maximizes efficiency and minimizes conflicts.
       `,
       variables: ['prompt']
     });
+
+    // Model-First Reasoning template (arxiv 2512.14474)
+    // Enforces explicit problem modeling before execution
+    this.enhancementTemplates.set('model-first-reasoning', {
+      id: 'model-first-reasoning',
+      purpose: 'Enforce explicit problem modeling before agent execution to reduce hallucinations',
+      template: `
+IMPORTANT: Before beginning any implementation work, you MUST first construct an explicit problem model.
+
+## Your Task:
+{prompt}
+
+## Step 1: Define Entities (REQUIRED)
+List all relevant objects, files, functions, services, and resources involved in this task:
+- For each entity: name, type (file/function/class/module/service/resource), key properties
+- Map relationships between entities (depends_on, contains, produces, consumes)
+
+## Step 2: Define State Variables (REQUIRED)
+What state needs to be tracked during execution?
+- Variable name, type, possible values (domain)
+- Initial state vs target state
+- Which variables indicate success?
+
+## Step 3: Define Actions (REQUIRED)
+What operations can you perform?
+- For each action: name, description, preconditions (what must be true before), effects (what changes after)
+- Prioritize actions (1-10 scale)
+- Estimate duration for complex actions
+
+## Step 4: Define Constraints (REQUIRED)
+What rules and limitations must be followed?
+- Temporal constraints (ordering requirements)
+- Resource constraints (memory, API limits, file access)
+- Logical constraints (invariants that must always hold)
+- Dependencies between actions
+
+## Step 5: Define Success Goals (REQUIRED)
+What constitutes successful completion?
+- Measurable success criteria
+- Verification conditions (how to check if done correctly)
+- Priority of goals if multiple
+
+## Execution Protocol:
+1. ONLY proceed with implementation AFTER completing all 5 steps above
+2. Work ONLY within the bounds of your defined model
+3. If you encounter something not in your model, STOP and extend the model first
+4. Verify your outputs against the defined constraints and goals
+5. Report any constraint violations immediately
+
+Context: {context}
+Agent Role: {agentRole}
+      `,
+      variables: ['prompt', 'context', 'agentRole']
+    });
+
+    // Causal Awareness template (inspired by DEMOCRITUS, arxiv 2512.07796)
+    // Enforces understanding of causal dependencies
+    this.enhancementTemplates.set('causal-awareness', {
+      id: 'causal-awareness',
+      purpose: 'Enforce understanding of causal dependencies for intelligent task ordering',
+      template: `
+## Causal Task Ordering
+
+Your task has the following causal dependencies that MUST be respected:
+
+### Task Order (from topological sort):
+{taskOrder}
+
+### Dependencies:
+{dependencies}
+
+### Causal Constraints:
+{causalConstraints}
+
+### Your Role:
+You are responsible for the following tasks in this order:
+{assignedTasks}
+
+### Execution Rules:
+1. Do NOT start a task until ALL its dependencies are complete
+2. Before each task, verify the preconditions are satisfied
+3. After completing a task, verify its effects are realized
+4. If a dependency is blocked, work on independent tasks first
+5. Report conflicts between causal expectations and actual state
+
+### Your Task:
+{prompt}
+
+Proceed following the causal ordering above.
+      `,
+      variables: ['prompt', 'taskOrder', 'dependencies', 'causalConstraints', 'assignedTasks']
+    });
+
+    // Combined Model-First + Causal template for full integration
+    this.enhancementTemplates.set('model-causal-integrated', {
+      id: 'model-causal-integrated',
+      purpose: 'Full integration of Model-First Reasoning with Causal Model awareness',
+      template: `
+## Problem Model Context
+You are working within an explicitly modeled problem domain.
+
+### Entities in Scope:
+{entities}
+
+### State Variables:
+{variables}
+
+### Your Assigned Actions:
+{actions}
+
+### Constraints to Follow:
+{constraints}
+
+### Goals to Achieve:
+{goals}
+
+## Causal Ordering Context
+Task execution follows this causal order:
+
+### Task Sequence:
+{taskOrder}
+
+### Your Dependencies:
+{dependencies}
+
+## Execution Protocol:
+1. Verify all preconditions before starting each action
+2. Follow the causal ordering - do not skip ahead
+3. After each action, verify its effects
+4. Check constraints continuously
+5. Report progress toward goals
+
+## Your Task:
+{prompt}
+
+Proceed methodically, respecting both the problem model and causal ordering.
+      `,
+      variables: ['prompt', 'entities', 'variables', 'actions', 'constraints', 'goals', 'taskOrder', 'dependencies']
+    });
   }
 
   async enhancePrompt(request: EnhancementRequest): Promise<EnhancementResponse> {
@@ -135,7 +274,7 @@ Output a structured plan that maximizes efficiency and minimizes conflicts.
       let enhanced = await this.generateEnhancement(request, analysis, strategy);
       
       // Apply provider-specific enhancements
-      // Note: Provider-specific optimizations removed after Qwen/GPT-OSS deprecation
+      // Note: Provider-specific optimizations removed after Llama/GPT-OSS deprecation
       if (request.provider === 'claude') {
         // Claude-specific enhancements could be added here
         // For now, Claude works well with the standard enhancement
@@ -319,15 +458,51 @@ Output a structured plan that maximizes efficiency and minimizes conflicts.
     strategy: string
   ): Promise<string> {
     const template = this.enhancementTemplates.get(strategy);
-    
+
     if (!template) {
       // Fallback enhancement without template
       return this.defaultEnhancement(request, analysis);
     }
-    
-    // For now, we'll use rule-based enhancement
-    // In production, this would call Claude API
-    return this.ruleBasedEnhancement(request, analysis, strategy);
+
+    // FIXED: Use actual AI API for prompt enhancement instead of rule-based logic
+    try {
+      const { aiProviderManager } = await import('../config/aiProviders');
+
+      // Check if AI provider is available
+      const provider = request.provider === 'openai' ? 'openai' : 'claude';
+      const providerEnum = provider === 'openai' ?
+        (await import('../config/aiProviders')).AIProvider.OPENAI :
+        (await import('../config/aiProviders')).AIProvider.CLAUDE;
+
+      if (!aiProviderManager.isProviderEnabled(providerEnum)) {
+        // Fall back to rule-based if no AI provider available
+        return this.ruleBasedEnhancement(request, analysis, strategy);
+      }
+
+      // Build enhancement prompt using template
+      const systemPrompt = template.template
+        .replace('{prompt}', request.prompt)
+        .replace('{context}', request.context || 'No additional context provided')
+        .replace('{purpose}', request.purpose || 'general')
+        .replace('{style}', request.style || 'balanced');
+
+      const { aiOrchestrator } = await import('./aiOrchestrator');
+
+      // Call AI provider to enhance prompt
+      const response = await aiOrchestrator.submitTask({
+        farmId: 'prompt-enhancement',
+        agentId: 'enhancer',
+        taskId: `enhance-${Date.now()}`,
+        prompt: systemPrompt,
+        provider: provider as 'claude' | 'openai'
+      });
+
+      return response.response || this.ruleBasedEnhancement(request, analysis, strategy);
+    } catch (error) {
+      console.error('AI-based prompt enhancement failed, falling back to rule-based:', error);
+      // Fallback to rule-based enhancement on error
+      return this.ruleBasedEnhancement(request, analysis, strategy);
+    }
   }
 
   private ruleBasedEnhancement(

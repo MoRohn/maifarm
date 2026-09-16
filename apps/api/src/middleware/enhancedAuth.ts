@@ -19,27 +19,14 @@ const authRateLimiter = new RateLimiterMemory({
 
 /**
  * Enhanced authentication middleware with proper security
+ * REMOVED: Auth bypass mode - all users must authenticate properly
  */
 export const authenticateToken = async (
-  req: AuthRequest, 
-  res: Response, 
+  req: AuthRequest,
+  res: Response,
   next: NextFunction
 ) => {
   try {
-    // Check if bypass is enabled (development only)
-    if (securityConfig.isBypassAuthEnabled()) {
-      logger.debug('[Auth] Bypassing authentication (development mode)');
-      req.user = {
-        id: '00000000-0000-0000-0000-000000000000',
-        email: 'dev@maifarm.local',
-        role: 'admin',
-        userId: '00000000-0000-0000-0000-000000000000',
-        roles: ['admin'],
-        permissions: ['*']
-      } as AuthToken;
-      return next();
-    }
-
     // Extract token from header
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -107,21 +94,10 @@ export const authenticateToken = async (
 
 /**
  * Require specific role
+ * REMOVED: Auth bypass mode - all users must authenticate properly
  */
 export const requireRole = (role: string) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (securityConfig.isBypassAuthEnabled()) {
-      req.user = {
-        id: '00000000-0000-0000-0000-000000000000',
-        email: 'dev@maifarm.local',
-        role: 'admin',
-        userId: '00000000-0000-0000-0000-000000000000',
-        roles: ['admin'],
-        permissions: ['*']
-      } as AuthToken;
-      return next();
-    }
-
     if (!req.user) {
       const response: ApiResponse = {
         success: false,
@@ -153,21 +129,10 @@ export const requireRole = (role: string) => {
 
 /**
  * Require specific permissions
+ * REMOVED: Auth bypass mode - all users must authenticate properly
  */
 export const requirePermission = (permissions: string[]) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (securityConfig.isBypassAuthEnabled()) {
-      req.user = {
-        id: '00000000-0000-0000-0000-000000000000',
-        email: 'dev@maifarm.local',
-        role: 'admin',
-        userId: '00000000-0000-0000-0000-000000000000',
-        roles: ['admin'],
-        permissions: ['*']
-      } as AuthToken;
-      return next();
-    }
-
     if (!req.user) {
       const response: ApiResponse = {
         success: false,
@@ -203,10 +168,11 @@ export const requirePermission = (permissions: string[]) => {
 
 /**
  * CSRF protection middleware
+ * REMOVED: Auth bypass skip - CSRF is always validated except for GET requests
  */
 export const validateCsrfToken = (req: AuthRequest, res: Response, next: NextFunction) => {
-  // Skip CSRF for GET requests and in development with bypass
-  if (req.method === 'GET' || securityConfig.isBypassAuthEnabled()) {
+  // Skip CSRF for GET requests only (they should be idempotent)
+  if (req.method === 'GET') {
     return next();
   }
 
@@ -327,15 +293,70 @@ export const authenticateApiKey = async (
     return res.status(403).json(response);
   }
 
-  // TODO: Validate API key against database
-  // For now, we'll accept any valid format key in development
-  if (!securityConfig.isProduction()) {
+  // Validate API key against database
+  try {
+    const { db } = await import('../database/connection');
+    const crypto = await import('crypto');
+
+    // Hash the API key to compare with stored hash
+    const keyHash = crypto.createHash('sha256').update(apiKey).digest('hex');
+
+    const result = await db.query(
+      `SELECT id, user_id, name, service, permissions, is_active, expires_at, rate_limit
+       FROM api_keys
+       WHERE key_hash = $1 AND is_active = true`,
+      [keyHash]
+    );
+
+    if (result.rows.length === 0) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'INVALID_API_KEY',
+          message: 'API key not found or inactive'
+        }
+      };
+      return res.status(403).json(response);
+    }
+
+    const apiKeyRecord = result.rows[0];
+
+    // Check expiration
+    if (apiKeyRecord.expires_at && new Date(apiKeyRecord.expires_at) < new Date()) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'API_KEY_EXPIRED',
+          message: 'API key has expired'
+        }
+      };
+      return res.status(403).json(response);
+    }
+
+    // Update usage count
+    await db.query(
+      'UPDATE api_keys SET usage_count = usage_count + 1, last_used_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [apiKeyRecord.id]
+    );
+
+    // Set user from API key
     req.user = {
-      userId: 'api-service',
+      userId: apiKeyRecord.user_id || 'api-service',
       roles: ['service'],
-      permissions: ['api:*']
+      permissions: apiKeyRecord.permissions || ['api:*']
     } as AuthToken;
+
     return next();
+  } catch (error) {
+    logger.error('[Auth] API key validation error:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'AUTH_ERROR',
+        message: 'Failed to validate API key'
+      }
+    };
+    return res.status(500).json(response);
   }
 
   // In production, validate against database

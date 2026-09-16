@@ -31,3 +31,6 @@ export { QuickTaskChart } from './QuickTaskChart';
 
 // Resource Charts
 export { ResourceUsageChart } from './ResourceUsageChart';
+
+// Thermal Charts
+export { ThermalChart, ThermalStatusBadge } from './ThermalChart';

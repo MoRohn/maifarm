@@ -66,7 +66,7 @@ const GoWildMode: React.FC<GoWildModeProps> = ({ farmId, onDiscoverySaved }) => 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl">
+          <div className="p-3 bg-gradient-to-br from-burnt-400 to-burnt-700 rounded-xl">
             <Zap className="w-6 h-6 text-white" />
           </div>
           <div>
@@ -116,7 +116,7 @@ const GoWildMode: React.FC<GoWildModeProps> = ({ farmId, onDiscoverySaved }) => 
         {(!session || session.status === 'idle' || session.status === 'completed') && (
           <button
             onClick={handleStart}
-            className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all transform hover:scale-105"
+            className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-burnt-500 to-burnt-700 text-white rounded-xl hover:from-burnt-600 hover:to-burnt-800 transition-all transform hover:scale-105"
           >
             <Play className="w-5 h-5" />
             <span>Start Exploration</span>
@@ -181,7 +181,7 @@ const GoWildMode: React.FC<GoWildModeProps> = ({ farmId, onDiscoverySaved }) => 
           </div>
           <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Discoveries</p>
-            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+            <p className="text-2xl font-bold text-burnt-600 dark:text-burnt-400">
               {session.stats.discoveriesMade}
             </p>
           </div>
@@ -193,7 +193,7 @@ const GoWildMode: React.FC<GoWildModeProps> = ({ farmId, onDiscoverySaved }) => 
           </div>
           <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">Avg Creativity</p>
-            <p className="text-2xl font-bold text-pink-600 dark:text-pink-400">
+            <p className="text-2xl font-bold text-burnt-500 dark:text-burnt-300">
               {Math.round(session.stats.averageCreativity)}%
             </p>
           </div>

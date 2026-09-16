@@ -616,7 +616,8 @@ class FarmArchiveService extends EventEmitter {
 
     try {
       // Try to get messages from terminal logs
-      const terminalPath = path.join(pathConfig.getPath('TERMINAL_LOGS'), farmId);
+      // CRITICAL FIX: Use TERMINALS_DIR instead of non-existent TERMINAL_LOGS
+      const terminalPath = path.join(pathConfig.getPath('TERMINALS_DIR'), farmId);
 
       for (const agent of agents) {
         const logFile = path.join(terminalPath, `agent-${agent.pane_index || 0}.log`);
@@ -701,7 +702,8 @@ class FarmArchiveService extends EventEmitter {
       }
 
       // Try to get workspace files
-      const workspacePath = path.join(pathConfig.getPath('WORKSPACES'), farmId);
+      // CRITICAL FIX: Use getFarmWorkspacePath() instead of non-existent 'WORKSPACES' constant
+      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
 
       try {
         const files = await this.scanDirectory(workspacePath);

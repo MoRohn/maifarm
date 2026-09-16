@@ -11,7 +11,7 @@
 import { EventEmitter } from 'events';
 import { logger, LogCategory } from '../utils/logger';
 import { harvestService } from './harvestService';
-import { terminalStreamService } from './terminalStreamService';
+import { unifiedTerminalStreamService } from './UnifiedTerminalStreamService';
 import { websocketManager } from '../websocket/websocketManager';
 import { db } from '../database/connection';
 
@@ -78,13 +78,13 @@ class ServiceManager extends EventEmitter {
     // Terminal stream service
     this.register({
       name: 'terminalStream',
-      service: terminalStreamService,
+      service: unifiedTerminalStreamService,
       dependencies: ['websocket'],
       initialize: async () => {
-        logger.info(LogCategory.SYSTEM, 'Terminal stream service initialized');
+        logger.info(LogCategory.SYSTEM, 'Unified terminal stream service initialized');
       },
       cleanup: async () => {
-        await terminalStreamService.cleanup();
+        await unifiedTerminalStreamService.cleanup();
       }
     });
 

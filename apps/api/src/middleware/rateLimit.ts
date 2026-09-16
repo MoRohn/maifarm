@@ -28,6 +28,11 @@ export const rateLimit = (options: RateLimitOptions = {}) => {
   } = options;
 
   return (req: Request, res: Response, next: NextFunction) => {
+    // Skip rate limiting if disabled in environment
+    if (process.env.ENABLE_RATE_LIMIT === 'false' || process.env.NODE_ENV === 'development') {
+      return next();
+    }
+
     const key = keyGenerator(req);
     const now = Date.now();
     
@@ -81,13 +86,20 @@ export const rateLimit = (options: RateLimitOptions = {}) => {
 
 // API-specific rate limits
 export const apiRateLimits = {
+  // Global rate limit for all requests
+  global: rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    message: 'Too many requests, please try again later'
+  }),
+
   // Strict limit for authentication endpoints
   auth: rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 5,
     message: 'Too many authentication attempts, please try again later'
   }),
-  
+
   // Standard limit for general API endpoints
   standard: rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes

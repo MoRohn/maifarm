@@ -1,242 +1,273 @@
-import React, { useState } from 'react';
-import { Zap, Cpu, HardDrive, Wifi, Battery, Monitor, AlertTriangle } from 'lucide-react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { PerformanceSettings as IPerformanceSettings, StorageSettings, NetworkSettings } from '@/types/settings';
+import {
+  CpuChipIcon,
+  WifiIcon,
+  BoltIcon,
+  Battery50Icon,
+  ExclamationTriangleIcon,
+} from '@heroicons/react/24/outline';
+import { useSettingsStore } from '@/store/settingsStore';
 
 const PerformanceSettings: React.FC = () => {
-  const [performance, setPerformance] = useState<IPerformanceSettings>({
-    maxConcurrentAgents: 3,
+  const { settings, updateSettings } = useSettingsStore();
+
+  const performance = settings.system?.performance ?? {
+    maxConcurrentAgents: 4,
     animationsEnabled: true,
     hardwareAcceleration: true,
-    lowPowerMode: false
-  });
+    lowPowerMode: false,
+  };
 
-  const [storage, setStorage] = useState<StorageSettings>({
+  const storage = settings.system?.storage ?? {
     cacheEnabled: true,
     maxCacheSize: 500,
     offlineMode: true,
     autoCleanup: true,
-    retentionDays: 30
-  });
+    retentionDays: 30,
+  };
 
-  const [network, setNetwork] = useState<NetworkSettings>({
+  const network = settings.system?.network ?? {
     proxyEnabled: false,
     timeout: 30,
     retryAttempts: 3,
-    offlineQueueEnabled: true
-  });
-
-  const updatePerformance = (updates: Partial<IPerformanceSettings>) => {
-    setPerformance(prev => ({ ...prev, ...updates }));
+    offlineQueueEnabled: true,
   };
 
-  const updateStorage = (updates: Partial<StorageSettings>) => {
-    setStorage(prev => ({ ...prev, ...updates }));
+  const updatePerformance = (updates: Partial<typeof performance>) => {
+    updateSettings({
+      system: {
+        performance: {
+          ...performance,
+          ...updates,
+        },
+      },
+    });
   };
 
-  const updateNetwork = (updates: Partial<NetworkSettings>) => {
-    setNetwork(prev => ({ ...prev, ...updates }));
+  const updateStorage = (updates: Partial<typeof storage>) => {
+    updateSettings({
+      system: {
+        storage: {
+          ...storage,
+          ...updates,
+        },
+      },
+    });
+  };
+
+  const updateNetwork = (updates: Partial<typeof network>) => {
+    updateSettings({
+      system: {
+        network: {
+          ...network,
+          ...updates,
+        },
+      },
+    });
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Performance Settings
-        </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-          Optimize MaiFarm's performance based on your system capabilities.
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Performance</h3>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          Tune MaiFarm for your workstation and connection profile.
         </p>
       </div>
 
-      {/* Agent Performance */}
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Cpu className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          <h4 className="font-medium text-gray-900 dark:text-white">Agent Configuration</h4>
-        </div>
-        
-        <div className="space-y-4">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <motion.div
+          layout
+          className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4"
+        >
+          <div className="flex items-center gap-3">
+            <CpuChipIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+            <div>
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white">Agent workload</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Control how many agents run in parallel.</p>
+            </div>
+          </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Maximum Concurrent Agents
-            </label>
+            <label className="text-xs text-gray-500 dark:text-gray-400">Max concurrent agents</label>
             <div className="flex items-center gap-4">
               <input
                 type="range"
-                min="1"
-                max="10"
+                min={1}
+                max={16}
                 value={performance.maxConcurrentAgents}
-                onChange={(e) => updatePerformance({ maxConcurrentAgents: parseInt(e.target.value) })}
-                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                onChange={(event) => updatePerformance({ maxConcurrentAgents: parseInt(event.target.value, 10) })}
+                className="h-2 flex-1 rounded bg-gray-200 dark:bg-gray-700"
               />
-              <span className="w-12 text-center font-medium text-gray-900 dark:text-white">
+              <span className="w-10 text-right text-sm font-medium text-gray-900 dark:text-white">
                 {performance.maxConcurrentAgents}
               </span>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Higher values allow more agents to run simultaneously but require more system resources
-            </p>
           </div>
-        </div>
-      </div>
 
-      {/* Visual Performance */}
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Monitor className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          <h4 className="font-medium text-gray-900 dark:text-white">Visual Performance</h4>
-        </div>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h5 className="font-medium text-gray-900 dark:text-white">Animations</h5>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Smooth transitions and animations throughout the interface
-              </p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+          <div className="space-y-3 text-sm">
+            <label className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-900/30">
+              <div>
+                <p className="font-medium text-gray-900 dark:text-white">Animations</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Smooth transitions across the UI.</p>
+              </div>
               <input
                 type="checkbox"
-                className="sr-only peer"
                 checked={performance.animationsEnabled}
-                onChange={(e) => updatePerformance({ animationsEnabled: e.target.checked })}
+                onChange={(event) => updatePerformance({ animationsEnabled: event.target.checked })}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
               />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
             </label>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <div>
-              <h5 className="font-medium text-gray-900 dark:text-white">Hardware Acceleration</h5>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Use GPU for rendering when available
-              </p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <label className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-900/30">
+              <div>
+                <p className="font-medium text-gray-900 dark:text-white">Hardware acceleration</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Use GPU for rendering when available.</p>
+              </div>
               <input
                 type="checkbox"
-                className="sr-only peer"
                 checked={performance.hardwareAcceleration}
-                onChange={(e) => updatePerformance({ hardwareAcceleration: e.target.checked })}
+                onChange={(event) => updatePerformance({ hardwareAcceleration: event.target.checked })}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500"
               />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
             </label>
-          </div>
-        </div>
-      </div>
 
-      {/* Storage Settings */}
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <HardDrive className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          <h4 className="font-medium text-gray-900 dark:text-white">Storage & Cache</h4>
-        </div>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h5 className="font-medium text-gray-900 dark:text-white">Enable Cache</h5>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Store frequently accessed data for faster loading
-              </p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
+            <label className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              <div>
+                <p className="font-medium">Low power mode</p>
+                <p className="text-xs">Reduce concurrency to conserve battery.</p>
+              </div>
               <input
                 type="checkbox"
-                className="sr-only peer"
-                checked={storage.cacheEnabled}
-                onChange={(e) => updateStorage({ cacheEnabled: e.target.checked })}
+                checked={performance.lowPowerMode}
+                onChange={(event) => updatePerformance({ lowPowerMode: event.target.checked })}
+                className="h-4 w-4 text-amber-600 focus:ring-amber-500"
               />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
             </label>
           </div>
+        </motion.div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Maximum Cache Size (MB)
-            </label>
-            <input
-              type="number"
-              min="100"
-              max="2000"
-              step="100"
-              value={storage.maxCacheSize}
-              onChange={(e) => updateStorage({ maxCacheSize: parseInt(e.target.value) })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
+        <motion.div
+          layout
+          className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4"
+        >
+          <div className="flex items-center gap-3">
+            <BoltIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             <div>
-              <h5 className="font-medium text-gray-900 dark:text-white">Offline Mode</h5>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Enable offline access to farms and settings
-              </p>
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white">Cache & storage</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Configure offline cache and retention.</p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={storage.offlineMode}
-                onChange={(e) => updateStorage({ offlineMode: e.target.checked })}
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
           </div>
-        </div>
-      </div>
 
-      {/* Power Settings */}
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Battery className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-          <h4 className="font-medium text-gray-900 dark:text-white">Power Management</h4>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <div>
-            <h5 className="font-medium text-gray-900 dark:text-white">Low Power Mode</h5>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Reduce performance to save battery on mobile devices
-            </p>
-          </div>
-          <label className="relative inline-flex items-center cursor-pointer">
+          <label className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-900/30 text-sm">
+            <span className="text-gray-700 dark:text-gray-300">Enable cache</span>
             <input
               type="checkbox"
-              className="sr-only peer"
-              checked={performance.lowPowerMode}
-              onChange={(e) => updatePerformance({ lowPowerMode: e.target.checked })}
+              checked={storage.cacheEnabled}
+              onChange={(event) => updateStorage({ cacheEnabled: event.target.checked })}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500"
             />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
           </label>
-        </div>
+
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400">Cache size (MB)</label>
+            <input
+              type="number"
+              min={100}
+              max={2000}
+              step={50}
+              value={storage.maxCacheSize}
+              onChange={(event) => updateStorage({ maxCacheSize: parseInt(event.target.value, 10) })}
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            />
+          </div>
+
+          <label className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3 dark:bg-gray-900/30 text-sm">
+            <div>
+              <p className="text-gray-700 dark:text-gray-300">Offline mode</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Queue commands while offline.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={storage.offlineMode}
+              onChange={(event) => updateStorage({ offlineMode: event.target.checked })}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+            />
+          </label>
+
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Retention: {storage.retentionDays} days — cached data older than this is cleaned automatically.
+          </div>
+        </motion.div>
       </div>
 
-      {/* Performance Tips */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-        <div className="flex items-start gap-3">
-          <Zap className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+      <motion.div
+        layout
+        className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4"
+      >
+        <div className="flex items-center gap-3">
+          <WifiIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           <div>
-            <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1">
-              Performance Tips
-            </h4>
-            <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
-              <li>• Reduce concurrent agents if experiencing slowdowns</li>
-              <li>• Disable animations on older devices</li>
-              <li>• Clear cache regularly to free up storage space</li>
-              <li>• Enable low power mode when on battery</li>
-            </ul>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white">Network behaviour</h4>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Timeouts and retries for backend requests.</p>
           </div>
         </div>
-      </div>
 
-      {/* Clear Cache Button */}
-      <div className="flex justify-end">
-        <button className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
-          Clear All Cache
-        </button>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400">Timeout (seconds)</label>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              value={network.timeout}
+              onChange={(event) => updateNetwork({ timeout: parseInt(event.target.value, 10) })}
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400">Retry attempts</label>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={network.retryAttempts}
+              onChange={(event) => updateNetwork({ retryAttempts: parseInt(event.target.value, 10) })}
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            />
+          </div>
+
+          <label className="text-xs text-gray-500 dark:text-gray-400">
+            Offline queue
+            <input
+              type="checkbox"
+              checked={network.offlineQueueEnabled}
+              onChange={(event) => updateNetwork({ offlineQueueEnabled: event.target.checked })}
+              className="ml-3 h-4 w-4 text-blue-600 focus:ring-blue-500"
+            />
+          </label>
+        </div>
+
+        {network.timeout < 10 && (
+          <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+            <ExclamationTriangleIcon className="w-4 h-4" />
+            Low timeouts may cause operations to fail on slower connections.
+          </div>
+        )}
+      </motion.div>
+
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+          <Battery50Icon className="w-4 h-4" />
+          Tips
+        </div>
+        <ul className="ml-6 mt-3 list-disc space-y-1">
+          <li>Use low power mode when running MaiFarm on battery for extended periods.</li>
+          <li>Keep cache enabled for faster farm loading; reduce size if storage is limited.</li>
+          <li>Increase retries if your network connection is unstable.</li>
+        </ul>
       </div>
     </div>
   );

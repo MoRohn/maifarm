@@ -6,6 +6,7 @@ import { db } from '../database/connection';
 import { farmService as farmManager } from '../services/unified/farmService';
 import { harvestService } from '../services/unified/harvestService';
 import { quickTaskService } from '../services/unified/quickTaskService';
+import { pathConfig } from '../config/paths';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import path from 'path';
@@ -72,7 +73,11 @@ router.use(authenticateToken);
 router.get('/farms', apiRateLimits.read, async (req: AuthRequest, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     const offset = (Number(page) - 1) * Number(limit);
     
@@ -145,7 +150,11 @@ router.post('/quick-task',
   async (req: AuthRequest, res) => {
   try {
     const { prompt, type = 'general' } = req.body;
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     if (!prompt) {
       return res.status(400).json({
@@ -326,7 +335,11 @@ router.post('/upload',
 router.get('/harvests', apiRateLimits.read, async (req: AuthRequest, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     const harvests = await harvestService.getUserHarvests(userId, {
       page: Number(page),
@@ -358,7 +371,11 @@ router.get('/harvests', apiRateLimits.read, async (req: AuthRequest, res) => {
  */
 router.get('/status', apiRateLimits.read, async (req: AuthRequest, res) => {
   try {
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     // Get counts
     const [farmsResult, harvestsResult, tasksResult] = await Promise.all([
@@ -403,7 +420,11 @@ router.get('/status', apiRateLimits.read, async (req: AuthRequest, res) => {
 router.post('/device', apiRateLimits.write, async (req: AuthRequest, res) => {
   try {
     const { deviceToken, platform, deviceId } = req.body;
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     if (!deviceToken || !platform || !deviceId) {
       return res.status(400).json({
@@ -467,7 +488,11 @@ router.post('/farm/launch',
       yamlConfig
     } = req.body;
     
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     if (!name || !prompt) {
       return res.status(400).json({
@@ -609,7 +634,11 @@ router.post('/workspace/sync',
   async (req: AuthRequest, res) => {
   try {
     const { farmId, syncDirection = 'upload' } = req.body;
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     if (!farmId) {
       return res.status(400).json({
@@ -624,7 +653,8 @@ router.post('/workspace/sync',
     if (syncDirection === 'upload') {
       // Upload files to server workspace
       const files = req.files as Express.Multer.File[];
-      const workspacePath = path.join(process.cwd(), 'maibarn', 'workspaces', 'active', farmId);
+      // CRITICAL FIX: Use pathConfig instead of hardcoded path
+      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
       
       await fs.mkdir(workspacePath, { recursive: true });
       
@@ -642,7 +672,8 @@ router.post('/workspace/sync',
       });
     } else {
       // Download workspace files to client
-      const workspacePath = path.join(process.cwd(), 'maibarn', 'workspaces', 'active', farmId);
+      // CRITICAL FIX: Use pathConfig instead of hardcoded path
+      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
       
       try {
         const files = await fs.readdir(workspacePath);
@@ -700,7 +731,8 @@ router.get('/workspace/:farmId/download/:filename',
   async (req: AuthRequest, res) => {
   try {
     const { farmId, filename } = req.params;
-    const filePath = path.join(process.cwd(), 'maibarn', 'workspaces', 'active', farmId, filename);
+    // CRITICAL FIX: Use pathConfig instead of hardcoded path
+    const filePath = path.join(pathConfig.getFarmWorkspacePath(farmId, false), filename);
     
     // Check if file exists
     await fs.access(filePath);

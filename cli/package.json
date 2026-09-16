@@ -1,0 +1,76 @@
+{
+  "name": "@maifarm/cli",
+  "version": "1.0.0",
+  "description": "MaiFarm CLI - Where Code Grows and Harvests Flow! 🌾",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "farm-cli": "./dist/index.js",
+    "maifarm-cli": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "watch": "tsc -w",
+    "clean": "rm -rf dist",
+    "link": "npm link",
+    "unlink": "npm unlink -g @maifarm/cli",
+    "install-global": "npm run build && npm link",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
+  },
+  "keywords": [
+    "maifarm",
+    "cli",
+    "farm",
+    "ai",
+    "orchestration",
+    "agents",
+    "harvest",
+    "automation"
+  ],
+  "author": "MaiFarm Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "blessed": "^0.1.81",
+    "boxen": "^7.1.1",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "figlet": "^1.7.0",
+    "inquirer": "^9.2.23",
+    "ora": "^8.0.1",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.25",
+    "@types/figlet": "^1.5.8",
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.14.10",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.3.2",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maifarm/maifarm-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/maifarm/maifarm-cli/issues"
+  },
+  "homepage": "https://github.com/maifarm/maifarm-cli#readme"
+}

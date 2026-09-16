@@ -67,23 +67,29 @@ export interface BarnFolder {
 }
 
 export interface BarnStats {
-  totalItems: number;
-  totalHarvests: number; // Alias for totalItems
-  itemsByType: Record<string, number>;
-  harvestsByType: Record<string, number>; // Alias for itemsByType
-  totalStorage: number; // in bytes
-  mostUsedItems: Array<{
+  totalItems?: number;
+  totalHarvests?: number; // Alias for totalItems
+  itemsByType?: Record<string, number>;
+  harvestsByType?: Record<string, number>; // Alias for itemsByType
+  byType?: Record<string, number>; // Alternative API response format
+  totalStorage?: number; // in bytes
+  totalSize?: number; // Alternative API response format (in bytes)
+  mostUsedItems?: Array<{
     id: string;
     name: string;
     useCount: number;
   }>;
-  mostUsedHarvests: Array<{
+  mostUsedHarvests?: Array<{
     id: string;
     name: string;
     useCount: number;
   }>; // Alias for mostUsedItems
-  recentItems: BarnItem[];
-  recentHarvests: BarnItem[]; // Alias for recentItems
+  mostAccessed?: BarnItem; // Alternative API response format (single item)
+  recentItems?: BarnItem[];
+  recentHarvests?: BarnItem[]; // Alias for recentItems
+  mostRecent?: BarnItem; // Alternative API response format (single item)
+  publicItems?: number;
+  privateItems?: number;
 }
 
 // Type alias for backward compatibility

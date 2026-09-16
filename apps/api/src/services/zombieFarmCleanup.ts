@@ -7,6 +7,8 @@ import { fileManager } from './fileManagerService';
 import { pathConfig } from '../config/paths';
 import path from 'path';
 
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
+
 interface ZombieFarm {
   farmId: string;
   sessionName: string;
@@ -152,7 +154,7 @@ export class ZombieFarmCleanupService extends EventEmitter {
   private async checkTmuxSession(sessionName: string): Promise<boolean> {
     return new Promise((resolve) => {
       const checkProcess = spawn('tmux', ['has-session', '-t', sessionName], {
-        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
       });
       
       let timeout: NodeJS.Timeout;
@@ -203,7 +205,8 @@ export class ZombieFarmCleanupService extends EventEmitter {
 
       // Step 3: Clean up workspace files if they exist
       try {
-        const workspacePath = path.join(pathConfig.getWorkspaceDirectory(), farm.farmId);
+        // CRITICAL FIX: Use getFarmWorkspacePath() instead of non-existent getWorkspaceDirectory()
+        const workspacePath = pathConfig.getFarmWorkspacePath(farm.farmId, false);
         const workspaceExists = await fileManager.directoryExists(workspacePath);
         
         if (workspaceExists) {
@@ -230,13 +233,13 @@ export class ZombieFarmCleanupService extends EventEmitter {
       // Step 5: Stop any monitoring services
       try {
         const { terminalOutputWatcher } = await import('./terminalOutputWatcher');
-        const { terminalStreamService } = await import('./terminalStreamService');
-        
+        const { unifiedTerminalStreamService } = await import('./UnifiedTerminalStreamService');
+
         if (terminalOutputWatcher.isWatching(farm.sessionName)) {
           terminalOutputWatcher.stopWatching(farm.sessionName);
         }
-        
-        await terminalStreamService.stopStreaming(farm.sessionName);
+
+        await unifiedTerminalStreamService.stopFarm(farm.farmId);
       } catch (monitoringError) {
         logThrottling.debug(`monitoring-cleanup-error-${farm.farmId}`, `Error stopping monitoring: ${monitoringError.message}`);
       }

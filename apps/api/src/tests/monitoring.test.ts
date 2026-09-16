@@ -1,5 +1,6 @@
-import request from 'supertest';
 import app from '../index';
+
+const request = require('supertest');
 
 describe('Monitoring API Tests', () => {
   describe('Metrics Endpoints', () => {

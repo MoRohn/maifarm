@@ -1,304 +1,238 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { XMarkIcon, CheckCircleIcon, ServerIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { useToast } from '@/hooks/useToast';
+import { ButtonLoadingState } from './components/WizardLoadingState';
 import {
-  Bot,
-  CheckCircle,
-  Download,
-  ExternalLink,
-  Loader,
-  Server,
-  Terminal,
-  XCircle
-} from 'lucide-react';
+  PROVIDER_COLORS,
+  MODAL_SIZES,
+  getSuccessMessage,
+  ERROR_MESSAGES,
+  GPT_OSS_INSTALL_STEPS,
+  PROVIDER_DOCS,
+} from './wizardConstants';
+import type { EngineConfigResult } from './wizardTypes';
+import { invokeCallback } from './wizardTypes';
+import { engineConfigService } from '@/services/engineConfigService';
 
 interface GptOssSetupWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (config: any) => void;
+  onComplete: ((config: { configured: boolean }) => void) | ((result: EngineConfigResult) => void);
 }
 
 export const GptOssSetupWizard: React.FC<GptOssSetupWizardProps> = ({
   isOpen,
   onClose,
-  onComplete
+  onComplete,
 }) => {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [isInstalling, setIsInstalling] = useState(false);
-  const [setupComplete, setSetupComplete] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const { success: showSuccess, error: showError } = useToast();
 
-  const steps = [
-    {
-      title: 'Introduction',
-      description: 'Set up GPT-OSS for local AI model execution'
-    },
-    {
-      title: 'Install Dependencies',
-      description: 'Install required packages and models'
-    },
-    {
-      title: 'Configure',
-      description: 'Configure GPT-OSS settings'
-    },
-    {
-      title: 'Test',
-      description: 'Test your GPT-OSS setup'
+  const colors = PROVIDER_COLORS['gpt-oss'];
+  const docs = PROVIDER_DOCS['gpt-oss'] ?? { apiKeys: '', models: '', quickstart: '' };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setAcknowledged(false);
+      setIsSaving(false);
     }
-  ];
+  }, [isOpen]);
 
-  const handleInstall = async () => {
-    setIsInstalling(true);
-    setError(null);
+  const handleComplete = async () => {
+    if (!acknowledged) {
+      showError(ERROR_MESSAGES.ACKNOWLEDGMENT_REQUIRED);
+      return;
+    }
 
+    setIsSaving(true);
     try {
-      // Simulate installation process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setCurrentStep(currentStep + 1);
-    } catch (err) {
-      setError('Installation failed. Please check your system requirements.');
+      // Use new unified service
+      const result = await engineConfigService.configure('gpt-oss', {
+        config: { acknowledged: true },
+      });
+
+      showSuccess(getSuccessMessage('GPT-OSS'));
+
+      // Call onComplete with backward compatibility
+      invokeCallback(onComplete, result);
+
+      onClose();
+    } catch (error) {
+      console.error(error);
+      showError(error instanceof Error ? error.message : ERROR_MESSAGES.SAVE_FAILED);
     } finally {
-      setIsInstalling(false);
+      setIsSaving(false);
     }
   };
-
-  const handleComplete = () => {
-    onComplete({
-      provider: 'gpt-oss',
-      configured: true,
-      model: 'gpt-oss-default'
-    });
-    onClose();
-  };
-
-  if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden"
-      >
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Bot className="w-8 h-8 text-white" />
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => !isSaving && onClose()}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gpt-oss-setup-title"
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={(event) => event.stopPropagation()}
+            className={`w-full ${MODAL_SIZES.medium} rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900`}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 p-6 dark:border-gray-700">
               <div>
-                <h2 className="text-2xl font-bold text-white">GPT-OSS Setup</h2>
-                <p className="text-white/80 text-sm">Open-source GPT models locally</p>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-white/80 hover:text-white transition-colors"
-            >
-              <XCircle className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-
-        {/* Progress Steps */}
-        <div className="flex items-center justify-center py-4 bg-gray-50 dark:bg-gray-800/50">
-          {steps.map((step, index) => (
-            <div key={index} className="flex items-center">
-              <div
-                className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                  index < currentStep
-                    ? 'bg-green-500 text-white'
-                    : index === currentStep
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-300 dark:bg-gray-700 text-gray-500'
-                }`}
-              >
-                {index < currentStep ? (
-                  <CheckCircle className="w-5 h-5" />
-                ) : (
-                  <span className="text-sm">{index + 1}</span>
-                )}
-              </div>
-              {index < steps.length - 1 && (
-                <div
-                  className={`w-20 h-0.5 ${
-                    index < currentStep
-                      ? 'bg-green-500'
-                      : 'bg-gray-300 dark:bg-gray-700'
-                  }`}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[400px]">
-          {currentStep === 0 && (
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold dark:text-white">
-                Welcome to GPT-OSS Setup
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                GPT-OSS allows you to run open-source GPT models locally on your machine.
-                This provides privacy, offline capability, and full control over your AI models.
-              </p>
-              <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg">
-                <p className="text-sm text-amber-800 dark:text-amber-200">
-                  <strong>Requirements:</strong>
-                  <ul className="list-disc list-inside mt-2 space-y-1">
-                    <li>Python 3.8 or higher</li>
-                    <li>At least 8GB RAM (16GB recommended)</li>
-                    <li>10GB free disk space</li>
-                    <li>CUDA-capable GPU (optional, for faster inference)</li>
-                  </ul>
+                <h2 id="gpt-oss-setup-title" className="text-xl font-semibold text-gray-900 dark:text-white">
+                  GPT-OSS Local Engine
+                </h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Your local AI engine is ready to power agents with OpenAI GPT-OSS 20B.
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSaving}
+                className="rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                aria-label="Close dialog"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
             </div>
-          )}
 
-          {currentStep === 1 && (
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold dark:text-white">
-                Install Dependencies
-              </h3>
-              <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 font-mono text-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <Terminal className="w-4 h-4" />
-                  <span className="text-gray-600 dark:text-gray-400">Terminal</span>
+            {/* Content */}
+            <div className="space-y-6 p-6">
+              {/* Pre-installed Notice */}
+              <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-900/40 dark:bg-green-900/10">
+                <div className="flex items-start gap-3">
+                  <CheckCircleIcon className="h-6 w-6 flex-shrink-0 text-green-600 dark:text-green-400" />
+                  <div className="text-sm text-green-900 dark:text-green-100">
+                    <p className="font-semibold">Already Installed & Ready</p>
+                    <p className="mt-1 text-xs opacity-90">
+                      GPT-OSS ships with MaiFarm by default. No API key or external service required.
+                    </p>
+                  </div>
                 </div>
-                <code className="text-green-600 dark:text-green-400">
-                  pip install gpt-oss transformers torch
-                </code>
               </div>
-              {isInstalling ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader className="w-8 h-8 animate-spin text-purple-600" />
-                  <span className="ml-3 text-gray-600 dark:text-gray-400">
-                    Installing dependencies...
-                  </span>
-                </div>
-              ) : error ? (
-                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
-                  <p className="text-red-600 dark:text-red-400">{error}</p>
-                </div>
-              ) : (
-                <button
-                  onClick={handleInstall}
-                  className="w-full bg-purple-600 text-white rounded-lg py-3 hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Download className="w-5 h-5" />
-                  Install Dependencies
-                </button>
-              )}
-            </div>
-          )}
 
-          {currentStep === 2 && (
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold dark:text-white">
-                Configure GPT-OSS
-              </h3>
+              {/* Features */}
               <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Model Selection
-                  </label>
-                  <select className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                    <option>GPT-J 6B</option>
-                    <option>GPT-Neo 2.7B</option>
-                    <option>GPT-Neo 1.3B</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Device
-                  </label>
-                  <select className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                    <option>CPU</option>
-                    <option>CUDA (GPU)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Max Tokens
-                  </label>
-                  <input
-                    type="number"
-                    defaultValue="2048"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  />
+                <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  What You Get
+                </h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <ServerIcon className="h-4 w-4 text-purple-500" />
+                      Local Model
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                      OpenAI GPT-OSS 20B (21B params, 131K context)
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <CheckCircleIcon className="h-4 w-4 text-purple-500" />
+                      No API Costs
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                      Unlimited usage at no cost
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <CheckCircleIcon className="h-4 w-4 text-purple-500" />
+                      Privacy First
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                      Data never leaves your machine
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                      <CheckCircleIcon className="h-4 w-4 text-purple-500" />
+                      Works Offline
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                      No internet connection needed
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {currentStep === 3 && (
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold dark:text-white">
-                Test Your Setup
-              </h3>
-              {setupComplete ? (
-                <div className="bg-green-50 dark:bg-green-900/20 p-6 rounded-lg">
-                  <div className="flex items-center gap-3 mb-3">
-                    <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
-                    <h4 className="text-lg font-semibold text-green-900 dark:text-green-100">
-                      Setup Complete!
-                    </h4>
-                  </div>
-                  <p className="text-green-700 dark:text-green-300 mb-4">
-                    GPT-OSS has been successfully configured and is ready to use.
-                  </p>
-                  <div className="bg-white dark:bg-gray-800 rounded p-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                      Test Response:
-                    </p>
-                    <p className="text-gray-900 dark:text-gray-100">
-                      "Hello! I'm GPT-OSS, running locally on your machine. How can I assist you today?"
-                    </p>
+              {/* System Requirements */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                <div className="flex items-start gap-2">
+                  <InformationCircleIcon className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                  <div className="text-xs text-blue-900 dark:text-blue-100">
+                    <p className="font-medium">Recommended System</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4 opacity-90">
+                      <li>8GB RAM minimum (16GB recommended)</li>
+                      <li>4GB free disk space</li>
+                      <li>Modern CPU (ARM or x86)</li>
+                    </ul>
                   </div>
                 </div>
-              ) : (
-                <button
-                  onClick={() => setSetupComplete(true)}
-                  className="w-full bg-green-600 text-white rounded-lg py-3 hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Server className="w-5 h-5" />
-                  Run Test
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
 
-        {/* Footer */}
-        <div className="bg-gray-50 dark:bg-gray-800 px-6 py-4 flex justify-between">
-          <button
-            onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-            disabled={currentStep === 0}
-            className="px-4 py-2 text-gray-600 dark:text-gray-400 disabled:opacity-50"
-          >
-            Previous
-          </button>
-          {currentStep === steps.length - 1 ? (
-            <button
-              onClick={handleComplete}
-              disabled={!setupComplete}
-              className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Complete Setup
-            </button>
-          ) : (
-            <button
-              onClick={() => setCurrentStep(currentStep + 1)}
-              className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              Next
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </div>
+              {/* Acknowledgment Checkbox */}
+              <label className="flex items-start gap-3 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm transition hover:border-purple-300 hover:bg-purple-50/40 cursor-pointer dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-purple-400 dark:hover:bg-purple-900/10">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(event) => setAcknowledged(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 flex-shrink-0 border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+                <span>
+                  I understand GPT-OSS is already installed and ready to use as my default AI engine.
+                </span>
+              </label>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 p-6 dark:border-gray-700 dark:bg-gray-900/60">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {docs.models && (
+                  <a
+                    href={docs.models}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`text-${colors.primary} hover:underline dark:text-${colors.textDark}`}
+                  >
+                    Learn more about GPT-OSS →
+                  </a>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={isSaving}
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleComplete}
+                  disabled={isSaving || !acknowledged}
+                  className={`inline-flex items-center rounded-lg bg-${colors.primary} px-4 py-2 text-sm font-medium text-white transition hover:bg-${colors.primaryHover} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {isSaving ? <ButtonLoadingState message="Activating..." /> : 'Activate GPT-OSS'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
-
-export default GptOssSetupWizard;

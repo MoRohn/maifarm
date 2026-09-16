@@ -49,9 +49,13 @@ export { ReportGenerator } from './ReportGenerator';
 // Filters & Overview
 export { AnalyticsFilters } from './AnalyticsFilters';
 export { AnalyticsOverview } from './AnalyticsOverview';
+export { EngineComparativeMetrics } from './EngineComparativeMetrics';
 
 // D3 Charts
 export { D3Charts } from './D3Charts';
+
+// Thermal Monitoring
+export { ThermalAlertPanel } from './ThermalAlertPanel';
 
 // Export chart components from Charts subdirectory
 export * from './Charts';

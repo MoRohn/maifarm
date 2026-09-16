@@ -17,10 +17,24 @@ interface AnalyticsUpdateEvent {
   timestamp: Date;
 }
 
+// Whitelist of allowed time range values to prevent SQL injection
+const ALLOWED_TIME_RANGES: Record<string, string> = {
+  '1h': '1 hour',
+  '24h': '24 hours',
+  '7d': '7 days',
+  '30d': '30 days',
+  '90d': '90 days',
+};
+
+function sanitizeTimeRange(timeRange: string): string {
+  // Return the PostgreSQL INTERVAL format if valid, otherwise default to 1 hour
+  return ALLOWED_TIME_RANGES[timeRange] || '1 hour';
+}
+
 export class AnalyticsWebSocketHandler {
   private updateInterval: NodeJS.Timeout | null = null;
   private subscribers: Map<string, Set<string>> = new Map();
-  
+
   constructor(private io: SocketIOServer) {
     this.setupAnalyticsHandlers();
     this.startPeriodicUpdates();
@@ -139,6 +153,12 @@ export class AnalyticsWebSocketHandler {
         used: usedMem,
         free: freeMem,
         percentage: Math.round((usedMem / totalMem) * 100)
+      },
+      storage: {
+        total: 0,
+        used: 0,
+        available: 0,
+        percentage: 0
       }
     };
   }
@@ -220,7 +240,7 @@ export class AnalyticsWebSocketHandler {
           COUNT(CASE WHEN t.status = 'failed' THEN 1 END) as errors
         FROM agents a
         LEFT JOIN tasks t ON a.id = t.agent_id
-        WHERE t.created_at >= NOW() - INTERVAL '${timeRange}'
+        WHERE t.created_at >= NOW() - INTERVAL '${sanitizeTimeRange(timeRange)}'
         GROUP BY a.id, a.name
         LIMIT 20
       `);
@@ -268,11 +288,11 @@ export class AnalyticsWebSocketHandler {
             THEN EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000 
             ELSE response_time END) as avg_completion_time
         FROM tasks
-        WHERE created_at >= NOW() - INTERVAL '${timeRange}'
+        WHERE created_at >= NOW() - INTERVAL '${sanitizeTimeRange(timeRange)}'
       `);
-      
+
       const row = result.rows[0] || {};
-      
+
       // Generate hourly trends
       const trendsHourly = Array.from({ length: 24 }, (_, i) => {
         const hour = new Date();
@@ -326,13 +346,13 @@ export class AnalyticsWebSocketHandler {
           COUNT(*) as total_harvests,
           AVG(yield_value) as avg_yield,
           SUM(yield_value) as total_yield,
-          COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_harvests
+          COUNT(CASE WHEN status IN ('completed', 'ready') THEN 1 END) as successful_harvests
         FROM harvests
-        WHERE created_at >= NOW() - INTERVAL '${timeRange}'
+        WHERE created_at >= NOW() - INTERVAL '${sanitizeTimeRange(timeRange)}'
       `);
-      
+
       const row = result.rows[0] || {};
-      
+
       return {
         totalHarvests: parseInt(row.total_harvests || 0),
         averageYield: parseFloat(row.avg_yield || 0),

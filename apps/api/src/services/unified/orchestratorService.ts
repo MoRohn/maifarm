@@ -46,7 +46,7 @@ export class OrchestratorService extends EventEmitter {
 
     try {
       // Use farmService for actual farm launch
-      const result = await farmService.launchFarm(config);
+      const result = await farmService.createFarm(config);
 
       task.status = 'completed';
       task.endTime = new Date();
@@ -80,7 +80,16 @@ export class OrchestratorService extends EventEmitter {
    * Get farm status
    */
   async getFarmStatus(farmId: string): Promise<any> {
-    return farmService.getFarmStatus(farmId);
+    const farm = farmService.getFarm(farmId);
+    if (!farm) {
+      return null;
+    }
+    return {
+      id: farm.id,
+      status: farm.status,
+      agents: farm.agents || [],
+      metadata: farm.metadata
+    };
   }
 
   /**
@@ -103,10 +112,10 @@ export class OrchestratorService extends EventEmitter {
       return {
         isRunning,
         agents: farm.agents || [],
-        processId: farm.tmux_session || undefined
+        processId: farm.tmuxSession || undefined
       };
     } catch (error) {
-      logger.error(LogCategory.ORCHESTRATION, `Failed to get status for farm ${farmId}:`, error);
+      logger.error(LogCategory.ORCHESTRATOR, `Failed to get status for farm ${farmId}:`, error);
       return { isRunning: false, agents: [] };
     }
   }
@@ -124,9 +133,9 @@ export class OrchestratorService extends EventEmitter {
       const tmuxCommand = `tmux send-keys -t "${sessionName}:0.${agentIndex}" "${command}" Enter`;
       await execAsync(tmuxCommand);
 
-      logger.info(LogCategory.ORCHESTRATION, `Sent command to agent ${agentIndex} in session ${sessionName}`);
+      logger.info(LogCategory.ORCHESTRATOR, `Sent command to agent ${agentIndex} in session ${sessionName}`);
     } catch (error) {
-      logger.error(LogCategory.ORCHESTRATION, `Failed to send command to agent:`, error);
+      logger.error(LogCategory.ORCHESTRATOR, `Failed to send command to agent:`, error);
       throw error;
     }
   }
@@ -150,7 +159,10 @@ export class OrchestratorService extends EventEmitter {
     try {
       // Use quickTaskService for quick tasks
       const { quickTaskService } = await import('./quickTaskService');
-      const result = await quickTaskService.executeQuickTask(prompt);
+      const result = await quickTaskService.createQuickTask({
+        title: 'Quick Task',
+        description: prompt
+      });
 
       task.status = 'completed';
       task.endTime = new Date();
@@ -242,7 +254,8 @@ export class OrchestratorService extends EventEmitter {
   async stopAllTasks(): Promise<void> {
     const activeTasks = this.getActiveTasks();
 
-    await Promise.all(
+    // FIX: Use Promise.allSettled to ensure all tasks are attempted even if some fail
+    const results = await Promise.allSettled(
       activeTasks.map(async (task) => {
         if (task.type === 'farm') {
           await this.stopFarm(task.farmId, true);
@@ -250,9 +263,20 @@ export class OrchestratorService extends EventEmitter {
       })
     );
 
+    // Log any failures but don't throw
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        logger.warn(LogCategory.ORCHESTRATOR, `Failed to stop task ${activeTasks[index]?.id}:`, result.reason);
+      }
+    });
+
     // Kill all processes
     for (const [id, process] of this.processes.entries()) {
-      process.kill('SIGTERM');
+      try {
+        process.kill('SIGTERM');
+      } catch (killError) {
+        logger.warn(LogCategory.ORCHESTRATOR, `Failed to kill process ${id}:`, killError);
+      }
       this.processes.delete(id);
     }
   }

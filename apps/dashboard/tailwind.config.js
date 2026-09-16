@@ -10,8 +10,46 @@ export default {
     path.join(__dirname, 'index.html'),
     path.join(__dirname, 'src/**/*.{js,ts,jsx,tsx}')
   ],
+  safelist: [
+    // Gradient from classes for QuickActions cards (Mode colors: Quick=green/leaf, Farm=navy, GoWild=burnt orange)
+    'from-leaf-400', 'from-navy-400', 'from-burnt-400',
+    // Gradient to classes
+    'to-leaf-800', 'to-navy-800', 'to-burnt-800',
+    // Text colors for accent classes
+    'text-leaf-600', 'text-navy-600', 'text-burnt-600',
+    // Background colors for accent classes
+    'bg-leaf-100', 'bg-navy-100', 'bg-burnt-100',
+    // Dark mode text variants (explicitly listed to avoid regex matching issues)
+    'dark:text-leaf-400', 'dark:text-navy-400', 'dark:text-burnt-400',
+    // Dark mode background variants with opacity
+    'dark:bg-leaf-900/30', 'dark:bg-navy-900/30', 'dark:bg-burnt-900/30',
+    // Legacy support for existing sky/harvest references
+    'from-sky-400', 'from-harvest-400', 'to-sky-800', 'to-harvest-800',
+    'text-sky-600', 'text-harvest-600', 'bg-sky-100', 'bg-harvest-100',
+  ],
   darkMode: 'class',
   theme: {
+    // Apple device breakpoints - comprehensive coverage
+    screens: {
+      'iphone-se': '320px',     // iPhone SE 1st gen
+      'iphone': '375px',        // iPhone X/11/12/13 Mini, iPhone SE 2nd/3rd gen
+      'iphone-12': '390px',     // iPhone 12/13/14 standard
+      'iphone-plus': '414px',   // iPhone Plus models
+      'iphone-14-pro': '430px', // iPhone 14 Pro Max
+      'sm': '640px',            // Small tablets
+      'ipad-mini': '744px',     // iPad Mini portrait
+      'ipad': '768px',          // iPad standard portrait
+      'md': '768px',
+      'ipad-11': '834px',       // iPad Pro 11" portrait
+      'ipad-pro': '1024px',     // iPad Pro landscape / desktop start
+      'lg': '1024px',
+      'ipad-pro-lg': '1194px',  // iPad Pro 12.9"
+      'xl': '1280px',           // Laptops
+      'macbook': '1440px',      // MacBook Pro
+      '2xl': '1536px',
+      'imac': '1920px',         // iMac
+      'imac-5k': '2560px',      // iMac 5K
+    },
     extend: {
       colors: {
         border: "hsl(var(--border))",
@@ -96,18 +134,43 @@ export default {
         'farm-sky': '#87CEEB',
         'farm-sun': '#FFD700',
         leaf: {
+          50: '#f0fdf4',
           100: '#dcfce7',
+          200: '#bbf7d0',
+          300: '#86efac',
           400: '#4ade80',
+          500: '#22c55e',
           600: '#16a34a',
+          700: '#15803d',
           800: '#166534',
           900: '#14532d',
+          950: '#052e16',
         },
         harvest: {
-          100: '#fed7aa',
+          50: '#fff7ed',
+          100: '#ffedd5',
+          200: '#fed7aa',
+          300: '#fdba74',
           400: '#fb923c',
+          500: '#f97316',
           600: '#ea580c',
+          700: '#c2410c',
           800: '#9a3412',
           900: '#7c2d12',
+          950: '#431407',
+        },
+        soil: {
+          50: '#fafaf9',
+          100: '#f5f5f4',
+          200: '#e7e5e4',
+          300: '#d6d3d1',
+          400: '#a8a29e',
+          500: '#78716c',
+          600: '#57534e',
+          700: '#44403c',
+          800: '#292524',
+          900: '#1c1917',
+          950: '#0c0a09',
         },
         sky: {
           100: '#e0f2fe',
@@ -115,6 +178,34 @@ export default {
           600: '#0284c7',
           800: '#075985',
           900: '#0c4a6e',
+        },
+        // Navy - Darker blue for New Farm mode
+        navy: {
+          50: '#f0f4ff',
+          100: '#e0e9ff',
+          200: '#c7d5fe',
+          300: '#a4b8fc',
+          400: '#7c93f8',
+          500: '#5a6ef2',
+          600: '#4149e6',
+          700: '#3538cc',
+          800: '#2d31a5',
+          900: '#1e2066',
+          950: '#151642',
+        },
+        // Burnt Orange - for Go Wild mode
+        burnt: {
+          50: '#fff8f1',
+          100: '#feecdc',
+          200: '#fcd5b8',
+          300: '#f9b88a',
+          400: '#f5925a',
+          500: '#f17336',
+          600: '#e25a1e',
+          700: '#bc4518',
+          800: '#96381a',
+          900: '#793118',
+          950: '#41160a',
         },
       },
       borderRadius: {
@@ -175,6 +266,36 @@ export default {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
         'glass-gradient': 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%)',
+      },
+      // Minimum touch target sizes for Apple HIG compliance (44pt minimum)
+      minHeight: {
+        'touch': '44px',       // Apple HIG minimum touch target
+        'touch-lg': '52px',    // Comfortable touch target
+      },
+      minWidth: {
+        'touch': '44px',       // Apple HIG minimum touch target
+        'touch-lg': '52px',    // Comfortable touch target
+      },
+      // Safe area insets for notched devices (iPhone X+)
+      spacing: {
+        'safe-top': 'env(safe-area-inset-top)',
+        'safe-bottom': 'env(safe-area-inset-bottom)',
+        'safe-left': 'env(safe-area-inset-left)',
+        'safe-right': 'env(safe-area-inset-right)',
+      },
+      // Padding with safe area support
+      padding: {
+        'safe-top': 'env(safe-area-inset-top)',
+        'safe-bottom': 'env(safe-area-inset-bottom)',
+        'safe-left': 'env(safe-area-inset-left)',
+        'safe-right': 'env(safe-area-inset-right)',
+      },
+      // Margin with safe area support
+      margin: {
+        'safe-top': 'env(safe-area-inset-top)',
+        'safe-bottom': 'env(safe-area-inset-bottom)',
+        'safe-left': 'env(safe-area-inset-left)',
+        'safe-right': 'env(safe-area-inset-right)',
       },
     },
   },

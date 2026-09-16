@@ -7,6 +7,9 @@ import { spawn, exec, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { EventEmitter } from 'events';
 import { structuredLogger as logger, LogCategory, LogContext } from '../utils/structuredLogger';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 const execAsync = promisify(exec);
 
@@ -190,7 +193,7 @@ export class TmuxConnectionPool extends EventEmitter {
     
     try {
       // Add TMUX_TMPDIR environment variable for consistency
-      const env = { ...process.env, TMUX_TMPDIR: '/tmp' };
+      const env = { ...process.env, TMUX_TMPDIR: tmuxTmpDir };
       
       const result = await Promise.race([
         execAsync(command.join(' '), { env }),

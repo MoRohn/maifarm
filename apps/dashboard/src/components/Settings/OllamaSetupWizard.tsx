@@ -16,22 +16,22 @@ const OllamaSetupWizard: React.FC<OllamaSetupWizardProps> = ({ onClose, onComple
       return {
         install: 'brew install ollama',
         start: 'ollama serve',
-        pull: 'ollama pull qwen2.5-coder:7b',
-        test: 'ollama run qwen2.5-coder:7b "Write hello world in Python"'
+        pull: 'ollama pull llama2.5-coder:7b',
+        test: 'ollama run llama2.5-coder:7b "Write hello world in Python"'
       };
     } else if (platform.includes('win')) {
       return {
         install: 'Download from https://ollama.ai/download/windows',
         start: 'ollama serve',
-        pull: 'ollama pull qwen2.5-coder:7b',
-        test: 'ollama run qwen2.5-coder:7b "Write hello world in Python"'
+        pull: 'ollama pull llama2.5-coder:7b',
+        test: 'ollama run llama2.5-coder:7b "Write hello world in Python"'
       };
     } else {
       return {
         install: 'curl -fsSL https://ollama.ai/install.sh | sh',
         start: 'ollama serve',
-        pull: 'ollama pull qwen2.5-coder:7b',
-        test: 'ollama run qwen2.5-coder:7b "Write hello world in Python"'
+        pull: 'ollama pull llama2.5-coder:7b',
+        test: 'ollama run llama2.5-coder:7b "Write hello world in Python"'
       };
     }
   };
@@ -55,7 +55,7 @@ const OllamaSetupWizard: React.FC<OllamaSetupWizardProps> = ({ onClose, onComple
       content: (
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Ollama is required to run Qwen models locally. It's a lightweight tool that manages and runs large language models.
+            Ollama is required to run Llama models locally. It's a lightweight tool that manages and runs large language models.
           </p>
           
           <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
@@ -141,12 +141,12 @@ const OllamaSetupWizard: React.FC<OllamaSetupWizardProps> = ({ onClose, onComple
       )
     },
     {
-      title: 'Download Qwen Model',
-      description: 'Download the Qwen Coder model for local code generation.',
+      title: 'Download Llama Model',
+      description: 'Download the Llama Coder model for local code generation.',
       content: (
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Now we'll download the Qwen2.5 Coder model. This is optimized for code generation tasks.
+            Now we'll download the Llama2.5 Coder model. This is optimized for code generation tasks.
           </p>
           
           <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
@@ -171,9 +171,9 @@ const OllamaSetupWizard: React.FC<OllamaSetupWizardProps> = ({ onClose, onComple
           <div className="space-y-2">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Model Sizes:</h4>
             <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-              <li>• <strong>qwen2.5-coder:1.5b</strong> - ~1GB (lightweight, 8GB RAM)</li>
-              <li>• <strong>qwen2.5-coder:7b</strong> - ~4.7GB (balanced, 16GB RAM) ✓</li>
-              <li>• <strong>qwen2.5-coder:32b</strong> - ~19GB (best performance, 32GB RAM)</li>
+              <li>• <strong>llama2.5-coder:1.5b</strong> - ~1GB (lightweight, 8GB RAM)</li>
+              <li>• <strong>llama2.5-coder:7b</strong> - ~4.7GB (balanced, 16GB RAM) ✓</li>
+              <li>• <strong>llama2.5-coder:32b</strong> - ~19GB (best performance, 32GB RAM)</li>
             </ul>
           </div>
 
@@ -196,7 +196,7 @@ const OllamaSetupWizard: React.FC<OllamaSetupWizardProps> = ({ onClose, onComple
       content: (
         <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Let's test the Qwen model to ensure it's working properly.
+            Let's test the Llama model to ensure it's working properly.
           </p>
           
           <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
@@ -233,7 +233,7 @@ hello_world()`}
               <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
               <div className="ml-3">
                 <p className="text-sm text-green-800 dark:text-green-200">
-                  Once you see the output, Ollama and Qwen are ready to use!
+                  Once you see the output, Ollama and Llama are ready to use!
                 </p>
               </div>
             </div>

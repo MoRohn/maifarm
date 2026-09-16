@@ -50,7 +50,7 @@ export interface FarmConfig {
   autoScale: boolean;
   prompt: string;
   timeout: number;
-  provider: 'claude' | 'openai' | 'qwen' | 'gpt_oss';
+  provider: 'claude' | 'openai' | 'llama' | 'gpt-oss';
   yaml?: string;
   attachmentPaths?: string[];
 }
@@ -76,7 +76,7 @@ interface CreateFarmOptions {
   name: string;
   description?: string;
   type?: 'sequential' | 'collaborative' | 'autonomous';
-  provider?: 'claude' | 'openai' | 'qwen' | 'gpt_oss';
+  provider?: 'claude' | 'openai' | 'llama' | 'gpt-oss';
   config?: Partial<FarmConfig>;
   userId: string | null;
   createdBy?: string | null;

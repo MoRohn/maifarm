@@ -68,8 +68,8 @@ export class UniversalAgentProtocol {
     // Claude translator
     this.providerTranslators.set('claude', new ClaudeTranslator());
     
-    // Qwen translator
-    this.providerTranslators.set('qwen', new QwenTranslator());
+    // Llama translator
+    this.providerTranslators.set('llama', new LlamaTranslator());
     
     // OpenAI translator
     this.providerTranslators.set('openai', new OpenAITranslator());
@@ -329,21 +329,21 @@ class ClaudeTranslator extends ProviderTranslator {
 }
 
 /**
- * Qwen-specific translator
+ * Llama-specific translator
  */
-class QwenTranslator extends ProviderTranslator {
-  async toUniversal(qwenMessage: any): Promise<UniversalAgentMessage> {
+class LlamaTranslator extends ProviderTranslator {
+  async toUniversal(llamaMessage: any): Promise<UniversalAgentMessage> {
     return {
       version: '1.0',
-      messageId: qwenMessage.msg_id || uuidv4(),
-      agentId: qwenMessage.agent_id,
-      provider: 'qwen',
-      messageType: this.detectQwenMessageType(qwenMessage),
+      messageId: llamaMessage.msg_id || uuidv4(),
+      agentId: llamaMessage.agent_id,
+      provider: 'llama',
+      messageType: this.detectLlamaMessageType(llamaMessage),
       payload: {
         format: 'universal',
-        data: this.extractQwenPayload(qwenMessage)
+        data: this.extractLlamaPayload(llamaMessage)
       },
-      timestamp: new Date(qwenMessage.ts || Date.now())
+      timestamp: new Date(llamaMessage.ts || Date.now())
     };
   }
 
@@ -351,13 +351,13 @@ class QwenTranslator extends ProviderTranslator {
     return {
       msg_id: message.messageId,
       agent_id: message.agentId,
-      msg_type: this.mapToQwenType(message.messageType),
+      msg_type: this.mapToLlamaType(message.messageType),
       payload: message.payload.data,
       ts: message.timestamp.getTime()
     };
   }
 
-  private detectQwenMessageType(message: any): UniversalAgentMessage['messageType'] {
+  private detectLlamaMessageType(message: any): UniversalAgentMessage['messageType'] {
     const typeMap = {
       'task_claim': 'work_claim',
       'status': 'status_update',
@@ -367,11 +367,11 @@ class QwenTranslator extends ProviderTranslator {
     return typeMap[message.msg_type] || 'coordination';
   }
 
-  private extractQwenPayload(message: any): any {
+  private extractLlamaPayload(message: any): any {
     return message.payload || message.data || {};
   }
 
-  private mapToQwenType(messageType: string): string {
+  private mapToLlamaType(messageType: string): string {
     const mapping = {
       'work_claim': 'task_claim',
       'status_update': 'status',

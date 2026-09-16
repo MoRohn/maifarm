@@ -278,12 +278,34 @@ export class HarvestService extends EventEmitter {
 
       // Emit events
       this.emit('harvest:completed', harvest);
-      websocketManager.broadcast('harvest:completed', {
-        harvestId,
-        farmId: harvest.farmId,
-        quality: harvest.quality,
-        summary: harvest.summary
-      });
+
+      // CRITICAL: Use broadcastWithAck for guaranteed harvest:completed delivery
+      // This ensures frontend receives harvest completion event even with WebSocket reconnections
+      try {
+        const ackResult = await websocketManager.broadcastWithAck(
+          'harvest:completed',
+          {
+            harvestId,
+            farmId: harvest.farmId,
+            quality: harvest.quality,
+            summary: harvest.summary
+          },
+          {
+            farmId: harvest.farmId,
+            retryAttempts: 3,
+            timeout: 5000
+          }
+        );
+
+        if (ackResult.success) {
+          logger.info(`[HarvestService] Harvest completed event delivered to ${ackResult.delivered} clients for harvest ${harvestId}`);
+        } else {
+          logger.warn(`[HarvestService] Harvest completed partial delivery: ${ackResult.delivered} delivered, ${ackResult.failed} failed`);
+        }
+      } catch (broadcastError) {
+        logger.error(`[HarvestService] Failed to broadcast harvest:completed event:`, broadcastError);
+        // Don't fail harvest completion if broadcast fails - harvest is already completed
+      }
 
       // Remove from active cache
       this.activeHarvests.delete(harvestId);

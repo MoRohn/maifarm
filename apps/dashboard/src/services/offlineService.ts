@@ -301,7 +301,7 @@ class OfflineService {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('MaiFarm Updated', {
         body: 'A new version is available. Refresh to update.',
-        icon: '/assets/maifarm_logo_icon.png'
+        icon: '/apple-touch-icon.png'
       });
     }
   }

@@ -235,11 +235,11 @@ export class HealthCheckService {
    */
   private async checkRedis(): Promise<ComponentHealth> {
     const startTime = Date.now();
-    
+
     try {
       const { redisClient } = await import('./unified/cacheService');
-      
-      if (!redisClient.isOpen) {
+
+      if (!redisClient || !redisClient.isOpen) {
         return {
           name: 'Redis',
           status: HealthStatus.DEGRADED,
@@ -247,10 +247,10 @@ export class HealthCheckService {
           latency: Date.now() - startTime
         };
       }
-      
+
       await redisClient.ping();
       const latency = Date.now() - startTime;
-      
+
       return {
         name: 'Redis',
         status: HealthStatus.HEALTHY,
@@ -429,7 +429,8 @@ export class HealthCheckService {
       const execAsync = promisify(exec);
       
       await execAsync('which tmux');
-      const result = await execAsync('TMUX_TMPDIR=/tmp tmux list-sessions 2>/dev/null || echo "No sessions"');
+      const { TMUX_TMP_DIR } = getPaths();
+      const result = await execAsync(`TMUX_TMPDIR="${TMUX_TMP_DIR}" tmux list-sessions 2>/dev/null || echo "No sessions"`);
       
       return {
         name: 'Tmux',

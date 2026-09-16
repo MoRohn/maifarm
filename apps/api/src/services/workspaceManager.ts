@@ -463,7 +463,7 @@ Resources are read-only to prevent accidental modification.
 
     // Add provider-specific environment variables (only allow relevant AI provider vars)
     const allowedVarPrefixes = [
-      'AI_PROVIDER', 'ANTHROPIC_', 'CLAUDE_', 'OPENAI_', 'QWEN_', 'GPT_OSS_', 
+      'AI_PROVIDER', 'ANTHROPIC_', 'CLAUDE_', 'OPENAI_', 'LLAMA_', 'GPT_OSS_', 
       'OLLAMA_', 'USE_LLM_PROXY', 'LLM_PROXY_URL', 'DASHSCOPE_',
       // Core MaiFarm environment variables
       'PORT', 'VITE_', 'JWT_', 'BYPASS_AUTH', 'DB_', 'REDIS_', 'WS_',
@@ -501,9 +501,8 @@ Resources are read-only to prevent accidental modification.
       case AIProvider.OPENAI:
         await this.setupOpenAIConfig(configDir, config);
         break;
-      case AIProvider.QWEN:
-      case AIProvider.QWEN_LOCAL:
-        await this.setupQwenConfig(configDir, config);
+      case AIProvider.LLAMA:
+        await this.setupLlamaConfig(configDir, config);
         break;
       case AIProvider.GPT_OSS:
         await this.setupGptOssConfig(configDir, config);
@@ -544,10 +543,10 @@ Resources are read-only to prevent accidental modification.
   }
 
   /**
-   * Setup Qwen configuration
+   * Setup Llama configuration
    */
-  private async setupQwenConfig(configDir: string, config: AIProviderConfig): Promise<void> {
-    const qwenConfig = {
+  private async setupLlamaConfig(configDir: string, config: AIProviderConfig): Promise<void> {
+    const llamaConfig = {
       api_key: config.apiKey,
       api_endpoint: config.apiEndpoint,
       model: config.model,
@@ -557,8 +556,8 @@ Resources are read-only to prevent accidental modification.
       ollama_model: config.ollamaModel
     };
     
-    const configPath = path.relative(pathConfig.getPath('MAIBARN_ROOT'), path.join(configDir, 'qwen.json'));
-    await fileManager.writeFile(configPath, JSON.stringify(qwenConfig, null, 2));
+    const configPath = path.relative(pathConfig.getPath('MAIBARN_ROOT'), path.join(configDir, 'llama.json'));
+    await fileManager.writeFile(configPath, JSON.stringify(llamaConfig, null, 2));
   }
 
   /**
@@ -641,10 +640,9 @@ Resources are read-only to prevent accidental modification.
           'fi'
         );
         break;
-      case AIProvider.QWEN:
-      case AIProvider.QWEN_LOCAL:
+      case AIProvider.LLAMA:
         script.push(
-          '# Qwen/Ollama setup',
+          '# Llama/Ollama setup',
           'if command -v ollama &> /dev/null; then',
           '  echo "✓ Ollama found at: $(which ollama)"',
           '  export OLLAMA_HOST="${OLLAMA_HOST:-http://localhost:11434}"',

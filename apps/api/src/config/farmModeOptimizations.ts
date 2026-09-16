@@ -5,10 +5,93 @@
  * to ensure high success rates and consistent performance.
  */
 
-export enum FarmMode {
-  HARVEST = 'harvest',
-  QUICK_TASK = 'quick_task',
-  GO_WILD = 'go_wild'
+import { FarmMode } from '../types/farm';
+
+// Re-export FarmMode for consumers
+export { FarmMode };
+
+/**
+ * Plugin Configuration for blerbz-plugins integration
+ * Controls inference-confidenz, inference-continuez, and inference-planz
+ */
+export interface PluginConfig {
+  /** Enable all plugins */
+  pluginsEnabled: boolean;
+  /** Enable confidence scoring (inference-confidenz) */
+  confidenzEnabled: boolean;
+  /** Enable auto-continuation (inference-continuez) */
+  continuezEnabled: boolean;
+  /** Confidence threshold for auto-continuation (0-99) */
+  continuezThreshold: number;
+  /** Enable planning workflow (inference-planz) */
+  planzEnabled: boolean;
+  /** Run pre-launch survey for GoWild mode */
+  planzPrelaunchSurvey: boolean;
+}
+
+/**
+ * Mode-specific plugin configuration defaults
+ * As documented in CLAUDE.md:
+ * - Quick Task: 85% threshold, no planz
+ * - Farm/Harvest: 80% threshold, no planz
+ * - GoWild: 60% threshold, planz enabled with pre-launch survey
+ */
+export const MODE_PLUGIN_DEFAULTS: Record<FarmMode, PluginConfig> = {
+  [FarmMode.QUICK_TASK]: {
+    pluginsEnabled: true,
+    confidenzEnabled: true,
+    continuezEnabled: true,
+    continuezThreshold: 85,
+    planzEnabled: false,
+    planzPrelaunchSurvey: false,
+  },
+  [FarmMode.HARVEST]: {
+    pluginsEnabled: true,
+    confidenzEnabled: true,
+    continuezEnabled: true,
+    continuezThreshold: 80,
+    planzEnabled: false,
+    planzPrelaunchSurvey: false,
+  },
+  [FarmMode.GO_WILD]: {
+    pluginsEnabled: true,
+    confidenzEnabled: true,
+    continuezEnabled: true,
+    continuezThreshold: 60,
+    planzEnabled: true,
+    planzPrelaunchSurvey: true,
+  },
+  [FarmMode.COLLABORATIVE]: {
+    pluginsEnabled: true,
+    confidenzEnabled: true,
+    continuezEnabled: true,
+    continuezThreshold: 80,
+    planzEnabled: false,
+    planzPrelaunchSurvey: false,
+  },
+  [FarmMode.SEQUENTIAL]: {
+    pluginsEnabled: true,
+    confidenzEnabled: true,
+    continuezEnabled: true,
+    continuezThreshold: 80,
+    planzEnabled: false,
+    planzPrelaunchSurvey: false,
+  },
+  [FarmMode.AUTONOMOUS]: {
+    pluginsEnabled: true,
+    confidenzEnabled: true,
+    continuezEnabled: true,
+    continuezThreshold: 70,
+    planzEnabled: true,
+    planzPrelaunchSurvey: false,
+  },
+};
+
+/**
+ * Get plugin configuration for a specific farm mode
+ */
+export function getPluginConfig(mode: FarmMode): PluginConfig {
+  return MODE_PLUGIN_DEFAULTS[mode] || MODE_PLUGIN_DEFAULTS[FarmMode.HARVEST];
 }
 
 export interface ModeOptimization {
@@ -138,6 +221,97 @@ export const MODE_OPTIMIZATIONS: Record<FarmMode, ModeOptimization> = {
       bufferTerminalOutput: true,
       useSessionPool: false             // Fresh sessions for isolation
     }
+  },
+
+  // Extended modes - default to HARVEST-like behavior
+  [FarmMode.COLLABORATIVE]: {
+    timing: {
+      sessionCreationDelay: 3000,
+      orchestratorStartDelay: 4000,
+      paneCreationDelay: 500,
+      streamingSetupDelay: 1000,
+      verificationInterval: 1000,
+      maxVerificationAttempts: 5
+    },
+    resources: {
+      nodeMemoryPerAgent: 2048,
+      maxConcurrentAgents: 10,
+      cpuThrottling: false,
+      diskIOPriority: 'normal'
+    },
+    recovery: {
+      autoRestart: true,
+      maxRestartAttempts: 3,
+      restartDelay: 5000,
+      healthCheckInterval: 10000,
+      gracefulShutdownTimeout: 30000
+    },
+    strategy: {
+      parallelAgentLaunch: false,
+      prewarmWorkspace: true,
+      bufferTerminalOutput: true,
+      useSessionPool: false
+    }
+  },
+
+  [FarmMode.SEQUENTIAL]: {
+    timing: {
+      sessionCreationDelay: 3000,
+      orchestratorStartDelay: 4000,
+      paneCreationDelay: 500,
+      streamingSetupDelay: 1000,
+      verificationInterval: 1000,
+      maxVerificationAttempts: 5
+    },
+    resources: {
+      nodeMemoryPerAgent: 2048,
+      maxConcurrentAgents: 10,
+      cpuThrottling: false,
+      diskIOPriority: 'normal'
+    },
+    recovery: {
+      autoRestart: true,
+      maxRestartAttempts: 3,
+      restartDelay: 5000,
+      healthCheckInterval: 10000,
+      gracefulShutdownTimeout: 30000
+    },
+    strategy: {
+      parallelAgentLaunch: false,
+      prewarmWorkspace: true,
+      bufferTerminalOutput: true,
+      useSessionPool: false
+    }
+  },
+
+  [FarmMode.AUTONOMOUS]: {
+    timing: {
+      sessionCreationDelay: 4000,
+      orchestratorStartDelay: 5000,
+      paneCreationDelay: 750,
+      streamingSetupDelay: 1500,
+      verificationInterval: 1500,
+      maxVerificationAttempts: 7
+    },
+    resources: {
+      nodeMemoryPerAgent: 3072,
+      maxConcurrentAgents: 20,
+      cpuThrottling: true,
+      diskIOPriority: 'low'
+    },
+    recovery: {
+      autoRestart: true,
+      maxRestartAttempts: 5,
+      restartDelay: 3000,
+      healthCheckInterval: 8000,
+      gracefulShutdownTimeout: 45000
+    },
+    strategy: {
+      parallelAgentLaunch: true,
+      prewarmWorkspace: true,
+      bufferTerminalOutput: true,
+      useSessionPool: false
+    }
   }
 };
 
@@ -176,6 +350,40 @@ export function getOptimizedLaunchSequence(mode: FarmMode): string[] {
       'health_monitoring_start',
       'creativity_boost',           // Special step for Go Wild
       'finalization'
+    ],
+    // Extended modes use HARVEST-like sequence
+    [FarmMode.COLLABORATIVE]: [
+      'preflight_checks',
+      'workspace_creation',
+      'session_prewarming',
+      'harvest_initialization',
+      'tmux_provisioning',
+      'agent_sequential_launch',
+      'streaming_setup',
+      'health_monitoring_start',
+      'finalization'
+    ],
+    [FarmMode.SEQUENTIAL]: [
+      'preflight_checks',
+      'workspace_creation',
+      'session_prewarming',
+      'harvest_initialization',
+      'tmux_provisioning',
+      'agent_sequential_launch',
+      'streaming_setup',
+      'health_monitoring_start',
+      'finalization'
+    ],
+    [FarmMode.AUTONOMOUS]: [
+      'preflight_checks',
+      'workspace_creation',
+      'harvest_initialization',
+      'tmux_provisioning',
+      'parallel_pane_creation',
+      'agent_parallel_launch',
+      'streaming_batch_setup',
+      'health_monitoring_start',
+      'finalization'
     ]
   };
 
@@ -184,24 +392,67 @@ export function getOptimizedLaunchSequence(mode: FarmMode): string[] {
 
 /**
  * Calculate dynamic timeout based on mode and agent count
+ * ENHANCED: Extended durations for comprehensive project work
  */
 export function calculateOptimalTimeout(mode: FarmMode, agentCount: number): number {
   const baseTimeouts: Record<FarmMode, number> = {
-    [FarmMode.HARVEST]: 3600,      // 1 hour base
-    [FarmMode.QUICK_TASK]: 300,    // 5 minutes fixed
-    [FarmMode.GO_WILD]: 2700        // 45 minutes base
+    [FarmMode.HARVEST]: 7200,      // 2 hours base (extended from 1 hour)
+    [FarmMode.QUICK_TASK]: 900,    // 15 minutes fixed (extended from 5 min)
+    [FarmMode.GO_WILD]: 5400,      // 1.5 hours base (extended from 45 min)
+    [FarmMode.COLLABORATIVE]: 7200, // Same as HARVEST
+    [FarmMode.SEQUENTIAL]: 7200,    // Same as HARVEST
+    [FarmMode.AUTONOMOUS]: 5400     // Same as GO_WILD
   };
 
   const agentMultipliers: Record<FarmMode, number> = {
-    [FarmMode.HARVEST]: 600,       // +10 min per agent
-    [FarmMode.QUICK_TASK]: 0,      // No scaling
-    [FarmMode.GO_WILD]: 300        // +5 min per agent
+    [FarmMode.HARVEST]: 900,       // +15 min per agent (increased from +10 min)
+    [FarmMode.QUICK_TASK]: 0,      // No scaling for quick tasks
+    [FarmMode.GO_WILD]: 600,       // +10 min per agent (increased from +5 min)
+    [FarmMode.COLLABORATIVE]: 900, // Same as HARVEST
+    [FarmMode.SEQUENTIAL]: 900,    // Same as HARVEST
+    [FarmMode.AUTONOMOUS]: 600     // Same as GO_WILD
   };
 
   const baseTimeout = baseTimeouts[mode];
   const multiplier = agentMultipliers[mode];
 
   return baseTimeout + (multiplier * Math.max(0, agentCount - 1));
+}
+
+/**
+ * Determine if a session qualifies as extended (>= 2 hours)
+ * Extended sessions get more lenient health thresholds
+ */
+export function isExtendedSession(timeoutSeconds: number): boolean {
+  return timeoutSeconds >= 7200; // 2 hours or more
+}
+
+/**
+ * Get health monitoring thresholds based on session duration
+ */
+export function getHealthThresholds(timeoutSeconds: number): {
+  idleThreshold: number;
+  stuckThreshold: number;
+  disconnectedThreshold: number;
+  maxConsecutiveIdle: number;
+} {
+  if (isExtendedSession(timeoutSeconds)) {
+    // Extended sessions (>= 2 hours): more lenient thresholds
+    return {
+      idleThreshold: 120000,      // 2 min idle detection
+      stuckThreshold: 600000,     // 10 min stuck detection
+      disconnectedThreshold: 900000, // 15 min disconnected tolerance
+      maxConsecutiveIdle: 10      // More tolerance for long thinking
+    };
+  }
+
+  // Standard sessions (< 2 hours): normal thresholds
+  return {
+    idleThreshold: 30000,         // 30s idle detection
+    stuckThreshold: 120000,       // 2 min stuck detection
+    disconnectedThreshold: 300000, // 5 min disconnected tolerance
+    maxConsecutiveIdle: 6         // Standard tolerance
+  };
 }
 
 /**
@@ -215,19 +466,38 @@ export function getPreflightRequirements(mode: FarmMode): {
 } {
   const requirements: Record<FarmMode, any> = {
     [FarmMode.HARVEST]: {
-      minMemoryGB: 8,
+      minMemoryGB: 3,  // Reduced from 4GB for better dev machine compatibility
       minDiskSpaceGB: 10,
       requiredServices: ['postgresql', 'redis', 'tmux'],
       maxLoadAverage: 0.8
     },
     [FarmMode.QUICK_TASK]: {
-      minMemoryGB: 4,
+      minMemoryGB: 1.5,  // Reduced from 2GB for lightweight tasks
       minDiskSpaceGB: 5,
       requiredServices: ['postgresql', 'tmux'],
       maxLoadAverage: 0.9
     },
     [FarmMode.GO_WILD]: {
-      minMemoryGB: 16,
+      minMemoryGB: 6,  // Reduced from 8GB for dev compatibility
+      minDiskSpaceGB: 20,
+      requiredServices: ['postgresql', 'redis', 'tmux'],
+      maxLoadAverage: 0.7
+    },
+    // Extended modes use HARVEST-like requirements
+    [FarmMode.COLLABORATIVE]: {
+      minMemoryGB: 3,
+      minDiskSpaceGB: 10,
+      requiredServices: ['postgresql', 'redis', 'tmux'],
+      maxLoadAverage: 0.8
+    },
+    [FarmMode.SEQUENTIAL]: {
+      minMemoryGB: 3,
+      minDiskSpaceGB: 10,
+      requiredServices: ['postgresql', 'redis', 'tmux'],
+      maxLoadAverage: 0.8
+    },
+    [FarmMode.AUTONOMOUS]: {
+      minMemoryGB: 6,
       minDiskSpaceGB: 20,
       requiredServices: ['postgresql', 'redis', 'tmux'],
       maxLoadAverage: 0.7

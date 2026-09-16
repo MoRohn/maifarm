@@ -1,5 +1,8 @@
 #!/bin/bash
 
+MAIFARM_ROOT="${MAIFARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+export MAIFARM_ROOT
+
 # Test All Farm Modes with XenoSync
 # Tests Quick Task (1 agent), Harvest (3 agents), and Go Wild (5 agents) modes
 
@@ -68,7 +71,7 @@ test_quick_task() {
             echo -e "${GREEN}✓${NC} Tmux session has 1 pane (correct for Quick Task)"
 
             # Check terminal log
-            LOG_FILE="/Users/rohnspringfield/maifarm/var/maibarn/terminals/$FARM_ID/agent-0.log"
+            LOG_FILE="${MAIFARM_ROOT}/var/maibarn/terminals/$FARM_ID/agent-0.log"
             if [ -f "$LOG_FILE" ]; then
                 SIZE=$(stat -f%z "$LOG_FILE" 2>/dev/null || echo "0")
                 if [ "$SIZE" -gt "0" ]; then
@@ -141,7 +144,7 @@ test_harvest() {
             # Check terminal logs
             LOGS_OK=true
             for i in 0 1 2; do
-                LOG_FILE="/Users/rohnspringfield/maifarm/var/maibarn/terminals/$FARM_ID/agent-$i.log"
+                LOG_FILE="${MAIFARM_ROOT}/var/maibarn/terminals/$FARM_ID/agent-$i.log"
                 if [ -f "$LOG_FILE" ]; then
                     SIZE=$(stat -f%z "$LOG_FILE" 2>/dev/null || echo "0")
                     if [ "$SIZE" -gt "0" ]; then
@@ -225,7 +228,7 @@ test_go_wild() {
             # Check terminal logs
             LOGS_OK=true
             for i in 0 1 2 3 4; do
-                LOG_FILE="/Users/rohnspringfield/maifarm/var/maibarn/terminals/$FARM_ID/agent-$i.log"
+                LOG_FILE="${MAIFARM_ROOT}/var/maibarn/terminals/$FARM_ID/agent-$i.log"
                 if [ -f "$LOG_FILE" ]; then
                     SIZE=$(stat -f%z "$LOG_FILE" 2>/dev/null || echo "0")
                     if [ "$SIZE" -gt "0" ]; then

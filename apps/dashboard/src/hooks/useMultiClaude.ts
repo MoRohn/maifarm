@@ -22,7 +22,16 @@ export const useMultiClaude = () => {
   const [agents, setAgents] = useState<MultiClaudeAgent[]>([]);
   const [config, setConfig] = useState<MultiClaudeConfig>(() => {
     const saved = localStorage.getItem('multiClaudeConfig');
-    return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+    if (saved) {
+      // FIX: Handle corrupted localStorage data gracefully
+      try {
+        return JSON.parse(saved);
+      } catch {
+        console.warn('useMultiClaude: Failed to parse saved config, using defaults');
+        return DEFAULT_CONFIG;
+      }
+    }
+    return DEFAULT_CONFIG;
   });
   const [isConnected, setIsConnected] = useState(false);
   const [coordinationData, setCoordinationData] = useState<CoordinationData | null>(null);

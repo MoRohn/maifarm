@@ -24,6 +24,8 @@ interface LoggerConfig {
   enableConsole: boolean;
 }
 
+const ENABLE_REMOTE_LOGS = import.meta.env.VITE_ENABLE_REMOTE_LOGS === 'true';
+
 class Logger {
   private config: LoggerConfig;
   private logs: LogEntry[] = [];
@@ -44,7 +46,7 @@ class Logger {
       minLevel: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
       maxEntries: 5000,
       persistToStorage: true,
-      sendToServer: true,
+      sendToServer: ENABLE_REMOTE_LOGS,
       enableConsole: process.env.NODE_ENV !== 'production',
       ...config
     };
@@ -96,16 +98,15 @@ class Logger {
     const logsToSend = [...this.logBuffer];
     this.logBuffer = [];
 
-    try {
-      await fetch('/api/monitoring/logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ logs: logsToSend })
-      });
-    } catch (error) {
-      // Re-add logs to buffer if send failed
-      this.logBuffer.unshift(...logsToSend);
-    }
+    // NON-BLOCKING: Fire and forget - don't await, don't throw
+    fetch('/api/monitoring/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ logs: logsToSend })
+    }).catch(error => {
+      // Silently handle errors - logging should never break the app
+      console.warn('[Logger] Failed to send logs to server (non-critical):', error?.message || String(error));
+    });
   }
 
   private shouldLog(level: LogLevel): boolean {

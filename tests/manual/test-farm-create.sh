@@ -1,5 +1,8 @@
 #!/bin/bash
 
+MAIFARM_ROOT="${MAIFARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+export MAIFARM_ROOT
+
 echo "Testing farm creation with fixed YAML..."
 
 # Create a harvest farm using the quick-actions endpoint
@@ -29,12 +32,12 @@ if [ "$FARM_ID" != "null" ] && [ -n "$FARM_ID" ]; then
   # Check YAML file
   echo ""
   echo "Checking YAML file:"
-  ls -la /Users/rohnspringfield/maifarm/var/maibarn/xenosync-sessions/prompt-farm-${FARM_ID:0:8}.yaml 2>/dev/null
+  ls -la ${MAIFARM_ROOT}/var/maibarn/xenosync-sessions/prompt-farm-${FARM_ID:0:8}.yaml 2>/dev/null
 
-  if [ -f "/Users/rohnspringfield/maifarm/var/maibarn/xenosync-sessions/prompt-farm-${FARM_ID:0:8}.yaml" ]; then
+  if [ -f "${MAIFARM_ROOT}/var/maibarn/xenosync-sessions/prompt-farm-${FARM_ID:0:8}.yaml" ]; then
     echo ""
     echo "YAML content:"
-    cat "/Users/rohnspringfield/maifarm/var/maibarn/xenosync-sessions/prompt-farm-${FARM_ID:0:8}.yaml"
+    cat "${MAIFARM_ROOT}/var/maibarn/xenosync-sessions/prompt-farm-${FARM_ID:0:8}.yaml"
   fi
 
   # Check agents in database

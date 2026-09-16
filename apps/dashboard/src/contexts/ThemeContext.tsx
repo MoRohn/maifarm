@@ -32,7 +32,16 @@ export const useTheme = () => {
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeSettings>(() => {
     const saved = localStorage.getItem('theme_settings');
-    return saved ? JSON.parse(saved) : defaultTheme;
+    if (saved) {
+      // FIX: Handle corrupted localStorage data gracefully
+      try {
+        return JSON.parse(saved);
+      } catch {
+        console.warn('ThemeContext: Failed to parse saved theme settings, using defaults');
+        return defaultTheme;
+      }
+    }
+    return defaultTheme;
   });
 
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light');

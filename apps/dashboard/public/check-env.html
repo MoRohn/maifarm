@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Environment Variables</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }
+        h1 { color: #00ffff; }
+        pre { background: #2a2a2a; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Environment Variables Check</h1>
+    <div id="output">
+        <p>This is a static HTML file. Environment variables are not available here.</p>
+        <p>Navigate to the React app to check: <a href="/">Go to App</a></p>
+    </div>
+
+    <script>
+        // In React app, you would use: import.meta.env.VITE_BYPASS_AUTH
+        // But this static HTML can't access those
+        console.log('Static HTML - no env vars available');
+
+        // Test API access
+        fetch('/api/farmers')
+            .then(r => {
+                document.getElementById('output').innerHTML += `
+                    <h2>API Test</h2>
+                    <p>Status: ${r.status} ${r.statusText}</p>
+                `;
+                return r.json();
+            })
+            .then(data => {
+                document.getElementById('output').innerHTML += `
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            })
+            .catch(err => {
+                document.getElementById('output').innerHTML += `
+                    <p style="color: red;">Error: ${err.message}</p>
+                `;
+            });
+    </script>
+</body>
+</html>

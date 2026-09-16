@@ -16,15 +16,26 @@ interface ParsedPrompt {
   taskType: string;
   technologies: string[];
   description: string;
-  provider?: 'claude' | 'qwen';
+  provider?: 'claude' | 'llama';
   contextWindowSize?: number;
   barnReferences?: string[];
 }
+
+type PromptEnhancementResult = {
+  enhanced_prompt: string;
+  original_prompt: string;
+  suggestions: string[];
+  improvements: string[];
+  confidence?: number;
+};
 
 export class YamlGeneratorService {
   private static instance: YamlGeneratorService;
   private templates: Map<string, YamlTemplate>;
   private history: any[] = [];
+  private promptEnhancementCache = new Map<string, { result: PromptEnhancementResult; expiresAt: number }>();
+  private promptEnhancementInFlight = new Map<string, Promise<PromptEnhancementResult>>();
+  private readonly PROMPT_ENHANCEMENT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   private constructor() {
     this.templates = new Map();
@@ -542,7 +553,7 @@ agents:
     try {
       // Determine provider from request or environment
       const provider = request.provider || process.env.AI_PROVIDER || 'claude';
-      const isQwen = provider === 'qwen';
+      const isLlama = provider === 'llama';
       
       // Store original prompt for preservation in description
       const originalPrompt = request.prompt;
@@ -559,8 +570,8 @@ agents:
             context: request.constraints?.context || `YAML generation for multi-agent orchestration using ${provider}`,
             targetAgentCount: request.constraints?.maxAgents,
             taskType: request.mode || 'farm',
-            additionalInstructions: isQwen 
-              ? 'Optimize for Qwen\'s large context window (256K tokens) and chain-of-thought reasoning'
+            additionalInstructions: isLlama 
+              ? 'Optimize for Llama\'s large context window (256K tokens) and chain-of-thought reasoning'
               : 'Optimize for clear agent roles and parallel task execution',
             provider: provider
           });
@@ -576,8 +587,8 @@ agents:
       }
       
       const parsed = this.parsePrompt(finalPrompt);
-      parsed.provider = provider as 'claude' | 'qwen';
-      parsed.contextWindowSize = isQwen ? 256000 : 100000; // Qwen has larger context
+      parsed.provider = provider as 'claude' | 'llama';
+      parsed.contextWindowSize = isLlama ? 256000 : 100000; // Llama has larger context
       parsed.originalPrompt = originalPrompt; // Preserve original prompt
       
       // Generate configuration based on parsed prompt - matching Claude Code format
@@ -598,7 +609,7 @@ agents:
         steps: this.generateSteps(parsed),
         config: {
           autoScale: false,
-          maxAgents: isQwen ? Math.min(parsed.agentCount * 2, 16) : Math.min(parsed.agentCount * 2, 10),
+          maxAgents: isLlama ? Math.min(parsed.agentCount * 2, 16) : Math.min(parsed.agentCount * 2, 10),
           timeout: dynamicTimeout,
           coordination: parsed.agentCount > 1 ? 'collaborative' : 'sequential',
           stagger: 5
@@ -648,7 +659,7 @@ agents:
         metadata: {
           generationTime: Date.now() - startTime,
           tokensUsed: 0, // Simplified for now
-          model: provider === 'qwen' ? 'qwen-based' : 'rule-based',
+          model: provider === 'llama' ? 'llama-based' : 'rule-based',
           provider: provider,
           confidence: 0.95,
           promptEnhanced: !!enhancementMetadata,
@@ -1002,8 +1013,8 @@ agents:
     prompt += `Total team size: ${fullTeamSize} specialized agents\n`;
     
     // Add specific agent capabilities if using special provider
-    if (parsed.provider === 'qwen') {
-      prompt += `\n🔧 **Provider Capabilities (Qwen):**\n`;
+    if (parsed.provider === 'llama') {
+      prompt += `\n🔧 **Provider Capabilities (Llama):**\n`;
       prompt += `- 256K token context window for handling large codebases\n`;
       prompt += `- Advanced chain-of-thought reasoning\n`;
       prompt += `- Optimized for complex multi-file operations\n`;
@@ -1086,19 +1097,19 @@ agents:
 
   private generateSuggestions(config: any, parsed: ParsedPrompt): string[] {
     const suggestions = [];
-    const isQwen = parsed.provider === 'qwen';
+    const isLlama = parsed.provider === 'llama';
 
     if (!parsed.technologies.length) {
       suggestions.push('Consider specifying technologies for more targeted agent capabilities');
     }
 
-    if (isQwen) {
-      // Qwen-specific suggestions
+    if (isLlama) {
+      // Llama-specific suggestions
       if (parsed.agentCount > 8) {
-        suggestions.push('While Qwen can handle more agents, consider limiting to 8 for optimal coordination');
+        suggestions.push('While Llama can handle more agents, consider limiting to 8 for optimal coordination');
       }
-      suggestions.push('Leverage Qwen\'s 256K context window for complex, multi-file tasks');
-      suggestions.push('Use chain-of-thought prompting for better reasoning with Qwen');
+      suggestions.push('Leverage Llama\'s 256K context window for complex, multi-file tasks');
+      suggestions.push('Use chain-of-thought prompting for better reasoning with Llama');
     } else {
       // Claude-specific suggestions
       if (parsed.agentCount > 5) {
@@ -1133,29 +1144,6 @@ agents:
 
   async getTemplates(): Promise<YamlTemplate[]> {
     return Array.from(this.templates.values());
-  }
-
-  async enhancePrompt(request: { prompt: string; context?: string; purpose?: string }): Promise<any> {
-    try {
-      // Use the prompt enhancer service
-      const enhanced = await promptEnhancer.enhancePrompt({
-        prompt: request.prompt,
-        context: request.context,
-        purpose: request.purpose as any || 'farm',
-        style: 'technical'
-      });
-      
-      return enhanced;
-    } catch (error) {
-      console.error('Error enhancing prompt:', error);
-      // Fallback to basic enhancement
-      return {
-        enhanced_prompt: request.prompt,
-        original_prompt: request.prompt,
-        suggestions: ['Consider adding more specific requirements'],
-        improvements: {}
-      };
-    }
   }
 
   async getHistory(userId?: string, options?: { limit: number; offset: number }): Promise<any[]> {
@@ -1207,7 +1195,12 @@ agents:
     }
     
     // Add dynamic timeout to metadata
-    const dynamicTimeout = this.calculateDynamicTimeout(parsed);
+    const parsedForTimeout = {
+      ...this.parsePrompt(request.prompt),
+      prompt: request.prompt,
+      originalPrompt: request.prompt
+    } as any;
+    const dynamicTimeout = this.calculateDynamicTimeout(parsedForTimeout);
     
     return {
       ...baseResponse,
@@ -1224,154 +1217,319 @@ agents:
     };
   }
 
-  /**
-   * Enhance a user prompt to make it more effective for YAML generation
-   * This method uses creative prompt engineering to improve the user's input
-   */
-  async enhancePrompt(request: {
-    prompt: string;
-    context?: string;
-    purpose?: string;
-  }): Promise<{
-    enhanced_prompt: string;
-    suggestions: string[];
-    improvements: string[];
-  }> {
-    const { prompt, context, purpose } = request;
-    
-    // Parse the original prompt
-    const parsed = this.parsePrompt(prompt);
-    
-    // Build an enhanced prompt with better structure and clarity
-    const enhancements: string[] = [];
-    const improvements: string[] = [];
-    const suggestions: string[] = [];
-    
-    // Start with a clear task definition
-    let enhancedPrompt = `Create a MaiFarm configuration for ${parsed.agentCount} agents`;
-    
-    // Add purpose-specific enhancements
-    if (purpose || parsed.taskType !== 'general') {
-      const taskPurpose = purpose || parsed.taskType;
-      enhancedPrompt += ` specialized in ${taskPurpose}`;
-      improvements.push(`Added clear specialization for ${taskPurpose}`);
+  async enhancePrompt(request: { prompt: string; context?: string; purpose?: string }): Promise<PromptEnhancementResult> {
+    const normalized = this.normalizeEnhancementRequest(request);
+    const cacheKey = JSON.stringify([normalized.prompt, normalized.context || null, normalized.purpose || null]);
+
+    const cached = this.promptEnhancementCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.result;
     }
-    
-    // Add technology stack if detected
+
+    if (this.promptEnhancementInFlight.has(cacheKey)) {
+      return this.promptEnhancementInFlight.get(cacheKey)!;
+    }
+
+    const execution = this.executePromptEnhancement(normalized);
+    this.promptEnhancementInFlight.set(cacheKey, execution);
+
+    try {
+      const result = await execution;
+      this.promptEnhancementCache.set(cacheKey, {
+        result,
+        expiresAt: Date.now() + this.PROMPT_ENHANCEMENT_TTL_MS
+      });
+      return result;
+    } finally {
+      this.promptEnhancementInFlight.delete(cacheKey);
+    }
+  }
+
+  private normalizeEnhancementRequest(request: { prompt: string; context?: string; purpose?: string }) {
+    const prompt = (request.prompt || '').trim();
+    const context = request.context?.trim();
+    const purpose = request.purpose?.trim();
+
+    return {
+      prompt,
+      context: context && context.length > 0 ? context : undefined,
+      purpose: purpose && purpose.length > 0 ? purpose.toLowerCase() : undefined
+    };
+  }
+
+  private async executePromptEnhancement(request: { prompt: string; context?: string; purpose?: string }): Promise<PromptEnhancementResult> {
+    const parsed = this.parsePrompt(request.prompt);
+    const heuristic = this.buildHeuristicEnhancement(parsed, request);
+
+    let enhancedPrompt = heuristic.enhancedPrompt;
+    const suggestions = new Set<string>(heuristic.suggestions);
+    const improvements = new Set<string>(heuristic.improvements);
+    let confidence: number | undefined;
+
+    try {
+      const claudeEnhancement = await promptEnhancementService.enhancePrompt({
+        prompt: request.prompt,
+        context: request.context,
+        targetAgentCount: parsed.agentCount,
+        taskType: (request.purpose as any) || parsed.taskType || 'farm',
+        additionalInstructions: 'Return only the improved prompt with clear agent roles, coordination steps, risks, and success criteria.'
+      });
+
+      const claudePrompt = claudeEnhancement.enhancedPrompt?.trim();
+      if (claudePrompt && this.isMeaningfulEnhancement(request.prompt, claudePrompt)) {
+        enhancedPrompt = claudePrompt;
+        improvements.add('Applied Claude prompt enhancement service');
+        confidence = Math.max(confidence ?? 0, 0.85);
+      }
+    } catch (error) {
+      console.warn('[YamlGenerator] Claude prompt enhancement unavailable:', error);
+    }
+
+    try {
+      const localEnhancement = await promptEnhancer.enhancePrompt({
+        prompt: enhancedPrompt,
+        context: request.context,
+        purpose: (request.purpose as any) || 'farm',
+        style: 'technical'
+      });
+
+      const localPrompt = localEnhancement.enhanced_prompt?.trim();
+      if (localPrompt && this.isMeaningfulEnhancement(enhancedPrompt, localPrompt)) {
+        enhancedPrompt = this.selectPreferredPrompt(enhancedPrompt, localPrompt);
+      }
+
+      localEnhancement.suggestions?.forEach((suggestion) => suggestions.add(suggestion));
+      this.normalizeImprovementEntries(localEnhancement.improvements).forEach((improvement) => improvements.add(improvement));
+      if (typeof (localEnhancement as any).confidence === 'number') {
+        confidence = Math.max(confidence ?? 0, (localEnhancement as any).confidence);
+      }
+    } catch (error) {
+      console.warn('[YamlGenerator] Local prompt enhancement failed:', error);
+    }
+
+    const finalPrompt = this.ensurePromptContext(enhancedPrompt, request, parsed);
+
+    suggestions.add('Review generated agent roles, steps, and constraints before launching the farm.');
+    suggestions.add('Provide explicit acceptance criteria to help agents measure success.');
+
+    return {
+      enhanced_prompt: finalPrompt,
+      original_prompt: request.prompt,
+      suggestions: this.toUniqueArray(suggestions),
+      improvements: this.toUniqueArray(improvements),
+      confidence
+    };
+  }
+
+  private buildHeuristicEnhancement(parsed: ParsedPrompt, request: { prompt: string; context?: string; purpose?: string }) {
+    const purpose = request.purpose || parsed.taskType || 'general';
+    const suggestions = new Set<string>();
+    const improvements = new Set<string>();
+
+    const agentCount = Math.max(parsed.agentCount, 1);
+    let enhancedPrompt = `Create a MaiFarm configuration for ${agentCount} agents`;
+
+    if (purpose) {
+      enhancedPrompt += ` specializing in ${purpose}`;
+      improvements.add(`Added specialization focus: ${purpose}`);
+    }
+
     if (parsed.technologies.length > 0) {
       enhancedPrompt += ` using ${parsed.technologies.join(', ')}`;
-      improvements.push(`Specified technology stack: ${parsed.technologies.join(', ')}`);
-    } else if (prompt.toLowerCase().includes('web') || prompt.toLowerCase().includes('app')) {
-      enhancedPrompt += ` using React, TypeScript, and Node.js`;
-      suggestions.push('Consider specifying your exact technology stack');
-      improvements.push('Added common web development stack');
+      improvements.add(`Documented technology stack (${parsed.technologies.join(', ')})`);
+    } else {
+      suggestions.add('Specify the primary technology stack to tailor agent capabilities.');
     }
-    
-    // Add task breakdown and coordination
-    enhancedPrompt += `. The farm should coordinate the following tasks:`;
-    
-    // Generate task list based on purpose
-    const tasksByPurpose: Record<string, string[]> = {
+
+    enhancedPrompt += '. Coordinate the following workstreams:';
+    const taskList = this.getTaskListForPurpose(purpose, parsed.taskType);
+    taskList.forEach((task) => {
+      enhancedPrompt += `\n- ${task}`;
+    });
+
+    enhancedPrompt += '\nEnsure agents claim work, share updates frequently, and maintain high quality standards.';
+
+    if (request.context) {
+      enhancedPrompt += `\nContext: ${request.context}`;
+      improvements.add('Incorporated provided context');
+    }
+
+    if (agentCount > 4) {
+      suggestions.add('Consider defining a lead coordinator to manage large agent teams.');
+    }
+
+    if (!parsed.description.toLowerCase().includes('test')) {
+      suggestions.add('Include testing or validation steps to maintain quality.');
+    }
+
+    if (!parsed.description.toLowerCase().includes('document')) {
+      suggestions.add('Add documentation responsibilities for knowledge transfer.');
+    }
+
+    return {
+      enhancedPrompt: enhancedPrompt.trim(),
+      suggestions: Array.from(suggestions),
+      improvements: Array.from(improvements)
+    };
+  }
+
+  private getTaskListForPurpose(purpose: string, fallback: string): string[] {
+    const library: Record<string, string[]> = {
       testing: [
-        'Set up comprehensive testing environment with proper dependencies',
-        'Create unit tests with high coverage for critical components',
-        'Implement integration tests for API endpoints and services',
-        'Develop end-to-end tests for user workflows',
-        'Generate detailed test reports with coverage metrics'
+        'Set up automated test tooling and environments',
+        'Create unit, integration, and end-to-end test suites',
+        'Measure coverage and highlight critical gaps',
+        'Automate regression testing workflows'
       ],
       review: [
-        'Analyze codebase structure and architecture patterns',
-        'Review code quality and adherence to best practices',
-        'Check for security vulnerabilities and performance issues',
-        'Validate documentation completeness and accuracy',
-        'Generate comprehensive review report with actionable recommendations'
+        'Perform architecture and code quality analysis',
+        'Identify security and dependency risks',
+        'Document improvement recommendations',
+        'Summarize key findings for stakeholders'
       ],
       development: [
-        'Initialize project with modern tooling and framework setup',
-        'Design and implement core architecture and features',
-        'Create responsive UI with accessibility considerations',
-        'Implement data persistence and API integration',
-        'Add comprehensive error handling and logging',
-        'Write technical documentation and deployment guides'
+        'Design solution architecture and project scaffolding',
+        'Implement prioritized features with clean abstractions',
+        'Add error handling, logging, and observability',
+        'Create deployment-ready build artifacts'
       ],
       debugging: [
-        'Reproduce reported issues consistently across environments',
-        'Analyze error logs and stack traces for root causes',
-        'Use debugging tools to trace execution flow',
-        'Implement and validate bug fixes',
-        'Document issues and solutions for future reference'
+        'Reproduce and isolate reported issues',
+        'Trace logs, stack traces, and telemetry for root causes',
+        'Implement fixes with regression safeguards',
+        'Document resolutions and preventative measures'
       ],
-      deployment: [
-        'Prepare production build with optimizations',
-        'Configure CI/CD pipeline for automated deployment',
-        'Set up monitoring and alerting systems',
-        'Perform smoke tests in staging environment',
-        'Execute production deployment with rollback plan'
+      analysis: [
+        'Gather and validate relevant data sources',
+        'Perform exploratory analysis and highlight insights',
+        'Evaluate risks, trade-offs, and dependencies',
+        'Provide actionable recommendations with rationale'
+      ],
+      optimization: [
+        'Profile current performance to identify bottlenecks',
+        'Prioritize optimizations based on impact and effort',
+        'Implement improvements across frontend and backend',
+        'Validate gains with repeatable benchmarks'
+      ],
+      visualization: [
+        'Define user stories and data storytelling goals',
+        'Design accessible, responsive data visualizations',
+        'Implement interactive dashboards with filtering',
+        'Document integration steps for stakeholders'
+      ],
+      documentation: [
+        'Capture architecture decisions and system context',
+        'Write API and integration references with examples',
+        'Produce onboarding and operational guides',
+        'Maintain change logs and release notes'
+      ],
+      general: [
+        'Clarify objectives, constraints, and success metrics',
+        'Break work into collaborative, parallel tasks',
+        'Define quality gates and review checkpoints',
+        'Plan knowledge transfer and documentation'
       ]
     };
-    
-    const tasks = tasksByPurpose[parsed.taskType] || tasksByPurpose.development;
-    tasks.forEach((task, index) => {
-      enhancedPrompt += `\n${index + 1}. ${task}`;
-    });
-    
-    // Add collaboration requirements
-    enhancedPrompt += '\n\nAgents should collaborate using:';
-    enhancedPrompt += '\n- Shared coordination files at maibarn/coordination/';
-    enhancedPrompt += '\n- Farm-specific workspace at maibarn/workspaces/active/{farm-id}/';
-    enhancedPrompt += '\n- Work claims to prevent duplicate efforts';
-    enhancedPrompt += '\n- Clear interfaces and integration points';
-    enhancedPrompt += '\n- Regular status updates and progress tracking';
-    enhancedPrompt += '\n- Immediate file saving to workspace - never wait until completion';
-    
-    // Add farm-themed personality
-    enhancedPrompt += '\n\nEach agent should have a unique farm animal personality that reflects their role:';
-    if (parsed.agentCount <= 5) {
-      const personalities = [
-        'Wise Barn Owl for analysis and review',
-        'Busy Bee for detailed implementation work',
-        'Loyal Dog for testing and quality assurance',
-        'Clever Pig for creative problem solving',
-        'Strong Horse for heavy lifting and infrastructure'
-      ];
-      personalities.slice(0, parsed.agentCount).forEach(p => {
-        enhancedPrompt += `\n- ${p}`;
-      });
-    } else {
-      enhancedPrompt += '\n- A diverse mix of farm animals matching their specialized roles';
+
+    return library[purpose] || library[fallback] || library.general;
+  }
+
+  private ensurePromptContext(prompt: string, request: { context?: string; purpose?: string }, parsed: ParsedPrompt): string {
+    let result = (prompt || '').trim();
+
+    if (request.context) {
+      const contextLower = request.context.toLowerCase();
+      if (!result.toLowerCase().includes(contextLower)) {
+        const separator = result.endsWith('.') ? ' ' : '\n';
+        result += `${separator}Context: ${request.context}`;
+      }
     }
-    
-    // Add context if provided
-    if (context) {
-      enhancedPrompt += `\n\nAdditional context: ${context}`;
-      improvements.push('Incorporated provided context');
+
+    if (request.purpose) {
+      const purposeLower = request.purpose.toLowerCase();
+      if (!result.toLowerCase().includes(purposeLower)) {
+        result += `\nFocus: ${request.purpose}`;
+      }
     }
-    
-    // Generate suggestions for further improvement
-    if (!parsed.technologies.length) {
-      suggestions.push('Specify your technology stack for better agent configuration');
+
+    if (parsed.agentCount > 1 && !result.toLowerCase().includes('coordinate')) {
+      result += '\nInclude coordination checkpoints, shared workspace paths, and conflict resolution steps.';
     }
-    
-    if (parsed.agentCount === 3) {
-      suggestions.push('Default 3 agents is good for small tasks. Consider 5-7 for complex projects');
+
+    return result.trim();
+  }
+
+  private isMeaningfulEnhancement(basePrompt: string, candidate: string): boolean {
+    const baseNormalized = (basePrompt || '').replace(/\s+/g, ' ').trim();
+    const candidateNormalized = (candidate || '').replace(/\s+/g, ' ').trim();
+
+    if (!candidateNormalized) {
+      return false;
     }
-    
-    if (!prompt.toLowerCase().includes('test')) {
-      suggestions.push('Consider adding testing requirements for quality assurance');
+
+    if (candidateNormalized.length <= baseNormalized.length) {
+      return candidate.split(/\n+/).length > basePrompt.split(/\n+/).length + 1;
     }
-    
-    if (!prompt.toLowerCase().includes('document')) {
-      suggestions.push('Include documentation tasks for better maintainability');
+
+    return candidateNormalized.length - baseNormalized.length > 12;
+  }
+
+  private selectPreferredPrompt(current: string, candidate: string): string {
+    if (!candidate) return current;
+    if (!current) return candidate;
+
+    const candidateLines = candidate.split(/\n+/).length;
+    const currentLines = current.split(/\n+/).length;
+
+    if (candidateLines > currentLines + 1) {
+      return candidate;
     }
-    
-    // Add creative farm-themed suggestion
-    suggestions.push('Your farm will be more productive with clear task boundaries and collaboration points');
-    
-    return {
-      enhanced_prompt: enhancedPrompt,
-      suggestions,
-      improvements
-    };
+
+    return candidate.length > current.length ? candidate : current;
+  }
+
+  private normalizeImprovementEntries(improvements: unknown): string[] {
+    if (!improvements) return [];
+
+    if (Array.isArray(improvements)) {
+      return improvements
+        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+        .filter((entry) => entry.length > 0);
+    }
+
+    if (typeof improvements === 'object') {
+      return Object.entries(improvements as Record<string, unknown>)
+        .map(([key, value]) => {
+          if (typeof value === 'string' && value.trim().length > 0) {
+            return `${this.capitalize(key)}: ${value.trim()}`;
+          }
+          return null;
+        })
+        .filter((entry): entry is string => Boolean(entry));
+    }
+
+    if (typeof improvements === 'string') {
+      const trimmed = improvements.trim();
+      return trimmed.length > 0 ? [trimmed] : [];
+    }
+
+    return [];
+  }
+
+  private toUniqueArray(values: Iterable<string>): string[] {
+    const unique = new Set<string>();
+    for (const value of values) {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        unique.add(trimmed);
+      }
+    }
+    return Array.from(unique);
+  }
+
+  private capitalize(value: string): string {
+    if (!value) return value;
+    return value.charAt(0).toUpperCase() + value.slice(1);
   }
 
   /**

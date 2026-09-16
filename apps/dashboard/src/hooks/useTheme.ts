@@ -5,8 +5,13 @@ export type Theme = 'light' | 'dark' | 'system';
 export const useTheme = () => {
   const [theme, setTheme] = useState<Theme>(() => {
     // Get theme from localStorage or default to system
-    const stored = localStorage.getItem('maifarm-theme');
-    return (stored as Theme) || 'system';
+    // FIX: Add try-catch for iOS Safari private browsing
+    try {
+      const stored = localStorage.getItem('maifarm-theme');
+      return (stored as Theme) || 'system';
+    } catch (e) {
+      return 'system';
+    }
   });
 
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
@@ -24,8 +29,12 @@ export const useTheme = () => {
       root.classList.toggle('dark', theme === 'dark');
     }
     
-    // Save to localStorage
-    localStorage.setItem('maifarm-theme', theme);
+    // Save to localStorage (with iOS Safari private browsing safety)
+    try {
+      localStorage.setItem('maifarm-theme', theme);
+    } catch (e) {
+      // Ignore - private browsing mode
+    }
   }, [theme]);
 
   // Listen for system theme changes

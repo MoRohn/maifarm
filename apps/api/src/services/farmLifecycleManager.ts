@@ -15,18 +15,7 @@ import { db } from '../database/connection';
 import { logger, LogCategory } from '../utils/logger';
 import { websocketManager } from '../websocket/websocketManager';
 import { redisClientManager } from './redisClientManager';
-
-export enum FarmStatus {
-  IDLE = 'idle',
-  LAUNCHING = 'launching',
-  ACTIVE = 'active',
-  RUNNING = 'running',
-  PAUSED = 'paused',
-  HARVESTING = 'harvesting',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  TERMINATED = 'terminated'
-}
+import { FarmStatus } from '../types/farm';
 
 export interface FarmLifecycleEvent {
   farmId: string;
@@ -43,6 +32,15 @@ export interface FarmRecoveryOptions {
   preserveWorkspace: boolean;
 }
 
+// FIX: Differentiated heartbeat thresholds to prevent premature orphan detection
+// AI models can have extended thinking periods (5-15+ minutes) without terminal output
+// Using a shorter threshold causes farms to be falsely marked as orphaned during thinking
+//
+// IDLE/LAUNCHING farms: 5 minutes (these should transition quickly)
+// ACTIVE/RUNNING farms: 30 minutes (allow for extended AI thinking)
+const FARM_HEARTBEAT_STALE_THRESHOLD_DEFAULT = 5 * 60 * 1000; // 5 minutes for idle/launching
+const FARM_HEARTBEAT_STALE_THRESHOLD_ACTIVE = 30 * 60 * 1000; // 30 minutes for active/running
+
 class FarmLifecycleManager extends EventEmitter {
   private static instance: FarmLifecycleManager;
   private activeMonitors: Map<string, NodeJS.Timeout> = new Map();
@@ -50,7 +48,7 @@ class FarmLifecycleManager extends EventEmitter {
   private recoveryAttempts: Map<string, number> = new Map();
 
   // Valid state transitions
-  private readonly VALID_TRANSITIONS: Record<FarmStatus, FarmStatus[]> = {
+  private readonly VALID_TRANSITIONS: Partial<Record<FarmStatus, FarmStatus[]>> = {
     [FarmStatus.IDLE]: [FarmStatus.LAUNCHING],
     [FarmStatus.LAUNCHING]: [FarmStatus.ACTIVE, FarmStatus.FAILED],
     [FarmStatus.ACTIVE]: [FarmStatus.RUNNING, FarmStatus.PAUSED, FarmStatus.HARVESTING, FarmStatus.FAILED, FarmStatus.TERMINATED],
@@ -59,7 +57,12 @@ class FarmLifecycleManager extends EventEmitter {
     [FarmStatus.HARVESTING]: [FarmStatus.COMPLETED, FarmStatus.FAILED],
     [FarmStatus.COMPLETED]: [FarmStatus.TERMINATED],
     [FarmStatus.FAILED]: [FarmStatus.TERMINATED, FarmStatus.LAUNCHING], // Allow retry
-    [FarmStatus.TERMINATED]: [] // Terminal state
+    [FarmStatus.TERMINATED]: [], // Terminal state
+    [FarmStatus.CRASHED]: [FarmStatus.TERMINATED],
+    [FarmStatus.STOPPED]: [FarmStatus.TERMINATED],
+    [FarmStatus.STALE]: [FarmStatus.RECOVERING, FarmStatus.TERMINATED],
+    [FarmStatus.RECOVERING]: [FarmStatus.RUNNING, FarmStatus.TERMINATED],
+    [FarmStatus.ORPHANED]: [FarmStatus.RECOVERING, FarmStatus.TERMINATED]
   };
 
   private constructor() {
@@ -116,21 +119,25 @@ class FarmLifecycleManager extends EventEmitter {
   }
 
   /**
-   * Transition farm to a new state
+   * Transition farm to a new state with retry logic for race conditions
    */
   async transitionState(
     farmId: string,
     fromStatus: FarmStatus,
     toStatus: FarmStatus,
-    metadata?: any
+    metadata?: any,
+    retryCount: number = 0
   ): Promise<void> {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 100;
+
     // Validate transition
     if (!this.isValidTransition(fromStatus, toStatus)) {
       throw new Error(`Invalid state transition from ${fromStatus} to ${toStatus}`);
     }
 
     try {
-      // Update database
+      // Update database with conditional check
       const result = await db.query(
         `UPDATE farms
          SET status = $1, updated_at = CURRENT_TIMESTAMP
@@ -140,7 +147,37 @@ class FarmLifecycleManager extends EventEmitter {
       );
 
       if (result.rows.length === 0) {
-        throw new Error(`Farm ${farmId} not in expected state ${fromStatus}`);
+        // RACE CONDITION HANDLING: Check current state and retry if appropriate
+        const currentState = await db.query(
+          'SELECT status FROM farms WHERE id = $1',
+          [farmId]
+        );
+
+        if (currentState.rows.length === 0) {
+          throw new Error(`Farm ${farmId} not found`);
+        }
+
+        const actualStatus = currentState.rows[0].status as FarmStatus;
+
+        // If already in target state, consider it a success (another process completed the transition)
+        if (actualStatus === toStatus) {
+          logger.info(LogCategory.FARM,
+            `Farm ${farmId} already transitioned to ${toStatus} by another process`);
+          return;
+        }
+
+        // If the transition from current state is valid, retry with current state
+        if (retryCount < MAX_RETRIES && this.isValidTransition(actualStatus, toStatus)) {
+          logger.warn(LogCategory.FARM,
+            `Farm ${farmId} state changed during transition (expected ${fromStatus}, got ${actualStatus}). Retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * (retryCount + 1)));
+          return this.transitionState(farmId, actualStatus, toStatus, metadata, retryCount + 1);
+        }
+
+        throw new Error(
+          `Farm ${farmId} state transition failed: expected ${fromStatus}, actual ${actualStatus}. ` +
+          `Transition to ${toStatus} not valid from current state.`
+        );
       }
 
       // Track state history
@@ -313,10 +350,16 @@ class FarmLifecycleManager extends EventEmitter {
     const lastHeartbeat = farm.last_heartbeat ? new Date(farm.last_heartbeat) : null;
     const now = new Date();
 
-    // Check if heartbeat is stale (> 2 minutes)
-    if (lastHeartbeat && (now.getTime() - lastHeartbeat.getTime()) > 120000) {
+    // Check if heartbeat is stale using differentiated thresholds
+    // ACTIVE/RUNNING farms get longer threshold to allow for AI thinking pauses
+    const threshold = (farm.status === FarmStatus.ACTIVE || farm.status === FarmStatus.RUNNING)
+      ? FARM_HEARTBEAT_STALE_THRESHOLD_ACTIVE  // 30 minutes for active/running
+      : FARM_HEARTBEAT_STALE_THRESHOLD_DEFAULT; // 5 minutes for other states
+
+    if (lastHeartbeat && (now.getTime() - lastHeartbeat.getTime()) > threshold) {
       if (farm.status === FarmStatus.ACTIVE || farm.status === FarmStatus.RUNNING) {
-        logger.warn(LogCategory.FARM, `Farm ${farmId} heartbeat is stale`);
+        const staleMinutes = Math.round((now.getTime() - lastHeartbeat.getTime()) / 60000);
+        logger.warn(LogCategory.FARM, `Farm ${farmId} heartbeat is stale (${staleMinutes} minutes without activity)`);
         this.emit('farmUnhealthy', farmId);
       }
     }
@@ -434,19 +477,20 @@ class FarmLifecycleManager extends EventEmitter {
    */
   async cleanupOrphanedFarms(): Promise<void> {
     try {
-      // Find farms that haven't had heartbeat in > 5 minutes
+      // FIX: Use 30-minute threshold for ACTIVE/RUNNING farms to allow for AI thinking pauses
+      // Previously 5 minutes - caused farms to be falsely marked orphaned during extended thinking
       const result = await db.query(
         `UPDATE farms
          SET orphaned_at = CURRENT_TIMESTAMP,
              status = 'failed'
          WHERE status IN ('active', 'running')
-           AND last_heartbeat < NOW() - INTERVAL '5 minutes'
+           AND last_heartbeat < NOW() - INTERVAL '30 minutes'
            AND orphaned_at IS NULL
          RETURNING id`
       );
 
       for (const row of result.rows) {
-        logger.warn(LogCategory.FARM, `Marked farm ${row.id} as orphaned`);
+        logger.warn(LogCategory.FARM, `Marked farm ${row.id} as orphaned (no heartbeat for 30+ minutes)`);
         this.emit('farmOrphaned', row.id);
       }
 

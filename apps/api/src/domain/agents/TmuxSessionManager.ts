@@ -3,6 +3,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { logger } from '../../utils/logger';
+import { pathConfig } from '../../config/paths';
 
 interface TmuxSession {
   name: string;
@@ -174,7 +175,7 @@ export class TmuxSessionManager extends EventEmitter {
    * Set up pipe-pane for all agents to capture terminal output
    */
   private async setupPipePaneForAllAgents(sessionName: string, farmId: string, agentCount: number): Promise<void> {
-    const terminalDir = `/Users/rohnspringfield/maifarm/var/maibarn/terminals/${farmId}`;
+    const terminalDir = pathConfig.getTerminalDir(farmId);
 
     // Create terminal directory
     await fs.mkdir(terminalDir, { recursive: true });

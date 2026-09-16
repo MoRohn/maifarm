@@ -26,6 +26,7 @@ export interface FarmLaunchOptions {
 
 export class FarmLaunchService {
   private static isLaunching = false;
+  private static isCreatingQuickTask = false;
 
   /**
    * Create and launch a farm with comprehensive error handling
@@ -223,6 +224,13 @@ export class FarmLaunchService {
    * Quick task creation (5-minute sprint)
    */
   static async createQuickTask(description: string, attachedFiles?: File[]): Promise<any> {
+    // Prevent duplicate submissions
+    if (this.isCreatingQuickTask) {
+      console.warn('[FarmLaunchFix] Already creating a quick task, skipping duplicate request');
+      throw new Error('Quick task creation already in progress');
+    }
+
+    this.isCreatingQuickTask = true;
     console.log('[FarmLaunchFix] Creating quick task:', description);
     console.log('[FarmLaunchFix] Attached files:', attachedFiles?.length || 0);
 
@@ -278,6 +286,8 @@ export class FarmLaunchService {
       }
 
       throw error;
+    } finally {
+      this.isCreatingQuickTask = false;
     }
   }
 }

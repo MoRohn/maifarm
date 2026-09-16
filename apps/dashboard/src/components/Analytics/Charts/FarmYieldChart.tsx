@@ -20,11 +20,9 @@ export const FarmYieldChart: React.FC<FarmYieldChartProps> = ({
   // Calculate trend
   const yieldTrend = useMemo(() => {
     if (!metrics?.yieldTrend || metrics.yieldTrend.length < 2) return 0;
-
-    const recent = metrics.yieldTrend[0]?.averageYield ?? 0;
-    const previous = metrics.yieldTrend[1]?.averageYield ?? 1; // Use 1 to avoid division by zero
-
-    if (previous === 0) return 0;
+    
+    const recent = metrics.yieldTrend[0].averageYield;
+    const previous = metrics.yieldTrend[1].averageYield;
     return ((recent - previous) / previous) * 100;
   }, [metrics]);
 
@@ -76,7 +74,7 @@ export const FarmYieldChart: React.FC<FarmYieldChartProps> = ({
         </h3>
         <div className="flex items-center gap-2 text-sm">
           <span className="text-gray-500 dark:text-gray-400">
-            {metrics.completedFarms ?? 0} farms
+            {metrics.completedFarms} farms
           </span>
         </div>
       </div>
@@ -94,13 +92,13 @@ export const FarmYieldChart: React.FC<FarmYieldChartProps> = ({
           <div>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Average Yield</p>
             <div className="flex items-baseline gap-2">
-              <span
+              <span 
                 className="text-3xl font-bold bg-clip-text text-transparent"
                 style={{
                   backgroundImage: `linear-gradient(90deg, ${primaryColor} 0%, ${accentColor} 100%)`
                 }}
               >
-                {(metrics.averageYield ?? 0).toFixed(1)}
+                {metrics.averageYield.toFixed(1)}
               </span>
               <span className="text-lg text-gray-600 dark:text-gray-400">Items</span>
             </div>
@@ -123,7 +121,7 @@ export const FarmYieldChart: React.FC<FarmYieldChartProps> = ({
       </motion.div>
 
       {/* Top Farm Highlight */}
-      {metrics.topFarm && metrics.topFarm.name && (
+      {metrics.topFarm && (
         <motion.div
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
@@ -142,7 +140,7 @@ export const FarmYieldChart: React.FC<FarmYieldChartProps> = ({
             </div>
             <div className="text-right">
               <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">
-                {metrics.topFarm.fileCount ?? 0}
+                {metrics.topFarm.fileCount}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">files</p>
             </div>
@@ -192,11 +190,11 @@ export const FarmYieldChart: React.FC<FarmYieldChartProps> = ({
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-gray-500 dark:text-gray-400">Total Files</p>
-            <p className="font-semibold">{(metrics.totalFilesGenerated ?? 0).toLocaleString()}</p>
+            <p className="font-semibold">{metrics.totalFilesGenerated.toLocaleString()}</p>
           </div>
           <div>
             <p className="text-gray-500 dark:text-gray-400">Farms Completed</p>
-            <p className="font-semibold">{metrics.completedFarms ?? 0}</p>
+            <p className="font-semibold">{metrics.completedFarms}</p>
           </div>
         </div>
       </div>

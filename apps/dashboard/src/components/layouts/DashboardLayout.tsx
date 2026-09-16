@@ -16,19 +16,20 @@ import {
   Circle,
   Trash2,
   Brain,
-  Sparkles,
   Stars,
   Rocket,
   Users,
-  Archive
+  Cpu
 } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
+import { MinimalProfileWidget } from '../common/MinimalProfileWidget'
+import { MobileBottomNav } from './MobileBottomNav'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useThemeStore } from '@/store/themeStore'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useWebSocketStore } from '@/store/websocketStore'
 import { useFarmStore } from '@/store/farmStore'
+import { useHardwareStore } from '@/store/hardwareStore'
 import { logFarmDeletion } from '@/store/activityStore'
-import { useArchiveStore } from '@/store/archiveStore'
 import { Breadcrumb } from '../common/Breadcrumb'
 import { useGlassMorphism, glassPresets } from '@/hooks/useGlassMorphism'
 import clsx from 'clsx'
@@ -48,9 +49,9 @@ export function DashboardLayout() {
   const [farmToDelete, setFarmToDelete] = useState<{ id: string; name: string } | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const { theme, colorScheme, setTheme } = useThemeStore()
-  const { connected } = useWebSocket()
+  const connected = useWebSocketStore((state) => state.connected)
   const { farms, fetchFarms, removeFarm } = useFarmStore()
-  const { archiveFarm } = useArchiveStore()
+  const { isInstalled, installedModel, checkInstallationStatus } = useHardwareStore()
   const [isDarkMode, setIsDarkMode] = useState(false)
   
   // Glass morphism hooks for different sections
@@ -100,6 +101,11 @@ export function DashboardLayout() {
     fetchFarms()
   }, [fetchFarms])
 
+  // Check GPT-OSS installation status on mount
+  useEffect(() => {
+    checkInstallationStatus()
+  }, [checkInstallationStatus])
+
   const themeIcon = {
     light: <Sun className="h-4 w-4" />,
     dark: <Moon className="h-4 w-4" />,
@@ -109,20 +115,15 @@ export function DashboardLayout() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-      case 'running':
         return 'bg-green-500'
       case 'launching':
-      case 'harvesting':
         return 'bg-yellow-500'
       case 'paused':
         return 'bg-orange-500'
       case 'completed':
         return 'bg-blue-500'
       case 'failed':
-      case 'crashed':
-      case 'stopped':
         return 'bg-red-500'
-      case 'idle':
       default:
         return 'bg-gray-400'
     }
@@ -133,27 +134,6 @@ export function DashboardLayout() {
     e.stopPropagation()
     setFarmToDelete(farm)
     setDeleteModalOpen(true)
-  }
-
-  const handleArchiveClick = async (e: React.MouseEvent, farm: { id: string; name: string }) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    try {
-      await archiveFarm({
-        farmId: farm.id,
-        reason: 'User initiated archive',
-        tags: ['manual-archive']
-      })
-
-      toast.success(`Farm "${farm.name}" archived successfully`)
-
-      // Refresh farms list to remove archived farm
-      fetchFarms()
-    } catch (error) {
-      toast.error(`Failed to archive farm "${farm.name}"`)
-      console.error('Archive error:', error)
-    }
   }
 
   const handleDeleteConfirm = async () => {
@@ -251,7 +231,7 @@ export function DashboardLayout() {
   }
 
   return (
-    <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900 safe-area-all">
       {/* Mobile sidebar backdrop */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -274,21 +254,20 @@ export function DashboardLayout() {
             exit={{ x: -280 }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             className="fixed left-0 top-0 z-50 h-full w-72 lg:hidden"
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingLeft: 'env(safe-area-inset-left, 0px)' }}
           >
             <div className="flex h-full flex-col glass-panel" style={sidebarGlass.glassStyles}>
-              <div className="flex h-32 items-center justify-between px-6">
-                <div className="flex items-center space-x-3">
-                  <img src={isDarkMode ? "/maifarm-icon-dark-bkgd.svg" : "/maifarm-icon-light-bkgd.svg"} alt="MaiFarm" className="h-16 w-16" />
-                </div>
+              {/* Mobile sidebar header - just close button, no logo banner */}
+              <div className="flex h-14 items-center justify-end px-4">
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="rounded-lg p-2 hover:bg-gray-100 active:bg-gray-200 dark:hover:bg-gray-800 dark:active:bg-gray-700 touch-manipulation active:scale-[0.95] min-h-[44px] min-w-[44px] flex items-center justify-center"
                   aria-label="Close sidebar"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+              <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
                 {navigation.map((item) => (
                   <div key={item.name}>
                     <NavLink
@@ -296,10 +275,10 @@ export function DashboardLayout() {
                       onClick={() => setSidebarOpen(false)}
                       className={({ isActive }) =>
                         clsx(
-                          'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                          'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 touch-manipulation active:scale-[0.98]',
                           isActive
                             ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-900 dark:text-primary-100 shadow-lg shadow-primary-500/10 border-l-2 border-primary-500'
-                            : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                            : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800 dark:active:bg-gray-700'
                         )
                       }
                     >
@@ -312,7 +291,7 @@ export function DashboardLayout() {
                       <div className="mt-1">
                         <button
                           onClick={() => setFarmsExpanded(!farmsExpanded)}
-                          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 rounded-lg transition-all duration-200"
+                          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800 dark:active:bg-gray-700 rounded-lg transition-all duration-200 touch-manipulation active:scale-[0.98]"
                           aria-label="Toggle farms list"
                           aria-expanded={farmsExpanded}
                         >
@@ -345,34 +324,24 @@ export function DashboardLayout() {
                                         onClick={() => setSidebarOpen(false)}
                                         className={({ isActive }) =>
                                           clsx(
-                                            'flex items-center space-x-2 rounded-lg px-3 py-2 pr-10 text-xs transition-all duration-200',
+                                            'flex items-center space-x-2 rounded-lg px-3 py-2 pr-10 text-xs transition-all duration-200 touch-manipulation active:scale-[0.98]',
                                             isActive
                                               ? 'bg-primary-100 dark:bg-primary-500/15 text-primary-700 dark:text-primary-300 border-l-2 border-primary-400'
-                                              : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                                              : 'text-gray-600 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-800 dark:active:bg-gray-700'
                                           )
                                         }
                                       >
                                         <Circle className={clsx('h-2 w-2', getStatusColor(farm.status))} />
                                         <span className="truncate">{farm.name}</span>
                                       </NavLink>
-                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                                        <button
-                                          onClick={(e) => handleArchiveClick(e, farm)}
-                                          className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/20 transition-all duration-200"
-                                          title={`Archive ${farm.name}`}
-                                          aria-label={`Archive farm ${farm.name}`}
-                                        >
-                                          <Archive className="h-3 w-3 text-blue-500 dark:text-blue-400" />
-                                        </button>
-                                        <button
-                                          onClick={(e) => handleDeleteClick(e, farm)}
-                                          className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20 transition-all duration-200"
-                                          title={`Delete ${farm.name}`}
-                                          aria-label={`Delete farm ${farm.name}`}
-                                        >
-                                          <Trash2 className="h-3 w-3 text-red-500 dark:text-red-400" />
-                                        </button>
-                                      </div>
+                                      <button
+                                        onClick={(e) => handleDeleteClick(e, farm)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20 transition-all duration-200 touch-manipulation opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        title={`Delete ${farm.name}`}
+                                        aria-label={`Delete farm ${farm.name}`}
+                                      >
+                                        <Trash2 className="h-3 w-3 text-red-500 dark:text-red-400" />
+                                      </button>
                                     </div>
                                   ))
                                 ) : (
@@ -389,16 +358,22 @@ export function DashboardLayout() {
                   </div>
                 ))}
               </nav>
-              <div className="border-t border-gray-200 dark:border-gray-700 p-3">
+              <div className="border-t border-gray-200 dark:border-gray-700 p-3 space-y-3">
+                {/* Profile Widget */}
+                <div className="group">
+                  <MinimalProfileWidget expanded={true} className="w-full" />
+                </div>
+
+                {/* Settings Link */}
                 <NavLink
                   to="/settings"
                   onClick={() => setSidebarOpen(false)}
                   className={({ isActive }) =>
                     clsx(
-                      'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                      'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 touch-manipulation active:scale-[0.98]',
                       isActive
                         ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-900 dark:text-primary-100 shadow-lg shadow-primary-500/10 border-l-2 border-primary-500'
-                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                        : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800 dark:active:bg-gray-700'
                     )
                   }
                 >
@@ -425,30 +400,30 @@ export function DashboardLayout() {
               className="h-38 w-38" 
             />
           </div>
-          <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+          <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
             {navigation.map((item) => (
               <div key={item.name}>
                 <NavLink
                   to={item.href}
                   className={({ isActive }) =>
                     clsx(
-                      'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                      'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 touch-manipulation active:scale-[0.98]',
                       isActive
                         ? 'bg-primary-100 dark:bg-primary-500/20 text-primary-900 dark:text-primary-100 shadow-lg shadow-primary-500/10 border-l-2 border-primary-500'
-                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/50'
+                        : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800/50 dark:active:bg-gray-700'
                     )
                   }
                 >
                   <item.icon className="h-5 w-5" />
                   <span>{item.name}</span>
                 </NavLink>
-                
+
                 {/* Show Farms section after Analytics */}
                 {item.name === 'Analytics' && (
                   <div className="mt-1">
                     <button
                       onClick={() => setFarmsExpanded(!farmsExpanded)}
-                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/50 rounded-lg transition-all duration-200"
+                      className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800/50 dark:active:bg-gray-700 rounded-lg transition-all duration-200 touch-manipulation active:scale-[0.98]"
                     >
                       <div className="flex items-center space-x-3">
                         <Wheat className="h-5 w-5" />
@@ -478,33 +453,23 @@ export function DashboardLayout() {
                                     to={`/harvest/${farm.id}`}
                                     className={({ isActive }) =>
                                       clsx(
-                                        'flex items-center space-x-2 rounded-lg px-3 py-2 pr-10 text-xs transition-all duration-200',
+                                        'flex items-center space-x-2 rounded-lg px-3 py-2 pr-10 text-xs transition-all duration-200 touch-manipulation active:scale-[0.98]',
                                         isActive
                                           ? 'bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                                          : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800/50'
+                                          : 'text-gray-600 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-800/50 dark:active:bg-gray-700'
                                       )
                                     }
                                   >
                                     <Circle className={clsx('h-2 w-2', getStatusColor(farm.status))} />
                                     <span className="truncate">{farm.name}</span>
                                   </NavLink>
-                                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                                    <button
-                                      onClick={(e) => handleArchiveClick(e, farm)}
-                                      className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/20 transition-all duration-200"
-                                      title={`Archive ${farm.name}`}
-                                      aria-label={`Archive farm ${farm.name}`}
-                                    >
-                                      <Archive className="h-3 w-3 text-blue-500 dark:text-blue-400" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => handleDeleteClick(e, farm)}
-                                      className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20 transition-all duration-200"
-                                      title={`Delete ${farm.name}`}
-                                    >
-                                      <Trash2 className="h-3 w-3 text-red-500 dark:text-red-400" />
-                                    </button>
-                                  </div>
+                                  <button
+                                    onClick={(e) => handleDeleteClick(e, farm)}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/20 transition-all duration-200"
+                                    title={`Delete ${farm.name}`}
+                                  >
+                                    <Trash2 className="h-3 w-3 text-red-500 dark:text-red-400" />
+                                  </button>
                                 </div>
                               ))
                             ) : (
@@ -521,15 +486,21 @@ export function DashboardLayout() {
               </div>
             ))}
           </nav>
-          <div className="border-t border-gray-200 dark:border-gray-700 p-3">
+          <div className="border-t border-gray-200 dark:border-gray-700 p-3 space-y-3">
+            {/* Profile Widget */}
+            <div className="group">
+              <MinimalProfileWidget expanded={true} className="w-full" />
+            </div>
+
+            {/* Settings Link */}
             <NavLink
               to="/settings"
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+                  'flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 touch-manipulation active:scale-[0.98]',
                   isActive
                     ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-900 dark:text-primary-100 shadow-lg shadow-primary-500/10'
-                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/50'
+                    : 'text-gray-700 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800/50 dark:active:bg-gray-700'
                 )
               }
             >
@@ -543,11 +514,11 @@ export function DashboardLayout() {
       {/* Main content */}
       <div className="lg:pl-64">
         {/* Top bar */}
-        <header className="sticky top-0 z-10 flex h-16 items-center glass-heavy border-b border-gray-200 dark:border-gray-700" style={headerGlass.glassStyles}>
+        <header className="sticky z-10 flex items-center glass-heavy border-b border-gray-200 dark:border-gray-700" style={{ ...headerGlass.glassStyles, top: 'env(safe-area-inset-top, 0px)', minHeight: 'calc(4rem + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div className="flex flex-1 items-center justify-between px-4 sm:px-6">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
+              className="rounded-lg p-2 hover:bg-gray-100 active:bg-gray-200 dark:hover:bg-gray-800 dark:active:bg-gray-700 lg:hidden touch-manipulation active:scale-[0.95] min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label="Open navigation menu"
             >
               <Menu className="h-5 w-5" />
@@ -573,6 +544,20 @@ export function DashboardLayout() {
                 </span>
               </div>
 
+              {/* GPT-OSS Model Badge */}
+              {isInstalled && installedModel && (
+                <NavLink
+                  to="/settings"
+                  className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500/10 to-green-500/10 border border-emerald-500/20 hover:border-emerald-500/40 active:border-emerald-500/60 active:scale-[0.98] transition-all duration-200 group touch-manipulation"
+                  title={`GPT-OSS: ${installedModel.recommendation.modelSize} model installed`}
+                >
+                  <Cpu className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                    GPT-OSS: {installedModel.recommendation.modelSize}
+                  </span>
+                </NavLink>
+              )}
+
               {/* Theme switcher */}
               <div className="flex items-center rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
                 {(['light', 'dark', 'system'] as const).map((t) => (
@@ -580,10 +565,10 @@ export function DashboardLayout() {
                     key={t}
                     onClick={() => setTheme(t)}
                     className={clsx(
-                      'rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
+                      'rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200 touch-manipulation active:scale-[0.95]',
                       theme === t
                         ? 'bg-gray-50 dark:bg-gray-700 shadow-sm'
-                        : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                        : 'hover:bg-gray-200 active:bg-gray-300 dark:hover:bg-gray-700 dark:active:bg-gray-600'
                     )}
                     aria-label={`Switch to ${t} theme`}
                     aria-pressed={theme === t}
@@ -600,31 +585,37 @@ export function DashboardLayout() {
         {/* Breadcrumb Navigation */}
         <Breadcrumb />
 
-        {/* Page content */}
-        <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8">
+        {/* Page content - FIX: Use dynamic viewport height for mobile */}
+        <main className="min-h-[calc(100vh-4rem)] min-h-screen-dynamic p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8">
           <Outlet />
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav />
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteModalOpen && farmToDelete && (
           <>
-            {/* Backdrop */}
+            {/* Backdrop - FIX: Account for safe areas on notched devices */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[200] bg-gray-900/80 backdrop-blur-sm"
+              className="fixed inset-0 z-[200] bg-gray-900/80 backdrop-blur-sm modal-safe-area"
               onClick={() => !isDeleting && setDeleteModalOpen(false)}
             />
-            
-            {/* Modal */}
+
+            {/* Modal - FIX: Account for safe area top inset on notched devices */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               className="fixed left-1/2 top-1/2 z-[210] w-full max-w-md -translate-x-1/2 -translate-y-1/2 p-4"
+              style={{
+                marginTop: 'env(safe-area-inset-top, 0px)'
+              }}
             >
               <div className="rounded-2xl glass-modal" style={modalGlass.glassStyles}>
                 <div className="p-6">

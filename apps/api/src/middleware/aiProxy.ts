@@ -1,11 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
-import { proxyConfig, transformClaudeToQwenRequest, transformQwenToClaudeResponse, isProxyEnabled } from '../config/proxyConfig';
+import { proxyConfig, transformClaudeToLlamaRequest, transformLlamaToClaudeResponse, isProxyEnabled } from '../config/proxyConfig';
 import { aiProxy } from '../services/aiProxy';
 import axios from 'axios';
 
 /**
  * AI Proxy Middleware
- * Intercepts Claude API calls and routes them to Qwen when configured
+ * Intercepts Claude API calls and routes them to Llama when configured
  */
 
 export interface ProxyRequest extends Request {
@@ -33,7 +33,7 @@ export function aiProxyMiddleware(req: ProxyRequest, res: Response, next: NextFu
   // Mark request as proxied
   req.isProxied = true;
   req.originalProvider = 'claude';
-  req.targetProvider = 'qwen';
+  req.targetProvider = 'llama';
 
   console.log(`[AI Proxy] Intercepting Claude request to ${req.path}`);
 
@@ -45,29 +45,29 @@ export function aiProxyMiddleware(req: ProxyRequest, res: Response, next: NextFu
  * Handle proxied requests in route handlers
  */
 export async function handleProxiedRequest(req: ProxyRequest, res: Response) {
-  if (!req.isProxied || req.targetProvider !== 'qwen') {
+  if (!req.isProxied || req.targetProvider !== 'llama') {
     throw new Error('Invalid proxy request');
   }
 
   try {
     // Transform request body
-    const transformedRequest = transformClaudeToQwenRequest(req.body);
+    const transformedRequest = transformClaudeToLlamaRequest(req.body);
     
-    // Get Qwen configuration
-    const qwenConfig = proxyConfig.providers.qwen;
+    // Get Llama configuration
+    const llamaConfig = proxyConfig.providers.llama;
     
-    // Make request to Qwen
+    // Make request to Llama
     const response = await axios.post(
-      `${qwenConfig.baseUrl}/services/aigc/text-generation/generation`,
+      `${llamaConfig.baseUrl}/services/aigc/text-generation/generation`,
       transformedRequest,
       {
-        headers: qwenConfig.headers,
+        headers: llamaConfig.headers,
         timeout: 300000 // 5 minutes
       }
     );
 
     // Transform response back to Claude format
-    const transformedResponse = transformQwenToClaudeResponse(response.data);
+    const transformedResponse = transformLlamaToClaudeResponse(response.data);
     
     // Send response
     res.json(transformedResponse);
@@ -85,7 +85,7 @@ export async function handleProxiedRequest(req: ProxyRequest, res: Response) {
       res.status(500).json({
         error: {
           type: 'proxy_error',
-          message: 'Failed to proxy request to Qwen'
+          message: 'Failed to proxy request to Llama'
         }
       });
     }
@@ -96,7 +96,7 @@ export async function handleProxiedRequest(req: ProxyRequest, res: Response) {
  * Streaming proxy handler
  */
 export async function handleStreamingProxiedRequest(req: ProxyRequest, res: Response) {
-  if (!req.isProxied || req.targetProvider !== 'qwen') {
+  if (!req.isProxied || req.targetProvider !== 'llama') {
     throw new Error('Invalid proxy request');
   }
 
@@ -107,50 +107,64 @@ export async function handleStreamingProxiedRequest(req: ProxyRequest, res: Resp
     res.setHeader('Connection', 'keep-alive');
 
     // Transform request
-    const transformedRequest = transformClaudeToQwenRequest(req.body);
+    const transformedRequest = transformClaudeToLlamaRequest(req.body);
     transformedRequest.parameters = {
       ...transformedRequest.parameters,
       incremental_output: true
     };
 
-    // Get Qwen configuration
-    const qwenConfig = proxyConfig.providers.qwen;
+    // Get Llama configuration
+    const llamaConfig = proxyConfig.providers.llama;
 
     // Make streaming request
     const response = await axios.post(
-      `${qwenConfig.baseUrl}/services/aigc/text-generation/generation`,
+      `${llamaConfig.baseUrl}/services/aigc/text-generation/generation`,
       transformedRequest,
       {
-        headers: qwenConfig.headers,
+        headers: llamaConfig.headers,
         responseType: 'stream',
         timeout: 300000
       }
     );
 
     // Process streaming response
+    // FIX: Track if response has ended to prevent writing to closed response
+    let responseEnded = false;
+
     response.data.on('data', (chunk: Buffer) => {
+      // FIX: Early return if response already ended to prevent write errors
+      if (responseEnded || res.writableEnded) {
+        return;
+      }
+
       const lines = chunk.toString().split('\n').filter(line => line.trim());
-      
+
       for (const line of lines) {
+        // FIX: Check again in loop since we might have ended during iteration
+        if (responseEnded || res.writableEnded) {
+          return;
+        }
+
         if (line.startsWith('data:')) {
           const data = line.slice(5).trim();
-          
+
           if (data === '[DONE]') {
+            responseEnded = true;
             res.write('data: [DONE]\n\n');
             res.end();
             return;
           }
-          
+
           try {
             const parsed = JSON.parse(data);
-            
+
             // Transform to Claude streaming format
             const claudeFormat = {
               completion: parsed.output?.text || '',
               stop_reason: null,
               model: 'claude-3-sonnet-20240229'
             };
-            
+
             res.write(`data: ${JSON.stringify(claudeFormat)}\n\n`);
           } catch (e) {
             console.error('[AI Proxy] Error parsing streaming chunk:', e);

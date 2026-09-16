@@ -19,6 +19,10 @@ export class ThemeService {
     this.applyColorsToDOM(colors, scheme);
     this.updateTailwindConfig(scheme);
     this.saveToLocalStorage(scheme);
+
+    // Force a synchronous style recalculation to prevent flash
+    // This ensures CSS variables are applied immediately
+    void document.documentElement.offsetHeight;
   }
 
   private generateThemeColors(scheme: ColorScheme, mode: 'light' | 'dark'): ThemeColors {
@@ -66,24 +70,24 @@ export class ThemeService {
 
   private applyColorsToDOM(colors: ThemeColors, scheme: ColorScheme): void {
     const root = document.documentElement;
-    
+
     // Apply CSS variables
     root.style.setProperty('--color-primary', colors.primary);
     root.style.setProperty('--color-primary-dark', colors.primaryDark);
     root.style.setProperty('--color-primary-light', colors.primaryLight);
     root.style.setProperty('--color-primary-rgb', scheme.primaryRGB || hexToRGB(scheme.primary));
-    
+
     root.style.setProperty('--color-accent', colors.accent);
     root.style.setProperty('--color-accent-dark', colors.accentDark);
     root.style.setProperty('--color-accent-light', colors.accentLight);
     root.style.setProperty('--color-accent-rgb', scheme.accentRGB || hexToRGB(scheme.accent));
-    
+
     root.style.setProperty('--color-background', colors.background);
     root.style.setProperty('--color-surface', colors.surface);
     root.style.setProperty('--color-text', colors.text);
     root.style.setProperty('--color-text-secondary', colors.textSecondary);
     root.style.setProperty('--color-border', colors.border);
-    
+
     root.style.setProperty('--color-error', colors.error);
     root.style.setProperty('--color-warning', colors.warning);
     root.style.setProperty('--color-success', colors.success);
@@ -94,6 +98,10 @@ export class ThemeService {
     if (metaThemeColor) {
       metaThemeColor.setAttribute('content', colors.primary);
     }
+
+    // Force style recalculation to ensure colors are applied immediately
+    // This prevents color flash by ensuring all CSS variables are set before any paint
+    void root.offsetHeight;
   }
 
   private updateTailwindConfig(scheme: ColorScheme): void {

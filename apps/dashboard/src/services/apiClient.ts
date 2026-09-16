@@ -1,4 +1,11 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
+import {
+  attachCorrelationHeaders,
+  endRequestTrace,
+  ensureCorrelationId,
+  getCorrelationHeaderName,
+  startRequestTrace,
+} from './requestTracer';
 
 // Simple error logging function to replace the missing import
 const logAPIError = (error: any, context?: any) => {
@@ -75,18 +82,50 @@ const retryRequest = async (error: AxiosError, retryConfig: RetryConfig): Promis
 // Track request timing for performance monitoring
 const requestTimings = new Map<string, number>();
 
+const getHeaderValue = (headers: any, key: string): string | undefined => {
+  if (!headers) return undefined;
+  if (typeof headers.get === 'function') {
+    return headers.get(key) || headers.get(key.toLowerCase());
+  }
+  return headers[key] || headers[key.toLowerCase()];
+};
+
+const setHeaderValue = (headers: any, key: string, value: string) => {
+  if (!headers) return;
+  if (typeof headers.set === 'function') {
+    headers.set(key, value);
+    return;
+  }
+  headers[key] = value;
+};
+
 // Request interceptor
 apiClient.interceptors.request.use(
   (config) => {
-    // Track request start time
-    const requestId = `${config.method}-${config.url}-${Date.now()}`;
-    config.headers['X-Request-ID'] = requestId;
-    requestTimings.set(requestId, Date.now());
-    
-    // Add auth token if available
-    const token = localStorage.getItem('authToken');
+    if (!config.headers) {
+      config.headers = {}
+    }
+
+    const correlationHeader = getCorrelationHeaderName()
+    const incomingCorrelation = getHeaderValue(config.headers, correlationHeader)
+    const correlationId = ensureCorrelationId(incomingCorrelation as string | undefined)
+
+    attachCorrelationHeaders(config.headers as any, correlationId)
+    requestTimings.set(correlationId, Date.now())
+    startRequestTrace(config.method, config.url, correlationId)
+
+    setHeaderValue(config.headers, 'X-Client-Timestamp', new Date().toISOString())
+    setHeaderValue(config.headers, 'X-Client-Source', 'maifarm-dashboard')
+
+    // Add auth token if available (with iOS Safari private browsing safety)
+    let token: string | null = null;
+    try {
+      token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
+    } catch (e) {
+      // localStorage not available in private browsing mode
+    }
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      setHeaderValue(config.headers, 'Authorization', `Bearer ${token}`)
     }
     
     // Debug: Catch the problematic handshake request
@@ -179,30 +218,43 @@ const circuitBreaker = new CircuitBreaker();
 apiClient.interceptors.response.use(
   (response) => {
     // Track response time
-    const requestId = response.config.headers?.['X-Request-ID'];
+    const requestId = getHeaderValue(response.config.headers, 'X-Request-ID');
     if (requestId && requestTimings.has(requestId)) {
       const duration = Date.now() - requestTimings.get(requestId)!;
       requestTimings.delete(requestId);
-      
+
+      const serverCorrelation = getHeaderValue(response.headers, 'x-correlation-id') || null;
+      endRequestTrace(requestId, response.status, undefined, serverCorrelation);
+
       // Log slow requests
       if (duration > 5000) {
         console.warn(`[API Slow] ${response.config.method?.toUpperCase()} ${response.config.url} took ${duration}ms`);
       }
+    } else if (requestId) {
+      // Ensure trace closes even if timing map missed it (e.g. hot cache)
+      const serverCorrelation = getHeaderValue(response.headers, 'x-correlation-id') || null;
+      endRequestTrace(requestId, response.status, undefined, serverCorrelation);
     }
-    
+
     // Record success for circuit breaker
     circuitBreaker.recordSuccess();
-    
+
     return response;
   },
   async (error: AxiosError) => {
     // Track response time for failed requests
-    const requestId = error.config?.headers?.['X-Request-ID'];
+    const requestId = getHeaderValue(error.config?.headers, 'X-Request-ID');
     if (requestId && requestTimings.has(requestId)) {
       const duration = Date.now() - requestTimings.get(requestId)!;
       requestTimings.delete(requestId);
+      console.error(`[API Error] ${error.config?.method?.toUpperCase()} ${error.config?.url} failed after ${duration}ms`, error);
+      const serverCorrelation = getHeaderValue(error.response?.headers, 'x-correlation-id') || null;
+      endRequestTrace(requestId, error.response?.status || 0, error, serverCorrelation);
+    } else if (requestId) {
+      const serverCorrelation = getHeaderValue(error.response?.headers, 'x-correlation-id') || null;
+      endRequestTrace(requestId, error.response?.status || 0, error, serverCorrelation);
     }
-    
+
     // Check circuit breaker
     if (circuitBreaker.isOpen()) {
       console.error('[Circuit Breaker] Request blocked - circuit is OPEN');
@@ -401,7 +453,9 @@ apiClient.interceptors.response.use(
 
       // Handle 401 Unauthorized
       if ((retryError as AxiosError).response?.status === 401) {
-        // Clear auth token and redirect to login
+        // Clear auth tokens and redirect to login
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
         localStorage.removeItem('authToken');
         window.location.href = '/login';
       }
@@ -539,7 +593,14 @@ export const api = {
   
   // Farmers
   farmers: {
-    list: () => apiClient.get('/api/farmers'),
+    list: () => apiClient.get('/api/farmers', {
+      params: { _t: Date.now() }, // Cache busting
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    }),
     getById: (id: string) => apiClient.get(`/api/farmers/${id}`),
     getProfile: (id: string) => apiClient.get(`/api/farmers/${id}/profile`),
     getStats: (id: string) => apiClient.get(`/api/farmers/${id}/stats`),
@@ -547,6 +608,38 @@ export const api = {
     generateYaml: (id: string, data: any) => apiClient.post(`/api/farmers/${id}/generate-yaml`, data),
     launch: (id: string, data?: any) => apiClient.post(`/api/farmers/${id}/launch`, data),
     categories: () => apiClient.get('/api/farmers/meta/categories'),
+  },
+
+  // Farmer Groups
+  farmerGroups: {
+    list: () => apiClient.get('/api/farmer-groups'),
+    getById: (id: string) => apiClient.get(`/api/farmer-groups/${id}`),
+    getBySlug: (slug: string) => apiClient.get(`/api/farmer-groups/${slug}`),
+    getFarmers: (groupId: string) => apiClient.get(`/api/farmer-groups/${groupId}/farmers`),
+    create: (data: { name: string; description?: string; icon?: string; color?: string }) =>
+      apiClient.post('/api/farmer-groups', data),
+    update: (id: string, data: { name?: string; description?: string; icon?: string; color?: string }) =>
+      apiClient.put(`/api/farmer-groups/${id}`, data),
+    delete: (id: string) => apiClient.delete(`/api/farmer-groups/${id}`),
+    addFarmer: (groupId: string, farmerId: string) =>
+      apiClient.post(`/api/farmer-groups/${groupId}/farmers`, { farmerId }),
+    removeFarmer: (groupId: string, farmerId: string) =>
+      apiClient.delete(`/api/farmer-groups/${groupId}/farmers/${farmerId}`),
+    // Stats
+    getAllStats: () => apiClient.get('/api/farmer-groups/stats/all'),
+    getStats: (farmerId: string) => apiClient.get(`/api/farmer-groups/stats/${farmerId}`),
+    // Ratings
+    getRatings: (farmerId: string, limit?: number) =>
+      apiClient.get(`/api/farmer-groups/ratings/${farmerId}`, { params: { limit } }),
+    addRating: (data: { farmerId: string; rating: number; farmId?: string; review?: string }) =>
+      apiClient.post('/api/farmer-groups/ratings', data),
+    getUserRating: (farmerId: string) => apiClient.get(`/api/farmer-groups/ratings/user/${farmerId}`),
+    // Favorites & Recent
+    toggleFavorite: (farmerId: string) => apiClient.post(`/api/farmer-groups/favorites/${farmerId}`),
+    getFavorites: () => apiClient.get('/api/farmer-groups/favorites'),
+    getRecent: (limit?: number) => apiClient.get('/api/farmer-groups/recent', { params: { limit } }),
+    // Health
+    health: () => apiClient.get('/api/farmer-groups/health'),
   },
 
   // Barn

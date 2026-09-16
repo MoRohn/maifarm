@@ -272,13 +272,28 @@ export class OAuthService {
     return Array.from(array, byte => chars[byte % chars.length]).join('');
   }
 
+  // In-memory fallback for iOS Safari private browsing mode
+  private inMemoryState: string | null = null;
+  private inMemorySession: string | null = null;
+
   private storeState(state: OAuthState): void {
     const encrypted = encryptionService.encryptSync(JSON.stringify(state));
-    sessionStorage.setItem(OAUTH_STATE_KEY, encrypted);
+    try {
+      sessionStorage.setItem(OAUTH_STATE_KEY, encrypted);
+    } catch {
+      // iOS Safari private browsing - fall back to in-memory
+      this.inMemoryState = encrypted;
+    }
   }
 
   private getStoredState(): OAuthState | null {
-    const encrypted = sessionStorage.getItem(OAUTH_STATE_KEY);
+    let encrypted: string | null = null;
+    try {
+      encrypted = sessionStorage.getItem(OAUTH_STATE_KEY);
+    } catch {
+      // iOS Safari private browsing - use in-memory fallback
+      encrypted = this.inMemoryState;
+    }
     if (!encrypted) return null;
 
     try {
@@ -290,16 +305,32 @@ export class OAuthService {
   }
 
   private clearState(): void {
-    sessionStorage.removeItem(OAUTH_STATE_KEY);
+    try {
+      sessionStorage.removeItem(OAUTH_STATE_KEY);
+    } catch {
+      // iOS Safari private browsing - clear in-memory
+    }
+    this.inMemoryState = null;
   }
 
   private storeSession(session: OAuthSession): void {
     const encrypted = encryptionService.encryptSync(JSON.stringify(session));
-    localStorage.setItem(OAUTH_SESSION_KEY, encrypted);
+    try {
+      localStorage.setItem(OAUTH_SESSION_KEY, encrypted);
+    } catch {
+      // iOS Safari private browsing - fall back to in-memory
+      this.inMemorySession = encrypted;
+    }
   }
 
   private getStoredSession(): OAuthSession | null {
-    const encrypted = localStorage.getItem(OAUTH_SESSION_KEY);
+    let encrypted: string | null = null;
+    try {
+      encrypted = localStorage.getItem(OAUTH_SESSION_KEY);
+    } catch {
+      // iOS Safari private browsing - use in-memory fallback
+      encrypted = this.inMemorySession;
+    }
     if (!encrypted) return null;
 
     try {
@@ -311,7 +342,12 @@ export class OAuthService {
   }
 
   private clearSession(): void {
-    localStorage.removeItem(OAUTH_SESSION_KEY);
+    try {
+      localStorage.removeItem(OAUTH_SESSION_KEY);
+    } catch {
+      // iOS Safari private browsing - clear in-memory
+    }
+    this.inMemorySession = null;
   }
 
   getActiveSession(): OAuthSession | null {

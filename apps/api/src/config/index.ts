@@ -116,13 +116,13 @@ export const config = {
       temperature: parseFloat(process.env.CLAUDE_TEMPERATURE || '0.7'),
     },
     
-    // Qwen configuration
-    qwen: {
-      enabled: getBoolEnv('QWEN_ENABLED', false),
-      apiEndpoint: getEnvVar('QWEN_API_ENDPOINT', 'https://dashscope.aliyuncs.com/api/v1'),
-      model: getEnvVar('QWEN_MODEL', 'qwen-coder-480b'),
-      maxTokens: getNumberEnv('QWEN_MAX_TOKENS', 4096),
-      temperature: parseFloat(process.env.QWEN_TEMPERATURE || '0.7'),
+    // Llama configuration
+    llama: {
+      enabled: getBoolEnv('LLAMA_ENABLED', false),
+      apiEndpoint: getEnvVar('LLAMA_API_ENDPOINT', 'https://dashscope.aliyuncs.com/api/v1'),
+      model: getEnvVar('LLAMA_MODEL', 'llama-coder-480b'),
+      maxTokens: getNumberEnv('LLAMA_MAX_TOKENS', 4096),
+      temperature: parseFloat(process.env.LLAMA_TEMPERATURE || '0.7'),
       useLLMProxy: getBoolEnv('USE_LLM_PROXY', false),
       llmProxyUrl: getEnvVar('LLM_PROXY_URL', 'http://localhost:8001'),
     },
@@ -214,7 +214,9 @@ export function validateConfig(): void {
   const errors: string[] = [];
 
   // Check database configuration
-  if (config.isProduction && config.database.password === 'maifarm123') {
+  // Only enforce this for non-localhost deployments (allow local testing with dev password)
+  const isLocalhost = config.database.host === 'localhost' || config.database.host === '127.0.0.1';
+  if (config.isProduction && !isLocalhost && config.database.password === 'maifarm123') {
     errors.push('Using default database password in production');
   }
 
@@ -261,7 +263,7 @@ export function logConfiguration(): void {
     },
     providers: {
       claude: config.providers.claude.enabled,
-      qwen: config.providers.qwen.enabled,
+      llama: config.providers.llama.enabled,
       ollama: config.providers.ollama.enabled,
     },
   });

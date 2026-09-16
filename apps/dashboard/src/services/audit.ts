@@ -236,28 +236,58 @@ class AuditService {
   private async sendAuditLog(log: AuditLog): Promise<void> {
     const { authService } = await import('./auth');
     const token = authService.getAccessToken();
-    
+
+    // Map our AuditLog format to the backend's expected format
+    const backendLog = {
+      type: log.action,
+      userId: log.userId,
+      details: log.metadata || {},
+      severity: log.severity,
+      timestamp: log.timestamp,
+      action: log.action,
+      resource: log.resource,
+      resourceId: log.resourceId,
+      success: log.success,
+      ipAddress: log.ipAddress,
+      userAgent: log.userAgent
+    };
+
     await fetch('/api/audit', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        ...(token && { 'Authorization': `Bearer ${token}` }),
       },
-      body: JSON.stringify(log),
+      body: JSON.stringify(backendLog),
     });
   }
 
   private async sendAuditLogs(logs: AuditLog[]): Promise<void> {
     const { authService } = await import('./auth');
     const token = authService.getAccessToken();
-    
+
+    // Map our AuditLog format to the backend's expected format
+    const backendLogs = logs.map(log => ({
+      type: log.action,
+      userId: log.userId,
+      details: log.metadata || {},
+      severity: log.severity,
+      timestamp: log.timestamp,
+      action: log.action,
+      resource: log.resource,
+      resourceId: log.resourceId,
+      success: log.success,
+      ipAddress: log.ipAddress,
+      userAgent: log.userAgent
+    }));
+
     await fetch('/api/audit/batch', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        ...(token && { 'Authorization': `Bearer ${token}` }),
       },
-      body: JSON.stringify(logs),
+      body: JSON.stringify(backendLogs),
     });
   }
 

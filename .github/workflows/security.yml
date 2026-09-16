@@ -151,7 +151,7 @@ jobs:
           npx license-checker --production --json > licenses.json
           
       - name: Upload license report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: license-report
           path: licenses.json
@@ -203,7 +203,7 @@ jobs:
           allow_issue_writing: true
 
       - name: Upload ZAP results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap-report
@@ -230,7 +230,7 @@ jobs:
           echo "- OWASP Scan: ${{ needs.owasp-scan.result }}" >> security-report.md
 
       - name: Upload security report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: security-summary
           path: security-report.md

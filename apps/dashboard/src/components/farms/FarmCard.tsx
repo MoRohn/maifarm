@@ -70,8 +70,6 @@ export function FarmCard({ farm, onClick, onPause, onResume, onDelete }: FarmCar
           pulse: false
         };
       case 'failed':
-      case 'crashed':
-      case 'stopped':
         return {
           badge: 'bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 dark:from-red-500/30 dark:to-rose-500/30 border border-red-500/30',
           glow: 'shadow-red-500/20',

@@ -4,8 +4,9 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
-import request from 'supertest';
 import { io as ioClient, Socket } from 'socket.io-client';
+
+const request = require('supertest');
 import { spawn } from 'child_process';
 import { 
   createTestFarm, 

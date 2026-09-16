@@ -2,50 +2,42 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { ApiResponse, AuthToken } from '../types/api';
 import { logger } from '../config/logging';
-import { GUEST_UUID } from '../utils/systemUuids';
+import { SYSTEM_UUIDS } from '../utils/systemUuids';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'maifarm-secret-key-change-in-production';
-let authBypassLogged = false; // Log bypass message only once per session
+// CRITICAL SECURITY: Require JWT_SECRET in production, fail startup if not set
+const JWT_SECRET = process.env.JWT_SECRET;
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (!JWT_SECRET && isProduction) {
+  console.error('🚨 CRITICAL SECURITY ERROR: JWT_SECRET must be set in production!');
+  console.error('Set JWT_SECRET environment variable before starting the server.');
+  process.exit(1);
+}
+
+// Use a development-only fallback for convenience in dev/test environments
+const SECRET = JWT_SECRET || 'dev-only-secret-DO-NOT-USE-IN-PRODUCTION';
 
 export interface AuthRequest extends Request {
   user?: AuthToken;
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
-  // SECURITY: Only allow auth bypass in development environment
-  // Never allow in production or staging
-  const isDevelopment = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-  const bypassEnabled = process.env.BYPASS_AUTH === 'true';
-
-  if (isDevelopment && bypassEnabled) {
-    // Only log once per session to reduce noise
-    if (!authBypassLogged) {
-      logger.warn('AUTH', '⚠️ Authentication bypass enabled - DEVELOPMENT ONLY');
-      authBypassLogged = true;
-    }
-    req.user = {
-      id: GUEST_UUID,
-      email: 'dev@maifarm.local',
-      role: 'developer', // Changed from 'admin' to 'developer' for safety
-      userId: GUEST_UUID,
-      roles: ['developer'],
-      permissions: ['read', 'write'] // Limited permissions, not wildcard
-    } as AuthToken;
-    return next();
-  } else if (!isDevelopment && bypassEnabled) {
-    logger.error('AUTH', '🚨 SECURITY: Attempted to bypass auth in production!');
-    const response: ApiResponse = {
-      success: false,
-      error: {
-        code: 'SECURITY_VIOLATION',
-        message: 'Authentication bypass not allowed in production'
-      }
-    };
-    return res.status(403).json(response);
-  }
-
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
+
+  // Development mode: allow guest access with full permissions
+  // This enables iOS "Continue as Guest" to work during development
+  if (!token && !isProduction) {
+    req.user = {
+      userId: SYSTEM_UUIDS.DEV_USER,
+      email: 'dev@maifarm.local',
+      roles: ['user', 'admin'],
+      permissions: ['*'], // Full permissions in dev mode
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 86400 * 365 // 1 year
+    };
+    return next();
+  }
 
   if (!token) {
     const response: ApiResponse = {
@@ -59,7 +51,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AuthToken;
+    const decoded = jwt.verify(token, SECRET) as AuthToken;
     req.user = decoded;
     next();
   } catch (err) {
@@ -76,35 +68,6 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
 export const requireRole = (role: string) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    // SECURITY: Only allow bypass in development
-    const isDevelopment = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-    const bypassEnabled = process.env.BYPASS_AUTH === 'true';
-
-    if (isDevelopment && bypassEnabled) {
-      req.user = {
-        id: GUEST_UUID,
-        email: 'dev@maifarm.local',
-        role: 'developer',
-        userId: GUEST_UUID,
-        roles: ['developer'],
-        permissions: ['read', 'write']
-      } as AuthToken;
-
-      // In dev mode, only bypass for developer role checks
-      if (role === 'admin') {
-        logger.warn('AUTH', 'Admin role required - cannot bypass in development');
-        const response: ApiResponse = {
-          success: false,
-          error: {
-            code: 'FORBIDDEN',
-            message: 'Admin access requires proper authentication'
-          }
-        };
-        return res.status(403).json(response);
-      }
-      return next();
-    }
-
     if (!req.user) {
       const response: ApiResponse = {
         success: false,
@@ -134,19 +97,6 @@ export const requireRole = (role: string) => {
 
 export const requirePermission = (permissions: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    // In development mode, allow bypassing authentication
-    if (process.env.BYPASS_AUTH === 'true') {
-      req.user = {
-        id: '00000000-0000-0000-0000-000000000000',
-        email: 'dev@maifarm.local',
-        role: 'admin',
-        userId: '00000000-0000-0000-0000-000000000000',
-        roles: ['admin'],
-        permissions: ['*'] // Grant all permissions in dev mode
-      } as AuthToken;
-      return next();
-    }
-
     if (!req.user) {
       const response: ApiResponse = {
         success: false,
@@ -158,8 +108,9 @@ export const requirePermission = (permissions: string[]) => {
       return res.status(401).json(response);
     }
 
-    const hasPermission = permissions.some(permission => 
-      req.user!.permissions.includes(permission) || req.user!.permissions.includes('*')
+    const userPermissions = req.user!.permissions || [];
+    const hasPermission = permissions.some(permission =>
+      userPermissions.includes(permission) || userPermissions.includes('*')
     );
     if (!hasPermission) {
       const response: ApiResponse = {
@@ -183,7 +134,7 @@ export const generateToken = (userId: string, roles: string[], permissions: stri
     permissions
   };
 
-  return jwt.sign(payload, JWT_SECRET, {
+  return jwt.sign(payload, SECRET, {
     expiresIn: '24h'
   });
 };

@@ -4,7 +4,7 @@
 -- This migration creates the core tables for the MaiFarm system
 -- Consolidates: 001_initial_schema, 016_system_users, 017_fix_created_by
 
--- Remove BEGIN to avoid transaction issues - let each statement auto-commit
+BEGIN;
 
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -334,4 +334,4 @@ CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings
 CREATE TRIGGER update_tmux_sessions_updated_at BEFORE UPDATE ON tmux_sessions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Removed COMMIT to avoid transaction issues
+COMMIT;

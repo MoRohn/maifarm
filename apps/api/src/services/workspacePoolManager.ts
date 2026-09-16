@@ -137,8 +137,9 @@ export class WorkspacePoolManager extends EventEmitter {
   private async createWorkspace(templateType: WorkspaceInstance['templateType']): Promise<WorkspaceInstance> {
     const startTime = Date.now();
     const workspaceId = uuidv4();
+    // CRITICAL FIX: Use FARM_WORKSPACES instead of non-existent WORKSPACE_ROOT
     const workspacePath = path.join(
-      pathConfig.getPath('WORKSPACE_ROOT'),
+      pathConfig.getPath('FARM_WORKSPACES'),
       'pool',
       workspaceId
     );

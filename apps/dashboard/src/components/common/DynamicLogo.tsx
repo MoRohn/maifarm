@@ -29,13 +29,13 @@ export const DynamicLogo: React.FC<DynamicLogoProps> = ({
     // Check if custom logo exists for this color scheme
     // If not, fallback to default logos
     if (colorId === 'forest-walk' || colorId === 'custom') {
-      // Use default logos
+      // Use default logos (forest-walk versions without bkgd suffix)
       if (variant === 'icon') {
-        return `/maifarm-icon-${themeMode}-bkgd.svg`;
+        return `/maifarm-icon-forest-walk-${themeMode}.svg`;
       } else if (variant === 'wordmark') {
-        return `/maifarm-logo-${themeMode}.svg`;
+        return `/maifarm-logo-forest-walk-${themeMode}.svg`;
       } else {
-        return `/maifarm-logo-${themeMode}-bkgd.svg`;
+        return `/maifarm-logo-forest-walk-${themeMode}.svg`;
       }
     } else {
       // Use color-specific logos (to be created manually)

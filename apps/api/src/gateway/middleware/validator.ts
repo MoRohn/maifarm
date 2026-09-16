@@ -150,7 +150,7 @@ export const resourceSchemas = {
   
   // Provider configuration
   configureProvider: z.object({
-    provider: z.enum(['claude', 'openai', 'qwen', 'ollama']),
+    provider: z.enum(['claude', 'openai', 'llama', 'ollama']),
     apiKey: z.string().min(1).optional(),
     model: z.string().min(1),
     maxTokens: z.number().optional(),

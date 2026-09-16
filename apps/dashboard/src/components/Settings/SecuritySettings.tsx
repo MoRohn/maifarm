@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  ShieldCheckIcon,
+import {
   KeyIcon,
   FingerPrintIcon,
   LockClosedIcon,
   ClockIcon,
   DocumentTextIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/hooks/useAuth';

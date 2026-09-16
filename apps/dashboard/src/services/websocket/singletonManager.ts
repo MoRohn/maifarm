@@ -19,8 +19,94 @@ class SingletonWebSocketManager {
   private reconnectDelay = 1000;
   private lastConnectionAttempt = 0;
   private connectionDebounceDelay = 500; // Minimum delay between connection attempts
+  private visibilityHandler: (() => void) | null = null;
+  private wasBackgrounded = false;
+  private backgroundTime = 0;
+  private globalHandlersSetup = false; // CRITICAL FIX: Prevent duplicate event handler registration
+  private isReconnecting = false; // CRITICAL FIX: Prevent Safari reconnection loops
 
-  private constructor() {}
+  private constructor() {
+    // Setup Safari background/foreground handling
+    this.setupVisibilityHandling();
+  }
+
+  /**
+   * Safari Background Tab Handling
+   * Safari aggressively suspends WebSocket connections when tabs are backgrounded.
+   * This handler ensures we reconnect when the tab becomes visible again.
+   */
+  private setupVisibilityHandling() {
+    if (typeof document === 'undefined') return;
+
+    this.visibilityHandler = () => {
+      const isVisible = document.visibilityState === 'visible';
+
+      if (!isVisible) {
+        // Tab is being backgrounded - track this
+        this.wasBackgrounded = true;
+        this.backgroundTime = Date.now();
+        console.log('[WebSocket] Tab backgrounded, marking for reconnection check');
+      } else if (this.wasBackgrounded && this.socket) {
+        // Tab is becoming visible after being backgrounded
+        const timeInBackground = Date.now() - this.backgroundTime;
+        this.wasBackgrounded = false;
+
+        console.log(`[WebSocket] Tab visible after ${Math.round(timeInBackground / 1000)}s in background`);
+
+        // Safari suspends connections after ~30s in background
+        // Check connection health and reconnect if needed
+        if (!this.socket.connected || timeInBackground > 30000) {
+          // CRITICAL FIX: Prevent reconnection loop by checking isReconnecting flag
+          if (this.isReconnecting) {
+            console.log('[WebSocket] Already reconnecting, skipping duplicate attempt');
+            return;
+          }
+
+          console.log('[WebSocket] Safari background suspension detected, reconnecting...');
+          this.isReconnecting = true;
+
+          // Force reconnection after Safari background
+          if (this.socket) {
+            // Disconnect cleanly first
+            this.socket.disconnect();
+
+            // Short delay then reconnect with loop prevention
+            setTimeout(() => {
+              if (this.socket && !this.socket.connected && !this.socket.connecting) {
+                this.socket.connect();
+              }
+              // Reset isReconnecting flag after attempt
+              setTimeout(() => {
+                this.isReconnecting = false;
+              }, 2000); // 2 second cooldown
+            }, 100);
+          }
+        } else {
+          // Connection still alive, send a ping to verify
+          this.socket.emit('ping', { timestamp: Date.now(), resumeCheck: true });
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', this.visibilityHandler);
+
+    // Also handle page freeze/resume events (Page Lifecycle API)
+    // These are more aggressive than visibilitychange
+    if ('onfreeze' in document) {
+      document.addEventListener('freeze', () => {
+        console.log('[WebSocket] Page frozen, marking for reconnection');
+        this.wasBackgrounded = true;
+        this.backgroundTime = Date.now();
+      });
+
+      document.addEventListener('resume', () => {
+        console.log('[WebSocket] Page resumed from freeze');
+        if (this.socket && !this.socket.connected) {
+          this.socket.connect();
+        }
+      });
+    }
+  }
 
   static getInstance(): SingletonWebSocketManager {
     if (!SingletonWebSocketManager.instance) {
@@ -149,8 +235,21 @@ class SingletonWebSocketManager {
   }
 
   private setupGlobalHandlers() {
-    if (!this.socket) return;
-    
+    // CRITICAL FIX: Set flag FIRST to prevent race condition in rapid calls
+    // This prevents duplicate handler registration if called multiple times
+    if (this.globalHandlersSetup) {
+      console.log('[WebSocket] Global handlers already setup, skipping duplicate registration');
+      return;
+    }
+    // FIX: Set flag immediately BEFORE any other operations to prevent race conditions
+    this.globalHandlersSetup = true;
+
+    if (!this.socket) {
+      // Reset flag since we didn't actually set up handlers
+      this.globalHandlersSetup = false;
+      return;
+    }
+
     // Start heartbeat monitoring
     this.startHeartbeat();
     
@@ -251,6 +350,28 @@ class SingletonWebSocketManager {
             if (farmId) {
               farmStore.updateFarm(farmId, { status: 'active' });
             }
+          } else if (eventName === 'farm:completed') {
+            // Farm completed successfully
+            const farmStore = useFarmStore.getState();
+            const farmId = data.farmId || data.payload?.farmId;
+            if (farmId) {
+              farmStore.updateFarm(farmId, { status: 'completed' });
+            }
+          } else if (eventName === 'farm:failed') {
+            // Farm failed
+            const farmStore = useFarmStore.getState();
+            const farmId = data.farmId || data.payload?.farmId;
+            if (farmId) {
+              farmStore.updateFarm(farmId, { status: 'failed' });
+            }
+          } else if (eventName === 'farm:status:changed') {
+            // Generic status change event
+            const farmStore = useFarmStore.getState();
+            const farmId = data.farmId || data.payload?.farmId;
+            const status = data.currentStatus || data.status || data.payload?.status;
+            if (farmId && status) {
+              farmStore.updateFarm(farmId, { status });
+            }
           }
         } else if (eventName.startsWith('agent:')) {
           if (eventName === 'agent:updated') {
@@ -263,19 +384,33 @@ class SingletonWebSocketManager {
     };
 
     // Forward all relevant events
+    // CRITICAL FIX: Removed duplicates that were causing events to fire 2-3 times
+    // Events with dedicated handlers below (agent:status, agent:created, agents:updated)
+    // are excluded to prevent duplicate processing
     const eventsToForward = [
       'message',
+      // Farm events
       'farm:updated',
-      'farm:created', 
+      'farm:created',
       'farm:status',
+      'farm:completed',
+      'farm:failed',
+      'farm:status:changed',
+      'farm:streaming:degraded',
       'farm:launched',
       'farm:agents:launching',
       'farm:tmux:ready',
-      'agent:created',
+      'farm:error',
+      'farm:cleanup:started',
+      'farm:cleanup:completed',
+      'farm:deleted',
+      // Agent events (agent:status, agent:created, agents:updated, agent:api_error, agent:warning handled separately below)
       'agent:updated',
-      'agent:status',
-      'agents:updated',
       'agent:output',
+      'agent:terminal',
+      'agent:removed',
+      'agents:removed',
+      // Task events
       'task:progress',
       // Harvest events
       'harvest:ready',
@@ -284,9 +419,13 @@ class SingletonWebSocketManager {
       'harvest:completed',
       'harvest:status',
       'harvest:update',
+      'harvest:updated',
+      'harvest:progress',
       'harvest:terminal:update',
       'harvest:terminal:command',
       'harvest:keepalive',
+      'harvest:yield:updated',
+      'harvest:item:updated',
       // Terminal events
       'terminal:output',
       'terminal:update',
@@ -294,39 +433,26 @@ class SingletonWebSocketManager {
       'terminal:join_session',
       'terminal:leave_session',
       'terminal:send_command',
-      'session:prepared',
-      'agent:terminal',
-      // Terminal events for HarvestTerminalPro
-      'terminal:output',
       'terminal:attached',
       'terminal:detached',
-      'terminal:streaming:ready',
-      'harvest:terminal:update',
+      'terminal:session',
       'session:prepared',
-      'harvest:completed',
-      'harvest:status',
-      'harvest:updated',
-      'harvest:progress',
-      'harvest:yield:updated',
-      'harvest:item:updated',
+      // GoWild and QuickTask events
       'goWild:status-changed',
       'quicktask:created',
       'quicktask:starting',
-      'quicktask:agent:launched',
-      'terminal:session',
-      'terminal:output',
-      'metrics:update',
-      'agent:api_error',
-      'agent:warning',
-      'farm:error',
-      'farm:cleanup:started',
-      'farm:cleanup:completed',
-      'farm:deleted',
-      'agent:removed',
-      'agents:removed'
+      'quicktask:agent:launched'
+      // Note: metrics:update has a dedicated handler below, not in this array
     ];
 
-    eventsToForward.forEach(eventName => forwardEvent(eventName));
+    // FIX: Use Set to guarantee no duplicate handlers can be registered
+    const registeredEvents = new Set<string>();
+    eventsToForward.forEach(eventName => {
+      if (!registeredEvents.has(eventName)) {
+        registeredEvents.add(eventName);
+        forwardEvent(eventName);
+      }
+    });
 
     // Additional special handling for certain events that need more processing
     // Note: These events are already forwarded above, but need extra handling
@@ -334,6 +460,8 @@ class SingletonWebSocketManager {
     // Add messages to store for specific events
     this.socket.on('metrics:update', (metrics) => {
       const store = useWebSocketStore.getState();
+      // FIX: Also trigger event for subscribers
+      store.triggerEvent('metrics:update', metrics);
       store.addMessage({
         type: 'metrics:update',
         event: 'metrics:update',
@@ -344,6 +472,9 @@ class SingletonWebSocketManager {
     
     // Show notifications for errors and warnings
     this.socket.on('agent:api_error', (data) => {
+      const store = useWebSocketStore.getState();
+      // FIX: Trigger event for subscribers
+      store.triggerEvent('agent:api_error', data);
       console.error('[WebSocket] Agent API Error:', data);
       if (window.showErrorNotification) {
         window.showErrorNotification(`Agent ${data.agentId}: ${data.error}`);
@@ -351,9 +482,36 @@ class SingletonWebSocketManager {
     });
 
     this.socket.on('agent:warning', (data) => {
+      const store = useWebSocketStore.getState();
+      // FIX: Trigger event for subscribers
+      store.triggerEvent('agent:warning', data);
       console.warn('[WebSocket] Agent Warning:', data);
       if (window.showWarningNotification) {
         window.showWarningNotification(`Agent ${data.agentId}: ${data.warning}`);
+      }
+    });
+
+    // WS8 FIX: Track joined rooms for auto-rejoin on reconnect
+    this.socket.on('terminal:joined', (data: { sessionId?: string; farmId?: string; joinedRooms?: string[] }) => {
+      // Track all rooms that were joined
+      if (this.manager) {
+        if (data.sessionId) {
+          this.manager.trackRoomJoin(`session:${data.sessionId}`);
+        }
+        if (data.farmId) {
+          this.manager.trackRoomJoin(`farm:${data.farmId}`);
+        }
+        // Track any rooms the server tells us about
+        if (data.joinedRooms) {
+          data.joinedRooms.forEach(room => this.manager?.trackRoomJoin(room));
+        }
+      }
+    });
+
+    this.socket.on('terminal:leave_session', () => {
+      // Clear tracked rooms when leaving sessions
+      if (this.manager) {
+        this.manager.clearTrackedRooms();
       }
     });
 
@@ -369,7 +527,10 @@ class SingletonWebSocketManager {
       console.log('[WebSocket] Agent status update:', data);
       const webSocketStore = useWebSocketStore.getState();
       const farmStore = useFarmStore.getState();
-      
+
+      // FIX: Trigger event for subscribers
+      webSocketStore.triggerEvent('agent:status', data);
+
       // Update agent in WebSocket store
       webSocketStore.updateAgent({
         id: data.agentId,
@@ -420,8 +581,12 @@ class SingletonWebSocketManager {
     // Handle agent created events
     this.socket.on('agent:created', (data) => {
       console.log('[WebSocket] Agent created:', data);
+      const webSocketStore = useWebSocketStore.getState();
       const farmStore = useFarmStore.getState();
-      
+
+      // FIX: Trigger event for subscribers
+      webSocketStore.triggerEvent('agent:created', data);
+
       if (data.farmId) {
         const farm = farmStore.farms.find(f => f.id === data.farmId);
         if (farm) {
@@ -454,8 +619,12 @@ class SingletonWebSocketManager {
     // Handle agents updated event (batch update)
     this.socket.on('agents:updated', (agents) => {
       console.log('[WebSocket] Agents batch update:', agents);
+      const webSocketStore = useWebSocketStore.getState();
       const farmStore = useFarmStore.getState();
-      
+
+      // FIX: Trigger event for subscribers
+      webSocketStore.triggerEvent('agents:updated', agents);
+
       // Group agents by farm
       const agentsByFarm = new Map<string, any[]>();
       
@@ -590,38 +759,44 @@ class SingletonWebSocketManager {
       if (this.disconnectTimer) {
         clearTimeout(this.disconnectTimer);
       }
-      
-      // Increase delay to 60 seconds to handle page transitions and rapid mount/unmount cycles
-      // This prevents disconnection during normal navigation and component updates
+
+      // CRITICAL FIX: Reduced from 60s to 10s for better resource management
+      // 10 seconds is sufficient for page transitions while preventing resource waste
       this.disconnectTimer = setTimeout(() => {
         // Double-check reference count before disconnecting
         if (this.referenceCount === 0) {
-          wsDebugger.log('disconnect', `No active references after 60s, disconnecting`, 0);
+          wsDebugger.log('disconnect', `No active references after 10s, disconnecting`, 0);
           this.forceDisconnect();
         } else {
           wsDebugger.log('reference', `Disconnect cancelled, active references: ${this.referenceCount}`, this.referenceCount);
         }
-      }, 60000); // 60 second delay to prevent disconnects during navigation
+      }, 10000); // 10 second delay (was 60s, reduced for resource efficiency)
     }
   }
 
   private forceDisconnect() {
     console.log('[WebSocket] Force disconnecting singleton connection');
-    
+
     // Clear timers
     if (this.disconnectTimer) {
       clearTimeout(this.disconnectTimer);
       this.disconnectTimer = null;
     }
-    
+
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-    
+
+    // Clean up visibility handler (Safari background handling)
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
+
     // Clean up reliability enhancer
     reliabilityEnhancer.cleanup();
-    
+
     this.manager?.disconnect();
     this.manager = null;
     this.socket = null;
@@ -629,6 +804,10 @@ class SingletonWebSocketManager {
     this.url = '';
     this.referenceCount = 0;
     this.reconnectAttempts = 0;
+    this.wasBackgrounded = false;
+    this.backgroundTime = 0;
+    this.globalHandlersSetup = false; // Reset so handlers can be re-registered
+    this.isReconnecting = false; // Reset reconnection flag
   }
 
   disconnect() {

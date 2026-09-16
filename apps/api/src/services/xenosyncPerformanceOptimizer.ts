@@ -69,8 +69,10 @@ export class XenoSyncPerformanceOptimizer extends EventEmitter {
         });
         
         // Implement adaptive streaming interval
-        const { terminalStreamService } = await import('./terminalStreamService');
-        const service = (terminalStreamService as any);
+        // NOTE: UnifiedTerminalStreamService doesn't yet implement setCaptureInterval
+        // This optimization is preserved for future implementation
+        const { unifiedTerminalStreamService } = await import('./UnifiedTerminalStreamService');
+        const service = (unifiedTerminalStreamService as any);
         if (service.setCaptureInterval) {
           service.setCaptureInterval(2000); // Increase to 2s during high load
         }
@@ -175,9 +177,10 @@ export class XenoSyncPerformanceOptimizer extends EventEmitter {
     this.metrics.cpuUsage = process.cpuUsage();
     
     // Measure terminal latency (simplified)
+    // NOTE: UnifiedTerminalStreamService doesn't yet implement getAverageLatency
     try {
-      const { terminalStreamService } = await import('./terminalStreamService');
-      const service = (terminalStreamService as any);
+      const { unifiedTerminalStreamService } = await import('./UnifiedTerminalStreamService');
+      const service = (unifiedTerminalStreamService as any);
       if (service.getAverageLatency) {
         this.metrics.terminalLatency = await service.getAverageLatency();
       }
@@ -235,8 +238,9 @@ export class XenoSyncPerformanceOptimizer extends EventEmitter {
     (sessionManager as any).clearCache?.();
     
     // Clear terminal output buffers
-    const { terminalStreamService } = await import('./terminalStreamService');
-    (terminalStreamService as any).clearBuffers?.();
+    // NOTE: UnifiedTerminalStreamService doesn't yet implement clearBuffers
+    const { unifiedTerminalStreamService } = await import('./UnifiedTerminalStreamService');
+    (unifiedTerminalStreamService as any).clearBuffers?.();
     
     // Clear structured logger correlation store
     structuredLogger.cleanupOldCorrelations();

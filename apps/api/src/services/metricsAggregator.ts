@@ -458,7 +458,9 @@ class MetricsAggregator extends EventEmitter {
       
       const data = await redis.get(this.REDIS_KEY);
       if (data) {
-        const parsed = JSON.parse(data);
+        // Convert Buffer to string if needed
+        const dataStr = typeof data === 'string' ? data : data.toString('utf-8');
+        const parsed = JSON.parse(dataStr);
         return parsed.metrics;
       }
     } catch (error) {

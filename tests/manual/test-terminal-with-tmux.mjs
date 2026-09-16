@@ -7,7 +7,7 @@ import { io } from 'socket.io-client';
 const SERVER_URL = 'http://localhost:4567';
 const TEST_FARM_ID = 'b5e40088-6875-44bc-b2ec-089ce0233e1f';
 const TEST_SESSION_ID = 'farm-b5e40088';
-const TERMINAL_DIR = `/Users/rohnspringfield/maifarm/var/maibarn/terminals/${TEST_FARM_ID}`;
+const TERMINAL_DIR = `${process.env.MAIFARM_ROOT || process.cwd()}/var/maibarn/terminals/${TEST_FARM_ID}`;
 const NUM_AGENTS = 3;
 
 console.log('🚀 Starting Real Tmux Terminal Stream Test');

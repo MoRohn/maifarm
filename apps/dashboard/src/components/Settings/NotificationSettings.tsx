@@ -1,369 +1,299 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { 
+import {
   BellIcon,
-  BellAlertIcon,
   EnvelopeIcon,
-  DevicePhoneMobileIcon,
   ClockIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ExclamationTriangleIcon
+  DevicePhoneMobileIcon,
+  InformationCircleIcon,
+  AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
-import { useUserStore } from '@/store/userStore';
+import { useSettingsStore } from '@/store/settingsStore';
 
-interface NotificationCategory {
-  id: string;
-  label: string;
-  description: string;
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-}
+const channelLabels = [
+  { key: 'inApp', label: 'In App' },
+  { key: 'push', label: 'Push' },
+  { key: 'email', label: 'Email' }
+] as const;
 
-const notificationCategories: NotificationCategory[] = [
-  {
-    id: 'farmComplete',
-    label: 'Farm Completion',
-    description: 'When a farm finishes all tasks',
-    icon: CheckCircleIcon,
-    color: 'text-green-600 dark:text-green-400'
-  },
-  {
-    id: 'agentError',
-    label: 'Agent Errors',
-    description: 'When an agent encounters an error',
-    icon: XCircleIcon,
-    color: 'text-red-600 dark:text-red-400'
-  },
-  {
-    id: 'systemUpdate',
-    label: 'System Updates',
-    description: 'Important system announcements',
-    icon: ExclamationTriangleIcon,
-    color: 'text-yellow-600 dark:text-yellow-400'
-  },
-  {
-    id: 'aiDiscovery',
-    label: 'AI Discoveries',
-    description: 'When AI finds interesting patterns',
-    icon: BellAlertIcon,
-    color: 'text-purple-600 dark:text-purple-400'
-  }
-];
+const NotificationSettings: React.FC = () => {
+  const { notifications, setNotifications } = useSettingsStore();
 
-interface NotificationSettings {
-  enabled: boolean;
-  sound: boolean;
-  desktop: boolean;
-  email: boolean;
-  categories: {
-    farmComplete: boolean;
-    agentError: boolean;
-    systemUpdate: boolean;
-    aiDiscovery: boolean;
-  };
-  quietHours: {
-    enabled: boolean;
-    start: string;
-    end: string;
-  };
-}
-
-export const NotificationSettings: React.FC = () => {
-  const { preferences, updatePreferences } = useUserStore();
-  
-  // Handle both boolean and object notification preferences
-  const getInitialNotifications = (): NotificationSettings => {
-    const defaultSettings: NotificationSettings = {
-      enabled: true,
-      sound: true,
-      desktop: true,
-      email: false,
-      categories: {
-        farmComplete: true,
-        agentError: true,
-        systemUpdate: true,
-        aiDiscovery: false
-      },
-      quietHours: {
-        enabled: false,
-        start: '22:00',
-        end: '08:00'
-      }
-    };
-
-    if (!preferences?.notifications) {
-      return defaultSettings;
-    }
-
-    // If notifications is a boolean, convert to object
-    if (typeof preferences.notifications === 'boolean') {
-      return {
-        ...defaultSettings,
-        enabled: preferences.notifications
-      };
-    }
-
-    // If it's already an object, merge with defaults
-    return {
-      ...defaultSettings,
-      ...preferences.notifications as NotificationSettings
-    };
-  };
-
-  const [notifications, setNotifications] = useState<NotificationSettings>(getInitialNotifications());
-
-  const handleToggle = (key: string, value: boolean) => {
-    const updated = { ...notifications, [key]: value };
-    setNotifications(updated);
-    updatePreferences({ notifications: updated });
-  };
-
-  const handleCategoryToggle = (categoryId: string) => {
-    const updated = {
+  const updateNotifications = (updates: Partial<typeof notifications>) => {
+    setNotifications({
       ...notifications,
-      categories: {
-        ...notifications.categories,
-        [categoryId]: !(notifications.categories as any)[categoryId]
-      }
-    };
-    setNotifications(updated);
-    updatePreferences({ notifications: updated });
+      ...updates
+    });
   };
 
-  const handleQuietHoursChange = (field: string, value: any) => {
-    const updated = {
-      ...notifications,
+  const updateQuietHours = (field: 'enabled' | 'start' | 'end', value: boolean | string) => {
+    updateNotifications({
       quietHours: {
         ...notifications.quietHours,
         [field]: value
       }
-    };
-    setNotifications(updated);
-    updatePreferences({ notifications: updated });
+    });
   };
 
-  const requestNotificationPermission = async () => {
-    if ('Notification' in window) {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        handleToggle('desktop', true);
+  const updateChannel = (
+    type: keyof typeof notifications.types,
+    channel: keyof (typeof notifications.types)[typeof type]['channels'],
+    value: boolean
+  ) => {
+    updateNotifications({
+      types: {
+        ...notifications.types,
+        [type]: {
+          ...notifications.types[type],
+          channels: {
+            ...notifications.types[type].channels,
+            [channel]: value
+          }
+        }
       }
-    }
+    });
+  };
+
+  const updateTypeEnabled = (type: keyof typeof notifications.types, value: boolean) => {
+    updateNotifications({
+      types: {
+        ...notifications.types,
+        [type]: {
+          ...notifications.types[type],
+          enabled: value
+        }
+      }
+    });
   };
 
   return (
     <div className="space-y-8">
-      {/* Main Toggle */}
-      <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-6 rounded-xl">
-        <label className="flex items-center justify-between cursor-pointer">
-          <div className="flex items-center space-x-3">
-            <BellIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Notification Preferences</h2>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          Choose how MaiFarm keeps you informed about farm activity and agent health.
+        </p>
+      </div>
+
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <BellIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
             <div>
-              <span className="text-lg font-medium text-gray-900 dark:text-white">
-                Enable Notifications
-              </span>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Stay updated with your farms and agents
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white">Enable Notifications</h3>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Toggle all MaiFarm notifications on or off
               </p>
             </div>
           </div>
-          <div className="relative">
+          <label className="inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
-              checked={notifications.enabled}
-              onChange={(e) => handleToggle('enabled', e.target.checked)}
               className="sr-only"
+              checked={notifications.enabled}
+              onChange={(event) => updateNotifications({ enabled: event.target.checked })}
             />
-            <div className={`w-14 h-8 rounded-full transition-colors duration-200 ${
+            <span className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
               notifications.enabled ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
             }`}>
-              <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
-                notifications.enabled ? 'translate-x-7' : 'translate-x-1'
-              } mt-1`} />
-            </div>
-          </div>
-        </label>
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  notifications.enabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </span>
+          </label>
+        </div>
       </div>
 
-      {/* Notification Channels */}
       {notifications.enabled && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-        >
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Notification Channels
-            </h3>
-            <div className="space-y-4">
-              <label className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <DevicePhoneMobileIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Desktop Notifications
-                    </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Browser push notifications
-                    </p>
-                  </div>
+        <div className="space-y-6">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="grid gap-6 lg:grid-cols-2"
+          >
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <DevicePhoneMobileIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">Notification Channels</h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Choose where notifications should appear</p>
                 </div>
-                {Notification.permission === 'default' ? (
-                  <button
-                    onClick={requestNotificationPermission}
-                    className="px-3 py-1 text-sm font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
-                  >
-                    Enable
-                  </button>
-                ) : (
+              </div>
+
+              <div className="space-y-4">
+                {Object.entries(notifications.types).map(([key, config]) => (
+                  <div key={key} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
+                        {key.replace(/([A-Z])/g, ' $1')}
+                      </span>
+                      <label className="inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={config.enabled}
+                          onChange={(event) => updateTypeEnabled(key as keyof typeof notifications.types, event.target.checked)}
+                        />
+                        <span className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
+                          config.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}>
+                          <span
+                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                              config.enabled ? 'translate-x-5' : 'translate-x-1'
+                            }`}
+                          />
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {channelLabels.map(({ key: channelKey, label }) => (
+                        <label
+                          key={channelKey}
+                          className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                            config.channels[channelKey]
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                              : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400'
+                          }`}
+                        >
+                          {label}
+                          <input
+                            type="checkbox"
+                            checked={config.channels[channelKey]}
+                            onChange={(event) => updateChannel(
+                              key as keyof typeof notifications.types,
+                              channelKey,
+                              event.target.checked
+                            )}
+                            className="ml-2 h-4 w-4 text-blue-600 focus:ring-blue-500"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <EnvelopeIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">Email Notifications</h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">Configure how MaiFarm emails are delivered</p>
+                </div>
+              </div>
+
+              <label className="flex items-center justify-between text-sm">
+                <span className="text-gray-700 dark:text-gray-300">Enable email notifications</span>
+                <input
+                  type="checkbox"
+                  checked={notifications.email.enabled}
+                  onChange={(event) =>
+                    updateNotifications({
+                      email: { ...notifications.email, enabled: event.target.checked }
+                    })
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </label>
+
+              <div className="space-y-2">
+                <label className="text-xs text-gray-500 dark:text-gray-400">Email address</label>
+                <input
+                  type="email"
+                  value={notifications.email.address}
+                  onChange={(event) =>
+                    updateNotifications({
+                      email: { ...notifications.email, address: event.target.value }
+                    })
+                  }
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="you@example.com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs text-gray-500 dark:text-gray-400">Frequency</label>
+                <select
+                  value={notifications.email.frequency}
+                  onChange={(event) =>
+                    updateNotifications({
+                      email: { ...notifications.email, frequency: event.target.value as typeof notifications.email.frequency }
+                    })
+                  }
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="immediate">Immediately</option>
+                  <option value="hourly">Hourly Digest</option>
+                  <option value="daily">Daily Summary</option>
+                  <option value="weekly">Weekly Summary</option>
+                </select>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-white">Quiet Hours</h5>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Pause notifications during selected hours</p>
+                  </div>
                   <input
                     type="checkbox"
-                    checked={notifications.desktop}
-                    onChange={(e) => handleToggle('desktop', e.target.checked)}
-                    disabled={Notification.permission === 'denied'}
-                    className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    checked={notifications.quietHours.enabled}
+                    onChange={(event) => updateQuietHours('enabled', event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                )}
-              </label>
-
-              <label className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <BellIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Sound Alerts
-                    </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Play sound for notifications
-                    </p>
-                  </div>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={notifications.sound}
-                  onChange={(e) => handleToggle('sound', e.target.checked)}
-                  className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                />
-              </label>
 
-              <label className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <EnvelopeIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Email Notifications
-                    </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Receive updates via email
-                    </p>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={notifications.email}
-                  onChange={(e) => handleToggle('email', e.target.checked)}
-                  className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* Notification Categories */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Notification Types
-            </h3>
-            <div className="space-y-3">
-              {notificationCategories.map((category) => {
-                const Icon = category.icon;
-                return (
+                {notifications.quietHours.enabled && (
                   <motion.div
-                    key={category.id}
-                    whileHover={{ scale: 1.01 }}
-                    className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors duration-200"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="grid grid-cols-2 gap-3"
                   >
-                    <label className="flex items-center justify-between cursor-pointer">
-                      <div className="flex items-center space-x-3">
-                        <Icon className={`w-5 h-5 ${category.color}`} />
-                        <div>
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            {category.label}
-                          </span>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {category.description}
-                          </p>
-                        </div>
-                      </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-gray-400">Start</label>
                       <input
-                        type="checkbox"
-                        checked={(notifications.categories as any)[category.id]}
-                        onChange={() => handleCategoryToggle(category.id)}
-                        className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                        type="time"
+                        value={notifications.quietHours.start}
+                        onChange={(event) => updateQuietHours('start', event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
-                    </label>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 dark:text-gray-400">End</label>
+                      <input
+                        type="time"
+                        value={notifications.quietHours.end}
+                        onChange={(event) => updateQuietHours('end', event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
                   </motion.div>
-                );
-              })}
+                )}
+              </div>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Quiet Hours */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              Quiet Hours
-            </h3>
-            <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-              <label className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  <ClockIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                  <div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Enable Quiet Hours
-                    </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Mute notifications during specified hours
-                    </p>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={notifications.quietHours.enabled}
-                  onChange={(e) => handleQuietHoursChange('enabled', e.target.checked)}
-                  className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 dark:focus:ring-purple-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                />
-              </label>
-
-              {notifications.quietHours.enabled && (
-                <div className="flex items-center space-x-4 mt-4">
-                  <div className="flex-1">
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Start Time
-                    </label>
-                    <input
-                      type="time"
-                      value={notifications.quietHours.start}
-                      onChange={(e) => handleQuietHoursChange('start', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      End Time
-                    </label>
-                    <input
-                      type="time"
-                      value={notifications.quietHours.end}
-                      onChange={(e) => handleQuietHoursChange('end', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-              )}
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <AdjustmentsHorizontalIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+              <h4 className="text-sm font-medium text-gray-900 dark:text-white">Notification Tips</h4>
             </div>
+            <ul className="space-y-3 text-xs text-gray-600 dark:text-gray-400">
+              <li className="flex items-start gap-2">
+                <InformationCircleIcon className="w-4 h-4 mt-0.5 text-blue-500" />
+                <span>Disable channels you don't use often to reduce noise without missing critical updates.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <InformationCircleIcon className="w-4 h-4 mt-0.5 text-blue-500" />
+                <span>Quiet hours pause notifications across all channels, including email digests.</span>
+              </li>
+            </ul>
           </div>
-        </motion.div>
+        </div>
       )}
     </div>
   );

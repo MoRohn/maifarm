@@ -103,6 +103,101 @@ class SeedService {
     return response.data;
   }
 
+  // ============================================
+  // SEEDS ENHANCEMENT METHODS (Feature A)
+  // ============================================
+
+  /**
+   * Validate seed compatibility with mode and engine
+   */
+  async validateCompatibility(
+    seedIds: string[],
+    mode: string,
+    engine: string
+  ): Promise<{
+    compatible: boolean;
+    incompatibleSeeds: Array<{ seedId: string; reason: string }>;
+    warnings: string[];
+  }> {
+    const response = await apiClient.post(`${this.baseUrl}/validate-compatibility`, {
+      seedIds,
+      mode,
+      engine
+    });
+    return response.data;
+  }
+
+  /**
+   * Get seeds applied to a farm
+   */
+  async getAppliedSeeds(farmId: string): Promise<Seed[]> {
+    const response = await apiClient.get<{ seeds: Seed[] }>(
+      `${this.baseUrl}/farm/${farmId}/applied`
+    );
+    return response.data.seeds || [];
+  }
+
+  // ============================================
+  // VIRAL SEEDS METHODS (Feature B)
+  // ============================================
+
+  /**
+   * Generate viral seeds from internet trends
+   */
+  async generateViralSeeds(config: {
+    searchQueries?: string[];
+    searchProvider?: 'websearch' | 'bing' | 'google';
+    maxResultsPerQuery?: number;
+    includeCategories?: string[];
+    excludeCategories?: string[];
+    creativityLevel?: number;
+  }): Promise<{
+    success: boolean;
+    seeds?: Seed[];
+    snapshotId?: string;
+    error?: string;
+  }> {
+    const response = await apiClient.post(`${this.baseUrl}/viral/generate`, config);
+    return response.data;
+  }
+
+  /**
+   * Regenerate viral seeds from a snapshot
+   */
+  async regenerateViralSeeds(snapshotId: string): Promise<{
+    success: boolean;
+    seeds?: Seed[];
+    snapshotId?: string;
+    error?: string;
+  }> {
+    const response = await apiClient.post(`${this.baseUrl}/viral/regenerate/${snapshotId}`);
+    return response.data;
+  }
+
+  /**
+   * Get viral seeds generation snapshots
+   */
+  async getViralSnapshots(limit: number = 10): Promise<{
+    success: boolean;
+    snapshots: Array<{
+      id: string;
+      searchQueries: string[];
+      seedCount: number;
+      createdAt: Date;
+    }>;
+  }> {
+    const response = await apiClient.get(`${this.baseUrl}/viral/snapshots?limit=${limit}`);
+    return response.data;
+  }
+
+  /**
+   * Check if viral seeds pipeline is running
+   */
+  async getViralPipelineStatus(): Promise<{ isRunning: boolean }> {
+    const response = await apiClient.get(`${this.baseUrl}/viral/status`);
+    return response.data;
+  }
+
   // Helper method to convert seed YAML to farm configuration
   convertSeedToFarmConfig(seed: Seed): any {
     return {

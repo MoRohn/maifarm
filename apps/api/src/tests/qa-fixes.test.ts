@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
-import request from 'supertest';
 import { Server } from 'http';
+
+const request = require('supertest');
 import { io as ioClient, Socket } from 'socket.io-client';
 import app from '../index';
 import { redis } from '../database/connection';

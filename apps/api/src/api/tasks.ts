@@ -56,10 +56,10 @@ router.use(authenticateToken);
 // GET /api/tasks - List all tasks with filtering and pagination
 router.get('/', apiRateLimits.read, async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      sort = 'createdAt', 
+    const {
+      page = 1,
+      limit = 20,
+      sort = 'created_at',
       order = 'desc',
       status,
       farmId,
@@ -67,8 +67,20 @@ router.get('/', apiRateLimits.read, async (req, res) => {
       priority
     } = req.query as PaginationQuery & FilterQuery & { priority?: string };
 
-    const offset = (Number(page) - 1) * Number(limit);
-    
+    // ROBUSTNESS FIX: Validate and cap pagination parameters to prevent DoS
+    const MAX_LIMIT = 1000;
+    const MAX_OFFSET = 100000;
+    const parsedLimit = Math.min(Math.max(1, Number(limit) || 20), MAX_LIMIT);
+    const parsedPage = Math.max(1, Number(page) || 1);
+    const offset = Math.min((parsedPage - 1) * parsedLimit, MAX_OFFSET);
+
+    // Validate and sanitize sort column to prevent SQL injection
+    const allowedSortColumns = ['id', 'farm_id', 'agent_id', 'type', 'priority', 'status', 'created_at', 'updated_at', 'started_at', 'completed_at'];
+    // Convert camelCase to snake_case for common inputs
+    const sortColumn = String(sort).replace(/([A-Z])/g, '_$1').toLowerCase();
+    const sanitizedSort = allowedSortColumns.includes(sortColumn) ? sortColumn : 'created_at';
+    const sanitizedOrder = order === 'asc' ? 'ASC' : 'DESC';
+
     // Build query
     let query = 'SELECT * FROM tasks WHERE 1=1';
     const params: any[] = [];
@@ -95,8 +107,8 @@ router.get('/', apiRateLimits.read, async (req, res) => {
     }
 
     // Add sorting and pagination
-    query += ` ORDER BY ${sort} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-    params.push(limit, offset);
+    query += ` ORDER BY ${sanitizedSort} ${sanitizedOrder} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    params.push(parsedLimit, offset);
 
     const result = await db.query(query, params);
     
@@ -123,7 +135,8 @@ router.get('/', apiRateLimits.read, async (req, res) => {
     }
 
     const countResult = await db.query(countQuery, countParams);
-    const total = parseInt(countResult.rows[0].count);
+    // FIX: Add defensive check for rows[0] access
+    const total = countResult.rows[0] ? parseInt(countResult.rows[0].count || '0') : 0;
 
     const response: ApiResponse<Task[]> = {
       success: true,
@@ -509,7 +522,8 @@ router.post('/quick', upload.array('files', 5), requirePermission(['tasks:create
     console.log('[QuickTask API] Creating quick task with file context');
     
     // Add timeout protection to prevent hanging forever
-    const QUICK_TASK_LAUNCH_TIMEOUT = 30000; // 30 seconds max for launch
+    // Increased to 120 seconds to allow for farm creation and orchestrator startup
+    const QUICK_TASK_LAUNCH_TIMEOUT = 120000; // 120 seconds max for launch
     
     const quickTaskPromise = quickTaskService.createQuickTask({
       title: taskTitle,
@@ -528,7 +542,7 @@ router.post('/quick', upload.array('files', 5), requirePermission(['tasks:create
     let launchTimeoutHandle: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise((_, reject) => {
       launchTimeoutHandle = setTimeout(() => {
-        reject(new Error('Quick Task launch timed out after 30 seconds'));
+        reject(new Error('Quick Task launch timed out after 120 seconds'));
       }, QUICK_TASK_LAUNCH_TIMEOUT);
     });
     

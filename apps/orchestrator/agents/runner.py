@@ -157,7 +157,9 @@ class ClaudeAPIClient(ClaudeClientProtocol):
 
         # Track metrics
         tokens_in = 0
-        tokens_out = 0
+        tokens_out_reported: int | None = None
+        tokens_out_estimated = 0
+        tokens_in_reported: int | None = None
         start_time = time.perf_counter()
 
         log_lifecycle_event(_logger, "claude_start", "agent_runner", run_id=request.run_id)
@@ -180,36 +182,41 @@ class ClaudeAPIClient(ClaudeClientProtocol):
                 # Track usage from Claude API
                 if "usage" in chunk:
                     usage = chunk["usage"]
-                    tokens_in = usage.get("input_tokens", tokens_in)
-                    tokens_out = usage.get("output_tokens", tokens_out)
+                    tokens_in_reported = usage.get("input_tokens", tokens_in_reported)
+                    tokens_out_reported = usage.get("output_tokens", tokens_out_reported)
+                    if tokens_in_reported is not None:
+                        tokens_in = tokens_in_reported
 
                 if event_type == "completion.delta":
                     delta = chunk.get("delta", {}).get("text", "")
                     if delta:
-                        tokens_out += len(delta.split())  # Rough estimate
+                        if tokens_out_reported is None:
+                            tokens_out_estimated += len(delta.split())  # Rough estimate
                         yield AgentStreamEvent(phase="delta", content_delta=delta)
                 elif event_type == "completion.message_delta":
                     delta = chunk.get("delta", {}).get("text", "")
                     if delta:
-                        tokens_out += len(delta.split())  # Rough estimate
+                        if tokens_out_reported is None:
+                            tokens_out_estimated += len(delta.split())
                         yield AgentStreamEvent(phase="delta", content_delta=delta)
                 elif event_type == "completion.stop":
                     break
 
         # Record final metrics
         duration = time.perf_counter() - start_time
-        if duration > 0 and tokens_out > 0:
-            tokens_per_sec = tokens_out / duration
+        final_tokens_out = tokens_out_reported if tokens_out_reported is not None else tokens_out_estimated
+        if duration > 0 and final_tokens_out > 0:
+            tokens_per_sec = final_tokens_out / duration
             update_tokens_per_sec(agent_id, tokens_per_sec)
 
         record_tokens_in(agent_id, model, tokens_in)
-        record_tokens_out(agent_id, model, tokens_out)
+        record_tokens_out(agent_id, model, final_tokens_out)
 
         # Calculate and record cost
-        cost = calculate_cost(model, tokens_in, tokens_out)
+        cost = calculate_cost(model, tokens_in, final_tokens_out)
         record_cost_usd(agent_id, model, cost)
 
-        log_lifecycle_event(_logger, "claude_end", "agent_runner", run_id=request.run_id, tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost)
+        log_lifecycle_event(_logger, "claude_end", "agent_runner", run_id=request.run_id, tokens_in=tokens_in, tokens_out=final_tokens_out, cost_usd=cost)
 
     async def stream_completion(
         self,

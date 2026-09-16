@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, 
-  ExternalLink, 
-  Download, 
-  Maximize2, 
-  Minimize2, 
-  Code, 
+import {
+  X,
+  ExternalLink,
+  Download,
+  Maximize2,
+  Minimize2,
+  Code,
   Eye,
   FileText,
   Image as ImageIcon,
@@ -34,6 +34,56 @@ export const YieldPreviewModal: React.FC<YieldPreviewModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [viewMode, setViewMode] = useState<'preview' | 'source'>('preview');
+
+  // Focus trap refs
+  const modalRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Handle escape key
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  }, [onClose]);
+
+  // Focus management and keyboard handling
+  useEffect(() => {
+    // Add escape key listener
+    document.addEventListener('keydown', handleKeyDown);
+
+    // Focus the close button on mount
+    setTimeout(() => {
+      closeButtonRef.current?.focus();
+    }, 100);
+
+    // Store previously focused element to restore on close
+    const previouslyFocused = document.activeElement as HTMLElement;
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      // Restore focus to previously focused element
+      previouslyFocused?.focus?.();
+    };
+  }, [handleKeyDown]);
+
+  // Focus trap: keep focus within modal
+  const handleFocusTrap = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab' || !modalRef.current) return;
+
+    const focusableElements = modalRef.current.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstElement = focusableElements[0] as HTMLElement;
+    const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+    if (e.shiftKey && document.activeElement === firstElement) {
+      e.preventDefault();
+      lastElement?.focus();
+    } else if (!e.shiftKey && document.activeElement === lastElement) {
+      e.preventDefault();
+      firstElement?.focus();
+    }
+  }, []);
 
   useEffect(() => {
     fetchContent();
@@ -199,19 +249,25 @@ export const YieldPreviewModal: React.FC<YieldPreviewModalProps> = ({
         exit={{ opacity: 0 }}
         className={`fixed ${isFullscreen ? 'inset-0' : 'inset-4'} z-50 flex items-center justify-center`}
         onClick={onClose}
+        onKeyDown={handleFocusTrap}
       >
         {/* Backdrop */}
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-        
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+
         {/* Preview Modal */}
         <motion.div
+          ref={modalRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="yield-preview-title"
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
           className={`relative bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden ${
-            isFullscreen ? 'w-full h-full' : 'w-full max-w-6xl h-[85vh]'
+            isFullscreen ? 'w-full h-full' : 'w-full max-w-6xl max-h-[85vh] sm:max-w-[calc(100vw-2rem)]'
           }`}
+          style={{ height: isFullscreen ? '100%' : 'calc(var(--full-vh, 85vh) * 0.85)' }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -228,7 +284,7 @@ export const YieldPreviewModal: React.FC<YieldPreviewModalProps> = ({
                     {getFileIcon()}
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    <h3 id="yield-preview-title" className="text-lg font-semibold text-gray-900 dark:text-white">
                       {yieldItem.name}
                     </h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -273,48 +329,53 @@ export const YieldPreviewModal: React.FC<YieldPreviewModalProps> = ({
                 <Tooltip content="Open in new tab" position="bottom">
                   <button
                     onClick={openInNewTab}
-                    className="p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                    aria-label="Open in new tab"
+                    className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
                   >
-                    <ExternalLink className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                    <ExternalLink className="w-4 h-4 text-gray-700 dark:text-gray-300" aria-hidden="true" />
                   </button>
                 </Tooltip>
-                
+
                 <Tooltip content="Download file" position="bottom">
                   <button
                     onClick={downloadFile}
-                    className="p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                    aria-label="Download file"
+                    className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
                   >
-                    <Download className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                    <Download className="w-4 h-4 text-gray-700 dark:text-gray-300" aria-hidden="true" />
                   </button>
                 </Tooltip>
-                
+
                 <Tooltip content={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} position="bottom">
                   <button
                     onClick={() => setIsFullscreen(!isFullscreen)}
-                    className="p-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                    aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                    className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
                   >
                     {isFullscreen ? (
-                      <Minimize2 className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                      <Minimize2 className="w-4 h-4 text-gray-700 dark:text-gray-300" aria-hidden="true" />
                     ) : (
-                      <Maximize2 className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                      <Maximize2 className="w-4 h-4 text-gray-700 dark:text-gray-300" aria-hidden="true" />
                     )}
                   </button>
                 </Tooltip>
                 
                 <Tooltip content="Close preview" position="bottom">
                   <button
+                    ref={closeButtonRef}
                     onClick={onClose}
-                    className="p-2 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 rounded-lg transition-colors"
+                    aria-label="Close preview"
+                    className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
                   >
-                    <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <X className="w-4 h-4 text-red-600 dark:text-red-400" aria-hidden="true" />
                   </button>
                 </Tooltip>
               </div>
             </div>
           </div>
           
-          {/* Content */}
-          <div className="flex-1 overflow-hidden bg-white dark:bg-gray-950" style={{ height: isFullscreen ? 'calc(100vh - 80px)' : 'calc(85vh - 80px)' }}>
+          {/* Content - uses dynamic viewport height for iOS Safari compatibility */}
+          <div className="flex-1 overflow-hidden bg-white dark:bg-gray-950" style={{ height: isFullscreen ? 'calc(var(--full-vh, 100vh) - 80px)' : 'calc(var(--full-vh, 85vh) * 0.85 - 80px)' }}>
             {renderPreview()}
           </div>
           

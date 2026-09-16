@@ -18,10 +18,14 @@ class RunEngine:
     def __init__(self, agent_manager: AgentManager, settings: AppSettings) -> None:
         self._agent_manager = agent_manager
         self._settings = settings
-        self._queue: asyncio.Queue[RunRequest] = asyncio.Queue()
+        queue_maxsize = max(0, getattr(settings, "runengine_queue_maxsize", 1000))
+        self._queue: asyncio.Queue[RunRequest] = (
+            asyncio.Queue(maxsize=queue_maxsize) if queue_maxsize > 0 else asyncio.Queue()
+        )
         self._workers: list[asyncio.Task[None]] = []
         self._inline_tasks: set[asyncio.Task[Any]] = set()  # Accept tasks with any return type
         self._running = False
+        self._queue_put_timeout = getattr(settings, "runengine_queue_put_timeout", 5.0)
 
     @property
     def worker_count(self) -> int:
@@ -71,7 +75,25 @@ class RunEngine:
         if not self._running:
             await self.start()
         await self._agent_manager.register_run(request)
-        await self._queue.put(request)
+        try:
+            if self._queue.maxsize > 0 and self._queue_put_timeout:
+                await asyncio.wait_for(self._queue.put(request), timeout=self._queue_put_timeout)
+            else:
+                await self._queue.put(request)
+        except asyncio.TimeoutError as exc:
+            await self._agent_manager.cancel_run(request.run_id)
+            await self._agent_manager.finalize_without_execution(
+                request,
+                status="failed",
+                detail="run queue saturated",
+            )
+            _logger.error(
+                "run_queue_full",
+                run_id=request.run_id,
+                maxsize=self._queue.maxsize,
+                timeout=self._queue_put_timeout,
+            )
+            raise RuntimeError("Run queue saturated") from exc
         update_run_queue_depth(self._queue.qsize())
         _logger.info("run_enqueued", run_id=request.run_id, qsize=self._queue.qsize())
         return request.run_id
@@ -114,6 +136,10 @@ class RunEngine:
             try:
                 if await self._agent_manager.is_cancelled(request.run_id):
                     _logger.info("skip_cancelled", run_id=request.run_id)
+                    await self._agent_manager.finalize_without_execution(
+                        request,
+                        status="cancelled",
+                    )
                     continue
                 log_lifecycle_event(_logger, "run_start", "runengine", run_id=request.run_id)
                 await self._agent_manager.execute_run(request)

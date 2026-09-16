@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
+import {
   Sprout,
   Zap,
   Trees,
@@ -10,7 +10,7 @@ import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { QuickTaskModal } from '../Task/QuickTaskModal';
 import { GoWildModal } from '../GoWild/GoWildModal';
-import { FarmChatWizard } from '../Farm/FarmChatWizardSafe';
+import { FarmChatWizard } from '../Farm/FarmChatWizard';
 import { useFarmStore } from '@/store/farmStore';
 import { AppleCard } from '../ui/AppleCard';
 import { api } from '@/services/apiClient';
@@ -31,7 +31,7 @@ export const QuickActions: React.FC = () => {
   const [showQuickTaskWizard, setShowQuickTaskWizard] = useState(false);
   const [showGoWildWizard, setShowGoWildWizard] = useState(false);
   const [showFarmWizard, setShowFarmWizard] = useState(false);
-  
+
   const { addFarm } = useFarmStore();
 
   const handleNewFarm = () => {
@@ -46,6 +46,7 @@ export const QuickActions: React.FC = () => {
     setShowQuickTaskWizard(true);
   };
 
+  // Color scheme: Quick Task=Green, New Farm=Navy Blue, Go Wild=Burnt Orange
   const actions: QuickAction[] = [
     {
       id: 'new-farm',
@@ -53,8 +54,8 @@ export const QuickActions: React.FC = () => {
       subtitle: 'Start Growing',
       description: 'Launch a new AI farming project with multiple agents',
       icon: Sprout,
-      gradient: 'from-leaf-400 to-leaf-800',
-      accentColor: 'leaf',
+      gradient: 'from-navy-400 to-navy-800',
+      accentColor: 'navy',
       onClick: handleNewFarm,
     },
     {
@@ -63,8 +64,8 @@ export const QuickActions: React.FC = () => {
       subtitle: 'Autonomous Growth',
       description: 'Enable creative exploration with self-directed agents',
       icon: Trees,
-      gradient: 'from-harvest-400 to-harvest-800',
-      accentColor: 'harvest',
+      gradient: 'from-burnt-400 to-burnt-800',
+      accentColor: 'burnt',
       onClick: handleGoWild,
     },
     {
@@ -73,8 +74,8 @@ export const QuickActions: React.FC = () => {
       subtitle: 'Lightning Fast',
       description: 'Execute a rapid task with a single focused agent',
       icon: Zap,
-      gradient: 'from-sky-400 to-sky-800',
-      accentColor: 'sky',
+      gradient: 'from-leaf-400 to-leaf-800',
+      accentColor: 'leaf',
       onClick: handleQuickTask,
     },
   ];
@@ -82,6 +83,9 @@ export const QuickActions: React.FC = () => {
   const getAccentClasses = (color: string) => {
     const colorMap: Record<string, string> = {
       leaf: 'text-leaf-600 dark:text-leaf-400 bg-leaf-100 dark:bg-leaf-900/30',
+      navy: 'text-navy-600 dark:text-navy-400 bg-navy-100 dark:bg-navy-900/30',
+      burnt: 'text-burnt-600 dark:text-burnt-400 bg-burnt-100 dark:bg-burnt-900/30',
+      // Legacy support
       sky: 'text-sky-600 dark:text-sky-400 bg-sky-100 dark:bg-sky-900/30',
       harvest: 'text-harvest-600 dark:text-harvest-400 bg-harvest-100 dark:bg-harvest-900/30',
     };
@@ -97,7 +101,7 @@ export const QuickActions: React.FC = () => {
       >
       </motion.div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
         {actions.map((action, index) => {
           const Icon = action.icon;
           const accentClasses = getAccentClasses(action.accentColor);
@@ -113,7 +117,7 @@ export const QuickActions: React.FC = () => {
                 variant="glass"
                 hover={true}
                 padding="none"
-                className="h-full cursor-pointer group"
+                className="h-full cursor-pointer group touch-manipulation"
                 onClick={action.onClick}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -125,38 +129,38 @@ export const QuickActions: React.FC = () => {
                   action.gradient
                 )} />
                 
-                {/* Content */}
-                <div className="relative p-8">
-                  {/* Icon container */}
+                {/* Content - Responsive padding */}
+                <div className="relative p-4 sm:p-6 md:p-8">
+                  {/* Icon container - Responsive size */}
                   <motion.div
-                    className="mb-6"
+                    className="mb-4 sm:mb-6"
                     whileHover={{ rotate: [0, -5, 5, 0] }}
                     transition={{ duration: 0.5 }}
                   >
                     <div className={clsx(
-                      'w-20 h-20 rounded-2xl flex items-center justify-center',
+                      'w-14 h-14 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl sm:rounded-2xl flex items-center justify-center',
                       'bg-gradient-to-br shadow-lg',
                       action.gradient,
                       'group-hover:shadow-xl transition-shadow duration-300'
                     )}>
-                      <Icon className="w-10 h-10 text-white" />
+                      <Icon className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 text-white" />
                     </div>
                   </motion.div>
-                  
-                  {/* Text content */}
-                  <div className="space-y-3">
+
+                  {/* Text content - Responsive sizing */}
+                  <div className="space-y-2 sm:space-y-3">
                     <div>
-                      <h4 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">
+                      <h4 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-0.5 sm:mb-1">
                         {action.title}
                       </h4>
                       <p className={clsx(
-                        'text-sm font-medium',
+                        'text-xs sm:text-sm font-medium',
                         accentClasses.split(' ')[0] // Just the text color
                       )}>
                         {action.subtitle}
                       </p>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                    <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
                       {action.description}
                     </p>
                   </div>

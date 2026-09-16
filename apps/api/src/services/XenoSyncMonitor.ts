@@ -15,7 +15,7 @@ import { exec, execSync } from 'child_process';
 import { logger, LogCategory } from '../utils/logger';
 import { db } from '../database/connection';
 import { websocketManager } from '../websocket/websocketManager';
-import { terminalStreamingEnhanced } from './TerminalStreamingEnhanced';
+import { unifiedTerminalStreamService } from './UnifiedTerminalStreamService';
 
 const TMUX_TMP_DIR = '/tmp';
 const HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
@@ -59,7 +59,7 @@ interface SessionMetrics {
 class XenoSyncMonitorService extends EventEmitter {
   private static instance: XenoSyncMonitorService;
   private sessions = new Map<string, XenoSyncSession>();
-  private healthCheckInterval?: NodeJS.Timer;
+  private healthCheckInterval?: ReturnType<typeof setInterval>;
 
   private constructor() {
     super();
@@ -229,12 +229,12 @@ class XenoSyncMonitorService extends EventEmitter {
     agent.processRunning = await this.checkProcessRunning(paneRef);
 
     // Check output is flowing
-    const terminalSession = terminalStreamingEnhanced.getSession(session.farmId);
-    if (terminalSession) {
-      const agentInfo = terminalSession.agents.get(agent.id);
-      if (agentInfo) {
-        const timeSinceOutput = Date.now() - agentInfo.lastOutput.getTime();
-        agent.outputFlowing = timeSinceOutput < 30000; // Output in last 30 seconds
+    const farmStatus = unifiedTerminalStreamService.getFarmStatus(session.farmId);
+    if (farmStatus) {
+      const agentStatus = farmStatus.agents?.find(a => a.agentId === agent.id);
+      if (agentStatus) {
+        // If agent is active in terminal streaming, consider output flowing
+        agent.outputFlowing = agentStatus.isActive;
 
         if (agent.outputFlowing) {
           agent.lastActivity = new Date();
@@ -311,8 +311,9 @@ class XenoSyncMonitorService extends EventEmitter {
     }
 
     // Re-setup terminal streaming if needed
-    const terminalSession = terminalStreamingEnhanced.getSession(session.farmId);
-    if (!terminalSession || !terminalSession.agents.get(agent.id)?.pipePaneActive) {
+    const farmStatus = unifiedTerminalStreamService.getFarmStatus(session.farmId);
+    const agentActive = farmStatus?.agents?.find(a => a.agentId === agent.id)?.isActive ?? false;
+    if (!agentActive) {
       logger.info(LogCategory.FARM, `[XenoSync Monitor] Re-initializing terminal streaming for agent ${agent.id}`);
       // Terminal streaming will handle its own recovery through its health checks
     }

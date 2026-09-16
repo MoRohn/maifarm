@@ -1,6 +1,6 @@
 /**
  * Context Manager for AI Providers
- * Handles large context windows and session management for Qwen3-Coder and Claude
+ * Handles large context windows and session management for Llama3-Coder and Claude
  */
 
 import { EventEmitter } from 'events';
@@ -11,7 +11,7 @@ import crypto from 'crypto';
 interface ContextSession {
   id: string;
   farmId: string;
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'llama' | 'openai';
   createdAt: Date;
   lastAccessed: Date;
   tokenCount: number;
@@ -36,7 +36,7 @@ interface ContextAttachment {
 }
 
 interface ContextWindow {
-  provider: 'claude' | 'qwen';
+  provider: 'claude' | 'llama' | 'openai';
   standard: number;
   large: number;
   maximum: number;
@@ -47,16 +47,24 @@ export class ContextManager extends EventEmitter {
   private sessionPath = '/tmp/maifarm_contexts';
   
   // Provider-specific context windows (in tokens)
-  private contextWindows: Record<'claude' | 'qwen', ContextWindow> = {
+  private contextWindows: Record<'claude' | 'llama' | 'openai', ContextWindow> = {
     claude: {
+      provider: 'claude',
       standard: 200000,
       large: 200000,
       maximum: 200000
     },
-    qwen: {
+    llama: {
+      provider: 'llama',
       standard: 256000,
       large: 512000,
       maximum: 1000000 // 1M tokens theoretical maximum
+    },
+    openai: {
+      provider: 'openai',
+      standard: 128000,  // GPT-4 Turbo context window
+      large: 128000,
+      maximum: 128000
     }
   };
 
@@ -80,7 +88,7 @@ export class ContextManager extends EventEmitter {
    */
   async createSession(
     farmId: string, 
-    provider: 'claude' | 'qwen',
+    provider: 'claude' | 'llama',
     options?: {
       windowSize?: 'standard' | 'large' | 'maximum';
       metadata?: Record<string, any>;
@@ -172,8 +180,8 @@ export class ContextManager extends EventEmitter {
     }
 
     // Strategy 2: If still not enough space, summarize older messages
-    if (tokensToFree > 0 && session.provider === 'qwen') {
-      // Qwen can handle larger contexts, so we can be more aggressive
+    if (tokensToFree > 0 && session.provider === 'llama') {
+      // Llama can handle larger contexts, so we can be more aggressive
       await this.summarizeOldMessages(sessionId);
     }
 
@@ -185,7 +193,7 @@ export class ContextManager extends EventEmitter {
   }
 
   /**
-   * Summarize old messages to save tokens (Qwen-specific optimization)
+   * Summarize old messages to save tokens (Llama-specific optimization)
    */
   private async summarizeOldMessages(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
@@ -287,8 +295,8 @@ export class ContextManager extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    if (session.provider === 'qwen') {
-      // Qwen-specific optimizations
+    if (session.provider === 'llama') {
+      // Llama-specific optimizations
       // 1. Reorder messages for better coherence
       // 2. Add chain-of-thought markers
       // 3. Optimize for larger context utilization
@@ -373,8 +381,107 @@ export class ContextManager extends EventEmitter {
   /**
    * Get provider capabilities
    */
-  getProviderCapabilities(provider: 'claude' | 'qwen'): ContextWindow {
+  getProviderCapabilities(provider: 'claude' | 'llama' | 'openai'): ContextWindow {
     return this.contextWindows[provider];
+  }
+
+  /**
+   * Get a session by farm ID
+   * Returns the most recent session for the farm
+   */
+  async getSessionByFarmId(farmId: string): Promise<ContextSession | null> {
+    // Search through sessions for the matching farm ID
+    for (const [_, session] of this.sessions) {
+      if (session.farmId === farmId) {
+        return session;
+      }
+    }
+
+    // If not found in memory, try to load from disk
+    try {
+      const files = await fs.readdir(this.sessionPath);
+      for (const file of files) {
+        if (file.endsWith('.json') && file.startsWith(farmId)) {
+          const content = await fs.readFile(path.join(this.sessionPath, file), 'utf-8');
+          const session = JSON.parse(content) as ContextSession;
+          session.createdAt = new Date(session.createdAt);
+          session.lastAccessed = new Date(session.lastAccessed);
+          session.messages.forEach(m => {
+            m.timestamp = new Date(m.timestamp);
+          });
+          this.sessions.set(session.id, session);
+          return session;
+        }
+      }
+    } catch (error) {
+      // Session not found
+    }
+
+    return null;
+  }
+
+  /**
+   * Update session metadata
+   */
+  async updateSessionMetadata(sessionId: string, metadata: Record<string, any>): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    session.metadata = {
+      ...session.metadata,
+      ...metadata
+    };
+    session.lastAccessed = new Date();
+
+    await this.persistSession(session);
+    this.emit('session:metadata-updated', { sessionId, metadata });
+  }
+
+  /**
+   * Compress context by removing old messages (public API)
+   * @param sessionId The session ID to compress
+   * @param tokensToFree Number of tokens to free up
+   */
+  async compressContext(sessionId: string, tokensToFree: number): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    let tokensFreed = 0;
+    let messagesRemoved = 0;
+
+    // Remove oldest messages until we've freed enough tokens
+    while (tokensFreed < tokensToFree && session.messages.length > 1) {
+      const oldestMessage = session.messages.shift();
+      if (oldestMessage) {
+        tokensFreed += oldestMessage.tokenCount;
+        session.tokenCount -= oldestMessage.tokenCount;
+        messagesRemoved++;
+      }
+    }
+
+    // Update compression count in metadata
+    session.metadata.compressionCount = (session.metadata.compressionCount || 0) + 1;
+    session.metadata.lastCompression = new Date();
+    session.lastAccessed = new Date();
+
+    await this.persistSession(session);
+    this.emit('context:compressed', {
+      sessionId,
+      messagesRemoved,
+      tokensFreed,
+      newTokenCount: session.tokenCount
+    });
+  }
+
+  /**
+   * Get all active sessions (for monitoring dashboard)
+   */
+  getAllSessions(): ContextSession[] {
+    return Array.from(this.sessions.values());
   }
 }
 

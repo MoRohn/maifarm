@@ -146,7 +146,6 @@ export const Analytics: React.FC = () => {
   const [farmYieldMetrics, setFarmYieldMetrics] = useState<FarmYieldMetrics | null>(null);
 
   // WebSocket connection for real-time updates
-  // Note: Hooks must be called at top level, cannot be in try-catch
   const { connected, lastMessage } = useWebSocket({
     url: import.meta.env.VITE_API_URL || 'http://localhost:4567',
     reconnect: true,
@@ -156,64 +155,54 @@ export const Analytics: React.FC = () => {
 
   // Calculate real Claude Code costs
   const calculateClaudeCosts = useMemo(() => {
-    if (!claudeMetrics) return { total: 0, breakdown: {} };
-    
+    if (!claudeMetrics || !claudeMetrics.tokensUsed) {
+      return {
+        total: 0,
+        breakdown: {
+          input: 0,
+          output: 0,
+          apiCalls: 0,
+          avgLatency: 0
+        }
+      };
+    }
+
     const model = claudeMetrics.modelType || 'claude-3-sonnet';
     const pricing = CLAUDE_API_PRICING[model as keyof typeof CLAUDE_API_PRICING] || CLAUDE_API_PRICING['claude-3-sonnet'];
-    
+
     const inputCost = (claudeMetrics.tokensUsed * 0.7) / 1000 * pricing.input; // Assume 70% input tokens
     const outputCost = (claudeMetrics.tokensUsed * 0.3) / 1000 * pricing.output; // Assume 30% output tokens
-    
+
     return {
       total: inputCost + outputCost,
       breakdown: {
         input: inputCost,
         output: outputCost,
-        apiCalls: claudeMetrics.apiCalls,
-        avgLatency: claudeMetrics.averageLatency
+        apiCalls: claudeMetrics.apiCalls || 0,
+        avgLatency: claudeMetrics.averageLatency || 0
       }
     };
   }, [claudeMetrics]);
 
-  // Load initial data with error recovery
+  // Load initial data
   useEffect(() => {
-    // Wrap in try-catch to prevent crashes
-    const loadInitialData = async () => {
-      try {
-        await loadAnalyticsData();
-      } catch (error) {
-        console.error('[Analytics] Failed to load initial analytics data:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Failed to load analytics data';
-        setError(errorMessage);
-        setLoading(false);
-        // Don't throw - just log and show error state in UI
-        toast.error(errorMessage);
-      }
-    };
-
-    loadInitialData();
+    loadAnalyticsData();
   }, [selectedTimeRange]);
 
-  // Handle WebSocket messages for real-time updates with error recovery
+  // Handle WebSocket messages for real-time updates
   useEffect(() => {
-    if (!lastMessage || typeof lastMessage !== 'object') return;
-
-    try {
+    if (lastMessage && typeof lastMessage === 'object') {
       const { type, payload } = lastMessage;
-
+      
       switch (type) {
         case 'metrics:update':
           // Handle unified metrics update with validation
           if (payload && typeof payload === 'object') {
-            try {
-              unifiedMetricsService.handleWebSocketUpdate(payload);
-              // Trigger analytics store update
-              updateFromWebSocket(payload);
-            } catch (error) {
-              console.error('[Analytics] Failed to process metrics update:', error);
-            }
+            unifiedMetricsService.handleWebSocketUpdate(payload);
+            // Trigger analytics store update
+            updateFromWebSocket(payload);
           } else {
-            console.warn('[Analytics] Invalid metrics:update payload received:', payload);
+            console.warn('Invalid metrics:update payload received:', payload);
           }
           break;
           
@@ -238,9 +227,6 @@ export const Analytics: React.FC = () => {
         default:
           break;
       }
-    } catch (error) {
-      console.error('[Analytics] Error processing WebSocket message:', error);
-      // Don't throw - just log and continue
     }
   }, [lastMessage, updateFromWebSocket]);
 
@@ -258,7 +244,6 @@ export const Analytics: React.FC = () => {
   const loadAnalyticsData = async () => {
     try {
       setLoading(true);
-      setError(null); // Clear previous errors
 
       // Use unified metrics service for consistent data
       const unifiedMetrics = await unifiedMetricsService.fetchMetrics();
@@ -390,29 +375,9 @@ export const Analytics: React.FC = () => {
       setLoading(false);
     } catch (error) {
       console.error('Failed to load analytics data:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load analytics data';
-      setError(errorMessage);
+      setError('Failed to load analytics data');
       setLoading(false);
-      toast.error(errorMessage);
-
-      // Set safe default values to prevent rendering crashes
-      setMetrics({
-        totalFarms: 0,
-        activeFarms: 0,
-        totalAgents: 0,
-        activeAgents: 0,
-        totalTasks: 0,
-        completedTasks: 0,
-        failedTasks: 0,
-        taskSuccessRate: 0,
-        errorRate: 0,
-        avgResponseTime: 0,
-        resourceUtilization: { cpu: 0, memory: 0, storage: 0, network: 0, timestamp: new Date() },
-        totalCost: { total: 0, compute: 0, storage: 0, network: 0, api: 0, period: 'hourly' as const, currency: 'USD' }
-      });
-
-      // Set empty time series data
-      updateTimeSeriesData([]);
+      toast.error('Failed to load analytics data');
     }
   };
 
@@ -464,19 +429,19 @@ export const Analytics: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex items-center justify-between"
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
           >
             <div>
-              <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
-                <BarChart3 className="w-10 h-10" />
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2 flex items-center gap-2 sm:gap-3">
+                <BarChart3 className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10" />
                 Analytics Dashboard
               </h1>
-              <p className="text-white/80 text-lg">
+              <p className="text-white/80 text-sm sm:text-base md:text-lg">
                 Real-time insights into your MaiFarm operations
               </p>
             </div>
-            
-            <div className="flex items-center gap-4">
+
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
               {/* Time Range Selector */}
               <select
                 value={selectedTimeRange.preset}
@@ -585,11 +550,11 @@ export const Analytics: React.FC = () => {
         
         <MetricCard
           title="Success Rate"
-          value={metrics && metrics.totalTasks > 0 ? `${((metrics.completedTasks / metrics.totalTasks) * 100).toFixed(1)}%` : '0%'}
+          value={metrics && metrics.totalTasks > 0 ? `${((metrics.completedTasks / metrics.totalTasks) * 100).toFixed(1)}%` : 'N/A'}
           icon={<Target className="w-6 h-6" style={{ color: accentColor }} />}
           gradient={`bg-gradient-to-br`}
           gradientStyle={{ background: `linear-gradient(135deg, ${accentColor}40 0%, ${accentColor}60 100%)` }}
-          change={2.4}
+          change={metrics && metrics.totalTasks > 0 ? 2.4 : undefined}
           subtitle={`${metrics?.completedTasks || 0} completed tasks`}
           onClick={() => setSelectedMetric('agents')}
         />
@@ -763,6 +728,15 @@ export const Analytics: React.FC = () => {
             {/* Agent Performance Table */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg">
               <h3 className="text-lg font-semibold mb-4">Agent Performance Details</h3>
+              {agentPerformance.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Activity className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+                  <p className="text-gray-500 dark:text-gray-400 mb-2">No agent performance data available</p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500">
+                    Create and run farms to see agent metrics here
+                  </p>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
@@ -785,53 +759,66 @@ export const Analytics: React.FC = () => {
                         <td className="py-3 px-4 font-medium">{agent.agentName}</td>
                         <td className="text-right py-3 px-4">{agent.tasksCompleted}</td>
                         <td className="text-right py-3 px-4">
-                          <span className={clsx(
-                            "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium",
-                            agent.successRate >= 90 
-                              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                              : agent.successRate >= 70
-                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                              : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                          )}>
-                            {agent.successRate >= 90 ? <CheckCircle2 className="w-3 h-3" /> :
-                             agent.successRate >= 70 ? <AlertCircle className="w-3 h-3" /> :
-                             <XCircle className="w-3 h-3" />}
-                            {agent.successRate.toFixed(1)}%
-                          </span>
+                          {agent.successRate !== null && agent.successRate !== undefined && !isNaN(agent.successRate) ? (
+                            <span className={clsx(
+                              "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium",
+                              agent.successRate >= 90
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                : agent.successRate >= 70
+                                ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                            )}>
+                              {agent.successRate >= 90 ? <CheckCircle2 className="w-3 h-3" /> :
+                               agent.successRate >= 70 ? <AlertCircle className="w-3 h-3" /> :
+                               <XCircle className="w-3 h-3" />}
+                              {agent.successRate.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 text-xs">N/A</span>
+                          )}
                         </td>
                         <td className="text-right py-3 px-4">
-                          {agent.averageResponseTime.toFixed(1)}s
+                          {agent.averageResponseTime ? `${agent.averageResponseTime.toFixed(1)}s` : 'N/A'}
                         </td>
                         <td className="text-right py-3 px-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <span>{agent.resourceUsage.cpu.toFixed(1)}%</span>
-                            <div className="w-12 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                              <div 
-                                className="bg-blue-500 h-1.5 rounded-full"
-                                style={{ width: `${agent.resourceUsage.cpu}%` }}
-                              />
+                          {agent.resourceUsage && agent.resourceUsage.cpu !== undefined ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <span>{agent.resourceUsage.cpu.toFixed(1)}%</span>
+                              <div className="w-12 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                <div
+                                  className="bg-blue-500 h-1.5 rounded-full"
+                                  style={{ width: `${Math.min(agent.resourceUsage.cpu, 100)}%` }}
+                                />
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 text-xs">N/A</span>
+                          )}
                         </td>
                         <td className="text-right py-3 px-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <span>{agent.resourceUsage.memory.toFixed(1)}%</span>
-                            <div className="w-12 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                              <div 
-                                className="bg-green-500 h-1.5 rounded-full"
-                                style={{ width: `${agent.resourceUsage.memory}%` }}
-                              />
+                          {agent.resourceUsage && agent.resourceUsage.memory !== undefined ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <span>{agent.resourceUsage.memory.toFixed(1)}%</span>
+                              <div className="w-12 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                <div
+                                  className="bg-green-500 h-1.5 rounded-full"
+                                  style={{ width: `${Math.min(agent.resourceUsage.memory, 100)}%` }}
+                                />
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 text-xs">N/A</span>
+                          )}
                         </td>
                         <td className="text-right py-3 px-4">
-                          ${agent.costMetrics.total.toFixed(2)}
+                          {agent.costMetrics && agent.costMetrics.total !== undefined ? `$${agent.costMetrics.total.toFixed(2)}` : '$0.00'}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -873,19 +860,19 @@ export const Analytics: React.FC = () => {
                 <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-600 dark:text-gray-400">Model</span>
-                    <span className="text-sm font-medium">{claudeMetrics?.modelType || 'claude-3-sonnet'}</span>
+                    <span className="text-sm font-medium">{claudeMetrics?.modelType || 'N/A'}</span>
                   </div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-600 dark:text-gray-400">API Calls</span>
-                    <span className="text-sm font-medium">{claudeMetrics?.apiCalls.toLocaleString() || 0}</span>
+                    <span className="text-sm font-medium">{claudeMetrics?.apiCalls ? claudeMetrics.apiCalls.toLocaleString() : '0'}</span>
                   </div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-600 dark:text-gray-400">Tokens Used</span>
-                    <span className="text-sm font-medium">{claudeMetrics?.tokensUsed.toLocaleString() || 0}</span>
+                    <span className="text-sm font-medium">{claudeMetrics?.tokensUsed ? claudeMetrics.tokensUsed.toLocaleString() : '0'}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600 dark:text-gray-400">Avg Latency</span>
-                    <span className="text-sm font-medium">{claudeMetrics?.averageLatency.toFixed(2) || 0}s</span>
+                    <span className="text-sm font-medium">{claudeMetrics?.averageLatency ? `${claudeMetrics.averageLatency.toFixed(2)}s` : 'N/A'}</span>
                   </div>
                 </div>
                 

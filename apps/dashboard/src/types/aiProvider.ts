@@ -5,7 +5,8 @@
 
 export enum AIProvider {
   CLAUDE = 'claude',
-  OPENAI = 'openai'
+  OPENAI = 'openai',
+  GROK = 'grok'
 }
 
 export interface AIProviderConfig {
@@ -24,6 +25,7 @@ export interface AIProviderSettings {
   providers: {
     [AIProvider.CLAUDE]: AIProviderConfig;
     [AIProvider.OPENAI]: AIProviderConfig;
+    [AIProvider.GROK]: AIProviderConfig;
   };
 }
 
@@ -77,6 +79,17 @@ export const AI_PROVIDER_CAPABILITIES: Record<AIProvider, AIProviderCapabilities
     costPerMillionTokens: {
       input: 5,
       output: 15
+    }
+  },
+  [AIProvider.GROK]: {
+    maxContextTokens: 128000,
+    supportsVision: true,
+    supportsStreaming: true,
+    supportsFunctionCalling: true,
+    supportsCodeExecution: false,
+    costPerMillionTokens: {
+      input: 2,
+      output: 10
     }
   }
 };

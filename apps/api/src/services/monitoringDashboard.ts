@@ -11,6 +11,9 @@ import { ResourceManager } from '../utils/ResourceManager';
 import { apiCircuitBreaker } from '../middleware/rateLimiter';
 import os from 'os';
 import { performance } from 'perf_hooks';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 interface SystemMetrics {
   cpu: {
@@ -426,7 +429,9 @@ class MonitoringDashboardService extends EventEmitter {
       for (const key of keys) {
         const data = await redis.get(key);
         if (data) {
-          const parsed = JSON.parse(data);
+          // Convert Buffer to string if needed
+          const dataStr = typeof data === 'string' ? data : data.toString('utf-8');
+          const parsed = JSON.parse(dataStr);
           const endpoint = key.replace('ratelimit:', '');
           endpoints[endpoint] = {
             requests: parsed.tokens,
@@ -562,7 +567,7 @@ class MonitoringDashboardService extends EventEmitter {
       const { promisify } = await import('util');
       const execPromise = promisify(exec);
 
-      await execPromise('TMUX_TMPDIR=/tmp tmux list-sessions');
+      await execPromise(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions`);
       const latency = performance.now() - start;
 
       return {

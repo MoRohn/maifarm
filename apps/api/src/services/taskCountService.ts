@@ -1,14 +1,34 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { pathConfig } from '../config/paths';
+import { db } from '../database/connection';
 import { logger } from '../utils/logger';
 
-/**
- * Service to count tasks completed based on files created by agents
- * Each file created by an agent represents a completed task
- */
+const FARM_CACHE_TTL_MS = Number(process.env.TASK_COUNT_FARM_CACHE_MS || 15000);
+const AGENT_CACHE_TTL_MS = Number(process.env.TASK_COUNT_AGENT_CACHE_MS || 15000);
+const HARVEST_CACHE_TTL_MS = Number(process.env.TASK_COUNT_HARVEST_CACHE_MS || 30000);
+const WATCH_POLL_INTERVAL_MS = Number(process.env.TASK_COUNT_WATCH_INTERVAL_MS || 2000);
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type CacheEntry<T> = {
+  value: T;
+  expiresAt: number;
+};
+
+function isUUID(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+async function parseCountResult(result: any): Promise<number> {
+  const raw = result?.rows?.[0]?.count ?? 0;
+  const parsed = typeof raw === 'number' ? raw : parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export class TaskCountService {
   private static instance: TaskCountService;
+
+  private farmCache = new Map<string, CacheEntry<number>>();
+  private agentCache = new Map<string, CacheEntry<number>>();
+  private harvestCache = new Map<string, CacheEntry<number>>();
 
   private constructor() {}
 
@@ -19,91 +39,157 @@ export class TaskCountService {
     return TaskCountService.instance;
   }
 
-  /**
-   * Count files created in a farm's workspace
-   * This represents the number of tasks completed by all agents in the farm
-   */
+  private async withCache<T>(
+    cache: Map<string, CacheEntry<T>>,
+    key: string,
+    ttlMs: number,
+    loader: () => Promise<T>
+  ): Promise<T> {
+    const cached = cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
+    const value = await loader();
+
+    if (ttlMs > 0) {
+      cache.set(key, {
+        value,
+        expiresAt: Date.now() + ttlMs
+      });
+    }
+
+    return value;
+  }
+
+  private clearCacheEntry(cache: Map<string, CacheEntry<number>>, key: string) {
+    cache.delete(key);
+  }
+
   async countTasksForFarm(farmId: string): Promise<number> {
-    try {
-      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
-      
-      // Check if workspace exists
-      try {
-        await fs.access(workspacePath);
-      } catch {
-        // Workspace doesn't exist yet, no tasks completed
+    if (!farmId) return 0;
+
+    const cacheKey = `farm:${farmId}`;
+    const count = await this.withCache(this.farmCache, cacheKey, FARM_CACHE_TTL_MS, async () => {
+      const result = await db.query(
+        `SELECT COUNT(*) AS count FROM tasks WHERE farm_id = $1`,
+        [farmId]
+      );
+      return parseCountResult(result);
+    });
+
+    logger.debug(`[TaskCountService] Farm ${farmId} has ${count} tasks in database`);
+    return count;
+  }
+
+  async countTasksForAgent(farmId: string, agentIdentifier: string | number): Promise<number> {
+    if (!farmId || agentIdentifier === undefined || agentIdentifier === null) {
+      return 0;
+    }
+
+    const cacheKey = `agent:${farmId}:${agentIdentifier}`;
+    const count = await this.withCache(this.agentCache, cacheKey, AGENT_CACHE_TTL_MS, async () => {
+      const agentId = await this.resolveAgentId(farmId, agentIdentifier);
+      if (!agentId) {
         return 0;
       }
 
-      // Count all files recursively in the workspace
-      const count = await this.countFilesRecursively(workspacePath);
-      
-      logger.debug(`[TaskCountService] Farm ${farmId} has ${count} files (tasks completed)`);
-      return count;
-    } catch (error) {
-      logger.error(`[TaskCountService] Error counting tasks for farm ${farmId}:`, error);
-      return 0;
-    }
+      const result = await db.query(
+        `SELECT COUNT(*) AS count FROM tasks WHERE farm_id = $1 AND agent_id = $2`,
+        [farmId, agentId]
+      );
+      return parseCountResult(result);
+    });
+
+    logger.debug(`[TaskCountService] Agent ${agentIdentifier} in farm ${farmId} has ${count} tasks in database`);
+    return count;
   }
 
-  /**
-   * Count files created by a specific agent in a farm
-   * ALL agents share the same workspace, so we look for agent markers
-   */
-  async countTasksForAgent(farmId: string, agentId: string | number): Promise<number> {
-    try {
-      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
-      
-      // In the shared workspace model, all agents work in the same directory
-      // Count files with agent markers in their name or content
-      const count = await this.countFilesWithAgentMarker(workspacePath, agentId);
-      
-      logger.debug(`[TaskCountService] Agent ${agentId} in farm ${farmId} has ${count} files (tasks completed)`);
-      return count;
-    } catch (error) {
-      logger.error(`[TaskCountService] Error counting tasks for agent ${agentId} in farm ${farmId}:`, error);
-      return 0;
-    }
-  }
-
-  /**
-   * Count files in harvest storage for a farm
-   * This represents completed and collected tasks
-   */
   async countHarvestedTasks(farmId: string): Promise<number> {
-    try {
-      // Check both active and completed harvests
-      const activeCount = await this.countHarvestFiles(farmId, false);
-      const completedCount = await this.countHarvestFiles(farmId, true);
-      
-      const total = activeCount + completedCount;
-      logger.debug(`[TaskCountService] Farm ${farmId} has ${total} harvested files`);
-      return total;
-    } catch (error) {
-      logger.error(`[TaskCountService] Error counting harvested tasks for farm ${farmId}:`, error);
-      return 0;
-    }
+    if (!farmId) return 0;
+
+    const cacheKey = `harvest:${farmId}`;
+    const count = await this.withCache(this.harvestCache, cacheKey, HARVEST_CACHE_TTL_MS, async () => {
+      const result = await db.query(
+        `SELECT COUNT(*) AS count FROM harvest_yield WHERE farm_id = $1`,
+        [farmId]
+      );
+      return parseCountResult(result);
+    });
+
+    logger.debug(`[TaskCountService] Farm ${farmId} has ${count} harvested items in database`);
+    return count;
   }
 
-  /**
-   * Get detailed task statistics for a farm
-   */
   async getTaskStatistics(farmId: string): Promise<{
     totalTasks: number;
     harvestedTasks: number;
     pendingTasks: number;
     tasksByType: Record<string, number>;
   }> {
+    if (!farmId) {
+      return {
+        totalTasks: 0,
+        harvestedTasks: 0,
+        pendingTasks: 0,
+        tasksByType: {}
+      };
+    }
+
     try {
-      const totalTasks = await this.countTasksForFarm(farmId);
+      const [aggregateResult, typeResult] = await Promise.all([
+        db.query(
+          `SELECT 
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+            COUNT(*) FILTER (WHERE status = 'failed') AS failed
+           FROM tasks
+           WHERE farm_id = $1`,
+          [farmId]
+        ),
+        db.query(
+          `SELECT 
+             LOWER(NULLIF(
+               COALESCE(
+                 payload->>'fileExtension',
+                 payload->>'extension',
+                 result->>'fileExtension',
+                 result->>'extension'
+               ), ''
+             )) AS extension,
+             COUNT(*) AS count
+           FROM tasks
+           WHERE farm_id = $1
+           GROUP BY 1`,
+          [farmId]
+        )
+      ]);
+
+      const aggregateRow = aggregateResult.rows?.[0] ?? {};
+      const totalTasks = parseInt(aggregateRow.total || '0', 10);
+      const completedTasks = parseInt(aggregateRow.completed || '0', 10);
       const harvestedTasks = await this.countHarvestedTasks(farmId);
-      const tasksByType = await this.categorizeTasksByFileType(farmId);
-      
+
+      const categories: Record<string, number> = {
+        code: 0,
+        documentation: 0,
+        data: 0,
+        config: 0,
+        other: 0
+      };
+
+      for (const row of typeResult.rows ?? []) {
+        const extension = typeof row.extension === 'string' ? row.extension.replace(/^\./, '') : '';
+        const count = parseInt(row.count || '0', 10);
+        const category = this.mapExtensionToCategory(extension);
+        categories[category] += count;
+      }
+
       return {
         totalTasks,
         harvestedTasks,
-        pendingTasks: Math.max(0, totalTasks - harvestedTasks),
-        tasksByType
+        pendingTasks: Math.max(0, totalTasks - completedTasks),
+        tasksByType: categories
       };
     } catch (error) {
       logger.error(`[TaskCountService] Error getting task statistics for farm ${farmId}:`, error);
@@ -116,203 +202,99 @@ export class TaskCountService {
     }
   }
 
-  /**
-   * Count files recursively in a directory
-   */
-  private async countFilesRecursively(dirPath: string): Promise<number> {
-    let count = 0;
-    
-    try {
-      const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        
-        if (entry.isDirectory()) {
-          // Skip special directories
-          if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.cache') {
-            continue;
-          }
-          // Recursively count files in subdirectories
-          count += await this.countFilesRecursively(fullPath);
-        } else if (entry.isFile()) {
-          // Skip special files
-          if (!entry.name.startsWith('.') && entry.name !== 'package-lock.json') {
-            count++;
-          }
-        }
-      }
-    } catch (error) {
-      logger.warn(`[TaskCountService] Error reading directory ${dirPath}:`, error);
-    }
-    
-    return count;
-  }
-
-  /**
-   * Count files that might have been created by a specific agent
-   * Look for files with agent markers in their name or content
-   */
-  private async countFilesWithAgentMarker(workspacePath: string, agentId: string | number): Promise<number> {
-    let count = 0;
-    
-    try {
-      const entries = await fs.readdir(workspacePath, { withFileTypes: true });
-      const agentMarker = `agent_${agentId}`;
-      
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name.includes(agentMarker)) {
-          count++;
-        }
-      }
-    } catch (error) {
-      logger.warn(`[TaskCountService] Error counting agent files:`, error);
-    }
-    
-    return count;
-  }
-
-  /**
-   * Count files in harvest storage
-   */
-  private async countHarvestFiles(farmId: string, completed: boolean): Promise<number> {
-    try {
-      const harvestPath = pathConfig.getHarvestPath(farmId, completed);
-      
-      try {
-        await fs.access(harvestPath);
-      } catch {
-        return 0; // Harvest directory doesn't exist
-      }
-      
-      // Count yield files specifically (these are the actual task outputs)
-      const yieldPath = path.join(harvestPath, 'yield');
-      
-      try {
-        await fs.access(yieldPath);
-        return await this.countFilesRecursively(yieldPath);
-      } catch {
-        // No yield directory, count all files
-        return await this.countFilesRecursively(harvestPath);
-      }
-    } catch (error) {
-      logger.warn(`[TaskCountService] Error counting harvest files:`, error);
-      return 0;
-    }
-  }
-
-  /**
-   * Categorize tasks by file type
-   */
-  private async categorizeTasksByFileType(farmId: string): Promise<Record<string, number>> {
-    const categories: Record<string, number> = {
-      code: 0,
-      documentation: 0,
-      data: 0,
-      config: 0,
-      other: 0
-    };
-    
-    try {
-      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
-      
-      try {
-        await fs.access(workspacePath);
-      } catch {
-        return categories;
-      }
-      
-      await this.categorizeFilesRecursively(workspacePath, categories);
-    } catch (error) {
-      logger.warn(`[TaskCountService] Error categorizing tasks:`, error);
-    }
-    
-    return categories;
-  }
-
-  /**
-   * Recursively categorize files by type
-   */
-  private async categorizeFilesRecursively(dirPath: string, categories: Record<string, number>): Promise<void> {
-    try {
-      const entries = await fs.readdir(dirPath, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        
-        if (entry.isDirectory()) {
-          // Skip special directories
-          if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.cache') {
-            continue;
-          }
-          await this.categorizeFilesRecursively(fullPath, categories);
-        } else if (entry.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase();
-          
-          // Categorize by extension
-          if (['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.go', '.rs'].includes(ext)) {
-            categories.code++;
-          } else if (['.md', '.txt', '.doc', '.pdf', '.rst'].includes(ext)) {
-            categories.documentation++;
-          } else if (['.json', '.csv', '.xml', '.sql', '.db'].includes(ext)) {
-            categories.data++;
-          } else if (['.yaml', '.yml', '.toml', '.ini', '.env', '.config'].includes(ext)) {
-            categories.config++;
-          } else if (!entry.name.startsWith('.')) {
-            categories.other++;
-          }
-        }
-      }
-    } catch (error) {
-      logger.warn(`[TaskCountService] Error categorizing files in ${dirPath}:`, error);
-    }
-  }
-
-  /**
-   * Watch for new files (tasks) in a farm workspace
-   * Returns a cleanup function to stop watching
-   */
   async watchTaskCompletion(
-    farmId: string, 
+    farmId: string,
     callback: (newTaskCount: number) => void
   ): Promise<() => void> {
-    try {
-      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
-      
-      // Ensure workspace exists
-      await fs.mkdir(workspacePath, { recursive: true });
-      
-      // Use fs.watch for real-time updates
-      const watcher = (await import('chokidar')).watch(workspacePath, {
-        ignored: /(^|[\/\\])\../,
-        persistent: true,
-        ignoreInitial: true
-      });
-      
-      // Debounce function to avoid too many updates
-      let debounceTimer: NodeJS.Timeout;
-      const debouncedUpdate = async () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(async () => {
-          const count = await this.countTasksForFarm(farmId);
+    let cancelled = false;
+    let lastCount = await this.countTasksForFarm(farmId);
+
+    callback(lastCount);
+
+    const interval = setInterval(async () => {
+      try {
+        if (cancelled) return;
+        const count = await this.countTasksForFarm(farmId);
+        if (count !== lastCount) {
+          lastCount = count;
           callback(count);
-        }, 1000); // Wait 1 second after last change
-      };
-      
-      watcher.on('add', debouncedUpdate);
-      watcher.on('unlink', debouncedUpdate);
-      
-      // Return cleanup function
-      return () => {
-        clearTimeout(debounceTimer);
-        watcher.close();
-      };
-    } catch (error) {
-      logger.error(`[TaskCountService] Error setting up task watcher for farm ${farmId}:`, error);
-      return () => {}; // Return no-op cleanup function
+        }
+      } catch (error) {
+        logger.warn(`[TaskCountService] Error polling task count for farm ${farmId}:`, error);
+      }
+    }, WATCH_POLL_INTERVAL_MS);
+
+    interval.unref?.();
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      this.clearCacheEntry(this.farmCache, `farm:${farmId}`);
+    };
+  }
+
+  private async resolveAgentId(farmId: string, agentIdentifier: string | number): Promise<string | null> {
+    if (typeof agentIdentifier === 'string') {
+      if (isUUID(agentIdentifier)) {
+        return agentIdentifier;
+      }
+
+      const numeric = Number.parseInt(agentIdentifier, 10);
+      if (Number.isInteger(numeric)) {
+        return this.lookupAgentIdByIndex(farmId, numeric);
+      }
+
+      return null;
     }
+
+    if (typeof agentIdentifier === 'number') {
+      return this.lookupAgentIdByIndex(farmId, agentIdentifier);
+    }
+
+    return null;
+  }
+
+  private async lookupAgentIdByIndex(farmId: string, index: number): Promise<string | null> {
+    if (!Number.isInteger(index) || index < 0) {
+      return null;
+    }
+
+    const result = await db.query(
+      `SELECT id FROM agents
+       WHERE farm_id = $1
+       ORDER BY created_at ASC
+       OFFSET $2 LIMIT 1`,
+      [farmId, index]
+    );
+
+    return result.rows?.[0]?.id ?? null;
+  }
+
+  private mapExtensionToCategory(extension: string): keyof Record<string, number> {
+    if (!extension) {
+      return 'other';
+    }
+
+    const ext = extension.startsWith('.') ? extension.slice(1) : extension;
+
+    if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'h', 'go', 'rs', 'rb', 'php'].includes(ext)) {
+      return 'code';
+    }
+
+    if (['md', 'markdown', 'txt', 'doc', 'docx', 'pdf', 'rst'].includes(ext)) {
+      return 'documentation';
+    }
+
+    if (['json', 'csv', 'xml', 'sql', 'db', 'parquet'].includes(ext)) {
+      return 'data';
+    }
+
+    if (['yaml', 'yml', 'toml', 'ini', 'env', 'config'].includes(ext)) {
+      return 'config';
+    }
+
+    return 'other';
   }
 }
 
-// Export singleton instance
 export const taskCountService = TaskCountService.getInstance();

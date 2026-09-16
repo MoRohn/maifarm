@@ -1,11 +1,14 @@
 import { logger } from '../utils/logger';
 import { spawn } from 'child_process';
 import type { RedisClientType } from 'redis';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 // Ensure consistent tmux environment for session visibility
 const TMUX_ENV = {
   ...process.env,
-  TMUX_TMPDIR: '/tmp'  // Critical for sharing tmux sessions between processes
+  TMUX_TMPDIR: tmuxTmpDir
 };
 
 export interface CachedSession {
@@ -126,7 +129,8 @@ export class HarvestSessionCache {
       if (this.redis) {
         const cached = await this.redis.get(cacheKey);
         if (cached) {
-          const session = this.deserializeSession(JSON.parse(cached));
+          const cachedStr = typeof cached === 'string' ? cached : cached.toString();
+          const session = this.deserializeSession(JSON.parse(cachedStr));
           // Check if cache entry is still valid based on TTL and status
           if (this.isValidCacheEntry(session)) {
             return session;
@@ -347,7 +351,8 @@ export class HarvestSessionCache {
               errorOutput.includes('No such file or directory') ||
               errorOutput.includes('error connecting to')) {
             // No tmux server is running or socket doesn't exist
-            console.log('[HarvestSessionCache] No tmux server running, returning empty sessions');
+            // Silenced to prevent log spam during development
+            // console.log('[HarvestSessionCache] No tmux server running, returning empty sessions');
             resolve([]);
           } else {
             reject(new Error(`tmux list-sessions failed: ${errorOutput}`));

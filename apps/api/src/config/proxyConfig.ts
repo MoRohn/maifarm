@@ -1,6 +1,6 @@
 /**
  * Proxy Configuration for AI Provider Compatibility
- * Handles translation between Claude and Qwen API formats
+ * Handles translation between Claude and Llama API formats
  */
 
 export interface ProxyRoute {
@@ -22,7 +22,7 @@ export interface ProxyConfig {
       baseUrl: string;
       headers: Record<string, string>;
     };
-    qwen: {
+    llama: {
       baseUrl: string;
       headers: Record<string, string>;
     };
@@ -30,9 +30,9 @@ export interface ProxyConfig {
 }
 
 /**
- * Transform Claude request format to Qwen format
+ * Transform Claude request format to Llama format
  */
-export function transformClaudeToQwenRequest(claudeRequest: any): any {
+export function transformClaudeToLlamaRequest(claudeRequest: any): any {
   // Handle different Claude request formats
   if (claudeRequest.prompt) {
     // Simple prompt format
@@ -50,7 +50,7 @@ export function transformClaudeToQwenRequest(claudeRequest: any): any {
         max_tokens: claudeRequest.max_tokens || 8192,
         top_p: claudeRequest.top_p || 0.95
       },
-      model: 'qwen-coder-480b'
+      model: 'llama-coder-480b'
     };
   }
 
@@ -68,7 +68,7 @@ export function transformClaudeToQwenRequest(claudeRequest: any): any {
         max_tokens: claudeRequest.max_tokens || 8192,
         top_p: claudeRequest.top_p || 0.95
       },
-      model: claudeRequest.model || 'qwen-coder-480b'
+      model: claudeRequest.model || 'llama-coder-480b'
     };
   }
 
@@ -77,35 +77,35 @@ export function transformClaudeToQwenRequest(claudeRequest: any): any {
 }
 
 /**
- * Transform Qwen response to Claude format
+ * Transform Llama response to Claude format
  */
-export function transformQwenToClaudeResponse(qwenResponse: any): any {
-  if (qwenResponse.output) {
-    // Qwen standard response format
+export function transformLlamaToClaudeResponse(llamaResponse: any): any {
+  if (llamaResponse.output) {
+    // Llama standard response format
     return {
-      completion: qwenResponse.output.text || qwenResponse.output.content || '',
-      stop_reason: qwenResponse.output.finish_reason || 'stop',
+      completion: llamaResponse.output.text || llamaResponse.output.content || '',
+      stop_reason: llamaResponse.output.finish_reason || 'stop',
       model: 'claude-3-sonnet-20240229', // Mimic Claude model
       usage: {
-        input_tokens: qwenResponse.usage?.input_tokens || 0,
-        output_tokens: qwenResponse.usage?.output_tokens || 0
+        input_tokens: llamaResponse.usage?.input_tokens || 0,
+        output_tokens: llamaResponse.usage?.output_tokens || 0
       }
     };
   }
 
   // Handle streaming response
-  if (qwenResponse.choices && qwenResponse.choices[0]) {
-    const choice = qwenResponse.choices[0];
+  if (llamaResponse.choices && llamaResponse.choices[0]) {
+    const choice = llamaResponse.choices[0];
     return {
       completion: choice.message?.content || choice.text || '',
       stop_reason: choice.finish_reason || 'stop',
       model: 'claude-3-sonnet-20240229',
-      usage: qwenResponse.usage || {}
+      usage: llamaResponse.usage || {}
     };
   }
 
   // Default passthrough
-  return qwenResponse;
+  return llamaResponse;
 }
 
 /**
@@ -117,12 +117,12 @@ export const proxyConfig: ProxyConfig = {
     {
       source: '/v1/messages',
       target: '/services/aigc/text-generation/generation',
-      transform: transformClaudeToQwenRequest
+      transform: transformClaudeToLlamaRequest
     },
     {
       source: '/v1/complete',
       target: '/services/aigc/text-generation/generation',
-      transform: transformClaudeToQwenRequest
+      transform: transformClaudeToLlamaRequest
     }
   ],
   middleware: {
@@ -138,8 +138,8 @@ export const proxyConfig: ProxyConfig = {
         'anthropic-version': '2023-06-01'
       }
     },
-    qwen: {
-      baseUrl: process.env.QWEN_API_ENDPOINT || 'https://dashscope.aliyuncs.com/api/v1',
+    llama: {
+      baseUrl: process.env.LLAMA_API_ENDPOINT || 'https://dashscope.aliyuncs.com/api/v1',
       headers: {
         'Content-Type': 'application/json',
         'X-DashScope-SSE': 'enable'
@@ -151,7 +151,7 @@ export const proxyConfig: ProxyConfig = {
 /**
  * Get proxy configuration for a specific provider
  */
-export function getProviderProxyConfig(provider: 'claude' | 'qwen'): typeof proxyConfig.providers.claude {
+export function getProviderProxyConfig(provider: 'claude' | 'llama'): typeof proxyConfig.providers.claude {
   return proxyConfig.providers[provider];
 }
 
@@ -159,5 +159,5 @@ export function getProviderProxyConfig(provider: 'claude' | 'qwen'): typeof prox
  * Check if proxy is enabled for current configuration
  */
 export function isProxyEnabled(): boolean {
-  return proxyConfig.enabled && process.env.AI_PROVIDER === 'qwen';
+  return proxyConfig.enabled && process.env.AI_PROVIDER === 'llama';
 }

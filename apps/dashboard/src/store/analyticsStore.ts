@@ -18,6 +18,7 @@ import {
 } from '@/types/analytics';
 import { unifiedMetricsService } from '@/services/unifiedMetricsService';
 import { ExtendedMetrics, MetricUpdateEvent } from '@/types/metrics';
+import type { EngineAnalyticsMetric, EngineCostSummary } from '@/types/analytics';
 
 interface AnalyticsStore extends AnalyticsState {
   // Actions
@@ -28,6 +29,10 @@ interface AnalyticsStore extends AnalyticsState {
   addTimeSeriesPoint: (seriesId: string, point: any) => void;
   updateAgentPerformance: (performance: AgentPerformanceMetric[]) => void;
   setAgentPerformance: (performance: AgentPerformanceMetric[]) => void;
+  setEngineMetrics: (metrics: EngineAnalyticsMetric[]) => void;
+  engineMetrics: EngineAnalyticsMetric[];
+  setEngineCostSummary: (summary: EngineCostSummary | null) => void;
+  engineCostSummary: EngineCostSummary | null;
   addTaskCompletion: (task: TaskCompletion) => void;
   setTaskCompletions: (tasks: TaskCompletion[]) => void;
   addError: (error: ErrorMetric) => void;
@@ -67,6 +72,8 @@ const initialState: AnalyticsState = {
   },
   refreshInterval: 30000, // 30 seconds
   lastUpdated: null,
+  engineMetrics: [],
+  engineCostSummary: null,
 };
 
 export const useAnalyticsStore = create<AnalyticsStore>()(
@@ -91,6 +98,9 @@ export const useAnalyticsStore = create<AnalyticsStore>()(
                 : series
             ),
           })),
+
+        setEngineMetrics: (metrics) => set({ engineMetrics: metrics }),
+        setEngineCostSummary: (summary) => set({ engineCostSummary: summary }),
 
         updateAgentPerformance: (performance) =>
           set({ agentPerformance: performance }),

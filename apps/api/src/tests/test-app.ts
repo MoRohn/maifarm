@@ -1,8 +1,9 @@
-import express from 'express';
-import { json, urlencoded } from 'express';
+import express = require('express');
 
-// Import only the barn routes for testing
-import { router as barnRoutes } from '../api/barn';
+const { json, urlencoded } = express;
+
+// Import auth routes for testing
+import authRoutes from '../api/auth';
 
 // Create Express app for testing
 const app = express();
@@ -11,8 +12,8 @@ const app = express();
 app.use(json({ limit: '50mb' }));
 app.use(urlencoded({ extended: true, limit: '50mb' }));
 
-// API Routes - only barn for now
-app.use('/api/barn', barnRoutes);
+// API Routes
+app.use('/api/auth', authRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

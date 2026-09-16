@@ -3,6 +3,9 @@ import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import { terminalService } from '../services/unified/terminalService';
 import { terminalFileWatcherService } from '../services/terminalFileWatcherService';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 // Define TerminalEvent type locally
 interface TerminalEvent {
@@ -112,10 +115,14 @@ interface BatchedMessage {
 
 class MessageBatcher {
   private batches = new Map<string, BatchedMessage[]>();
-  private readonly batchSize = 10;
-  private readonly batchTimeout = 100; // 100ms
+  private readonly batchSize = 5; // Reduced from 10 for faster delivery
+  private readonly batchTimeout = 50; // Reduced from 100ms for better perceived performance
   private timeouts = new Map<string, NodeJS.Timeout>();
-  
+  private retryTimeouts = new Map<string, NodeJS.Timeout>(); // Track retry timeouts to prevent leaks
+  private retryCounts = new Map<string, number>(); // Track retry attempts per batch
+  private readonly maxRetries = 10; // Max retry attempts before dropping batch
+  private readonly baseRetryDelay = 100; // Initial retry delay in ms
+
   addMessage(event: string, data: any, rooms: string[]): void {
     const batchKey = `${event}:${rooms.join(',')}`;
     
@@ -144,14 +151,54 @@ class MessageBatcher {
   private flushBatch(batchKey: string): void {
     const batch = this.batches.get(batchKey);
     if (!batch || batch.length === 0) return;
-    
+
     // Clear timeout
     const timeout = this.timeouts.get(batchKey);
     if (timeout) {
       clearTimeout(timeout);
       this.timeouts.delete(batchKey);
     }
-    
+
+    // CRITICAL: Check if io is initialized before emitting
+    // This prevents race condition where messages are batched before socket setup
+    if (!io) {
+      // Track retry attempts with exponential backoff
+      const retryCount = (this.retryCounts.get(batchKey) || 0) + 1;
+      this.retryCounts.set(batchKey, retryCount);
+
+      if (retryCount > this.maxRetries) {
+        // Max retries exceeded - log and drop batch to prevent memory leak
+        console.error(`[MessageBatcher] Socket.io not initialized after ${this.maxRetries} attempts, dropping ${batch.length} messages for ${batchKey}`);
+        this.batches.delete(batchKey);
+        this.retryCounts.delete(batchKey);
+        return;
+      }
+
+      // Exponential backoff: 100ms, 200ms, 400ms, 800ms, etc. (capped at 5s)
+      const delay = Math.min(this.baseRetryDelay * Math.pow(2, retryCount - 1), 5000);
+      console.warn(`[MessageBatcher] Socket.io not initialized, retry ${retryCount}/${this.maxRetries} in ${delay}ms`);
+
+      // Clear existing retry timeout for this batch before scheduling new one
+      const existingRetryTimeout = this.retryTimeouts.get(batchKey);
+      if (existingRetryTimeout) {
+        clearTimeout(existingRetryTimeout);
+      }
+
+      // Track retry timeout to prevent memory leaks during cleanup
+      const retryTimeout = setTimeout(() => {
+        this.retryTimeouts.delete(batchKey); // Clear on execution
+        this.flushBatch(batchKey);
+      }, delay);
+      this.retryTimeouts.set(batchKey, retryTimeout);
+
+      // Re-add batch to map for retry
+      this.batches.set(batchKey, batch);
+      return;
+    }
+
+    // Socket.io is initialized - clear retry counter on success
+    this.retryCounts.delete(batchKey);
+
     // Emit batched messages
     if (batch.length === 1) {
       // Single message - emit normally
@@ -170,18 +217,26 @@ class MessageBatcher {
         });
       });
     }
-    
+
     // Clear batch
     this.batches.delete(batchKey);
   }
   
   cleanup(): void {
-    // Clear all timeouts
+    // Clear all batch timeouts
     for (const timeout of this.timeouts.values()) {
       clearTimeout(timeout);
     }
     this.timeouts.clear();
+
+    // Clear all retry timeouts to prevent memory leaks
+    for (const retryTimeout of this.retryTimeouts.values()) {
+      clearTimeout(retryTimeout);
+    }
+    this.retryTimeouts.clear();
+
     this.batches.clear();
+    this.retryCounts.clear();
   }
 }
 
@@ -242,7 +297,7 @@ const terminalOutputCache = {
 const detectWindowTarget = async (sessionName: string): Promise<string> => {
   try {
     const execAsync = promisify(exec);
-    const { stdout } = await execAsync(`TMUX_TMPDIR=/tmp tmux list-windows -t "${sessionName}" -F "#{window_name}" 2>/dev/null || echo ""`);
+    const { stdout } = await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-windows -t "${sessionName}" -F "#{window_name}" 2>/dev/null || echo ""`);
     const windows = stdout.trim().split('\n').filter(Boolean);
     
     // XenoSync uses 'agents' window, standard orchestrator uses '0' or default
@@ -265,7 +320,7 @@ const findActualSessionName = async (requestedSessionName: string, farmId?: stri
   
   try {
     const execAsync = promisify(exec);
-    const { stdout } = await execAsync('TMUX_TMPDIR=/tmp tmux list-sessions -F "#{session_name}" 2>/dev/null || echo ""');
+    const { stdout } = await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions -F "#{session_name}" 2>/dev/null || echo ""`);
     const sessions = stdout.trim().split('\n').filter(Boolean);
     
     let foundSession = null;
@@ -829,27 +884,48 @@ export const createTerminalWebSocketHandlers = (ioInstance: SocketServer): Termi
     }
   };
 
+  // FIX: Child process timeout constant to prevent hanging
+  const CHILD_PROCESS_TIMEOUT = 10000; // 10 seconds max for tmux commands
+
   // Enhanced helper function to get agent count from tmux session
+  // FIX: Added timeout protection to prevent hanging promises
   const getSessionAgentCount = async (sessionId: string): Promise<number> => {
     const { sessionName, windowTarget } = await findActualSessionName(sessionId);
     const actualSession = sessionName || sessionId;
-    
+
     return new Promise((resolve) => {
+      let resolved = false;
+      let output = '';
+
       const countPanes = spawn('tmux', [
-        'list-panes', 
-        '-t', `${actualSession}:${windowTarget}`, 
+        'list-panes',
+        '-t', `${actualSession}:${windowTarget}`,
         '-F', '#{pane_index}'
       ], {
-        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
       });
-      
-      let output = '';
-      
+
+      // FIX: Add timeout to kill hanging process
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.warn(`[TerminalHandlers] Timeout counting panes for ${actualSession}:${windowTarget}`);
+          countPanes.kill('SIGKILL');
+          resolve(0);
+        }
+      }, CHILD_PROCESS_TIMEOUT);
+
       countPanes.stdout?.on('data', (data: Buffer) => {
-        output += data.toString();
+        // FIX: Limit output buffer size to prevent memory issues
+        if (output.length < 10000) {
+          output += data.toString();
+        }
       });
-      
+
       countPanes.on('exit', (code) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeout);
         if (code === 0) {
           const count = output.trim().split('\n').filter(Boolean).length;
           console.log(`[TerminalHandlers] Found ${count} panes in session ${actualSession}:${windowTarget}`);
@@ -859,8 +935,11 @@ export const createTerminalWebSocketHandlers = (ioInstance: SocketServer): Termi
           resolve(0);
         }
       });
-      
+
       countPanes.on('error', (error) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeout);
         console.error(`[TerminalHandlers] Error counting panes for ${actualSession}:`, (error as any)?.message);
         resolve(0);
       });
@@ -868,29 +947,46 @@ export const createTerminalWebSocketHandlers = (ioInstance: SocketServer): Termi
   };
 
   // Enhanced helper function to capture agent output with proper window targeting
+  // FIX: Added timeout protection to prevent hanging promises
   const captureAgentOutput = async (sessionId: string, agentId: number, farmId?: string): Promise<string[]> => {
     const { sessionName, windowTarget } = await findActualSessionName(sessionId, farmId);
     const actualSession = sessionName || sessionId;
-    
+
     return new Promise((resolve) => {
+      let resolved = false;
+      let output = '';
       const paneTarget = `${actualSession}:${windowTarget}.${agentId}`;
-      
+
       const capture = spawn('tmux', [
         'capture-pane',
         '-t', paneTarget,
         '-p',
         '-S', '-10' // Get last 10 lines
       ], {
-        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
       });
-      
-      let output = '';
-      
+
+      // FIX: Add timeout to kill hanging process
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.warn(`[TerminalHandlers] Timeout capturing output from ${paneTarget}`);
+          capture.kill('SIGKILL');
+          resolve([]);
+        }
+      }, CHILD_PROCESS_TIMEOUT);
+
       capture.stdout?.on('data', (data: Buffer) => {
-        output += data.toString();
+        // FIX: Limit output buffer size to prevent memory issues
+        if (output.length < 50000) {
+          output += data.toString();
+        }
       });
-      
+
       capture.on('exit', (code) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeout);
         if (code === 0) {
           const lines = output.split('\n').filter(line => line.trim());
           if (lines.length > 0) {
@@ -898,14 +994,15 @@ export const createTerminalWebSocketHandlers = (ioInstance: SocketServer): Termi
           }
           resolve(lines);
         } else {
-          if (code !== 0) {
-            console.warn(`[TerminalHandlers] Failed to capture output from ${paneTarget} (exit code: ${code})`);
-          }
+          console.warn(`[TerminalHandlers] Failed to capture output from ${paneTarget} (exit code: ${code})`);
           resolve([]);
         }
       });
-      
+
       capture.on('error', (error) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timeout);
         console.error(`[TerminalHandlers] Error capturing output from ${paneTarget}:`, (error as any)?.message);
         resolve([]);
       });

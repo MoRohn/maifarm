@@ -70,24 +70,64 @@ class WebsocketHub:
         self._sse_count = 0
 
     async def register_ws(self, session_id: str, websocket: WebSocket) -> None:
+        max_connections = getattr(self._settings, "websocket_max_connections", 0)
         await websocket.accept()
         connection = HarvestConnection(kind="ws", session_id=session_id, websocket=websocket)
-        # Start dedicated sender loop for this connection (tracked for cleanup)
         connection.sender_task = asyncio.create_task(self._ws_sender_loop(connection))
+
+        reject_connection = False
         async with self._lock:
-            self._sessions.setdefault(session_id, []).append(connection)
-            self._ws_count += 1
-            update_ws_gauge(self._ws_count)
+            if max_connections and self._ws_count >= max_connections:
+                reject_connection = True
+            else:
+                self._sessions.setdefault(session_id, []).append(connection)
+                self._ws_count += 1
+                update_ws_gauge(self._ws_count)
+
+        if reject_connection:
+            if connection.sender_task and not connection.sender_task.done():
+                connection.sender_task.cancel()
+                try:
+                    await connection.sender_task
+                except asyncio.CancelledError:
+                    pass
+            await websocket.close(code=1001, reason="Max websocket connections reached")
+            _logger.warning(
+                "ws_rejected_over_capacity",
+                session_id=session_id,
+                max_connections=max_connections,
+            )
+            return
+
         _logger.info("ws_registered", session_id=session_id, total_ws=self._ws_count)
 
     async def unregister_ws(self, session_id: str, websocket: WebSocket) -> None:
+        connection: HarvestConnection | None = None
+        removed = False
         async with self._lock:
             connections = self._sessions.get(session_id, [])
-            self._sessions[session_id] = [conn for conn in connections if conn.websocket is not websocket]
-            if not self._sessions[session_id]:
+            remaining: list[HarvestConnection] = []
+            for conn in connections:
+                if conn.websocket is websocket:
+                    connection = conn
+                    removed = True
+                else:
+                    remaining.append(conn)
+            if remaining:
+                self._sessions[session_id] = remaining
+            else:
                 self._sessions.pop(session_id, None)
-            self._ws_count = max(0, self._ws_count - 1)
-            update_ws_gauge(self._ws_count)
+            if removed:
+                self._ws_count = max(0, self._ws_count - 1)
+                update_ws_gauge(self._ws_count)
+            else:
+                update_ws_gauge(self._ws_count)
+        if connection and connection.sender_task and not connection.sender_task.done():
+            connection.sender_task.cancel()
+            try:
+                await connection.sender_task
+            except asyncio.CancelledError:
+                pass
         if websocket.client_state != WebSocketState.DISCONNECTED:
             await websocket.close()
         _logger.info("ws_unregistered", session_id=session_id, total_ws=self._ws_count)

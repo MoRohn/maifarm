@@ -70,6 +70,7 @@ export interface AgentInstance extends Omit<Agent, 'health' | 'resources'> {
   lastHealthCheck: Date;
   restartCount: number;
   metadata: Record<string, any>;
+  capabilities?: string[];
 }
 
 export interface AgentState {

@@ -1,14 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { HarvestService } from '../../services/unified/farmService';
-import { websocketManager } from '../../websocket/websocketManager';
-import { harvestService as harvestFileCollector } from '../services/unified/harvestService';
-import { db } from '../../database/client';
+import { HarvestService } from '../../services/harvestService';
+import { unifiedWebSocketManager as websocketManager } from '../../websocket/UnifiedWebSocketManager';
+import { db } from '../../database/connection';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
-jest.mock('../../websocket/websocketManager');
-jest.mock('../../services/harvestFileCollector');
-jest.mock('../../database/client');
+jest.mock('../../websocket/UnifiedWebSocketManager');
+jest.mock('../../database/connection');
 jest.mock('child_process');
 jest.mock('../../utils/logger', () => ({
   logger: {

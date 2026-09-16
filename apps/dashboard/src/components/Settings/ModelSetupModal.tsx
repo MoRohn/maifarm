@@ -16,26 +16,26 @@ const ModelSetupModal: React.FC<ModelSetupModalProps> = ({
   onComplete,
   recommendedModels 
 }) => {
-  const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:7b');
+  const [selectedModel, setSelectedModel] = useState('llama2.5-coder:7b');
   const [isInstalling, setIsInstalling] = useState(false);
   const [installStep, setInstallStep] = useState<'select' | 'installing' | 'complete'>('select');
   const [installProgress, setInstallProgress] = useState('');
 
   const defaultModels: RecommendedModel[] = recommendedModels.length > 0 ? recommendedModels : [
     {
-      name: 'qwen2.5-coder:32b',
+      name: 'llama2.5-coder:32b',
       size: '19GB',
-      description: 'Most capable Qwen Coder model',
+      description: 'Most capable Llama Coder model',
       useCase: 'Complex coding tasks, large context windows'
     },
     {
-      name: 'qwen2.5-coder:7b',
+      name: 'llama2.5-coder:7b',
       size: '4.5GB',
       description: 'Balanced performance and resource usage',
       useCase: 'General coding tasks, good for most users'
     },
     {
-      name: 'qwen2.5-coder:1.5b',
+      name: 'llama2.5-coder:1.5b',
       size: '1GB',
       description: 'Lightweight model for basic tasks',
       useCase: 'Simple completions, limited resources'
@@ -101,7 +101,7 @@ const ModelSetupModal: React.FC<ModelSetupModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-              Setup Local Qwen Model
+              Setup Local Llama Model
             </h2>
             <button
               onClick={onClose}
@@ -153,7 +153,7 @@ const ModelSetupModal: React.FC<ModelSetupModalProps> = ({
                             <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded">
                               {model.size}
                             </span>
-                            {model.name === 'qwen2.5-coder:7b' && (
+                            {model.name === 'llama2.5-coder:7b' && (
                               <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
                                 Recommended
                               </span>

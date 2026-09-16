@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Farm } from '@/types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4567/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export interface ClaudeCodeCosts {
   totalCost: number;

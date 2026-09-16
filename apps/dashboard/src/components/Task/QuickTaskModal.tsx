@@ -1,94 +1,69 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Sparkles, Paperclip, ChevronDown, ChevronRight, Sprout } from 'lucide-react';
+import { X, Zap, Send, Sparkles, Paperclip, ChevronRight, Timer, Target, Flame, Eye, Bug, FileText, Code, Wrench, TestTube } from 'lucide-react';
 import { clsx } from 'clsx';
 import { api } from '@/services/apiClient';
 import { toast } from 'react-hot-toast';
+import { PromptEnhancer } from '../Chat/PromptEnhancer';
 import { motion, AnimatePresence } from 'framer-motion';
+import { FarmLaunchService } from '@/services/farmLaunchFix';
 import FileUpload from '../common/FileUpload';
-import { FarmInputField } from '../Farm/FarmInputField';
-import { useAIProvider } from '@/hooks/useAIProvider';
-import { useFarmStore } from '@/store/farmStore';
-import { handleApiError, showRateLimitModal } from '@/utils/errorHandlers';
+
+// Quick Task Theme Colors - Leaf Green for speed and efficiency
+const quickTaskTheme = {
+  primary: '#22c55e', // leaf-500
+  primaryDark: '#16a34a', // leaf-600
+  primaryLight: '#4ade80', // leaf-400
+  accent: '#86efac', // leaf-300
+  gradient: {
+    from: '#052e16', // green-950
+    via: '#14532d', // green-900
+    to: '#15803d', // leaf-700
+  },
+  glow: 'rgba(34, 197, 94, 0.4)',
+  cardBg: 'rgba(5, 46, 22, 0.6)', // green-950/60
+  cardBorder: 'rgba(34, 197, 94, 0.25)',
+};
+
+// Quick task suggestions for the user
+const quickTaskSuggestions = [
+  { icon: Eye, title: 'Quick Code Review', description: 'Review a snippet or small file', duration: '5 min' },
+  { icon: Bug, title: 'Fix a Bug', description: 'Debug and fix a specific issue', duration: '10 min' },
+  { icon: FileText, title: 'Write Documentation', description: 'Add comments or README', duration: '10 min' },
+  { icon: TestTube, title: 'Write Tests', description: 'Create unit or integration tests', duration: '15 min' },
+  { icon: Wrench, title: 'Refactor Code', description: 'Clean up and optimize', duration: '10 min' },
+  { icon: Code, title: 'Implement Feature', description: 'Add a small feature', duration: '15 min' },
+];
 
 interface QuickTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface ChatMessage {
-  id: string;
-  type: 'assistant' | 'user';
-  content: string;
-}
-
-interface EnhancementOption {
-  id: string;
-  title: string;
-  description: string;
-  prompt: string;
-  highlights: string[];
-}
-
-const deriveQuickTaskName = (prompt: string): string => {
-  const trimmed = prompt.trim();
-  if (!trimmed) {
-    return 'Quick Task';
-  }
-
-  const firstMeaningfulLine = trimmed
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .find(line => line.length > 0) || trimmed;
-
-  const normalized = firstMeaningfulLine.replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return 'Quick Task';
-  }
-
-  const sentenceCase = normalized[0].toUpperCase() + normalized.slice(1);
-  return sentenceCase.length > 60 ? `${sentenceCase.slice(0, 57).trim()}…` : sentenceCase;
-};
-
-export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose }) => {
+export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({
+  isOpen,
+  onClose
+}) => {
   const navigate = useNavigate();
-  const { provider: activeProvider } = useAIProvider();
-  const { fetchFarms } = useFarmStore();
-  const [step, setStep] = useState<'input' | 'decision' | 'launching'>('input');
+  const [step, setStep] = useState<'input' | 'enhance' | 'launching'>('input');
   const [taskDescription, setTaskDescription] = useState('');
-  const [finalPrompt, setFinalPrompt] = useState('');
-  const [enhancedPrompt, setEnhancedPrompt] = useState('');
-  const [selectedEnhancementLabel, setSelectedEnhancementLabel] = useState<string | null>(null);
+  const [enhancedTask, setEnhancedTask] = useState('');
   const [loading, setLoading] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
-  const [isFileUploadExpanded, setIsFileUploadExpanded] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [showEnhancementQuestion, setShowEnhancementQuestion] = useState(false);
-  const [enhancementOptions, setEnhancementOptions] = useState<EnhancementOption[]>([]);
 
+  // Reset when modal opens/closes
   useEffect(() => {
     if (isOpen) {
       setStep('input');
       setTaskDescription('');
-      setFinalPrompt('');
-      setEnhancedPrompt('');
-      setSelectedEnhancementLabel(null);
+      setEnhancedTask('');
       setAttachedFiles([]);
-      setIsFileUploadExpanded(false);
-      setMessages([
-        {
-          id: 'assistant-welcome',
-          type: 'assistant',
-          content: 'What quick win should we tackle together?'
-        }
-      ]);
-      setShowEnhancementQuestion(false);
-      setEnhancementOptions([]);
     }
   }, [isOpen]);
 
-  const handleUserMessage = (content: string) => {
-    const trimmed = content.trim();
+  const handleSubmitTask = () => {
+    console.log('[QuickTaskModal] handleSubmitTask called with description:', taskDescription);
+    const trimmed = taskDescription.trim();
     if (!trimmed) {
       toast.error('Please describe your task');
       return;
@@ -100,186 +75,97 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose 
       });
       return;
     }
-
-    const timestamp = Date.now();
-    setTaskDescription(trimmed);
-    setFinalPrompt(trimmed);
-    setEnhancedPrompt('');
-    setSelectedEnhancementLabel(null);
-
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `user-${timestamp}`,
-        type: 'user',
-        content: trimmed
-      },
-      {
-        id: `assistant-enhance-${timestamp}`,
-        type: 'assistant',
-        content: 'Want me to tidy that up or give it a little more clarity before we run?' 
-      }
-    ]);
-
-    setEnhancementOptions([]);
-    setShowEnhancementQuestion(true);
-    setStep('decision');
+    console.log('[QuickTaskModal] Moving to enhance step');
+    setStep('enhance');
   };
 
-  const getEnhancementOptions = (prompt: string): EnhancementOption[] => {
-    const trimmed = prompt.trim();
-    return [
-      {
-        id: 'friendly-checklist',
-        title: 'Friendly checklist version',
-        description: 'Keeps the original request but adds a simple checklist so the agent knows exactly what to hand back.',
-        highlights: [
-          'Restates the task in plain language',
-          'Adds a short deliverable checklist',
-          'Mentions double-checks for quality'
-        ],
-        prompt: `We need to ${trimmed}. Please respond with a friendly checklist that covers: the main steps you’ll take, anything you’ll double-check before finishing, and the exact items you’ll hand back (links, summaries, code, etc.). Keep it warm and concise.`
-      },
-      {
-        id: 'context-plus-next',
-        title: 'Context + next-step guide',
-        description: 'Explains why the task matters, what a great result looks like, and what to do once it lands.',
-        highlights: [
-          'Shares why the task matters to the team',
-          'Describes the ideal final output',
-          'Suggests a simple follow-up step'
-        ],
-        prompt: `The immediate goal is: ${trimmed}. Start with one sentence explaining why this matters right now and who benefits. Describe the ideal result in a couple of friendly bullets (mention format, tone, or examples if helpful). Wrap up with one practical recommendation for what we should do after we receive the deliverable.`
-      }
-    ];
-  };
-
-  const handleRequestEnhancement = () => {
-    if (!taskDescription) return;
-    const timestamp = Date.now();
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `user-enhance-${timestamp}`,
-        type: 'user',
-        content: 'Yes, polish it for me.'
-      },
-      {
-        id: `assistant-options-${timestamp}`,
-        type: 'assistant',
-        content: 'Here are two clearer versions. Pick one or stick with what you wrote.'
-      }
-    ]);
-
-    setEnhancementOptions(getEnhancementOptions(taskDescription));
-    setShowEnhancementQuestion(false);
+  const handleEnhanced = (enhanced: string, pills: string[]) => {
+    setEnhancedTask(enhanced);
+    launchTask(enhanced);
   };
 
   const handleSkipEnhancement = () => {
-    const timestamp = Date.now();
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `user-skip-${timestamp}`,
-        type: 'user',
-        content: 'No need— send it as-is.'
-      },
-      {
-        id: `assistant-skip-${timestamp}`,
-        type: 'assistant',
-        content: 'Great, launching with your original prompt now.'
-      }
-    ]);
-
-    setShowEnhancementQuestion(false);
-    setEnhancementOptions([]);
-    setSelectedEnhancementLabel(null);
-    setEnhancedPrompt('');
-    setFinalPrompt(taskDescription);
+    setEnhancedTask(taskDescription);
     launchTask(taskDescription);
-  };
-
-  const handleSelectEnhancement = (option: EnhancementOption) => {
-    const timestamp = Date.now();
-    setMessages(prev => [
-      ...prev,
-      {
-        id: `user-select-${timestamp}`,
-        type: 'user',
-        content: `Let’s use the “${option.title}” version.`
-      },
-      {
-        id: `assistant-select-${timestamp}`,
-        type: 'assistant',
-        content: 'Perfect. I’ll use that tuned prompt for the agents.'
-      }
-    ]);
-
-    setShowEnhancementQuestion(false);
-    setEnhancementOptions([]);
-    setSelectedEnhancementLabel(option.title);
-    setEnhancedPrompt(option.prompt);
-    setFinalPrompt(option.prompt);
-    launchTask(option.prompt);
   };
 
   const launchTask = async (prompt: string) => {
     setLoading(true);
     setStep('launching');
 
+    // Set a timeout to prevent infinite loading - backend can take up to 120 seconds
     const timeout = setTimeout(() => {
-      console.error('[QuickTaskModal] Task launch timeout after 30 seconds');
-      toast.error('Task launch timeout. Please try again.', {
+      console.error('[QuickTaskModal] Task launch timeout after 90 seconds');
+      toast.error('Task launch taking longer than expected. Please check the dashboard.', {
         duration: 4000,
         icon: '⏱️'
       });
       setStep('input');
       setLoading(false);
-    }, 31000);
+    }, 90000); // 90 second timeout to match backend
 
     try {
-      let promptWithFiles = prompt;
+      console.log('[QuickTaskModal] Launching quick task with enhanced service');
+
+      // Add file context to prompt if files are attached
+      let enhancedPrompt = prompt;
       if (attachedFiles.length > 0) {
         const fileNames = attachedFiles.map(f => f.name).join(', ');
-        promptWithFiles = `${prompt}\n\n[Attached files: ${fileNames}]`;
+        enhancedPrompt = `${prompt}\n\n[Attached files: ${fileNames}]`;
+        console.log('[QuickTaskModal] Added file context to prompt:', fileNames);
       }
 
-      const launchPromise = launchQuickTask(promptWithFiles);
+      // Use Promise.race to implement a proper timeout - backend can take up to 120 seconds
+      const launchPromise = FarmLaunchService.createQuickTask(enhancedPrompt, attachedFiles);
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Launch timeout')), 30000)
+        setTimeout(() => reject(new Error('Launch timeout')), 85000) // 85 seconds to allow backend time
       );
 
       const result = await Promise.race([launchPromise, timeoutPromise]) as any;
-      clearTimeout(timeout);
+      clearTimeout(timeout); // Clear the UI timeout if successful
 
-      const farmId = result?.farmId || result?.data?.farmId;
+      console.log('[QuickTaskModal] Launch result:', result);
+
+      const farmId = result?.farmId;
+      const harvestId = result?.harvestId;
+
       if (farmId) {
         toast.success('⚡ Task launched!');
+        console.log('[QuickTaskModal] Successfully got farm ID:', farmId);
+
+        // Close modal immediately
         onClose();
-        await fetchFarms().catch(() => undefined);
+
+        // Navigate through concept explainer for Quick Tasks
+        const navigationUrl = `/farm/${farmId}/transition/quicktask`;
+        console.log('[QuickTaskModal] Navigating to:', navigationUrl);
+
+        // Use requestAnimationFrame for smoother transition
         requestAnimationFrame(() => {
-          navigate(`/farm/${farmId}/transition/quicktask`);
+          navigate(navigationUrl);
         });
       } else {
+        console.error('[QuickTaskModal] No farm ID in result:', result);
         throw new Error('Failed to generate farm ID');
       }
     } catch (error: any) {
       clearTimeout(timeout);
       console.error('[QuickTaskModal] Critical error:', error);
 
+      // Provide more specific error messages
       if (error.message === 'Launch timeout') {
         toast.error('Server is taking too long to respond. Please try again.', {
           duration: 4000,
           icon: '⏱️'
         });
-      } else if (error.code === 'RATE_LIMIT_EXCEEDED' || error.response?.status === 429) {
-        // Show rate limit modal for rate limit errors
-        showRateLimitModal(error);
+      } else if (error.response?.status === 400) {
+        toast.error(error.response?.data?.error?.message || 'Invalid request. Please check your input.');
+      } else if (error.response?.status >= 500) {
+        toast.error('Server error. Please try again in a moment.');
       } else if (!navigator.onLine) {
         toast.error('No internet connection. Please check your network.');
       } else {
-        // Use generic API error handler for other errors
-        handleApiError(error, 'Failed to launch task');
+        toast.error('Failed to launch task. Please try again.');
       }
 
       setStep('input');
@@ -288,232 +174,404 @@ export const QuickTaskModal: React.FC<QuickTaskModalProps> = ({ isOpen, onClose 
     }
   };
 
-  const launchQuickTask = async (prompt: string) => {
-    const provider = activeProvider || 'claude';
-    const taskName = deriveQuickTaskName(prompt);
-    const basePayload = {
-      prompt,
-      name: taskName,
-      description: prompt,
-      provider,
-      mode: 'quick-task',
-      agentCount: 2,
-      timeoutSeconds: 900,
-      useXenoSync: true
-    } as const;
-
-    if (attachedFiles.length > 0) {
-      const formData = new FormData();
-      Object.entries(basePayload).forEach(([key, value]) => formData.append(key, String(value)));
-      attachedFiles.forEach((file) => formData.append('files', file));
-      const response = await api.quickActions.createFarm(formData);
-      return response.data?.data || response.data;
-    }
-
-    const response = await api.quickActions.createFarm(basePayload);
-    return response.data?.data || response.data;
-  };
-
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pb-safe"
+          style={{
+            paddingTop: 'max(env(safe-area-inset-top), 16px)',
+            paddingBottom: 'max(env(safe-area-inset-bottom), 16px)'
+          }}
+        >
+          {/* Themed gradient backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0"
+            style={{
+              background: `linear-gradient(135deg, ${quickTaskTheme.gradient.from} 0%, ${quickTaskTheme.gradient.via} 50%, ${quickTaskTheme.gradient.to} 100%)`,
+            }}
             onClick={onClose}
-          />
-
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="relative w-full max-w-md bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-100 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 rounded-2xl shadow-2xl overflow-hidden"
           >
-            <div className="relative bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-6 text-white">
-              <button
-                onClick={onClose}
-                className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <Sprout className="w-6 h-6" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold">Quick Task Launch</h2>
-                  <p className="text-sm text-white/80">Spin up a focused two-agent burst</p>
-                </div>
-              </div>
-            </div>
+            {/* Animated glow effects */}
+            <motion.div
+              animate={{
+                opacity: [0.3, 0.5, 0.3],
+                scale: [1, 1.1, 1],
+              }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl"
+              style={{ backgroundColor: quickTaskTheme.glow }}
+            />
+            <motion.div
+              animate={{
+                opacity: [0.2, 0.4, 0.2],
+                scale: [1.1, 1, 1.1],
+              }}
+              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+              className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full blur-3xl"
+              style={{ backgroundColor: quickTaskTheme.glow }}
+            />
+          </motion.div>
 
-            <div className="p-6 space-y-6">
-              <div className="space-y-3">
-                {messages.map((message) => (
-                  <div key={message.id} className={clsx('flex', message.type === 'user' ? 'justify-end' : 'justify-start')}>
-                    <div
-                      className={clsx(
-                        'max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm',
-                        message.type === 'user'
-                          ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg'
-                          : 'bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 border border-blue-200/70 dark:border-indigo-500/30'
-                      )}
+          {/* Modal */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            transition={{ type: "spring", duration: 0.5 }}
+            className="relative w-full max-w-2xl"
+          >
+            {/* Main container with glass effect */}
+            <div
+              className="relative rounded-2xl shadow-2xl overflow-hidden border"
+              style={{
+                backgroundColor: 'rgba(6, 78, 59, 0.85)',
+                borderColor: quickTaskTheme.cardBorder,
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              {/* Subtle inner glow */}
+              <div
+                className="absolute inset-0 rounded-2xl pointer-events-none"
+                style={{
+                  boxShadow: `inset 0 1px 1px rgba(255,255,255,0.1), 0 0 40px ${quickTaskTheme.glow}`,
+                }}
+              />
+
+              {/* Header */}
+              <div className="relative px-6 py-5 border-b" style={{ borderColor: quickTaskTheme.cardBorder }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    {/* Animated icon container */}
+                    <motion.div
+                      className="relative p-3 rounded-xl"
+                      style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)' }}
+                      animate={{
+                        boxShadow: [
+                          `0 0 20px ${quickTaskTheme.glow}`,
+                          `0 0 30px ${quickTaskTheme.glow}`,
+                          `0 0 20px ${quickTaskTheme.glow}`,
+                        ]
+                      }}
+                      transition={{ duration: 2, repeat: Infinity }}
                     >
-                      {message.content}
+                      <Zap className="w-7 h-7" style={{ color: quickTaskTheme.primary }} />
+                    </motion.div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-white">
+                        Quick Task
+                      </h2>
+                      <p className="text-sm" style={{ color: quickTaskTheme.accent }}>
+                        5 min · iPhone
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
-
-              {step === 'input' && (
-                <div className="space-y-4">
-                  <FarmInputField
-                    onSubmit={handleUserMessage}
-                    disabled={loading}
-                    minLength={5}
-                    submitButtonText="Send"
-                    variant="textarea"
-                    placeholder="Describe the quick task (e.g., ‘Draft a release note for today’s update’)."
-                  />
-
-                  <div className="space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsFileUploadExpanded(!isFileUploadExpanded)}
-                    className="flex items-center space-x-2 w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                    >
-                      {isFileUploadExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-gray-500" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-gray-500" />
-                      )}
-                      <Paperclip className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Attach context or files (optional)
-                      </span>
-                      {attachedFiles.length > 0 && (
-                        <span className="ml-auto text-xs text-blue-600 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded-full">
-                          {attachedFiles.length} file{attachedFiles.length > 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </button>
-
-                    <AnimatePresence>
-                      {isFileUploadExpanded && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className="overflow-hidden"
-                        >
-                          <div className="pt-2 pb-1">
-                            <FileUpload
-                              onFilesChange={setAttachedFiles}
-                              maxFiles={5}
-                              maxSizeInMB={10}
-                              acceptedTypes={['image/*', '.pdf', '.txt', '.md', '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.yaml', '.yml', '.json']}
-                              className="mt-2"
-                            />
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-              )}
-
-              {step === 'decision' && showEnhancementQuestion && (
-                <div className="space-y-4">
-                  <div className="bg-white dark:bg-gray-900 border border-blue-200/60 dark:border-blue-800/40 rounded-xl p-4 shadow-sm">
-                    <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2">Current prompt</h3>
-                    <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">
-                      {taskDescription}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button
-                      onClick={handleRequestEnhancement}
-                    className="flex-1 px-5 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Sparkles className="h-5 w-5" />
-                      Enhance it
-                    </button>
-                    <button
-                      onClick={handleSkipEnhancement}
-                    className="flex-1 px-5 py-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
-                    >
-                      No, continue
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {step === 'decision' && !showEnhancementQuestion && enhancementOptions.length > 0 && (
-                <div className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {enhancementOptions.map((option) => (
-                      <div
-                        key={option.id}
-                        className="h-full bg-white dark:bg-gray-900 border border-blue-200/70 dark:border-indigo-500/30 rounded-xl p-4 shadow-sm flex flex-col gap-4"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">{option.title}</h4>
-                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{option.description}</p>
-                          </div>
-                          <Sparkles className="h-5 w-5 text-blue-500" />
-                        </div>
-
-                        <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                          {option.highlights.map((highlight, index) => (
-                            <li key={`${option.id}-highlight-${index}`} className="flex items-start gap-2">
-                              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-500" />
-                              <span>{highlight}</span>
-                            </li>
-                          ))}
-                        </ul>
-
-                        <button
-                          onClick={() => handleSelectEnhancement(option)}
-                          className="mt-auto inline-flex items-center justify-center px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium hover:from-blue-600 hover:to-indigo-700 transition-all"
-                        >
-                          Use this version
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
                   <button
-                    onClick={handleSkipEnhancement}
-                    className="w-full px-5 py-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+                    onClick={onClose}
+                    className="p-2 rounded-lg transition-all hover:scale-110"
+                    style={{
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: quickTaskTheme.accent
+                    }}
                   >
-                    No, continue with my original prompt
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
-              )}
+              </div>
 
-              {step === 'launching' && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex flex-col items-center justify-center py-8 space-y-4"
-                >
-                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-300 border-t-indigo-500" />
-                  <div className="text-center space-y-2">
-                    <p className="text-lg font-medium text-gray-900 dark:text-white">Launching quick task</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs">
-                      Warming up agents, setting the workspace, and preparing your deliverable.
-                    </p>
-                  </div>
-                </motion.div>
-              )}
+              {/* Content - scrollable for iOS small screens with safe area support */}
+              <div
+                className="relative p-6 overflow-y-auto"
+                style={{
+                  maxHeight: 'calc(var(--full-vh, 80vh) - 200px - env(safe-area-inset-bottom, 0px))',
+                  WebkitOverflowScrolling: 'touch'
+                }}
+              >
+                {/* Input Step */}
+                {step === 'input' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-6"
+                  >
+                    {/* Suggested Tasks Section */}
+                    <div>
+                      <p className="text-sm font-medium mb-3" style={{ color: quickTaskTheme.accent }}>
+                        Suggested for iPhone
+                      </p>
+                      <div className="grid grid-cols-3 gap-3">
+                        {quickTaskSuggestions.slice(0, 3).map((suggestion, index) => {
+                          const IconComponent = suggestion.icon;
+                          return (
+                            <motion.button
+                              key={index}
+                              whileHover={{ scale: 1.02, y: -2 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => setTaskDescription(suggestion.title + ': ' + suggestion.description)}
+                              className="p-4 rounded-xl text-left transition-all"
+                              style={{
+                                backgroundColor: quickTaskTheme.cardBg,
+                                borderColor: quickTaskTheme.cardBorder,
+                                border: '1px solid',
+                              }}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <IconComponent
+                                  className="w-5 h-5"
+                                  style={{ color: index === 0 ? '#3B82F6' : index === 1 ? '#EF4444' : quickTaskTheme.accent }}
+                                />
+                                <span className="text-xs opacity-60 text-white">{suggestion.duration}</span>
+                              </div>
+                              <h4 className="font-semibold text-white text-sm mb-1">{suggestion.title}</h4>
+                              <p className="text-xs opacity-70 text-white">{suggestion.description}</p>
+                            </motion.button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Task Description */}
+                    <div>
+                      <label className="block text-sm font-medium mb-2 text-white">
+                        Describe your task
+                      </label>
+                      <textarea
+                        value={taskDescription}
+                        onChange={(e) => setTaskDescription(e.target.value)}
+                        placeholder="What would you like help with? Be specific for better results."
+                        className="w-full px-4 py-3 rounded-xl resize-none transition-all text-white placeholder-white/40"
+                        style={{
+                          backgroundColor: quickTaskTheme.cardBg,
+                          borderColor: taskDescription ? quickTaskTheme.primary : quickTaskTheme.cardBorder,
+                          border: '1px solid',
+                          outline: 'none',
+                        }}
+                        rows={4}
+                        autoFocus
+                        onFocus={(e) => {
+                          e.target.style.borderColor = quickTaskTheme.primary;
+                          e.target.style.boxShadow = `0 0 0 3px ${quickTaskTheme.glow}`;
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = taskDescription ? quickTaskTheme.primary : quickTaskTheme.cardBorder;
+                          e.target.style.boxShadow = 'none';
+                        }}
+                      />
+                      <p className="mt-2 text-xs opacity-60 text-white">
+                        What would you like help with? Be specific for better results.
+                      </p>
+                      {taskDescription.trim().length > 0 && taskDescription.trim().length < 5 && (
+                        <motion.p
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="mt-2 text-xs flex items-center space-x-1"
+                          style={{ color: '#FBBF24' }}
+                        >
+                          <span>⚠️</span>
+                          <span>Please add {5 - taskDescription.trim().length} more character{5 - taskDescription.trim().length !== 1 ? 's' : ''}</span>
+                        </motion.p>
+                      )}
+                    </div>
+
+                    {/* Attachments Section */}
+                    <div
+                      className="p-4 rounded-xl"
+                      style={{
+                        backgroundColor: quickTaskTheme.cardBg,
+                        borderColor: quickTaskTheme.cardBorder,
+                        border: '1px solid',
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium text-white">Attachments</span>
+                          <span className="text-xs opacity-50 text-white px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                            ℹ️
+                          </span>
+                        </div>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          className="w-8 h-8 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: quickTaskTheme.primary }}
+                          onClick={() => document.getElementById('quicktask-file-input')?.click()}
+                        >
+                          <span className="text-white text-lg">+</span>
+                        </motion.button>
+                      </div>
+                      <div className="text-center py-4">
+                        <Paperclip className="w-6 h-6 mx-auto mb-2 opacity-40 text-white" />
+                        <p className="text-sm opacity-60 text-white">No files attached</p>
+                        <p className="text-xs opacity-40 text-white mt-1">Recommended: Screenshots & Photos, Code Snippets</p>
+                      </div>
+                      <input
+                        id="quicktask-file-input"
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          setAttachedFiles(prev => [...prev, ...files].slice(0, 5));
+                        }}
+                      />
+                      {attachedFiles.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {attachedFiles.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                              <span className="text-sm text-white truncate">{file.name}</span>
+                              <button
+                                onClick={() => setAttachedFiles(prev => prev.filter((_, i) => i !== index))}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Button */}
+                    <motion.button
+                      whileHover={{ scale: loading ? 1 : 1.02 }}
+                      whileTap={{ scale: loading ? 1 : 0.98 }}
+                      onClick={handleSubmitTask}
+                      disabled={!taskDescription.trim() || loading}
+                      className="w-full py-3.5 rounded-xl font-semibold transition-all flex items-center justify-center space-x-2"
+                      style={{
+                        backgroundColor: (taskDescription.trim() && !loading) ? quickTaskTheme.primary : 'rgba(255,255,255,0.1)',
+                        color: (taskDescription.trim() && !loading) ? 'white' : 'rgba(255,255,255,0.4)',
+                        cursor: (taskDescription.trim() && !loading) ? 'pointer' : 'not-allowed',
+                        boxShadow: (taskDescription.trim() && !loading) ? `0 4px 20px ${quickTaskTheme.glow}` : 'none',
+                      }}
+                    >
+                      <Zap className="w-5 h-5" />
+                      <span>{loading ? 'Launching...' : 'Start Quick Task'}</span>
+                      {attachedFiles.length > 0 && (
+                        <span className="ml-1 px-2 py-0.5 bg-white/20 rounded-full text-xs">
+                          +{attachedFiles.length}
+                        </span>
+                      )}
+                    </motion.button>
+                  </motion.div>
+                )}
+
+                {/* Enhancement Step */}
+                {step === 'enhance' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <PromptEnhancer
+                      originalPrompt={taskDescription}
+                      mode="quicktask"
+                      onEnhanced={handleEnhanced}
+                      onSkip={handleSkipEnhancement}
+                    />
+                  </motion.div>
+                )}
+
+                {/* Launching Step */}
+                {step === 'launching' && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex flex-col items-center justify-center py-12 space-y-6"
+                  >
+                    <div className="relative">
+                      {/* Outer rotating ring */}
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                        className="absolute inset-0 rounded-full"
+                      >
+                        <div
+                          className="w-24 h-24 rounded-full border-4 border-transparent"
+                          style={{
+                            borderTopColor: quickTaskTheme.primary,
+                            borderRightColor: quickTaskTheme.primaryLight,
+                          }}
+                        />
+                      </motion.div>
+
+                      {/* Inner pulsing circle */}
+                      <motion.div
+                        animate={{ scale: [1, 1.1, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="w-24 h-24 rounded-full flex items-center justify-center"
+                        style={{
+                          background: `linear-gradient(135deg, ${quickTaskTheme.primaryDark} 0%, ${quickTaskTheme.primary} 50%, ${quickTaskTheme.primaryLight} 100%)`,
+                        }}
+                      >
+                        <Zap className="w-12 h-12 text-white" />
+                      </motion.div>
+
+                      {/* Particles */}
+                      <motion.div
+                        animate={{
+                          scale: [1, 1.5, 1],
+                          opacity: [0.5, 0, 0.5]
+                        }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="absolute inset-0 rounded-full blur-xl"
+                        style={{
+                          background: `linear-gradient(135deg, ${quickTaskTheme.primaryLight} 0%, ${quickTaskTheme.primary} 100%)`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="text-center space-y-2">
+                      <motion.p
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="text-xl font-bold"
+                        style={{
+                          background: `linear-gradient(90deg, ${quickTaskTheme.primaryLight} 0%, ${quickTaskTheme.primary} 50%, ${quickTaskTheme.accent} 100%)`,
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                          backgroundClip: 'text',
+                        }}
+                      >
+                        Launching Sprint
+                      </motion.p>
+                      <motion.p
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="text-sm"
+                        style={{ color: quickTaskTheme.accent }}
+                      >
+                        Setting up your 5-minute sprint...
+                      </motion.p>
+                    </div>
+
+                    {/* Loading dots */}
+                    <div className="flex space-x-2">
+                      {[0, 1, 2].map((i) => (
+                        <motion.div
+                          key={i}
+                          animate={{
+                            y: [0, -10, 0],
+                            backgroundColor: [quickTaskTheme.primaryDark, quickTaskTheme.primary, quickTaskTheme.primaryLight, quickTaskTheme.primaryDark]
+                          }}
+                          transition={{
+                            duration: 1.2,
+                            repeat: Infinity,
+                            delay: i * 0.15
+                          }}
+                          className="w-2 h-2 rounded-full"
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
             </div>
           </motion.div>
         </div>

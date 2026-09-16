@@ -75,7 +75,7 @@ export class ErrorRecoveryManager {
       name: 'xenosync-missing',
       condition: (error) => error.message?.includes('XenoSync launcher not found'),
       recover: async (error, context) => {
-        logger.warn(LogCategory.APP, 'XenoSync not found, attempting fallback to standard orchestration');
+        logger.warn(LogCategory.SYSTEM, 'XenoSync not found, attempting fallback to standard orchestration');
         // Fallback to standard orchestration handled in farmService
       },
       maxRetries: 0
@@ -86,7 +86,7 @@ export class ErrorRecoveryManager {
       name: 'undefined-property',
       condition: (error) => error.message?.includes('Cannot read properties of undefined'),
       recover: async (error, context) => {
-        logger.warn(LogCategory.APP, `Undefined property access: ${error.message}. Using safe defaults.`);
+        logger.warn(LogCategory.SYSTEM, `Undefined property access: ${error.message}. Using safe defaults.`);
         // Safe defaults handled in calling code
       },
       maxRetries: 0
@@ -113,7 +113,7 @@ export class ErrorRecoveryManager {
       condition: (error) => error.code >= 1300 && error.code < 1400,
       recover: async (error, context) => {
         if (context?.farmId) {
-          logger.warn(LogCategory.APP, `Farm ${context.farmId} launch failed, updating status`);
+          logger.warn(LogCategory.SYSTEM, `Farm ${context.farmId} launch failed, updating status`);
           await this.updateFarmStatus(context.farmId, 'failed', error.message);
         }
       },
@@ -126,7 +126,7 @@ export class ErrorRecoveryManager {
    */
   registerStrategy(strategy: RecoveryStrategy): void {
     this.recoveryStrategies.set(strategy.name, strategy);
-    logger.info(LogCategory.APP, `Registered recovery strategy: ${strategy.name}`);
+    logger.info(LogCategory.SYSTEM, `Registered recovery strategy: ${strategy.name}`);
   }
 
   /**
@@ -139,7 +139,7 @@ export class ErrorRecoveryManager {
         .filter(strategy => strategy.condition(error));
 
       if (applicableStrategies.length === 0) {
-        logger.debug(LogCategory.APP, 'No recovery strategy found for error', {
+        logger.debug(LogCategory.SYSTEM, 'No recovery strategy found for error', {
           error: error.message,
           code: error.code
         });
@@ -152,27 +152,27 @@ export class ErrorRecoveryManager {
         const attempts = this.retryAttempts.get(retryKey) || 0;
 
         if (attempts >= strategy.maxRetries) {
-          logger.warn(LogCategory.APP, `Max retries reached for strategy ${strategy.name}`);
+          logger.warn(LogCategory.SYSTEM, `Max retries reached for strategy ${strategy.name}`);
           continue;
         }
 
         this.retryAttempts.set(retryKey, attempts + 1);
 
         try {
-          logger.info(LogCategory.APP, `Attempting recovery with strategy: ${strategy.name}`);
+          logger.info(LogCategory.SYSTEM, `Attempting recovery with strategy: ${strategy.name}`);
           await strategy.recover(error, context);
 
           // Clear retry counter on success
           this.retryAttempts.delete(retryKey);
           return true;
         } catch (recoveryError) {
-          logger.error(LogCategory.APP, `Recovery strategy ${strategy.name} failed:`, recoveryError);
+          logger.error(LogCategory.SYSTEM, `Recovery strategy ${strategy.name} failed:`, recoveryError);
         }
       }
 
       return false;
     } catch (error) {
-      logger.error(LogCategory.APP, 'Error in recovery system:', error);
+      logger.error(LogCategory.SYSTEM, 'Error in recovery system:', error);
       return false;
     }
   }
@@ -282,7 +282,7 @@ export async function withRecovery<T>(
   try {
     return await operation();
   } catch (error) {
-    logger.error(LogCategory.APP, `Error in ${context.operation}:`, error);
+    logger.error(LogCategory.SYSTEM, `Error in ${context.operation}:`, error);
 
     // Attempt recovery
     const recovered = await recoveryManager.recover(error, context);
@@ -292,13 +292,13 @@ export async function withRecovery<T>(
       try {
         return await operation();
       } catch (retryError) {
-        logger.error(LogCategory.APP, `Retry failed after recovery:`, retryError);
+        logger.error(LogCategory.SYSTEM, `Retry failed after recovery:`, retryError);
       }
     }
 
     // Return fallback if available
     if (fallback !== undefined) {
-      logger.warn(LogCategory.APP, `Using fallback value for ${context.operation}`);
+      logger.warn(LogCategory.SYSTEM, `Using fallback value for ${context.operation}`);
       return fallback;
     }
 
@@ -359,7 +359,7 @@ export function ensureProperties<T extends Record<string, any>>(
         }
       }
 
-      logger.debug(LogCategory.APP, `Set default value for missing property: ${String(key)}`);
+      logger.debug(LogCategory.SYSTEM, `Set default value for missing property: ${String(key)}`);
     }
   }
 

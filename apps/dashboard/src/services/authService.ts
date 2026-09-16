@@ -103,12 +103,16 @@ class AuthService {
   }
 
   async logout(): Promise<void> {
+    // iOS Safari private browsing protection - don't throw on storage errors
     try {
       localStorage.removeItem(this.SESSION_KEY);
+    } catch {
+      console.warn('[AuthService] localStorage unavailable for logout');
+    }
+    try {
       sessionStorage.removeItem(this.SESSION_KEY);
-    } catch (error) {
-      console.error('Logout failed:', error);
-      throw error;
+    } catch {
+      console.warn('[AuthService] sessionStorage unavailable for logout');
     }
   }
 
@@ -220,10 +224,15 @@ class AuthService {
 
   private async storeSession(session: AuthSession): Promise<void> {
     const sessionStr = JSON.stringify(session);
-    if (session.refreshToken) {
-      localStorage.setItem(this.SESSION_KEY, sessionStr);
-    } else {
-      sessionStorage.setItem(this.SESSION_KEY, sessionStr);
+    try {
+      if (session.refreshToken) {
+        localStorage.setItem(this.SESSION_KEY, sessionStr);
+      } else {
+        sessionStorage.setItem(this.SESSION_KEY, sessionStr);
+      }
+    } catch {
+      // iOS Safari private browsing - session will not persist
+      console.warn('[AuthService] Storage unavailable (iOS Safari private mode?) - session not persisted');
     }
   }
 
@@ -239,7 +248,12 @@ class AuthService {
 
   private async storeCredentials(creds: { email: string; password: string }): Promise<void> {
     const credsStr = JSON.stringify(creds);
-    localStorage.setItem(this.CREDENTIALS_KEY, credsStr);
+    try {
+      localStorage.setItem(this.CREDENTIALS_KEY, credsStr);
+    } catch {
+      // iOS Safari private browsing - credentials will not persist
+      console.warn('[AuthService] localStorage unavailable (iOS Safari private mode?) - credentials not persisted');
+    }
   }
 }
 

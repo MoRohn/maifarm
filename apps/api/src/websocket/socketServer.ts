@@ -5,13 +5,18 @@ import { WebSocketEvent } from '../types/api';
 import { db, redis } from '../database/connection';
 import { taskCounter, activeAgents } from '../api/metrics';
 import { validateWebSocketOrigin } from '../middleware/cors';
-import { logger } from '../utils/logger';
+import { logger, LogCategory } from '../utils/logger';
 import AnalyticsWebSocketHandler from './analytics';
 import HarvestWebSocketHandler from './harvestHandlers';
-import { createTerminalWebSocketHandlers, TERMINAL_EVENTS } from './terminalHandlers';
+import { createUnifiedTerminalHandlers, TERMINAL_EVENTS } from './unifiedTerminalHandlers';
+import { registerConfidenceSocketHandlers, initializeConfidenceHandlers } from './confidenceHandlers';
 import { coordinationService } from '../services/coordinationService';
 import { costTrackingService } from '../services/costTrackingService';
 import { reliabilityManager } from './reliabilityManager';
+import { recordWebsocketHandshake } from '../monitoring/metricsCollector';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -26,7 +31,7 @@ export class WebSocketServer {
   private agentSubscriptions: Map<string, Set<string>> = new Map();
   private analyticsHandler: AnalyticsWebSocketHandler;
   private harvestHandler: HarvestWebSocketHandler;
-  private terminalHandlers: ReturnType<typeof createTerminalWebSocketHandlers>;
+  private terminalHandlers: ReturnType<typeof createUnifiedTerminalHandlers>;
   private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(httpServer: HTTPServer) {
@@ -65,9 +70,9 @@ export class WebSocketServer {
           if (validateWebSocketOrigin(origin)) {
             callback(null, true);
           } else {
-            logger.warn('WEBSOCKET', `Connection rejected from origin: ${origin}`);
-            // In production, still allow but log for monitoring
-            callback(null, true);
+            logger.warn(LogCategory.WEBSOCKET, `Connection rejected from origin: ${origin}`);
+            // SECURITY FIX: Reject unauthorized origins in production
+            callback(new Error(`Origin ${origin} not allowed`), false);
           }
         },
         methods: ["GET", "POST", "OPTIONS"],
@@ -78,7 +83,7 @@ export class WebSocketServer {
       pingTimeout: 60000,     // 60s timeout (balanced for stability)
       pingInterval: 25000,     // 25s ping interval
       connectTimeout: 45000,   // 45s initial connection timeout
-      transports: ['websocket', 'polling'], // Fallback support
+      transports: ['websocket'], // Use websocket only to avoid polling auth issues
       allowEIO3: true,         // Support older clients
       perMessageDeflate: {     // Optimized compression
         threshold: 1024,       // Only compress messages > 1KB
@@ -124,46 +129,65 @@ export class WebSocketServer {
     // Initialize harvest handler
     this.harvestHandler = new HarvestWebSocketHandler(this.io);
     
-    // Initialize terminal handlers
-    this.terminalHandlers = createTerminalWebSocketHandlers(this.io);
+    // Initialize unified terminal handlers
+    this.terminalHandlers = createUnifiedTerminalHandlers(this.io);
+
+    // Initialize confidence handlers for blerbz-plugins integration
+    initializeConfidenceHandlers();
     
     
     
   }
 
   private setupMiddleware() {
-    // In local mode, we don't require authentication
     this.io.use(async (socket: AuthenticatedSocket, next) => {
-      // Accept any connection in local mode
-      socket.userId = socket.handshake.auth.userId || 'local-user';
-      socket.roles = ['admin', 'user'];
-      // Add comprehensive permissions for development mode
-      socket.permissions = [
-        'admin:all',
-        'farms:read',
-        'farms:write',
-        'agents:read',
-        'agents:write',
-        'agents:control',
-        'tasks:create',
-        'tasks:read',
-        'tasks:write',
-        'metrics:read',
-        'costs:read',
-        'health:read',
-        'terminals:read',
-        'terminals:write'
-      ];
-      
-      next();
+      try {
+        // REMOVED: Auth bypass mode - all WebSocket connections must authenticate properly
+
+        // Production mode: require and validate JWT token
+        const token = socket.handshake.auth.token;
+        if (!token) {
+          return next(new Error('Authentication required'));
+        }
+
+        // Validate JWT token
+        try {
+          const jwt = require('jsonwebtoken');
+          const JWT_SECRET = process.env.JWT_SECRET || 'maifarm-secret-key-change-in-production';
+          const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+          // Set user info from decoded token
+          socket.userId = decoded.userId || decoded.sub;
+          socket.roles = decoded.roles || ['user'];
+          socket.permissions = decoded.permissions || [];
+
+          next();
+        } catch (jwtError) {
+          logger.error(LogCategory.WEBSOCKET, 'JWT validation failed for WebSocket:', jwtError);
+          return next(new Error('Invalid authentication token'));
+        }
+      } catch (error) {
+        logger.error(LogCategory.WEBSOCKET, 'WebSocket middleware error:', error);
+        next(new Error('Authentication failed'));
+      }
     });
   }
 
   private setupHeartbeat(socket: AuthenticatedSocket) {
+    // CRITICAL FIX: Clear any existing heartbeat interval for this socket ID
+    // This prevents memory leak when sockets reconnect with the same ID
+    // Without this, after N reconnects, N intervals would run simultaneously
+    const existingInterval = this.heartbeatIntervals.get(socket.id);
+    if (existingInterval) {
+      clearInterval(existingInterval);
+      this.heartbeatIntervals.delete(socket.id);
+      logger.debug(LogCategory.WEBSOCKET, `Cleared existing heartbeat interval for reconnected socket ${socket.id}`);
+    }
+
     // Initialize heartbeat data
     socket.data.lastPong = Date.now();
     socket.data.missedPings = 0;
-    
+
     // Send initial ping with timestamp
     socket.emit('ping', { timestamp: Date.now() });
     
@@ -190,6 +214,13 @@ export class WebSocketServer {
       // Disconnect after 90 seconds of no response (much more tolerant)
       if (timeSinceLastPong > 90000) {
         console.log(`[WebSocket] Client ${socket.id} timed out (${timeSinceLastPong}ms since last pong)`);
+        // MEMORY LEAK FIX: Clear interval immediately before disconnecting
+        // This prevents the interval from running again if disconnect handler is delayed
+        const currentInterval = this.heartbeatIntervals.get(socket.id);
+        if (currentInterval) {
+          clearInterval(currentInterval);
+          this.heartbeatIntervals.delete(socket.id);
+        }
         socket.disconnect(true);
         return;
       }
@@ -216,6 +247,26 @@ export class WebSocketServer {
     this.io.on('connection', (socket: AuthenticatedSocket) => {
       console.log(`[WebSocket] ✅ Client connected: ${socket.id} (User: ${socket.userId || 'anonymous'})`);
       console.log(`[WebSocket] Total connected clients: ${this.connectedClients.size + 1}`);
+
+      const handshake: any = socket.handshake || {};
+      let issuedMs: number | undefined;
+
+      if (typeof handshake.issued === 'number') {
+        issuedMs = handshake.issued;
+      } else if (typeof handshake.issued === 'string') {
+        const parsed = Number(handshake.issued);
+        issuedMs = Number.isNaN(parsed) ? Date.parse(handshake.issued) : parsed;
+      }
+
+      if (!issuedMs && typeof handshake.time === 'string') {
+        const parsedTime = Date.parse(handshake.time);
+        issuedMs = Number.isNaN(parsedTime) ? undefined : parsedTime;
+      }
+
+      if (issuedMs) {
+        const durationMs = Math.max(0, Date.now() - issuedMs);
+        recordWebsocketHandshake(socket.nsp?.name || '/', durationMs / 1000);
+      }
       
       // Initialize client room tracking
       socket.data.joinedRooms = new Set<string>();
@@ -241,6 +292,9 @@ export class WebSocketServer {
       
       // Initialize terminal connection
       this.terminalHandlers.handleTerminalConnect(socket);
+
+      // Register confidence socket handlers (blerbz-plugins integration)
+      registerConfidenceSocketHandlers(socket);
       
 
       // Send initial connection success
@@ -553,7 +607,10 @@ export class WebSocketServer {
           timestamp: new Date()
         });
 
-        this.terminalHandlers.handleTerminalJoinSession(socket, data);
+        // Only call handler if farmId is available (required by TerminalJoinPayload)
+        if (farmId) {
+          this.terminalHandlers.handleTerminalJoinSession(socket, { sessionId, farmId });
+        }
       });
 
       // Also support the simpler 'terminal:join' event for compatibility
@@ -675,7 +732,9 @@ export class WebSocketServer {
           console.log(`[Socket] Terminal attach request: session=${sessionId}, agent=${agentId}`);
           
           // First verify the session exists (non-blocking)
-          const checkSession = spawn('tmux', ['has-session', '-t', sessionId]);
+          const checkSession = spawn('tmux', ['has-session', '-t', sessionId], {
+            env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+          });
           
           // Set a timeout for the session check
           const checkTimeout = setTimeout(() => {
@@ -759,7 +818,9 @@ export class WebSocketServer {
             '-p',
             '-S', `-${lines}`,
             '-e' // Include escape sequences for colors
-          ]);
+          ], {
+            env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+          });
           
           let output = '';
           captureProcess.stdout?.on('data', (chunk: Buffer) => {
@@ -810,7 +871,7 @@ export class WebSocketServer {
               '-p',
               '-S', '-5' // Get last 5 lines
             ], {
-              env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+              env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
             });
 
             let output = '';
@@ -872,8 +933,10 @@ export class WebSocketServer {
           console.log(`[Socket] Terminal input: session=${sessionId}, agent=${agentId}, length=${input.length}`);
           
           // First check if the session exists (non-blocking)
-          const checkSession = spawn('tmux', ['has-session', '-t', sessionId]);
-          
+          const checkSession = spawn('tmux', ['has-session', '-t', sessionId], {
+            env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+          });
+
           checkSession.on('exit', (code) => {
             if (code !== 0) {
               console.warn(`[Socket] Session ${sessionId} does not exist, skipping input`);
@@ -884,13 +947,15 @@ export class WebSocketServer {
               });
               return;
             }
-            
+
             // Session exists, forward input to tmux pane (non-blocking)
             const tmuxCmd = spawn('tmux', [
               'send-keys',
               '-t', `${sessionId}:agents.${agentId}`,
               input
-            ]);
+            ], {
+              env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+            });
             
             // Set a timeout to kill the process if it hangs
             const timeout = setTimeout(() => {
@@ -1169,256 +1234,261 @@ export class WebSocketServer {
 
 
   private setupCoordinationListeners() {
-    // TEMPORARILY BYPASS coordination listeners during simplified startup
-    // coordinationService doesn't have an 'on' method - it's not an EventEmitter
-    logger.warn('WebSocket', 'Skipping coordination listeners setup - coordinationService not initialized');
-    return;
+    // FIX: coordinationService IS an EventEmitter - enable listeners properly
+    try {
+      // Listen for agent updates from coordination service
+      coordinationService.on('agents:updated', (agents) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'agents:updated',
+            data: agents,
+            timestamp: new Date(),
+            source: 'coordination'
+          };
+          // Emit both events for backward compatibility
+          this.io.emit('agents:updated', agents);
+          this.io.emit('coordination:agents', event);
 
-    // TODO: Re-enable when proper initialization is restored
-    /*
-    // Listen for agent updates from coordination service
-    coordinationService.on('agents:updated', (agents) => {
-      const event: WebSocketEvent = {
-        event: 'agents:updated',
-        data: agents,
-        timestamp: new Date(),
-        source: 'coordination'
-      };
-      // Emit both events for backward compatibility
-      this.io.emit('agents:updated', agents);
-      this.io.emit('coordination:agents', event);
-
-      // Also broadcast to multi-claude subscribers
-      this.broadcastMultiClaudeCoordination({ activeAgents: agents });
-    });
-
-    // Listen for health status updates
-    coordinationService.on('health:status', (healthData) => {
-      const event: WebSocketEvent = {
-        event: 'health:status',
-        data: healthData,
-        timestamp: new Date(),
-        source: 'health-monitor'
-      };
-      this.io.emit('health:status', event);
-      
-      // Emit to specific agent subscribers
-      const subscriberIds = this.agentSubscriptions.get(healthData.agentId);
-      if (subscriberIds) {
-        subscriberIds.forEach(socketId => {
-          const socket = this.connectedClients.get(socketId);
-          if (socket) {
-            socket.emit('agent:health:status', event);
-          }
-        });
-      }
-    });
-
-    // Listen for health warnings
-    coordinationService.on('health:warning', (warningData) => {
-      const event: WebSocketEvent = {
-        event: 'health:warning',
-        data: warningData,
-        timestamp: new Date(),
-        source: 'health-monitor'
-      };
-      this.io.emit('health:warning', event);
-      
-      // Also emit high-priority warning to all clients
-      this.io.emit('alert:health', {
-        type: 'warning',
-        priority: 'high',
-        ...warningData
+          // Also broadcast to multi-claude subscribers
+          this.broadcastMultiClaudeCoordination({ activeAgents: agents });
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling agents:updated event:', error);
+        }
       });
-    });
 
-    // Listen for health summaries
-    coordinationService.on('health:summary', (summaryData) => {
-      const event: WebSocketEvent = {
-        event: 'health:summary',
-        data: summaryData,
-        timestamp: new Date(),
-        source: 'health-monitor'
-      };
-      this.io.emit('health:summary', event);
-    });
+      // Listen for individual agent status changes
+      coordinationService.on('agent:status', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'agent:status',
+            data,
+            timestamp: new Date(),
+            source: 'coordination'
+          };
+          this.io.emit('agent:status', event);
 
-    // Listen for individual agent status changes
-    coordinationService.on('agent:status', (data) => {
-      const event: WebSocketEvent = {
-        event: 'agent:status',
-        data,
-        timestamp: new Date(),
-        source: 'coordination'
-      };
-      this.io.emit('agent:status', event);
-      
-      // Also broadcast to agent-specific room
-      if (data.agentId) {
-        this.broadcastAgentUpdate(data.agentId, data);
-      }
-    });
+          // Also broadcast to agent-specific room
+          if (data.agentId) {
+            this.broadcastAgentUpdate(data.agentId, data);
+          }
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling agent:status event:', error);
+        }
+      });
 
-    // Listen for work claims updates
-    coordinationService.on('claims:updated', (claims) => {
-      const event: WebSocketEvent = {
-        event: 'coordination:claims',
-        data: claims,
-        timestamp: new Date(),
-        source: 'coordination'
-      };
-      this.io.emit('coordination:claims', event);
-    });
+      // Listen for work claims updates
+      coordinationService.on('claims:updated', (claims) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'coordination:claims',
+            data: claims,
+            timestamp: new Date(),
+            source: 'coordination'
+          };
+          this.io.emit('coordination:claims', event);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling claims:updated event:', error);
+        }
+      });
 
-    // Listen for harvest ready events
-    coordinationService.on('harvest:ready', (harvest) => {
-      this.broadcastHarvestReady(harvest);
-    });
+      // Listen for harvest ready events
+      coordinationService.on('harvest:ready', (harvest) => {
+        try {
+          this.broadcastHarvestReady(harvest);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling harvest:ready event:', error);
+        }
+      });
 
-    // Listen for health monitoring events
-    coordinationService.on('health:status', (data) => {
-      const event: WebSocketEvent = {
-        event: 'health:status',
-        data,
-        timestamp: new Date(),
-        source: 'health-monitor'
-      };
-      
-      // Broadcast to all health subscribers
-      this.io.to('health:realtime').emit('health:status', event);
-      
-      // Also broadcast to multiclaude subscribers
-      this.io.to('multiclaude:updates').emit('health:status', event);
-      
-      // Also broadcast to agent-specific room
-      if (data.agentId) {
-        this.broadcastAgentUpdate(data.agentId, data);
-      }
-    });
+      // Listen for health monitoring events
+      coordinationService.on('health:status', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'health:status',
+            data,
+            timestamp: new Date(),
+            source: 'health-monitor'
+          };
 
-    // Listen for health warnings
-    coordinationService.on('health:warning', (data) => {
-      const event: WebSocketEvent = {
-        event: 'health:warning',
-        data,
-        timestamp: new Date(),
-        source: 'health-monitor'
-      };
-      
-      // Broadcast to all health subscribers
-      this.io.to('health:realtime').emit('health:warning', event);
-      
-      // Also broadcast to multiclaude subscribers
-      this.io.to('multiclaude:updates').emit('health:warning', event);
-      
-      // Also broadcast to agent-specific room for urgent warnings
-      if (data.agentId && data.type === 'context') {
-        this.broadcastAgentUpdate(data.agentId, { 
-          ...data, 
-          urgency: 'high',
-          recommendedAction: 'Consider context clearing or workload reduction'
-        });
-      }
-    });
+          // Broadcast to all health subscribers
+          this.io.to('health:realtime').emit('health:status', event);
 
-    // Listen for periodic health summaries
-    coordinationService.on('health:summary', (data) => {
-      const event: WebSocketEvent = {
-        event: 'health:summary',
-        data,
-        timestamp: new Date(),
-        source: 'health-monitor'
-      };
-      
-      // Broadcast to health subscribers and multiclaude subscribers
-      this.io.to('health:realtime').emit('health:summary', event);
-      this.io.to('multiclaude:updates').emit('health:summary', event);
-    });
+          // Also broadcast to multiclaude subscribers
+          this.io.to('multiclaude:updates').emit('health:status', event);
 
-    // Listen for work coordination events
-    coordinationService.on('work:coordination:claimed', (data) => {
-      const event: WebSocketEvent = {
-        event: 'work:claimed',
-        data,
-        timestamp: new Date(),
-        source: 'work-coordination'
-      };
-      this.io.to('multiclaude:updates').emit('work:claimed', event);
-    });
+          // Also broadcast to agent-specific room
+          if (data.agentId) {
+            this.broadcastAgentUpdate(data.agentId, data);
+          }
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling health:status event:', error);
+        }
+      });
 
-    coordinationService.on('work:coordination:completed', (data) => {
-      const event: WebSocketEvent = {
-        event: 'work:completed',
-        data,
-        timestamp: new Date(),
-        source: 'work-coordination'
-      };
-      this.io.to('multiclaude:updates').emit('work:completed', event);
-    });
+      // Listen for health warnings
+      coordinationService.on('health:warning', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'health:warning',
+            data,
+            timestamp: new Date(),
+            source: 'health-monitor'
+          };
 
-    coordinationService.on('work:coordination:queued', (data) => {
-      const event: WebSocketEvent = {
-        event: 'work:queued',
-        data,
-        timestamp: new Date(),
-        source: 'work-coordination'
-      };
-      this.io.to('multiclaude:updates').emit('work:queued', event);
-    });
-    */
+          // Broadcast to all health subscribers
+          this.io.to('health:realtime').emit('health:warning', event);
+
+          // Also broadcast to multiclaude subscribers
+          this.io.to('multiclaude:updates').emit('health:warning', event);
+
+          // Also emit high-priority warning to all clients
+          this.io.emit('alert:health', {
+            type: 'warning',
+            priority: 'high',
+            ...data
+          });
+
+          // Also broadcast to agent-specific room for urgent warnings
+          if (data.agentId && data.type === 'context') {
+            this.broadcastAgentUpdate(data.agentId, {
+              ...data,
+              urgency: 'high',
+              recommendedAction: 'Consider context clearing or workload reduction'
+            });
+          }
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling health:warning event:', error);
+        }
+      });
+
+      // Listen for periodic health summaries
+      coordinationService.on('health:summary', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'health:summary',
+            data,
+            timestamp: new Date(),
+            source: 'health-monitor'
+          };
+
+          // Broadcast to health subscribers and multiclaude subscribers
+          this.io.to('health:realtime').emit('health:summary', event);
+          this.io.to('multiclaude:updates').emit('health:summary', event);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling health:summary event:', error);
+        }
+      });
+
+      // Listen for work coordination events
+      coordinationService.on('work:coordination:claimed', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'work:claimed',
+            data,
+            timestamp: new Date(),
+            source: 'work-coordination'
+          };
+          this.io.to('multiclaude:updates').emit('work:claimed', event);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling work:claimed event:', error);
+        }
+      });
+
+      coordinationService.on('work:coordination:completed', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'work:completed',
+            data,
+            timestamp: new Date(),
+            source: 'work-coordination'
+          };
+          this.io.to('multiclaude:updates').emit('work:completed', event);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling work:completed event:', error);
+        }
+      });
+
+      coordinationService.on('work:coordination:queued', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'work:queued',
+            data,
+            timestamp: new Date(),
+            source: 'work-coordination'
+          };
+          this.io.to('multiclaude:updates').emit('work:queued', event);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling work:queued event:', error);
+        }
+      });
+
+      logger.info(LogCategory.WEBSOCKET, 'Coordination listeners setup completed');
+    } catch (error) {
+      logger.error(LogCategory.WEBSOCKET, 'Failed to setup coordination listeners:', error);
+    }
   }
 
   // Setup cost tracking service listeners
   private setupCostTrackingListeners() {
-    // TEMPORARILY BYPASS cost tracking listeners during simplified startup
-    logger.warn('WebSocket', 'Skipping cost tracking listeners setup - service not initialized');
-    return;
+    // FIX: costTrackingService IS an EventEmitter - enable listeners properly
+    try {
+      // Listen for cost updates
+      costTrackingService.on('cost:update', (data) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'cost:update',
+            data,
+            timestamp: new Date(),
+            source: 'cost-tracking'
+          };
+          this.io.to('costs:realtime').emit('cost:update', event);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling cost:update event:', error);
+        }
+      });
 
-    // TODO: Re-enable when proper initialization is restored
-    /*
-    // Listen for cost updates
-    costTrackingService.on('cost:update', (data) => {
-      const event: WebSocketEvent = {
-        event: 'cost:update',
-        data,
-        timestamp: new Date(),
-        source: 'cost-tracking'
-      };
-      this.io.to('costs:realtime').emit('cost:update', event);
-    });
+      // Listen for metrics updates
+      costTrackingService.on('metrics:update', (metrics) => {
+        try {
+          const event: WebSocketEvent = {
+            event: 'cost:metrics',
+            data: metrics,
+            timestamp: new Date(),
+            source: 'cost-tracking'
+          };
+          this.io.to('costs:realtime').emit('cost:metrics', event);
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, 'Error handling cost:metrics event:', error);
+        }
+      });
 
-    // Listen for metrics updates
-    costTrackingService.on('metrics:update', (metrics) => {
-      const event: WebSocketEvent = {
-        event: 'cost:metrics',
-        data: metrics,
-        timestamp: new Date(),
-        source: 'cost-tracking'
-      };
-      this.io.to('costs:realtime').emit('cost:metrics', event);
-    });
-    */
+      logger.info(LogCategory.WEBSOCKET, 'Cost tracking listeners setup completed');
+    } catch (error) {
+      logger.error(LogCategory.WEBSOCKET, 'Failed to setup cost tracking listeners:', error);
+    }
   }
 
   private startMetricsReporting() {
     // Report metrics every 5 seconds
     setInterval(async () => {
-      // Default metrics if database is unavailable
-      let metrics = {
-        recent: [],
-        queues: {},
-        activeAgents: [],
-        connectedClients: this.connectedClients.size,
-        timestamp: new Date(),
-        dashboard: {
-          activeFarms: 0,
-          totalAgents: 0,
-          tasksCompleted: 0,
-          successRate: 100
-        }
-      };
-
+      // FIX: Wrap entire callback in try-catch to prevent unhandled promise rejections
       try {
+        // Default metrics if database is unavailable
+        let metrics = {
+          recent: [],
+          queues: {},
+          activeAgents: [],
+          connectedClients: this.connectedClients.size,
+          timestamp: new Date(),
+          dashboard: {
+            activeFarms: 0,
+            totalAgents: 0,
+            tasksCompleted: 0,
+            successRate: 100
+          }
+        };
+
+        try {
         // Get current metrics from database (handle missing columns gracefully)
         const metricsResult = await db.query(`
           SELECT
@@ -1500,14 +1570,18 @@ export class WebSocketServer {
             successRate: parseInt(dashboard.success_rate)
           }
         };
-      } catch (error) {
-        // Database not available - use default metrics
-        if (error.code !== 'ECONNREFUSED') {
-          console.error('Error fetching metrics:', error);
+        } catch (error: any) {
+          // Database not available - use default metrics
+          if (error.code !== 'ECONNREFUSED') {
+            console.error('Error fetching metrics:', error);
+          }
         }
-      }
 
-      this.broadcastMetrics(metrics);
+        this.broadcastMetrics(metrics);
+      } catch (outerError) {
+        // Catch any errors in the entire callback to prevent unhandled rejections
+        logger.error(LogCategory.WEBSOCKET, 'Error in metrics reporting interval:', outerError);
+      }
     }, 5000);
   }
 
@@ -1517,13 +1591,16 @@ export class WebSocketServer {
       const { agentCleanupService } = await import('../services/agentCleanupService.js');
 
       // Check if agentCleanupService has an 'on' method
-      if (!agentCleanupService || typeof agentCleanupService.on !== 'function') {
+      if (!agentCleanupService || typeof (agentCleanupService as any).on !== 'function') {
         logger.warn('WebSocket', 'Skipping cleanup listeners - agentCleanupService not an EventEmitter');
         return;
       }
 
+      // Cast to EventEmitter-like interface for TypeScript (cast through unknown for type safety)
+      const cleanupEmitter = agentCleanupService as unknown as { on: (event: string, handler: (data: any) => void) => void };
+
       // Listen for farm cleanup events
-      agentCleanupService.on('cleanup:farm:started', (data: any) => {
+      cleanupEmitter.on('cleanup:farm:started', (data: any) => {
       const event: WebSocketEvent = {
         event: 'farm:cleanup:started',
         data,
@@ -1533,7 +1610,7 @@ export class WebSocketServer {
       this.io.emit('farm:cleanup:started', event);
     });
 
-    agentCleanupService.on('cleanup:farm:completed', (data: any) => {
+    cleanupEmitter.on('cleanup:farm:completed', (data: any) => {
       const event: WebSocketEvent = {
         event: 'farm:cleanup:completed',
         data,
@@ -1551,7 +1628,7 @@ export class WebSocketServer {
       });
     });
 
-    agentCleanupService.on('cleanup:farm:error', (data: any) => {
+    cleanupEmitter.on('cleanup:farm:error', (data: any) => {
       const event: WebSocketEvent = {
         event: 'farm:cleanup:error',
         data,
@@ -1562,7 +1639,7 @@ export class WebSocketServer {
     });
 
     // Listen for agent cleanup events
-    agentCleanupService.on('cleanup:agent:removed', (data: any) => {
+    cleanupEmitter.on('cleanup:agent:removed', (data: any) => {
       const event: WebSocketEvent = {
         event: 'agent:removed',
         data,
@@ -1575,7 +1652,7 @@ export class WebSocketServer {
       this.io.to(`agent:${data.agentId}`).emit('agent:removed', event);
     });
 
-    agentCleanupService.on('cleanup:disconnected', (data: any) => {
+    cleanupEmitter.on('cleanup:disconnected', (data: any) => {
       const event: WebSocketEvent = {
         event: 'agents:cleanup:disconnected',
         data,
@@ -1587,20 +1664,6 @@ export class WebSocketServer {
     } catch (error) {
       logger.error('WebSocket', 'Failed to setup cleanup listeners:', error);
     }
-  }
-
-  public getConnectionStats() {
-    return {
-      totalConnections: this.connectedClients.size,
-      farmSubscriptions: Array.from(this.farmSubscriptions.entries()).map(([farmId, sockets]) => ({
-        farmId,
-        subscribers: sockets.size
-      })),
-      agentSubscriptions: Array.from(this.agentSubscriptions.entries()).map(([agentId, sockets]) => ({
-        agentId,
-        subscribers: sockets.size
-      }))
-    };
   }
 
   public broadcast(event: string, data: any) {
@@ -1759,6 +1822,7 @@ export class WebSocketServer {
     });
     
     return {
+      totalConnections: this.connectedClients.size, // Backwards compatibility
       totalConnected: this.connectedClients.size,
       totalSockets: allSockets.length,
       terminalRooms: Array.from(terminalRooms),
@@ -1779,3 +1843,9 @@ export class WebSocketServer {
 }
 
 export default WebSocketServer;
+
+// Helper to get the global socket server instance (for use by API routes)
+export function getSocketServer(): import('socket.io').Server | null {
+  const wsServer = (global as any).wsServer as WebSocketServer | undefined;
+  return wsServer?.io ?? null;
+}

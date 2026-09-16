@@ -16,7 +16,7 @@
 
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { logger, LogCategory } from '../utils/logger';
@@ -25,9 +25,12 @@ import { websocketManager } from '../websocket/websocketManager';
 import { withDatabaseRetry } from '../utils/retry';
 import { TmuxManager } from '../utils/tmuxManager';
 import { unifiedTerminalStreamService } from './UnifiedTerminalStreamService';
+import { enhancedTerminalService } from './EnhancedRealTimeTerminalService';
+import { unifiedAIEngineLauncher } from './UnifiedAIEngineLauncher';
 import { agentActivityHeartbeatService } from './AgentActivityHeartbeatService';
-import { harvestService } from './harvestService';
+import { harvestService } from './unified/harvestService';
 import { harvestSessionCache } from './harvestSessionCache';
+import { yieldDetectionService } from './YieldDetectionService';
 import { pathConfig } from '../config/paths';
 import { shutdownCoordinator } from './shutdownCoordinator';
 import { tmuxSessionVerifier } from './TmuxSessionVerifier';
@@ -41,14 +44,64 @@ import {
   MODE_OPTIMIZATIONS,
   getOptimizedLaunchSequence,
   calculateOptimalTimeout,
-  getPreflightRequirements
+  getPreflightRequirements,
+  getPluginConfig
 } from '../config/farmModeOptimizations';
 import { FarmMode, FarmProvider } from '../types/farm';
+import { farmService } from './unified/farmService';
+import { problemModelingService } from './ProblemModelingService';
+import { causalModelingService } from './CausalModelingService';
+import { thermalMonitoringService, ThermalPressureLevel, THERMAL_PRESSURE_LABELS } from './ThermalMonitoringService';
+import { seedContextAssembler } from './seedContextAssembler';
 
 const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
-const resolveProvider = (provider: FarmProvider | undefined): 'claude' | 'openai' =>
-  provider === 'openai' ? 'openai' : 'claude';
+const resolveProvider = (provider: FarmProvider | undefined): FarmProvider => {
+  if (provider) {
+    return provider;
+  }
+  const defaultProvider = aiProviderManager.getDefaultProvider();
+  return (defaultProvider as FarmProvider) || 'claude';
+};
+
+const mapToAiProvider = (provider: FarmProvider): AIProvider => {
+  switch (provider) {
+    case 'openai':
+      return AIProvider.OPENAI;
+    case 'gpt-oss':
+      return AIProvider.GPT_OSS;
+    case 'llama':
+    case 'ollama':
+      return AIProvider.LLAMA;
+    default:
+      return AIProvider.CLAUDE;
+  }
+};
+
+type OrchestratorProvider = 'claude' | 'openai' | 'gpt-oss' | 'grok';
+
+const mapToOrchestratorProvider = (provider: FarmProvider): OrchestratorProvider => {
+  // FIXED: Explicitly handle each provider type including grok
+  switch (provider) {
+    case 'gpt-oss':
+      return 'gpt-oss';
+    case 'openai':
+      return 'openai';
+    case 'claude':
+      return 'claude';
+    case 'grok':
+      return 'grok';
+    case 'llama':
+    case 'ollama':
+      // Llama/Ollama use local inference - map to gpt-oss which has local support
+      logger.info(LogCategory.FARM, `Provider ${provider} mapped to gpt-oss for local inference`);
+      return 'gpt-oss';
+    default:
+      // Log warning for unexpected provider but default to claude
+      logger.warn(LogCategory.FARM, `Unknown provider "${provider}", defaulting to claude`);
+      return 'claude';
+  }
+};
 
 // Launch configuration for each mode
 interface FarmLaunchConfig {
@@ -65,15 +118,18 @@ interface FarmLaunchConfig {
   files?: string[];
   metadata?: any;
   yamlContent?: string; // YAML configuration for agents
+  // Seeds context injection (Feature A: Seeds can Seed a Farm)
+  appliedSeedIds?: string[];
+  seedsTextSnapshot?: string;
 }
 
-// Mode-specific configurations
+// Mode-specific configurations (ENHANCED for extended farming sessions)
 const MODE_CONFIGS = {
   [FarmMode.HARVEST]: {
     defaultAgentCount: 3,
     minAgents: 2,
     maxAgents: 10,
-    defaultTimeout: 3600, // 1 hour
+    defaultTimeout: 7200, // 2 hours (extended from 1 hour for comprehensive work)
     useXenoSync: true,
     requiresPrompt: true,
     sessionPrefix: 'farm',
@@ -83,7 +139,7 @@ const MODE_CONFIGS = {
     defaultAgentCount: 2,  // XenoSync requires minimum 2 agents
     minAgents: 2,
     maxAgents: 2,
-    defaultTimeout: 300, // 5 minutes FIXED
+    defaultTimeout: 900, // 15 minutes (extended from 5 min for complete bug fixes)
     useXenoSync: true,  // Enable XenoSync for proper coordination
     requiresPrompt: true,
     sessionPrefix: 'farm',  // STANDARDIZED: All modes use 'farm' prefix
@@ -93,7 +149,7 @@ const MODE_CONFIGS = {
     defaultAgentCount: 5,
     minAgents: 3,
     maxAgents: 20,
-    defaultTimeout: 2700, // 45 minutes
+    defaultTimeout: 5400, // 1.5 hours (extended from 45 min for thorough exploration)
     useXenoSync: true,
     requiresPrompt: true,
     sessionPrefix: 'farm',  // STANDARDIZED: All modes use 'farm' prefix
@@ -103,6 +159,7 @@ const MODE_CONFIGS = {
 
 export enum LaunchPhase {
   PREFLIGHT = 'preflight',
+  MODELING = 'modeling',  // Model-First Reasoning + Causal Model extraction
   WORKSPACE = 'workspace',
   HARVEST = 'harvest',
   TMUX = 'tmux',
@@ -178,6 +235,7 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
   private static instance: UnifiedFarmLaunchOrchestrator;
   private activeFarms = new Map<string, LaunchState>();
   private orchestratorProcesses = new Map<string, ChildProcess>();
+  private forceKillTimeouts = new Map<string, NodeJS.Timeout>(); // Track force-kill timeouts
   private tmuxManager: TmuxManager;
 
   private constructor() {
@@ -266,13 +324,47 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       logger.warn(LogCategory.FARM, `System load high: ${loadAverage.toFixed(2)}, recommended max ${requirements.maxLoadAverage}`);
     }
 
-    await aiProviderManager.refreshApiKeys();
-    const provider = resolveProvider(config.provider) === 'openai'
-      ? AIProvider.OPENAI
-      : AIProvider.CLAUDE;
+    // Check thermal state - prevent launching during thermal throttling
+    const thermalCheck = thermalMonitoringService.canLaunchFarm();
+    if (!thermalCheck.allowed) {
+      logger.error(LogCategory.THERMAL, `Farm launch blocked due to thermal conditions`, {
+        farmId: config.farmId,
+        reason: thermalCheck.reason
+      });
+      throw new Error(`Thermal protection: ${thermalCheck.reason}`);
+    }
 
-    if (!aiProviderManager.isProviderEnabled(provider)) {
-      throw new Error(`Provider ${provider} is not enabled. Add a valid API key before launching.`);
+    // Adjust agent count based on thermal state
+    const recommendedAgents = thermalMonitoringService.getRecommendedAgentCount(config.agentCount);
+    if (recommendedAgents < config.agentCount) {
+      const currentMetrics = thermalMonitoringService.getCurrentMetrics();
+      logger.warn(LogCategory.THERMAL, `Reducing agent count due to thermal pressure`, {
+        farmId: config.farmId,
+        requestedAgents: config.agentCount,
+        recommendedAgents,
+        pressureLevel: currentMetrics?.pressureLabel || 'unknown'
+      });
+
+      // Update config with reduced agent count
+      config.agentCount = recommendedAgents;
+      state.agentCount = recommendedAgents;
+
+      // Emit warning event
+      websocketManager.broadcast('thermal:agent-reduction', {
+        farmId: config.farmId,
+        originalCount: config.agentCount,
+        reducedCount: recommendedAgents,
+        reason: `Thermal pressure: ${currentMetrics?.pressureLabel || 'elevated'}`,
+        timestamp: new Date()
+      });
+    }
+
+    await aiProviderManager.refreshApiKeys();
+    const resolvedProvider = resolveProvider(config.provider);
+    const providerEnum = mapToAiProvider(resolvedProvider);
+
+    if (!aiProviderManager.isProviderEnabled(providerEnum)) {
+      throw new Error(`Provider ${resolvedProvider} is not enabled. Add a valid configuration before launching.`);
     }
 
     const tmuxReady = await this.tmuxManager.ensureServerRunning();
@@ -298,6 +390,151 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       await harvestSessionCache.mapFarmToSession(config.farmId, state.sessionName);
     } catch (error) {
       logger.warn(LogCategory.HARVEST, `Failed to prime harvest session cache for ${config.farmId}:`, error);
+    }
+  }
+
+  /**
+   * MODELING PHASE - Model-First Reasoning + Causal Model Extraction
+   *
+   * Based on:
+   * - "Model-First Reasoning LLM Agents" (arxiv 2512.14474)
+   * - "Large Causal Models from Large Language Models" (arxiv 2512.07796)
+   *
+   * This phase generates explicit problem models and causal graphs before
+   * agent execution, reducing hallucinations and enabling intelligent task ordering.
+   */
+  private async executeModelingPhase(config: FarmLaunchConfig, state: LaunchState): Promise<void> {
+    const startTime = Date.now();
+    const farmId = config.farmId;
+
+    logger.info(LogCategory.FARM,
+      `Starting MODELING phase for farm ${farmId} (${config.mode} mode, ${config.agentCount} agents)`);
+
+    // Broadcast modeling started event
+    websocketManager.broadcast('farm:modeling-started', {
+      farmId,
+      phase: 'MODELING',
+      mode: config.mode,
+      agentCount: config.agentCount,
+      timestamp: new Date().toISOString(),
+    });
+    websocketManager.broadcastToFarm(farmId, 'farm:modeling-started', {
+      farmId,
+      phase: 'MODELING',
+      mode: config.mode,
+      agentCount: config.agentCount,
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
+      // Determine AI provider for model generation
+      const modelProvider = config.provider === 'openai' ? 'openai' :
+                           config.provider === 'ollama' || config.provider === 'llama' ? 'ollama' :
+                           'claude';
+
+      // Generate Problem Model (Model-First Reasoning)
+      logger.info(LogCategory.FARM, `Generating problem model for farm ${farmId}`);
+      const problemModelResult = await problemModelingService.generateModel({
+        farmId,
+        prompt: config.prompt,
+        mode: config.mode.toUpperCase() as 'HARVEST' | 'QUICK_TASK' | 'GO_WILD',
+        agentCount: config.agentCount,
+        provider: modelProvider,
+        context: config.yamlContent,
+      });
+
+      if (problemModelResult.warnings.length > 0) {
+        logger.warn(LogCategory.FARM,
+          `Problem model warnings for ${farmId}: ${problemModelResult.warnings.join(', ')}`);
+      }
+
+      logger.info(LogCategory.FARM,
+        `Problem model generated for ${farmId}: ` +
+        `${problemModelResult.model.entities.length} entities, ` +
+        `${problemModelResult.model.actions.length} actions, ` +
+        `${problemModelResult.model.constraints.length} constraints ` +
+        `(${problemModelResult.durationMs}ms)`);
+
+      // Broadcast problem model generated event
+      websocketManager.broadcast('farm:problem-model-generated', {
+        farmId,
+        modelId: problemModelResult.model.id,
+        entityCount: problemModelResult.model.entities.length,
+        actionCount: problemModelResult.model.actions.length,
+        constraintCount: problemModelResult.model.constraints.length,
+        goalCount: problemModelResult.model.goals.length,
+        durationMs: problemModelResult.durationMs,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Generate Causal Model (DEMOCRITUS-inspired)
+      logger.info(LogCategory.FARM, `Extracting causal model for farm ${farmId}`);
+      const causalModel = await causalModelingService.extractCausalModel({
+        farmId,
+        prompt: config.prompt,
+        problemModel: {
+          entities: problemModelResult.model.entities.map(e => ({
+            id: e.id,
+            name: e.name,
+            type: e.type,
+          })),
+          actions: problemModelResult.model.actions.map(a => ({
+            id: a.id,
+            name: a.name,
+            description: a.description,
+          })),
+        },
+        provider: modelProvider,
+        context: config.yamlContent,
+      });
+
+      logger.info(LogCategory.FARM,
+        `Causal model extracted for ${farmId}: ` +
+        `${causalModel.triples.length} triples, ` +
+        `${causalModel.graph.nodes.length} nodes, ` +
+        `${causalModel.conflicts.length} conflicts ` +
+        `(isDAG: ${causalModel.graph.isDAG})`);
+
+      // Broadcast causal model generated event
+      websocketManager.broadcast('farm:causal-model-generated', {
+        farmId,
+        modelId: causalModel.id,
+        tripleCount: causalModel.triples.length,
+        nodeCount: causalModel.graph.nodes.length,
+        edgeCount: causalModel.graph.edges.length,
+        conflictCount: causalModel.conflicts.length,
+        isDAG: causalModel.graph.isDAG,
+        topologicalOrder: causalModel.topologicalOrder,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Store model references in launch state metadata
+      state.metadata = state.metadata || {};
+      state.metadata.problemModelId = problemModelResult.model.id;
+      state.metadata.causalModelId = causalModel.id;
+      state.metadata.taskOrder = causalModel.topologicalOrder;
+
+      // Broadcast modeling completion
+      websocketManager.broadcast('farm:modeling-complete', {
+        farmId,
+        problemModel: problemModelingService.getModelSummary(problemModelResult.model),
+        causalModel: causalModelingService.getModelSummary(causalModel),
+      });
+
+      const totalDuration = Date.now() - startTime;
+      logger.info(LogCategory.FARM,
+        `MODELING phase completed for ${farmId} in ${totalDuration}ms`);
+
+    } catch (error) {
+      // MODELING phase is non-blocking - log warning but continue
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.warn(LogCategory.FARM,
+        `MODELING phase failed for ${farmId}, continuing without models: ${errorMessage}`);
+
+      // Still mark as completed (with warning) so pipeline continues
+      state.metadata = state.metadata || {};
+      state.metadata.modelingFailed = true;
+      state.metadata.modelingError = errorMessage;
     }
   }
 
@@ -345,8 +582,17 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
     // Shutdown already scheduled in provisionTmuxSession() - no need to schedule again
     logger.info(LogCategory.FARM, `Shutdown already scheduled for ${config.farmId} during tmux provisioning`);
 
-    // CRITICAL FIX: Use transaction with retry to ensure database-first registration
-    // This prevents the race condition where frontend receives agents before DB has them
+    // CRITICAL FIX: Broadcast agent registration BEFORE database persistence so the
+    // frontend receives agent identities before any terminal output arrives.
+    // This prevents the race condition described in CLAUDE.md (agents must be visible
+    // before logs stream in). The database transaction then persists the same data.
+    try {
+      await this.broadcastAgentRegistration(config.farmId, state);
+    } catch (error) {
+      logger.error(LogCategory.FARM, `Failed to broadcast agents pre-database for farm ${config.farmId}:`, error);
+    }
+
+    // Use transaction with retry to ensure persistent storage after the pre-broadcast
     // Enhanced with transaction monitoring to diagnose orphaned session root cause
     const transactionStart = Date.now();
     let transactionCompleted = false;
@@ -383,7 +629,7 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
                ON CONFLICT (id) DO UPDATE SET
                  name = EXCLUDED.name,
-                 type = EXCLUDED.name,
+                 type = EXCLUDED.type,
                  status = EXCLUDED.status,
                  session_name = EXCLUDED.session_name,
                  pane_index = EXCLUDED.pane_index,
@@ -443,9 +689,18 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
 
             if (updateResult.rowCount === 0) {
               logger.error(LogCategory.DATABASE, `farms.agents UPDATE matched 0 rows for farm ${config.farmId}`);
+              throw new Error(`Farm ${config.farmId} not found in database during agents update`);
             } else {
               const updatedCount = updateResult.rows[0]?.updated_count;
               logger.info(LogCategory.DATABASE, `farms.agents JSONB array updated successfully: ${updatedCount} agents for farm ${config.farmId}`);
+
+              // CRITICAL FIX: Validate that the database has the correct number of agents
+              // If JSONB serialization failed, updatedCount will be null or different from expected
+              if (updatedCount !== agentsArray.length) {
+                const errorMsg = `Agent count mismatch for farm ${config.farmId}: expected ${agentsArray.length}, database has ${updatedCount}`;
+                logger.error(LogCategory.DATABASE, errorMsg);
+                throw new Error(errorMsg);
+              }
             }
           } catch (err) {
             logger.error(LogCategory.DATABASE, `farms.agents UPDATE query failed for farm ${config.farmId}:`, err);
@@ -474,14 +729,6 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
           transactionCompleted = true;
         });
 
-        // 3. Broadcast agent registration ONLY after successful transaction commit
-        const broadcastStart = Date.now();
-        logger.info(LogCategory.FARM, `Broadcasting agent registration for ${state.agents.size} agents AFTER database save`);
-        await this.broadcastAgentRegistration(config.farmId, state);
-        const broadcastDuration = Date.now() - broadcastStart;
-
-        logger.debug(LogCategory.WEBSOCKET, `Agent registration broadcast completed in ${broadcastDuration}ms for farm ${config.farmId}`);
-
       }, 'finalizeLaunch', { farmId: config.farmId, agentCount: state.agents.size });
 
       const transactionDuration = Date.now() - transactionStart;
@@ -492,14 +739,57 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
 
       // Update farm status to 'active' through state machine after successful launch
       // This must happen OUTSIDE the transaction to avoid state machine conflicts
-      try {
-        const { getService } = await import('./serviceManager');
-        const farmService = getService('farm');
-        await farmService.updateFarmStatus(config.farmId, 'active', 'farm_launch_completed');
-        logger.info(LogCategory.FARM, `Farm ${config.farmId} status updated to active via state machine`);
-      } catch (statusError) {
-        logger.error(LogCategory.FARM, `Failed to update farm status to active:`, statusError);
-        // Don't fail the launch if status update fails - farm is already operational
+      // CRITICAL FIX: Add retry and fallback to ensure status is updated
+      let statusUpdateSuccess = false;
+      const maxStatusRetries = 3;
+
+      for (let attempt = 1; attempt <= maxStatusRetries; attempt++) {
+        try {
+          await farmService.updateFarmStatus(config.farmId, 'active', 'farm_launch_completed');
+          logger.info(LogCategory.FARM, `Farm ${config.farmId} status updated to active via state machine`);
+          statusUpdateSuccess = true;
+          break;
+        } catch (statusError) {
+          logger.warn(LogCategory.FARM,
+            `Status update attempt ${attempt}/${maxStatusRetries} failed:`,
+            statusError instanceof Error ? statusError.message : statusError);
+
+          if (attempt < maxStatusRetries) {
+            await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+          }
+        }
+      }
+
+      // CRITICAL FALLBACK: If state machine update failed, directly update DB and broadcast
+      if (!statusUpdateSuccess) {
+        logger.error(LogCategory.FARM,
+          `All ${maxStatusRetries} status update attempts failed for farm ${config.farmId}. Using fallback.`);
+
+        try {
+          // Direct database update bypassing state machine
+          await db.query(
+            'UPDATE farms SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            ['active', config.farmId]
+          );
+          logger.info(LogCategory.FARM, `Farm ${config.farmId} status force-updated to active via direct DB`);
+          statusUpdateSuccess = true;
+        } catch (dbError) {
+          logger.error(LogCategory.DATABASE, `Direct DB status update failed:`, dbError);
+        }
+
+        // ALWAYS broadcast status even if DB update failed - frontend needs to know
+        const statusPayload = {
+          farmId: config.farmId,
+          status: 'active',
+          previousStatus: 'launching',
+          reason: 'farm_launch_completed',
+          fallbackUsed: true,
+          timestamp: new Date()
+        };
+        websocketManager.broadcast('farm:status', statusPayload);
+        websocketManager.broadcastToFarm(config.farmId, 'farm:status', statusPayload);
+        websocketManager.broadcast('farm:status:changed', statusPayload);
+        logger.info(LogCategory.FARM, `Broadcast farm:status event for ${config.farmId} -> active (fallback)`);
       }
 
       // Alert on very slow finalization (>10 seconds)
@@ -521,10 +811,48 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
           error: error instanceof Error ? error.stack : String(error)
         });
 
-      // CRITICAL: Transaction failed but tmux session exists - this creates an orphaned session!
+      // CRITICAL FIX: Transaction failed but tmux session exists - clean up the orphaned session immediately
       logger.error(LogCategory.SYSTEM,
         `ORPHANED SESSION ALERT: Farm ${config.farmId} has tmux session ${state.sessionName} ` +
-        `but database transaction failed. OrphanedSessionRecoveryService will detect and recover this.`);
+        `but database transaction failed. Cleaning up orphaned session immediately.`);
+
+      // Clean up the orphaned tmux session to prevent resource leak
+      try {
+        if (state.sessionName) {
+          const { exec } = await import('child_process');
+          const { promisify } = await import('util');
+          const execAsync = promisify(exec);
+
+          // Kill the tmux session using TMUX_TMPDIR for cross-process visibility
+          await execAsync(`TMUX_TMPDIR=/tmp tmux kill-session -t ${state.sessionName}`, {
+            timeout: 10000
+          });
+          logger.info(LogCategory.FARM, `Successfully cleaned up orphaned tmux session ${state.sessionName} after transaction failure`);
+        }
+      } catch (cleanupError) {
+        logger.error(LogCategory.FARM, `Failed to clean up orphaned tmux session ${state.sessionName}:`, cleanupError);
+        // Continue to throw original error - cleanup failure is secondary
+      }
+
+      // CRITICAL FIX: Update farm status to 'failed' in database before throwing
+      // This prevents farms from being stuck in 'launching' or 'active' status forever
+      try {
+        const pool = getPool();
+        await pool.query(
+          `UPDATE farms SET status = 'failed', updated_at = NOW() WHERE id = $1`,
+          [config.farmId]
+        );
+        logger.info(LogCategory.DATABASE, `Updated farm ${config.farmId} status to 'failed' after transaction failure`);
+
+        // Broadcast status change to connected clients
+        websocketManager.broadcast('farm:status', {
+          farmId: config.farmId,
+          status: 'failed',
+          error: `Farm launch transaction failed: ${error instanceof Error ? error.message : String(error)}`
+        });
+      } catch (statusUpdateError) {
+        logger.error(LogCategory.DATABASE, `Failed to update farm status to 'failed' after transaction failure:`, statusUpdateError);
+      }
 
       throw error;
     }
@@ -596,6 +924,11 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
           exec: () => this.performPreflightChecks(normalizedConfig!, launchState!)
         },
         {
+          phase: LaunchPhase.MODELING,
+          label: 'Generating problem and causal models',
+          exec: () => this.executeModelingPhase(normalizedConfig!, launchState!)
+        },
+        {
           phase: LaunchPhase.WORKSPACE,
           label: 'Preparing isolated workspace',
           exec: () => this.createWorkspace(normalizedConfig!)
@@ -629,9 +962,29 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
 
       launchState.status = 'launching';
 
-      for (const step of steps) {
-        await this.runLaunchStep(launchState, step.phase, step.label, step.exec);
-      }
+      // CRITICAL FIX: Add overall pipeline timeout to prevent hanging indefinitely
+      // FIX: Increase pipeline timeout for longer farm modes (HARVEST, GO_WILD)
+      // Default: 10 minutes for initialization, or 20% of farm timeout (whichever is larger)
+      const basePipelineTimeout = 600000; // 10 minutes base
+      const configBasedTimeout = normalizedConfig.timeout
+        ? Math.max(normalizedConfig.timeout * 1000 * 0.2, basePipelineTimeout) // 20% of farm time or 10 min
+        : basePipelineTimeout;
+      const pipelineTimeoutMs = Math.min(configBasedTimeout, 1200000); // Cap at 20 minutes max
+
+      const pipelinePromise = (async () => {
+        for (const step of steps) {
+          await this.runLaunchStep(launchState!, step.phase, step.label, step.exec);
+        }
+      })();
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Farm launch pipeline timed out after ${pipelineTimeoutMs / 1000} seconds`));
+        }, pipelineTimeoutMs);
+      });
+
+      // Race between pipeline completion and timeout
+      await Promise.race([pipelinePromise, timeoutPromise]);
 
       launchState.status = 'running';
 
@@ -727,13 +1080,31 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       throw new Error(`Prompt is required for ${mode} mode`);
     }
 
-    // Normalize agent count
+    // Normalize agent count with explicit validation
     let agentCount = config.agentCount || modeConfig.defaultAgentCount;
     logger.info(LogCategory.FARM,
       `Agent count before normalization: ${agentCount}, config.agentCount: ${config.agentCount}, defaultAgentCount: ${modeConfig.defaultAgentCount}`);
 
+    // CRITICAL VALIDATION: Ensure agent count is a valid positive number
+    if (typeof agentCount !== 'number' || !Number.isFinite(agentCount)) {
+      logger.error(LogCategory.FARM, `Invalid agent count type: ${typeof agentCount}, value: ${agentCount}`);
+      throw new Error(`Invalid agent count: must be a positive number, got ${agentCount}`);
+    }
+
     const originalCount = agentCount;
     agentCount = Math.max(modeConfig.minAgents, Math.min(modeConfig.maxAgents, agentCount));
+
+    // CRITICAL: Enforce minimum of 1 agent regardless of mode config (safety check)
+    if (agentCount < 1) {
+      logger.error(LogCategory.FARM, `Agent count ${agentCount} is below minimum of 1`);
+      throw new Error(`Farm must have at least 1 agent. Requested: ${originalCount}, after normalization: ${agentCount}`);
+    }
+
+    // Log warning if agent count was adjusted significantly
+    if (originalCount !== agentCount) {
+      logger.warn(LogCategory.FARM,
+        `Agent count adjusted from ${originalCount} to ${agentCount} (min: ${modeConfig.minAgents}, max: ${modeConfig.maxAgents})`);
+    }
 
     logger.info(LogCategory.FARM,
       `Agent count after normalization: ${agentCount} (was ${originalCount}), min: ${modeConfig.minAgents}, max: ${modeConfig.maxAgents}`);
@@ -745,8 +1116,9 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
 
     // Determine if XenoSync should be used
     const providerKey = resolveProvider(config.provider);
+    const orchestrationProvider = mapToOrchestratorProvider(providerKey);
     const useXenoSync = modeConfig.useXenoSync &&
-                        providerKey === 'claude' &&
+                        orchestrationProvider === 'claude' &&
                         agentCount >= 2;
 
     return {
@@ -757,11 +1129,14 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       timeout,
       provider: providerKey,
       useXenoSync,
-      userId: config.userId || 'system',
+      userId: config.userId || '',
       creativityLevel: config.creativityLevel,
       files: config.files,
       metadata: config.metadata,
-      yamlContent: config.yamlContent
+      yamlContent: config.yamlContent,
+      // Seeds context injection (Feature A: Seeds can Seed a Farm)
+      appliedSeedIds: config.appliedSeedIds,
+      seedsTextSnapshot: config.seedsTextSnapshot
     };
   }
 
@@ -778,18 +1153,17 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
    */
   private async createWorkspace(config: FarmLaunchConfig): Promise<void> {
     await aiProviderManager.refreshApiKeys();
-    const provider = resolveProvider(config.provider) === 'openai'
-      ? AIProvider.OPENAI
-      : AIProvider.CLAUDE;
+    const resolvedProvider = resolveProvider(config.provider);
+    const providerEnum = mapToAiProvider(resolvedProvider);
 
     const workspaceInfo = await workspaceManager.createFarmWorkspace(config.farmId, {
       template: 'default',
-      aiProvider: provider,
+      aiProvider: providerEnum,
       includeBarnAccess: true,
       initAI: true,
       metadata: {
         mode: config.mode,
-        provider: config.provider
+        provider: resolvedProvider
       }
     });
 
@@ -834,20 +1208,23 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
    * Initialize harvest for the farm
    */
   private async initializeHarvest(config: FarmLaunchConfig): Promise<string> {
-    const harvestConfig = {
-      farmId: config.farmId,
-      name: `${config.mode}-${config.farmId.substring(0, 8)}`,
-      metadata: {
-        mode: config.mode,
-        agentCount: config.agentCount,
-        timeout: config.timeout,
-        provider: config.provider,
-        useXenoSync: config.useXenoSync,
-        ...config.metadata
-      }
-    };
+    const farmName = config.farmName || `${config.mode}-${config.farmId.substring(0, 8)}`;
 
-    const harvest = await harvestService.startHarvest(harvestConfig);
+    // Use UnifiedHarvestService with proper signature (farmId, farmName, userId)
+    // Validate that userId is provided
+    if (!config.userId) {
+      throw new Error('userId is required to initialize harvest');
+    }
+
+    const harvest = await harvestService.startHarvest(
+      config.farmId,
+      farmName,
+      config.userId
+    );
+
+    logger.info(LogCategory.HARVEST,
+      `Harvest ${harvest.id} initialized for farm ${config.farmId}`);
+
     return harvest.id;
   }
 
@@ -883,7 +1260,8 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
    */
   private async setupPipePaneForAllAgents(sessionName: string, windowName: string, farmId: string, agentCount: number): Promise<void> {
     // CRITICAL: Use consistent path with orchestrator.py - use FULL farm ID
-    const terminalsBase = pathConfig.getPath('TERMINALS_DIR') || '/Users/rohnspringfield/maifarm/var/maibarn/terminals';
+    // FIX: Removed hardcoded developer path, use proper fallback from MAIBARN_ROOT
+    const terminalsBase = pathConfig.getPath('TERMINALS_DIR') || path.join(pathConfig.getPath('MAIBARN_ROOT'), 'terminals');
     const terminalDir = path.join(terminalsBase, farmId);
 
     try {
@@ -921,7 +1299,7 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
 
       logger.info(LogCategory.TERMINAL, `Configured pipe-pane for ${agentCount} agents in session ${sessionName}`);
 
-      // File watching is now handled by ConsolidatedTerminalService when registerFarm is called
+      // File watching is handled by UnifiedTerminalStreamService
 
     } catch (error) {
       logger.error(LogCategory.TERMINAL, `Failed to set up pipe-pane for agents:`, error);
@@ -953,6 +1331,16 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
 
     logger.info(LogCategory.FARM,
       `Pre-initialized ${config.agentCount} agents in state with names: ${agentNames.join(', ')}`);
+
+    // Register farm with YieldDetectionService for real-time artifact detection
+    try {
+      yieldDetectionService.registerFarm(config.farmId, config.prompt, agentNames);
+      logger.info(LogCategory.FARM,
+        `Registered farm ${config.farmId} with YieldDetectionService for yield detection`);
+    } catch (error) {
+      logger.error(LogCategory.FARM,
+        `Failed to register farm with YieldDetectionService:`, error);
+    }
 
     // Apply mode-specific timing delays
     await new Promise(resolve => setTimeout(resolve, optimization.timing.orchestratorStartDelay));
@@ -1105,9 +1493,8 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
     const tmuxSessionName = state.sessionName;
     logger.info(LogCategory.FARM, `Using already-created tmux session: ${tmuxSessionName}`);
 
-    // No need to pre-register with multiple services anymore
-    // The ConsolidatedTerminalService handles everything when we call registerFarm later
-    logger.debug(LogCategory.FARM, `Terminal streaming will be set up by ConsolidatedTerminalService`);
+    // Terminal streaming is handled by UnifiedTerminalStreamService
+    logger.debug(LogCategory.FARM, `Terminal streaming will be set up by UnifiedTerminalStreamService`);
 
     // Session was already created in setupTmuxSession (provisionTmuxSession phase)
     // Just verify it exists instead of trying to create it again
@@ -1156,25 +1543,125 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
     // Get memory optimization for this mode
     const memoryPerAgent = String(optimization.resources.nodeMemoryPerAgent);
 
+    // Ensure coordination directory exists and write seeds files if provided
+    const coordinationDir = path.join(maibarnRoot, 'coordination');
+    await fs.mkdir(coordinationDir, { recursive: true });
+
+    // Write applied seeds to coordination directory for orchestrator to pick up
+    if (config.appliedSeedIds && config.appliedSeedIds.length > 0) {
+      try {
+        // Assemble seeds context using the canonical assembler
+        const assembledContext = await seedContextAssembler.assembleContext({
+          farmId: config.farmId,
+          mode: config.mode,
+          provider: config.provider,
+          basePrompt: config.prompt,
+          seedIds: config.appliedSeedIds,
+          pinVersions: true
+        });
+
+        // Write applied seeds JSON for orchestrator
+        const appliedSeedsData = assembledContext.appliedSeeds.map(s => ({
+          seedId: s.seedId,
+          seedName: s.seedName,
+          seedVersion: s.seedVersion,
+          seedPrompt: s.seedPrompt
+        }));
+        await fs.writeFile(
+          path.join(coordinationDir, 'applied_seeds.json'),
+          JSON.stringify(appliedSeedsData, null, 2)
+        );
+
+        // Write seeds text snapshot for direct injection
+        if (assembledContext.seedsSection) {
+          await fs.writeFile(
+            path.join(coordinationDir, 'seeds_text_snapshot.txt'),
+            assembledContext.seedsSection
+          );
+        }
+
+        // Update farm with applied seeds
+        await seedContextAssembler.updateFarmWithSeeds(
+          config.farmId,
+          config.appliedSeedIds,
+          assembledContext.seedsSection
+        );
+
+        logger.info(LogCategory.FARM, `Seeds context written: ${appliedSeedsData.length} seeds for farm ${config.farmId}`);
+
+        if (assembledContext.warnings.length > 0) {
+          logger.warn(LogCategory.FARM, `Seeds warnings: ${assembledContext.warnings.join(', ')}`);
+        }
+      } catch (seedErr) {
+        logger.warn(LogCategory.FARM, `Failed to write seeds context, continuing without seeds:`, seedErr);
+      }
+    } else if (config.seedsTextSnapshot) {
+      // If text snapshot provided directly, write it
+      try {
+        await fs.writeFile(
+          path.join(coordinationDir, 'seeds_text_snapshot.txt'),
+          config.seedsTextSnapshot
+        );
+        logger.info(LogCategory.FARM, `Seeds text snapshot written directly for farm ${config.farmId}`);
+      } catch (seedErr) {
+        logger.warn(LogCategory.FARM, `Failed to write seeds text snapshot:`, seedErr);
+      }
+    }
+
     // Build orchestrator arguments
+    // maibarnRoot already declared earlier in this function
+    // CRITICAL FIX: Include 'active' subdirectory to match where workspaceManager creates workspaces
+    const workspaceRoot = path.join(maibarnRoot, 'workspaces', 'active');
+
+    // Get mode-specific plugin configuration
+    const pluginConfig = getPluginConfig(config.mode);
+
     const orchestratorArgs = [
       orchestratorPath,
       '--prompt-file', promptYamlPath,  // Use --prompt-file flag as expected by orchestrator.py
       '--num-agents', String(config.agentCount),
       '--farm-id', config.farmId,
       '--session', tmuxSessionName,  // Use --session (not --session-name)
-      '--workspace-dir', path.join(pathConfig.getPath('MAIBARN_ROOT'), 'workspaces'),  // Base workspace dir, farm ID added by orchestrator
-      '--coordination-dir', path.join(pathConfig.getPath('MAIBARN_ROOT'), 'coordination'),  // CRITICAL: Required for status file
-      '--provider', resolveProvider(config.provider),
+      '--workspace-dir', workspaceRoot,  // Base workspace dir, farm ID added by orchestrator
+      '--coordination-dir', path.join(maibarnRoot, 'coordination'),  // CRITICAL: Required for status file
+      '--provider', mapToOrchestratorProvider(resolveProvider(config.provider)),
       // REMOVED --reuse-session: Each farm needs its own fresh session with correct pane count for all agents
       '--debug',  // Add debug flag for better logging
       '--no-kill-on-exit',  // CRITICAL FIX: Prevent orchestrator from killing tmux sessions on exit
       '--fast-launch',  // PERFORMANCE: Skip checks and minimize delays
-      '--max-runtime', String(config.timeout)  // Pass farm timeout to orchestrator (already in seconds)
+      '--max-runtime', String(config.timeout),  // Pass farm timeout to orchestrator (already in seconds)
+      // Blerbz Plugins Configuration (inference-confidenz, inference-continuez, inference-planz)
+      '--continuez-threshold', String(pluginConfig.continuezThreshold),
     ];
 
+    // Add plugin flags based on mode-specific configuration
+    if (pluginConfig.pluginsEnabled) {
+      orchestratorArgs.push('--plugins-enabled');
+      if (pluginConfig.confidenzEnabled) {
+        orchestratorArgs.push('--confidenz-enabled');
+      } else {
+        orchestratorArgs.push('--no-confidenz');
+      }
+      if (pluginConfig.continuezEnabled) {
+        orchestratorArgs.push('--continuez-enabled');
+      } else {
+        orchestratorArgs.push('--no-continuez');
+      }
+      if (pluginConfig.planzEnabled) {
+        orchestratorArgs.push('--planz-enabled');
+      }
+      if (pluginConfig.planzPrelaunchSurvey) {
+        orchestratorArgs.push('--planz-prelaunch');
+      }
+    } else {
+      orchestratorArgs.push('--no-plugins');
+    }
+
+    logger.info(LogCategory.FARM, `Plugin config for ${config.mode}: threshold=${pluginConfig.continuezThreshold}%, planz=${pluginConfig.planzEnabled}`);
+
     // FIXED: Use aiProviderManager to get properly validated/decrypted API keys
-    const providerEnum = config.provider === 'openai' ? AIProvider.OPENAI : AIProvider.CLAUDE;
+    const resolvedProvider = resolveProvider(config.provider);
+    const providerEnum = mapToAiProvider(resolvedProvider);
     const providerEnv = aiProviderManager.getProviderEnvironment(providerEnum);
 
     // Log the full command for debugging
@@ -1185,13 +1672,21 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       detached: false,  // Changed from true to false to keep it attached for better monitoring
       stdio: ['ignore', 'pipe', 'pipe'],  // Capture stdout and stderr for debugging
       env: {
+        ...process.env,
         ...providerEnv,  // Use validated provider environment from aiProviderManager
         TMUX_TMPDIR: tmuxTmpDir,
         NODE_MEMORY_PER_AGENT: memoryPerAgent,  // Pass optimized memory setting
+        MAIBARN_ROOT: maibarnRoot,
+        MAIFARM_WORKSPACE: workspaceRoot,
+        USE_LLM_PROXY: process.env.USE_LLM_PROXY ?? 'false',
+        LLM_PROXY_URL: process.env.LLM_PROXY_URL ?? '',
         PYTHONUNBUFFERED: '1'  // Ensure Python output is not buffered
       },
       cwd: process.cwd()  // Ensure correct working directory
     });
+
+    // DEBUG: Log spawn success
+    logger.info(LogCategory.FARM, `Orchestrator process spawned - PID: ${orchestratorProcess.pid}, API Key in env: ${providerEnv.ANTHROPIC_API_KEY ? 'YES' : 'NO'}`);
 
     // Track if orchestrator started successfully
     let orchestratorStarted = false;
@@ -1311,8 +1806,8 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
         );
       }
 
-      // Verify orchestrator status is "ready" not just "initializing"
-      if (orchestratorStatus.status !== 'ready' && orchestratorStatus.status !== OrchestratorStatus.READY) {
+      // Verify orchestrator status is "ready" or "completed" not just "initializing"
+      if (orchestratorStatus.status !== 'ready' && orchestratorStatus.status !== OrchestratorStatus.COMPLETED) {
         logger.error(LogCategory.FARM,
           `Orchestrator not in ready state for farm ${config.farmId}: status=${orchestratorStatus.status}`
         );
@@ -1335,7 +1830,6 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
         {
           maxAttempts: 3, // Reduced since orchestrator already confirmed
           retryDelay: 1000,
-          progressiveBackoff: false,
           recreateOnFailure: false
         }
       );
@@ -1364,7 +1858,6 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
         {
           maxAttempts: 5,
           retryDelay: 2000,
-          progressiveBackoff: true,
           recreateOnFailure: false
         }
       );
@@ -1444,8 +1937,23 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       return '';
     }
 
-    // Standard Claude CLI launch (without prompt - will be sent separately)
-    return `cd ${workspace} && NODE_OPTIONS='--max-old-space-size=4096' claude --dangerously-skip-permissions`;
+    // Get the active AI provider
+    const provider = aiProviderManager.getDefaultProvider();
+
+    // Build command based on provider
+    switch (provider) {
+      case AIProvider.CLAUDE:
+        return `cd ${workspace} && NODE_OPTIONS='--max-old-space-size=4096' claude --dangerously-skip-permissions`;
+      case AIProvider.OPENAI:
+        return `cd ${workspace} && echo "OpenAI agent launching..."`;
+      case AIProvider.GPT_OSS:
+        return `cd ${workspace} && echo "GPT-OSS agent launching..."`;
+      case AIProvider.LLAMA:
+        return `cd ${workspace} && echo "Llama agent launching..."`;
+      default:
+        // Fallback to Claude
+        return `cd ${workspace} && NODE_OPTIONS='--max-old-space-size=4096' claude --dangerously-skip-permissions`;
+    }
   }
 
   /**
@@ -1457,18 +1965,45 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
     paneIndex: number,
     config: FarmLaunchConfig
   ): Promise<void> {
-    // Stage 1: Launch Claude
-    const launchCommand = this.buildAgentLaunchCommand(config, paneIndex, false);
-    await this.executeInPane(sessionName, windowName, paneIndex, launchCommand);
+    // Get agent from state
+    const agentState = this.activeFarms.get(config.farmId)?.agents.get(paneIndex);
+    const agentName = agentState?.name || `Agent ${paneIndex + 1}`;
 
-    // Wait for Claude to initialize
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    // Use unified AI engine launcher for all providers
+    try {
+      const farmProviderForLaunch = (config.provider || aiProviderManager.getDefaultProvider()) as FarmProvider;
+      await unifiedAIEngineLauncher.launchAgent({
+        farmId: config.farmId,
+        agentId: `${config.farmId}-agent-${paneIndex}`,
+        agentIndex: paneIndex,
+        agentName: agentName,
+        prompt: config.prompt,
+        sessionName: sessionName,
+        workspacePath: pathConfig.getFarmWorkspacePath(config.farmId, false),
+        provider: mapToAiProvider(farmProviderForLaunch),
+        timeout: config.timeout
+      });
 
-    // Stage 2: Send the prompt line by line
-    await this.sendPromptToPane(sessionName, windowName, paneIndex, config.prompt);
+      logger.info(LogCategory.FARM, `Launched agent ${agentName} with unified AI engine launcher`);
+    } catch (error) {
+      logger.error(LogCategory.FARM, `Failed to launch agent ${agentName}:`, error);
 
-    // Wait for prompt to be processed
-    await new Promise(resolve => setTimeout(resolve, 2000));
+      // Fallback to original method for Claude
+      if (aiProviderManager.getDefaultProvider() === AIProvider.CLAUDE) {
+        // Stage 1: Launch Claude
+        const launchCommand = this.buildAgentLaunchCommand(config, paneIndex, false);
+        await this.executeInPane(sessionName, windowName, paneIndex, launchCommand);
+
+        // Wait for Claude to initialize
+        await new Promise(resolve => setTimeout(resolve, 4000));
+
+        // Stage 2: Send the prompt line by line
+        await this.sendPromptToPane(sessionName, windowName, paneIndex, config.prompt);
+
+        // Wait for prompt to be processed
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
   }
 
   /**
@@ -1557,18 +2092,13 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
    */
   private async setupTerminalStreaming(config: FarmLaunchConfig, state: LaunchState): Promise<void> {
     logger.info(LogCategory.TERMINAL,
-      `Setting up real-time terminal streaming for farm ${config.farmId} with ${config.agentCount} agents`);
+      `Setting up enhanced real-time terminal streaming for farm ${config.farmId} with ${config.agentCount} agents`);
 
-    // The UnifiedTerminalStreamService provides production-grade streaming:
-    // - Dual-mode capture: file watching + tmux polling
-    // - Zero-latency broadcasting with immediate flush
-    // - Circuit breaker for error recovery
-    // - Health monitoring with auto-recovery
-    // - Clean agent message extraction
-    // - WebSocket broadcasting with sub-10ms latency
-    // Professional, smooth, and highly robust!
+    // Use BOTH terminal services for maximum reliability:
+    // 1. Enhanced service for structured messages and yield detection
+    // 2. Unified service for backward compatibility
 
-    // Register farm session first (before agents start)
+    // Register farm session with unified service (backward compatibility)
     unifiedTerminalStreamService.registerFarmSession(
       config.farmId,
       state.sessionName,
@@ -1587,21 +2117,140 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       );
     }
 
-    logger.info(LogCategory.AGENT,
-      `Registered ${config.agentCount} agents with activity heartbeat service`);
-
-    // Start streaming for all agents
-    await unifiedTerminalStreamService.startFarmStreaming(
+    // Register farm with yield detection service
+    yieldDetectionService.registerFarm(
       config.farmId,
-      state.sessionName,
-      config.agentCount
+      config.prompt,
+      agentNames
     );
+
+    logger.info(LogCategory.AGENT,
+      `Registered ${config.agentCount} agents with activity heartbeat and yield detection services`);
+
+    // CRITICAL FIX: Track terminal service initialization for coordination
+    let unifiedStreamSuccess = false;
+    let enhancedStreamsStarted = 0;
+    let enhancedStreamsFailed = 0;
+
+    // Start unified terminal streaming (existing service)
+    try {
+      await unifiedTerminalStreamService.startFarmStreaming(
+        config.farmId,
+        state.sessionName,
+        config.agentCount
+      );
+      unifiedStreamSuccess = true;
+      logger.info(LogCategory.TERMINAL,
+        `Unified terminal streaming started for farm ${config.farmId}`);
+    } catch (unifiedError) {
+      logger.error(LogCategory.TERMINAL,
+        `Failed to start unified terminal streaming:`, unifiedError);
+      // Continue anyway - enhanced service may still work
+    }
+
+    // Start enhanced terminal streaming for each agent (new service)
+    const farmProvider = (config.provider || aiProviderManager.getDefaultProvider()) as FarmProvider;
+    const aiProvider = mapToAiProvider(farmProvider);
+    const workspace = pathConfig.getFarmWorkspacePath(config.farmId, false);
+
+    for (let i = 0; i < config.agentCount; i++) {
+      const agent = state.agents.get(i);
+      if (agent) {
+        try {
+          await enhancedTerminalService.startStreaming({
+            farmId: config.farmId,
+            agentId: `${config.farmId}-agent-${i}`,
+            agentIndex: i,
+            agentName: agent.name,
+            sessionName: state.sessionName,
+            aiProvider: aiProvider,
+            outputPath: pathConfig.getTerminalLogPath(config.farmId, i),
+            workspacePath: workspace
+          });
+
+          enhancedStreamsStarted++;
+          logger.info(LogCategory.TERMINAL,
+            `Started enhanced streaming for ${agent.name} with ${farmProvider} provider`);
+        } catch (error) {
+          enhancedStreamsFailed++;
+          logger.warn(LogCategory.TERMINAL,
+            `Failed to start enhanced streaming for ${agent.name}:`, error);
+        }
+      }
+    }
+
+    // Log coordination summary
+    const totalAgents = config.agentCount;
+    const streamingHealth = enhancedStreamsStarted / totalAgents;
+    logger.info(LogCategory.TERMINAL,
+      `Terminal streaming coordination: unified=${unifiedStreamSuccess ? 'OK' : 'FAILED'}, ` +
+      `enhanced=${enhancedStreamsStarted}/${totalAgents} started, ${enhancedStreamsFailed} failed ` +
+      `(health: ${(streamingHealth * 100).toFixed(0)}%)`);
+
+    // Emit event if streaming is degraded (less than 80% success)
+    if (streamingHealth < 0.8 || !unifiedStreamSuccess) {
+      const degradedPayload = {
+        farmId: config.farmId,
+        unifiedStreamSuccess,
+        enhancedStreamsStarted,
+        enhancedStreamsFailed,
+        totalAgents,
+        streamingHealth,
+        timestamp: new Date()
+      };
+      websocketManager.broadcast('farm:streaming:degraded', degradedPayload);
+      logger.warn(LogCategory.TERMINAL,
+        `Farm ${config.farmId} terminal streaming is degraded - some agents may not show output`);
+    }
 
     logger.info(LogCategory.TERMINAL,
       `Real-time terminal streaming initialized for farm ${config.farmId}`);
 
-    // Wait a moment for pipe-pane to be fully established
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // CRITICAL FIX: Properly verify pipe-pane is working before broadcasting ready
+    // Wait longer and verify terminal log files are being created/written
+    const verificationStartTime = Date.now();
+    const maxVerificationWaitMs = 5000; // 5 seconds max wait
+    const checkIntervalMs = 500;
+    let allTerminalLogsReady = false;
+
+    while (Date.now() - verificationStartTime < maxVerificationWaitMs) {
+      try {
+        // Check if terminal log files exist for all agents
+        let readyCount = 0;
+        for (let i = 0; i < config.agentCount; i++) {
+          const logPath = pathConfig.getTerminalLogPath(config.farmId, i);
+          try {
+            const stats = await fs.stat(logPath);
+            // Consider ready if file exists (content may come later from agents)
+            if (stats.isFile()) {
+              readyCount++;
+            }
+          } catch {
+            // File doesn't exist yet
+          }
+        }
+
+        if (readyCount >= config.agentCount) {
+          allTerminalLogsReady = true;
+          logger.info(LogCategory.TERMINAL,
+            `All ${config.agentCount} terminal log files verified for farm ${config.farmId}`);
+          break;
+        }
+
+        logger.debug(LogCategory.TERMINAL,
+          `Waiting for terminal logs: ${readyCount}/${config.agentCount} ready`);
+        await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
+      } catch (error) {
+        logger.warn(LogCategory.TERMINAL,
+          `Error verifying terminal logs:`, error);
+        await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
+      }
+    }
+
+    if (!allTerminalLogsReady) {
+      logger.warn(LogCategory.TERMINAL,
+        `Terminal log verification incomplete after ${maxVerificationWaitMs}ms - proceeding anyway`);
+    }
 
     // Refresh harvest session cache with confirmed pane count so UI polling succeeds
     try {
@@ -1617,6 +2266,7 @@ export class UnifiedFarmLaunchOrchestrator extends EventEmitter {
       agentCount: state.agents.size,
       windowName: state.windowName,
       status: 'ready',
+      terminalLogsVerified: allTerminalLogsReady,
       timestamp: new Date()
     };
 
@@ -1807,6 +2457,15 @@ Remember: Be bold, be creative, but always maintain professional code quality an
       }
     }
 
+    // FIX: Cleanup workspace on failed launch to prevent orphaned directories
+    try {
+      await workspaceManager.cleanupWorkspace(farmId, false); // Don't archive failed workspaces
+      logger.info(LogCategory.FARM, `Cleaned up workspace for failed farm ${farmId}`);
+    } catch (workspaceError) {
+      logger.warn(LogCategory.FARM, `Failed to cleanup workspace for farm ${farmId}:`, workspaceError);
+      // Continue cleanup even if workspace cleanup fails
+    }
+
     // Update database
     await this.updateFarmDatabase(farmId, 'failed', '');
 
@@ -1830,16 +2489,29 @@ Remember: Be bold, be creative, but always maintain professional code quality an
       if (process.stdout) process.stdout.removeAllListeners();
       if (process.stderr) process.stderr.removeAllListeners();
 
+      // FIX: Clear any existing force-kill timeout to prevent duplicates
+      const existingTimeout = this.forceKillTimeouts.get(farmId);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+        this.forceKillTimeouts.delete(farmId);
+      }
+
       // Kill process if still running
       if (!process.killed) {
         process.kill('SIGTERM');
-        // Force kill after 5 seconds if not terminated
-        setTimeout(() => {
+        // FIX: Track the force kill timeout to prevent duplicates and memory leaks
+        const forceKillTimeout = setTimeout(() => {
+          this.forceKillTimeouts.delete(farmId);
           if (!process.killed) {
             logger.warn(LogCategory.FARM, `Force killing orchestrator process for farm ${farmId}`);
-            process.kill('SIGKILL');
+            try {
+              process.kill('SIGKILL');
+            } catch (killError) {
+              logger.debug(LogCategory.FARM, `SIGKILL failed (process may already be dead):`, killError);
+            }
           }
         }, 5000);
+        this.forceKillTimeouts.set(farmId, forceKillTimeout);
       }
 
       // Remove from tracking map
@@ -1855,6 +2527,12 @@ Remember: Be bold, be creative, but always maintain professional code quality an
    * Setup event handlers
    */
   private setupEventHandlers(): void {
+    // Guard against circular import issues - farmHealthMonitor may not be available yet
+    if (!farmHealthMonitor) {
+      logger.debug(LogCategory.FARM, 'FarmHealthMonitor not available, skipping event handler setup');
+      return;
+    }
+
     // Listen for health monitor recovery events
     farmHealthMonitor.on('orchestrator-restart-needed', async ({ farmId }) => {
       logger.warn(LogCategory.FARM, `Orchestrator restart requested for farm ${farmId}`);
@@ -1882,39 +2560,69 @@ Remember: Be bold, be creative, but always maintain professional code quality an
 
   /**
    * Restart orchestrator for a farm
+   * FIX: Use same argument format as original launch to prevent orchestrator failures
    */
   private async restartOrchestrator(farmId: string, state: LaunchState): Promise<void> {
     logger.info(LogCategory.FARM, `Restarting orchestrator for farm ${farmId}`);
 
     // Re-launch the orchestrator with the same configuration
-    const workspacePath = path.join(pathConfig.getPath('MAIBARN_ROOT'), 'workspaces', farmId);
-    const promptPath = path.join(workspacePath, 'prompt.txt');
+    // CRITICAL FIX: Use getFarmWorkspacePath to ensure consistent path with 'active' subdirectory
+    const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
+    const maibarnRoot = pathConfig.getMaibarnRoot();
 
+    // Check for prompt.yaml first (preferred), then prompt.txt
+    let promptPath = path.join(workspacePath, 'prompt.yaml');
     try {
       await fs.access(promptPath);
     } catch {
-      throw new Error('Prompt file not found for orchestrator restart');
+      promptPath = path.join(workspacePath, 'prompt.txt');
+      try {
+        await fs.access(promptPath);
+      } catch {
+        throw new Error('Prompt file not found for orchestrator restart');
+      }
     }
 
     // FIXED: Use aiProviderManager to get properly validated/decrypted API keys
-    const providerEnum = state.provider === 'openai' ? AIProvider.OPENAI : AIProvider.CLAUDE;
+    const resolvedProvider = resolveProvider(state.provider);
+    const providerEnum = mapToAiProvider(resolvedProvider);
     const providerEnv = aiProviderManager.getProviderEnvironment(providerEnum);
 
-    // Launch orchestrator again
+    // Launch orchestrator again with SAME ARGUMENTS as original launch
     const orchestratorPath = path.join(process.cwd(), 'scripts/python/orchestrator.py');
-    const orchestratorProcess = spawn('python3', [
+    const workspaceRoot = path.join(maibarnRoot, 'workspaces', 'active');
+
+    // FIX: Use same argument names as original launch (lines 1521-1535)
+    const orchestratorArgs = [
       orchestratorPath,
-      promptPath,
-      '--agents', String(state.agentCount),
+      '--prompt-file', promptPath,  // Use --prompt-file flag (not positional)
+      '--num-agents', String(state.agentCount),  // Use --num-agents (not --agents)
       '--farm-id', farmId,
-      '--session-name', state.sessionName,
-      '--workspace', workspacePath
-    ], {
+      '--session', state.sessionName,  // Use --session (not --session-name)
+      '--workspace-dir', workspaceRoot,  // Use --workspace-dir (not --workspace)
+      '--coordination-dir', path.join(maibarnRoot, 'coordination'),  // CRITICAL: Required for status file
+      '--provider', mapToOrchestratorProvider(resolvedProvider),
+      '--debug',
+      '--no-kill-on-exit',  // CRITICAL: Prevent orchestrator from killing tmux sessions on exit
+      '--fast-launch'  // PERFORMANCE: Skip checks and minimize delays
+    ];
+
+    if (state.timeout) {
+      orchestratorArgs.push('--max-runtime', String(state.timeout));
+    }
+
+    logger.info(LogCategory.FARM, `Restarting orchestrator: python3 ${orchestratorArgs.join(' ')}`);
+
+    const orchestratorProcess = spawn('python3', orchestratorArgs, {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
+        ...process.env,
         ...providerEnv,  // Use validated provider environment from aiProviderManager
-        TMUX_TMPDIR: tmuxTmpDir
+        TMUX_TMPDIR: tmuxTmpDir,
+        MAIBARN_ROOT: maibarnRoot,
+        MAIFARM_WORKSPACE: workspaceRoot,
+        PYTHONUNBUFFERED: '1'
       }
     });
 
@@ -1922,6 +2630,9 @@ Remember: Be bold, be creative, but always maintain professional code quality an
     if (state.metadata) {
       state.metadata.orchestratorPID = orchestratorProcess.pid;
     }
+
+    // Track the process for cleanup
+    this.orchestratorProcesses.set(farmId, orchestratorProcess);
 
     logger.info(LogCategory.FARM, `Orchestrator restarted with PID ${orchestratorProcess.pid} for farm ${farmId}`);
   }

@@ -383,10 +383,8 @@ export class TaskCheckpointService {
    * Get agent workspace path
    */
   private async getAgentWorkspace(farmId: string, agentId: string): Promise<string> {
-    const workspacePath = path.join(
-      pathConfig.getPath('WORKSPACE_ROOT'),
-      farmId
-    );
+    // CRITICAL FIX: Use getFarmWorkspacePath() instead of non-existent WORKSPACE_ROOT
+    const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
     await fileManager.ensureDirectory(workspacePath);
     return workspacePath;
   }

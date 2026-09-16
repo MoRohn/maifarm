@@ -19,47 +19,97 @@ import { yamlSanitizer } from './yamlSanitizer';
 
 class YamlGeneratorService {
   private apiEndpoint: string;
+  private enhancePromptCache = new Map<string, { expiresAt: number; data: PromptEnhancementResponse }>();
+  private enhancePromptInFlight = new Map<string, Promise<PromptEnhancementResponse>>();
+  private generateYamlInFlight = new Map<string, Promise<GenerationResponse>>();
+  private readonly REQUEST_TIMEOUT_MS = 15000;
+  private readonly CACHE_TTL_MS = 60 * 1000;
 
   constructor() {
-    this.apiEndpoint = import.meta.env.VITE_API_URL || 'http://localhost:4567';
+    this.apiEndpoint = import.meta.env.VITE_API_URL || '/api';
+  }
+
+  private normalizeEnhancementRequest(request: PromptEnhancementRequest): PromptEnhancementRequest {
+    return {
+      prompt: request.prompt.trim(),
+      context: request.context?.trim() || undefined,
+      purpose: request.purpose?.trim() || undefined,
+      suggestions: request.suggestions
+    };
+  }
+
+  private async executeEnhancePromptRequest(request: PromptEnhancementRequest): Promise<PromptEnhancementResponse> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${this.apiEndpoint}/api/yaml/enhance-prompt`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error?.error?.message || `Failed to enhance prompt (status ${response.status})`);
+      }
+
+      const result = await response.json();
+      if (result.success && result.data) {
+        return {
+          success: true,
+          enhanced_prompt: result.data.enhanced_prompt,
+          original_prompt: result.data.original_prompt,
+          suggestions: this.dedupeStrings(result.data.suggestions || []),
+          improvements: this.dedupeStrings(result.data.improvements || [])
+        };
+      }
+
+      throw new Error(result?.error?.message || 'Invalid response from server');
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        console.warn('Prompt enhancement request timed out, using local fallback.');
+      } else {
+        console.error('Prompt enhancement error:', error);
+      }
+
+      return this.localEnhancePrompt(request);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   /**
    * Enhance a user prompt using AI before generating YAML
    */
   async enhancePrompt(request: PromptEnhancementRequest): Promise<PromptEnhancementResponse> {
+    const normalized = this.normalizeEnhancementRequest(request);
+    const cacheKey = JSON.stringify([normalized.prompt, normalized.context || null, normalized.purpose || null]);
+
+    const cached = this.enhancePromptCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { ...cached.data };
+    }
+
+    if (this.enhancePromptInFlight.has(cacheKey)) {
+      return this.enhancePromptInFlight.get(cacheKey)!;
+    }
+
+    const execution = this.executeEnhancePromptRequest(normalized);
+    this.enhancePromptInFlight.set(cacheKey, execution);
+
     try {
-      const response = await fetch(`${this.apiEndpoint}/api/yaml/enhance-prompt`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request)
+      const response = await execution;
+      this.enhancePromptCache.set(cacheKey, {
+        expiresAt: Date.now() + this.CACHE_TTL_MS,
+        data: response
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'Failed to enhance prompt');
-      }
-
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        return {
-          success: true,
-          enhanced_prompt: result.data.enhanced_prompt,
-          original_prompt: result.data.original_prompt,
-          suggestions: result.data.suggestions || [],
-          improvements: result.data.improvements || []
-        };
-      } else {
-        throw new Error(result.error?.message || 'Invalid response from server');
-      }
-    } catch (error) {
-      console.error('Prompt enhancement error:', error);
-      
-      // Fallback to local enhancement if backend fails
-      return this.localEnhancePrompt(request);
+      return response;
+    } finally {
+      this.enhancePromptInFlight.delete(cacheKey);
     }
   }
 
@@ -69,44 +119,83 @@ class YamlGeneratorService {
   private localEnhancePrompt(request: PromptEnhancementRequest): PromptEnhancementResponse {
     const { prompt, context, purpose } = request;
     const improvements: string[] = [];
-    const suggestions: string[] = [];
-    
-    let enhancedPrompt = prompt;
-    
-    // Add basic enhancements
+    const suggestions = new Set<string>();
+
+    let enhancedPrompt = prompt.trim();
+
     if (!prompt.match(/\d+\s*agents?/i)) {
-      enhancedPrompt = `Create a farm with 3 agents for ${prompt}`;
-      improvements.push('Added default agent count');
+      enhancedPrompt += enhancedPrompt.endsWith('.') ? ' ' : '. ';
+      enhancedPrompt += 'Coordinate at least 3 specialized agents to tackle the request.';
+      improvements.push('Added default agent coordination guidance');
     }
-    
+
     if (purpose) {
-      enhancedPrompt += `. Focus on ${purpose}`;
-      improvements.push(`Added focus area: ${purpose}`);
+      enhancedPrompt += `\nFocus: ${purpose}`;
+      improvements.push(`Highlighted objective: ${purpose}`);
     }
-    
+
     if (context) {
-      enhancedPrompt += `. Context: ${context}`;
-      improvements.push('Incorporated context');
+      enhancedPrompt += `\nContext: ${context}`;
+      improvements.push('Incorporated provided context');
     }
-    
-    // Add suggestions
-    suggestions.push('Consider specifying the number of agents');
-    suggestions.push('Add technology stack for better configuration');
-    suggestions.push('Include testing requirements');
-    
+
+    enhancedPrompt += '\nKey directives:';
+    enhancedPrompt += '\n- Break the work into parallel tasks with clear ownership';
+    enhancedPrompt += '\n- Define acceptance criteria and success metrics';
+    enhancedPrompt += '\n- Share updates through the farm workspace and avoid duplicate efforts';
+
+    suggestions.add('Specify the exact number of agents and their specialties.');
+    suggestions.add('List the primary technology stack to tailor agent tooling.');
+    suggestions.add('Include testing or validation requirements to maintain quality.');
+
     return {
       success: true,
-      enhanced_prompt: enhancedPrompt,
+      enhanced_prompt: enhancedPrompt.trim(),
       original_prompt: prompt,
-      suggestions,
-      improvements
+      suggestions: this.dedupeStrings(Array.from(suggestions)),
+      improvements: this.dedupeStrings(improvements)
     };
+  }
+
+  private dedupeStrings(values: string[]): string[] {
+    const seen = new Set<string>();
+    for (const value of values) {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        seen.add(trimmed);
+      }
+    }
+    return Array.from(seen);
   }
 
   /**
    * Generate YAML configuration from natural language prompt
    */
   async generateYaml(request: GenerationRequest): Promise<GenerationResponse> {
+    const cacheKey = JSON.stringify({
+      prompt: request.prompt,
+      mode: request.mode || 'freestyle',
+      options: request.options || null
+    });
+
+    if (this.generateYamlInFlight.has(cacheKey)) {
+      return this.generateYamlInFlight.get(cacheKey)!;
+    }
+
+    const execution = this.performGenerateYaml(request);
+    this.generateYamlInFlight.set(cacheKey, execution);
+
+    try {
+      return await execution;
+    } finally {
+      this.generateYamlInFlight.delete(cacheKey);
+    }
+  }
+
+  private async performGenerateYaml(request: GenerationRequest): Promise<GenerationResponse> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
+
     try {
       // If backend is available, use it
       const response = await fetch(`${this.apiEndpoint}/api/yaml/generate`, {
@@ -119,7 +208,8 @@ class YamlGeneratorService {
           mode: request.mode || 'freestyle',
           options: request.options,
           provider: request.options?.provider || 'claude'
-        })
+        }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
@@ -195,6 +285,9 @@ class YamlGeneratorService {
           error: localError instanceof Error ? localError.message : 'Failed to generate YAML'
         };
       }
+    }
+    finally {
+      clearTimeout(timeout);
     }
   }
 

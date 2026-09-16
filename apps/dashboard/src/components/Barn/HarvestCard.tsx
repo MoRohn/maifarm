@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Package,
@@ -11,10 +11,12 @@ import {
   Download,
   Trash2,
   GitBranch,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Harvest } from '@/types/barn';
+import { harvestService } from '@/services/harvestService';
 
 interface HarvestCardProps {
   harvest: Harvest;
@@ -24,18 +26,21 @@ interface HarvestCardProps {
   isSelected?: boolean;
   onSelect?: (selected: boolean) => void;
   selectionMode?: boolean;
+  isDeleting?: boolean;  // UX FIX: Loading state for delete operation
 }
 
-export const HarvestCard: React.FC<HarvestCardProps> = ({ 
-  harvest, 
-  onClick, 
-  onDelete, 
+export const HarvestCard: React.FC<HarvestCardProps> = ({
+  harvest,
+  onClick,
+  onDelete,
   onCreateSeed,
   isSelected = false,
   onSelect,
-  selectionMode = false
+  selectionMode = false,
+  isDeleting = false  // UX FIX: Accept loading state prop
 }) => {
-  const [showMenu, setShowMenu] = React.useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   
   const typeConfig = {
     app: {
@@ -75,13 +80,26 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({
   const config = typeConfig[harvestType];
   const Icon = config.icon;
 
+  const handleDownload = useCallback(async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      await harvestService.downloadExport(harvest.id, 'json');
+    } catch (error) {
+      console.error('Failed to download harvest:', error);
+      // Could add toast notification here for user feedback
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [harvest.id, isDownloading]);
+
   const handleAction = (e: React.MouseEvent, action: string) => {
     e.stopPropagation();
     setShowMenu(false);
-    
+
     switch (action) {
       case 'download':
-        // Implement download
+        handleDownload();
         break;
       case 'createSeed':
         onCreateSeed?.();
@@ -93,12 +111,9 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    if (selectionMode && onSelect) {
-      e.stopPropagation();
-      onSelect(!isSelected);
-    } else {
-      onClick();
-    }
+    // Always open details when clicking the card
+    // Selection should only happen via checkbox
+    onClick();
   };
 
   return (
@@ -141,9 +156,13 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({
               e.stopPropagation();
               setShowMenu(!showMenu);
             }}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center
+                       text-gray-400 hover:text-gray-600 dark:hover:text-gray-300
+                       opacity-100 sm:opacity-0 sm:group-hover:opacity-100
+                       transition-opacity touch-manipulation"
+            aria-label="More options"
           >
-            <MoreVertical className="w-4 h-4" />
+            <MoreVertical className="w-5 h-5" />
           </button>
           
           {showMenu && (
@@ -154,26 +173,46 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({
             >
               <button
                 onClick={(e) => handleAction(e, 'createSeed')}
-                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20"
+                className="w-full min-h-[44px] flex items-center space-x-3 px-4 text-sm text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20"
               >
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-5 h-5" />
                 <span>Create Seed</span>
               </button>
               <hr className="my-1 border-gray-200 dark:border-gray-700" />
               <button
                 onClick={(e) => handleAction(e, 'download')}
-                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                disabled={isDownloading}
+                className={clsx(
+                  "w-full min-h-[44px] flex items-center space-x-3 px-4 text-sm",
+                  isDownloading
+                    ? "text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                )}
               >
-                <Download className="w-4 h-4" />
-                <span>Download</span>
+                {isDownloading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Download className="w-5 h-5" />
+                )}
+                <span>{isDownloading ? 'Downloading...' : 'Download'}</span>
               </button>
               <hr className="my-1 border-gray-200 dark:border-gray-700" />
               <button
                 onClick={(e) => handleAction(e, 'delete')}
-                className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                disabled={isDeleting}
+                className={clsx(
+                  "w-full min-h-[44px] flex items-center space-x-3 px-4 text-sm",
+                  isDeleting
+                    ? "text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                    : "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                )}
               >
-                <Trash2 className="w-4 h-4" />
-                <span>Delete</span>
+                {isDeleting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-5 h-5" />
+                )}
+                <span>{isDeleting ? 'Deleting...' : 'Delete'}</span>
               </button>
             </motion.div>
           )}
@@ -198,8 +237,13 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({
               <Clock className="w-3.5 h-3.5" />
               <span>{(() => {
                 if (!harvest.createdAt) return 'Unknown';
-                const date = new Date(harvest.createdAt);
-                return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString();
+                try {
+                  const date = new Date(harvest.createdAt);
+                  return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString();
+                } catch {
+                  // Safari/iOS may throw on invalid date formats
+                  return 'Unknown';
+                }
               })()}</span>
             </div>
             <div className="flex items-center space-x-1">
@@ -251,7 +295,7 @@ export const HarvestCard: React.FC<HarvestCardProps> = ({
             <div>
               <span className="text-gray-500 dark:text-gray-500">Success Rate</span>
               <p className="font-medium text-gray-900 dark:text-white">
-                {harvest.metadata.successRate}%
+                {typeof harvest.metadata?.successRate === 'number' ? harvest.metadata.successRate : 0}%
               </p>
             </div>
           </div>

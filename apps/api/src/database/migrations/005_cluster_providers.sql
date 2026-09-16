@@ -380,50 +380,50 @@ CREATE TABLE IF NOT EXISTS agent_metrics (
 -- ============================================
 
 -- Cluster nodes indexes
-CREATE INDEX idx_cluster_nodes_status ON cluster_nodes(status);
-CREATE INDEX idx_cluster_nodes_role ON cluster_nodes(role);
-CREATE INDEX idx_cluster_nodes_heartbeat ON cluster_nodes(last_heartbeat DESC);
-CREATE INDEX idx_cluster_nodes_health ON cluster_nodes(health_score DESC);
+CREATE INDEX IF NOT EXISTS idx_cluster_nodes_status ON cluster_nodes(status);
+CREATE INDEX IF NOT EXISTS idx_cluster_nodes_role ON cluster_nodes(role);
+CREATE INDEX IF NOT EXISTS idx_cluster_nodes_heartbeat ON cluster_nodes(last_heartbeat DESC);
+CREATE INDEX IF NOT EXISTS idx_cluster_nodes_health ON cluster_nodes(health_score DESC);
 
 -- Load balancer rules indexes
-CREATE INDEX idx_lb_rules_enabled ON load_balancer_rules(enabled);
-CREATE INDEX idx_lb_rules_priority ON load_balancer_rules(priority DESC);
-CREATE INDEX idx_lb_rules_type ON load_balancer_rules(rule_type);
+CREATE INDEX IF NOT EXISTS idx_lb_rules_enabled ON load_balancer_rules(enabled);
+CREATE INDEX IF NOT EXISTS idx_lb_rules_priority ON load_balancer_rules(priority DESC);
+CREATE INDEX IF NOT EXISTS idx_lb_rules_type ON load_balancer_rules(rule_type);
 
 -- Provider pool indexes
-CREATE INDEX idx_provider_pool_provider ON provider_pool(provider);
-CREATE INDEX idx_provider_pool_status ON provider_pool(status);
-CREATE INDEX idx_provider_pool_enabled ON provider_pool(enabled);
-CREATE INDEX idx_provider_pool_priority ON provider_pool(priority DESC);
+CREATE INDEX IF NOT EXISTS idx_provider_pool_provider ON provider_pool(provider);
+CREATE INDEX IF NOT EXISTS idx_provider_pool_status ON provider_pool(status);
+CREATE INDEX IF NOT EXISTS idx_provider_pool_enabled ON provider_pool(enabled);
+CREATE INDEX IF NOT EXISTS idx_provider_pool_priority ON provider_pool(priority DESC);
 
 -- Cross provider messages indexes
-CREATE INDEX idx_cross_provider_msgs_status ON cross_provider_messages(status);
-CREATE INDEX idx_cross_provider_msgs_source ON cross_provider_messages(source_provider);
-CREATE INDEX idx_cross_provider_msgs_target ON cross_provider_messages(target_provider);
-CREATE INDEX idx_cross_provider_msgs_created ON cross_provider_messages(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cross_provider_msgs_status ON cross_provider_messages(status);
+CREATE INDEX IF NOT EXISTS idx_cross_provider_msgs_source ON cross_provider_messages(source_provider);
+CREATE INDEX IF NOT EXISTS idx_cross_provider_msgs_target ON cross_provider_messages(target_provider);
+CREATE INDEX IF NOT EXISTS idx_cross_provider_msgs_created ON cross_provider_messages(created_at DESC);
 
 -- Provider bridges indexes
-CREATE INDEX idx_provider_bridges_source ON provider_bridges(source_provider);
-CREATE INDEX idx_provider_bridges_target ON provider_bridges(target_provider);
-CREATE INDEX idx_provider_bridges_status ON provider_bridges(status);
+CREATE INDEX IF NOT EXISTS idx_provider_bridges_source ON provider_bridges(source_provider);
+CREATE INDEX IF NOT EXISTS idx_provider_bridges_target ON provider_bridges(target_provider);
+CREATE INDEX IF NOT EXISTS idx_provider_bridges_status ON provider_bridges(status);
 
 -- Resource pools indexes
-CREATE INDEX idx_resource_pools_type ON resource_pools(pool_type);
-CREATE INDEX idx_resource_pools_status ON resource_pools(status);
+CREATE INDEX IF NOT EXISTS idx_resource_pools_type ON resource_pools(pool_type);
+CREATE INDEX IF NOT EXISTS idx_resource_pools_status ON resource_pools(status);
 
 -- Failover policies indexes
-CREATE INDEX idx_failover_policies_resource ON failover_policies(resource_type);
-CREATE INDEX idx_failover_policies_enabled ON failover_policies(enabled);
+CREATE INDEX IF NOT EXISTS idx_failover_policies_resource ON failover_policies(resource_type);
+CREATE INDEX IF NOT EXISTS idx_failover_policies_enabled ON failover_policies(enabled);
 
 -- Cluster events indexes
-CREATE INDEX idx_cluster_events_timestamp ON cluster_events(timestamp DESC);
-CREATE INDEX idx_cluster_events_type ON cluster_events(event_type);
-CREATE INDEX idx_cluster_events_severity ON cluster_events(severity);
-CREATE INDEX idx_cluster_events_resolved ON cluster_events(resolved);
+CREATE INDEX IF NOT EXISTS idx_cluster_events_timestamp ON cluster_events(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_cluster_events_type ON cluster_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_cluster_events_severity ON cluster_events(severity);
+CREATE INDEX IF NOT EXISTS idx_cluster_events_resolved ON cluster_events(resolved);
 
 -- Agent metrics indexes
-CREATE INDEX idx_agent_metrics_agent_id ON agent_metrics(agent_id);
-CREATE INDEX idx_agent_metrics_period ON agent_metrics(period_start, period_end);
-CREATE INDEX idx_agent_metrics_created ON agent_metrics(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_agent_id ON agent_metrics(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_period ON agent_metrics(period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_agent_metrics_created ON agent_metrics(created_at DESC);
 
 COMMIT;

@@ -6,6 +6,9 @@ import { BaseService } from './types';
 import { logger, LogCategory } from '../../utils/logger';
 import { redis } from '../../database/connection';
 
+// Export redis client for health checks and other services
+export const redisClient = redis;
+
 export class UnifiedCacheService implements BaseService {
   private cache = redis;
 

@@ -58,6 +58,8 @@ class WebSocketService {
   private maxRetries = 10;
   private useMockData = false;
   private retryManager: WebSocketRetryManager;
+  // FIX: Store service worker listener reference for cleanup
+  private serviceWorkerMessageHandler: ((event: MessageEvent) => void) | null = null;
 
   constructor() {
     this.connect = this.connect.bind(this);
@@ -65,7 +67,7 @@ class WebSocketService {
     this.emit = this.emit.bind(this);
     this.on = this.on.bind(this);
     this.off = this.off.bind(this);
-    
+
     // Initialize retry manager
     this.retryManager = createWebSocketRetryManager({
       maxRetries: this.maxRetries,
@@ -82,18 +84,20 @@ class WebSocketService {
     });
 
     // Listen for service worker messages to pause/resume farms
+    // FIX: Store handler reference for proper cleanup
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', (event) => {
+      this.serviceWorkerMessageHandler = (event: MessageEvent) => {
         if (event.data && event.data.type === 'FARM_PAUSE') {
           this.pauseFarm(event.data.farmId);
         } else if (event.data && event.data.type === 'FARM_RESUME') {
           this.resumeFarm(event.data.farmId);
         }
-      });
+      };
+      navigator.serviceWorker.addEventListener('message', this.serviceWorkerMessageHandler);
     }
   }
 
-  connect(url: string = import.meta.env.VITE_API_URL || 'http://localhost:4567') {
+  connect(url: string = import.meta.env.VITE_API_URL || '/api') {
     if (this.socket?.connected) {
       console.log('WebSocket already connected');
       return;
@@ -124,8 +128,13 @@ class WebSocketService {
       
       console.log('Connecting to WebSocket server at:', wsUrl);
         
+      // Get access token from localStorage for authentication
+      const accessToken = typeof window !== 'undefined'
+        ? localStorage.getItem('accessToken')
+        : null;
+
       this.socket = io(wsUrl, {
-        transports: ['websocket', 'polling'], // Prefer websocket over polling
+        transports: ['websocket'], // Use websocket only to avoid polling auth issues
         reconnection: true, // Enable auto-reconnection
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
@@ -135,10 +144,11 @@ class WebSocketService {
         autoConnect: true,
         withCredentials: true, // Match server CORS configuration
         auth: {
-          userId: 'local-user' // Add auth for local development
+          userId: 'local-user', // For local development
+          token: accessToken // JWT token for authentication
         },
-        upgrade: true, // Allow upgrading from polling to websocket
-        rememberUpgrade: true, // Remember the upgrade
+        upgrade: false, // No upgrade needed with websocket-only transport
+        rememberUpgrade: false, // No upgrade to remember
         // Match server's ping/pong settings for stability
         pingTimeout: 60000, // 60s to match server
         pingInterval: 25000 // 25s to match server
@@ -158,6 +168,14 @@ class WebSocketService {
 
   private setupEventHandlers() {
     if (!this.socket) return;
+
+    // CRITICAL: Remove all existing event listeners before adding new ones
+    // This prevents memory leaks from listener accumulation on reconnection
+    this.socket.removeAllListeners();
+
+    // CRITICAL FIX: Also remove onAny handlers - removeAllListeners() doesn't clear them
+    // Without this, onAny handlers accumulate on each reconnect, causing 1-10MB/hour leak
+    this.socket.offAny();
 
     this.socket.on('connect', () => {
       console.log('WebSocket connected');
@@ -333,11 +351,8 @@ class WebSocketService {
       }
     });
 
-    // Handle heartbeat ping from server
-    this.socket.on('ping', () => {
-      // Respond with pong to keep connection alive
-      this.socket?.emit('pong');
-    });
+    // NOTE: Ping handler is already registered at line ~197 with timestamp support
+    // Do NOT register a duplicate ping handler here
 
     // Handle specific events needed by GrowingPage and other components
     this.socket.on('farm:status', (data: any) => {
@@ -388,13 +403,23 @@ class WebSocketService {
       useWebSocketStore.getState().triggerEvent('terminal:output', data);
     });
 
+    // Handle agent activity updates (real-time heartbeat)
+    this.socket.on('agent:activity:update', (data: any) => {
+      this.handleMessage({
+        type: 'agent:activity:update',
+        payload: data,
+        timestamp: new Date(),
+      });
+      useWebSocketStore.getState().triggerEvent('agent:activity:update', data);
+    });
+
     // Generic event handler for any other events
     this.socket.onAny((event: string, data: any) => {
       // Skip events we've already handled specifically
-      const handledEvents = ['connect', 'disconnect', 'error', 'connect_error', 'ping', 'message', 
+      const handledEvents = ['connect', 'disconnect', 'error', 'connect_error', 'ping', 'message',
                            'agent_update', 'farm_update', 'farm:paused', 'farm:resumed',
-                           'farm:status', 'agent:output', 'task:progress', 'harvest:ready', 
-                           'terminal:output'];
+                           'farm:status', 'agent:output', 'task:progress', 'harvest:ready',
+                           'terminal:output', 'agent:activity:update'];
       
       if (!handledEvents.includes(event)) {
         this.handleMessage({
@@ -451,6 +476,14 @@ class WebSocketService {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+    }
+
+    // FIX: Clean up mock data interval
+    this.stopMockDataGeneration();
+
+    // FIX: Clean up service worker listener to prevent memory leak
+    if (this.serviceWorkerMessageHandler && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.removeEventListener('message', this.serviceWorkerMessageHandler);
     }
 
     if (this.socket) {
@@ -574,7 +607,9 @@ class WebSocketService {
   private disableMockDataMode() {
     this.useMockData = false;
     mockDataProvider.stop();
-    
+    // FIX: Also stop internal mock data generation interval
+    this.stopMockDataGeneration();
+
     // Notify UI about live mode
     this.handleMessage({
       type: 'connection:status',

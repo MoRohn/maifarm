@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import { metricsCollector } from '../monitoring/metricsCollector';
 import { farmHealthMonitor } from '../services/farmHealthMonitor';
 import { logger, LogCategory } from '../utils/logger';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -195,7 +196,8 @@ router.get('/api/farms/health', async (req, res) => {
 });
 
 // Trigger manual recovery for a farm
-router.post('/api/farms/:farmId/health/recover', async (req, res) => {
+// SECURITY FIX: Added authenticateToken middleware to prevent unauthenticated access
+router.post('/api/farms/:farmId/health/recover', authenticateToken, async (req: AuthRequest, res) => {
   try {
     const { farmId } = req.params;
     const health = farmHealthMonitor.getHealth(farmId);
@@ -246,10 +248,27 @@ router.get('/api/terminal-health', async (req, res) => {
   }
 });
 
+// Helper: Promise with timeout to prevent hanging health checks
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), timeoutMs))
+  ]);
+}
+
 // Detailed health status
 router.get('/api/health/detailed', async (req, res) => {
   try {
-    const metrics = await metricsCollector.getCurrentMetrics();
+    const metrics = metricsCollector.getCurrentMetrics();
+    // Await all metric promises with timeout to prevent hanging
+    const HEALTH_CHECK_TIMEOUT = 5000; // 5 second timeout per check
+    const [farms, agents, clients, resources] = await Promise.all([
+      withTimeout(metrics.farms, HEALTH_CHECK_TIMEOUT, { values: [] }),
+      withTimeout(metrics.agents, HEALTH_CHECK_TIMEOUT, { values: [] }),
+      withTimeout(metrics.clients, HEALTH_CHECK_TIMEOUT, { values: [] }),
+      withTimeout(metrics.resources, HEALTH_CHECK_TIMEOUT, { values: [] })
+    ]);
+
     const systemInfo = {
       node: {
         version: process.version,
@@ -269,10 +288,10 @@ router.get('/api/health/detailed', async (req, res) => {
         }))
       },
       application: {
-        farms: metrics.farms,
-        agents: metrics.agents,
-        websockets: metrics.websockets,
-        tasks: metrics.tasks
+        farms,
+        agents,
+        clients,
+        resources
       }
     };
 
@@ -282,7 +301,7 @@ router.get('/api/health/detailed', async (req, res) => {
       system: systemInfo
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       status: 'error',
       timestamp: new Date(),
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -337,15 +356,39 @@ async function checkCPUUsage() {
 }
 
 async function checkDiskSpace() {
-  // Implement disk space check based on your requirements
-  // This is a placeholder implementation
-  return { status: 'pass' as const };
+  try {
+    // Check disk space for the maibarn directory
+    const { execSync } = await import('child_process');
+    const dfOutput = execSync('df -k /tmp 2>/dev/null || df -k / 2>/dev/null', { encoding: 'utf-8' });
+    const lines = dfOutput.trim().split('\n');
+    if (lines.length >= 2) {
+      const parts = lines[1].split(/\s+/);
+      if (parts.length >= 5) {
+        const usedPercent = parseInt(parts[4].replace('%', ''));
+        if (usedPercent > 95) {
+          return { status: 'fail' as const, message: `Disk usage critical: ${usedPercent}%` };
+        } else if (usedPercent > 85) {
+          return { status: 'warn' as const, message: `Disk usage high: ${usedPercent}%` };
+        }
+      }
+    }
+    return { status: 'pass' as const };
+  } catch (error) {
+    // If disk check fails, warn but don't fail
+    return { status: 'warn' as const, message: 'Unable to check disk space' };
+  }
 }
 
 async function checkActiveAgents() {
   try {
-    const metrics = await metricsCollector.getCurrentMetrics();
-    if (metrics.agents.active === 0 && metrics.farms.active > 0) {
+    const metrics = metricsCollector.getCurrentMetrics();
+    const [agents, farms] = await Promise.all([metrics.agents, metrics.farms]);
+
+    // Count active agents and farms from the metric values
+    const activeAgentCount = agents.values?.filter((v: any) => v.labels?.status === 'active').reduce((sum: number, v: any) => sum + v.value, 0) || 0;
+    const activeFarmCount = farms.values?.filter((v: any) => v.labels?.status === 'active').reduce((sum: number, v: any) => sum + v.value, 0) || 0;
+
+    if (activeAgentCount === 0 && activeFarmCount > 0) {
       return { status: 'warn' as const, message: 'No active agents but farms are running' };
     }
     return { status: 'pass' as const };

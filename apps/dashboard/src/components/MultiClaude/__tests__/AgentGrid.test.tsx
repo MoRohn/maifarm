@@ -1,11 +1,10 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentGrid } from '../AgentGrid';
 import { MultiClaudeAgent } from '@/types/multiClaude';
 
 // Mock framer-motion to avoid animation issues in tests
-vi.mock('framer-motion', () => ({
+jest.mock('framer-motion', () => ({
   motion: {
     div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
     button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
@@ -38,14 +37,14 @@ describe('AgentGrid', () => {
   ];
 
   const mockHandlers = {
-    onAgentCommand: vi.fn(),
-    onAgentPrompt: vi.fn(),
-    onAddAgent: vi.fn(),
-    onRemoveAgent: vi.fn(),
+    onAgentCommand: jest.fn(),
+    onAgentPrompt: jest.fn(),
+    onAddAgent: jest.fn(),
+    onRemoveAgent: jest.fn(),
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   it('renders the agent grid with correct title', () => {

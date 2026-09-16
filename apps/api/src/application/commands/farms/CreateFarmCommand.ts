@@ -9,7 +9,7 @@ import { z } from 'zod';
 const CreateFarmPayloadSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
-  provider: z.enum(['claude', 'openai', 'qwen', 'ollama']),
+  provider: z.enum(['claude', 'openai', 'llama', 'ollama']),
   seedId: z.string().uuid().optional(),
   config: z.object({
     timeout: z.number().min(60).max(86400).optional(),

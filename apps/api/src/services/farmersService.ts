@@ -1,8 +1,13 @@
 import fs from 'fs/promises';
+import { statSync } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import yaml from 'yaml';
 import { v4 as uuidv4 } from 'uuid';
 import { FarmerTemplate, FarmerProfile, FarmerStats, FarmerCategory } from '../../src/types/farmers';
+
+const _currentFilePath = fileURLToPath(import.meta.url);
+const _currentDirPath = path.dirname(_currentFilePath);
 
 export class FarmersService {
   private farmersCache: Map<string, FarmerTemplate> = new Map();
@@ -10,15 +15,84 @@ export class FarmersService {
   private statsCache: Map<string, FarmerStats> = new Map();
   private templatesPath: string;
   private initializationPromise: Promise<void>;
+  private initializationAttempts: number = 0;
+  private maxInitializationAttempts: number = 3;
+  private initializationError: Error | null = null;
+  private isInitialized: boolean = false;
 
   constructor() {
-    this.templatesPath = path.join(process.cwd(), 'server', 'templates', 'farmers');
-    console.log('[FarmersService] Initializing with templates path:', this.templatesPath);
-    this.initializationPromise = this.initializeTemplates().catch(error => {
-      console.error('[FarmersService] Failed to initialize:', error);
-      // Don't re-throw here to prevent server crash
-      return Promise.resolve();
-    });
+    // Try new monorepo structure first, then fallback to old structure
+    const possiblePaths = [
+      path.join(process.cwd(), 'apps', 'api', 'src', 'templates', 'farmers'),
+      path.join(process.cwd(), 'apps', 'api', 'templates', 'farmers'),
+      path.join(process.cwd(), 'apps', 'api', 'dist', 'templates', 'farmers'),
+      path.join(process.cwd(), 'src', 'templates', 'farmers'),
+      path.join(process.cwd(), 'dist', 'templates', 'farmers'),
+      path.join(process.cwd(), 'templates', 'farmers'),
+      path.join(process.cwd(), 'server', 'templates', 'farmers'),
+      path.join(_currentDirPath, '..', 'templates', 'farmers')
+    ];
+
+    const uniquePaths = Array.from(new Set(possiblePaths.map(candidate => path.resolve(candidate))));
+    const resolvedPath = this.resolveTemplatesPath(uniquePaths);
+
+    this.templatesPath = resolvedPath;
+    console.log('[FarmersService] ============================================');
+    console.log('[FarmersService] INITIALIZING FARMERS SERVICE');
+    console.log('[FarmersService] Candidate template paths:', uniquePaths);
+    console.log('[FarmersService] Selected templates path:', this.templatesPath);
+    console.log('[FarmersService] Working directory:', process.cwd());
+    console.log('[FarmersService] _currentDirPath:', _currentDirPath);
+    console.log('[FarmersService] ============================================');
+
+    this.initializationPromise = this.initializeWithRetry();
+  }
+
+  private resolveTemplatesPath(possiblePaths: string[]): string {
+    for (const candidate of possiblePaths) {
+      try {
+        if (statSync(candidate).isDirectory()) {
+          return candidate;
+        }
+      } catch (error) {
+        // Directory is not accessible, keep looking
+        continue;
+      }
+    }
+
+    // Fallback to the last option even if it does not exist yet.
+    const fallback = possiblePaths[possiblePaths.length - 1];
+    console.warn('[FarmersService] ⚠️ No existing templates directory found. Falling back to:', fallback);
+    return fallback;
+  }
+
+  private async initializeWithRetry(): Promise<void> {
+    while (this.initializationAttempts < this.maxInitializationAttempts) {
+      this.initializationAttempts++;
+      console.log(`[FarmersService] Initialization attempt ${this.initializationAttempts}/${this.maxInitializationAttempts}`);
+
+      try {
+        await this.initializeTemplates();
+        this.isInitialized = true;
+        this.initializationError = null;
+        console.log('[FarmersService] ✅ Initialization successful');
+        return;
+      } catch (error) {
+        this.initializationError = error as Error;
+        console.error(`[FarmersService] ❌ Initialization attempt ${this.initializationAttempts} failed:`, error);
+        console.error('[FarmersService] Error stack:', (error as Error).stack);
+
+        if (this.initializationAttempts < this.maxInitializationAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, this.initializationAttempts - 1), 5000);
+          console.log(`[FarmersService] Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    console.error('[FarmersService] ❌ FATAL: Failed to initialize after all retry attempts');
+    console.error('[FarmersService] Last error:', this.initializationError);
+    // Don't throw - allow service to continue with empty cache
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -262,7 +336,10 @@ export class FarmersService {
   async getAllFarmers(): Promise<FarmerTemplate[]> {
     try {
       await this.ensureInitialized();
-      return Array.from(this.farmersCache.values());
+      const farmers = Array.from(this.farmersCache.values());
+      console.log('[FarmersService] getAllFarmers() returning', farmers.length, 'farmers');
+      console.log('[FarmersService] Farmer IDs:', farmers.map(f => f.id));
+      return farmers;
     } catch (error) {
       console.error('[FarmersService] Error getting all farmers:', error);
       // Return empty array instead of throwing to prevent 500 error
@@ -357,6 +434,58 @@ export class FarmersService {
       template,
       customizedYaml: template.yaml_content || ''
     };
+  }
+
+  /**
+   * Get health status of the FarmersService
+   * Useful for diagnostics and monitoring
+   */
+  async getHealthStatus() {
+    await this.ensureInitialized();
+
+    const status = {
+      isInitialized: this.isInitialized,
+      initializationAttempts: this.initializationAttempts,
+      maxAttempts: this.maxInitializationAttempts,
+      hasError: this.initializationError !== null,
+      error: this.initializationError ? {
+        message: this.initializationError.message,
+        stack: this.initializationError.stack
+      } : null,
+      loadedFarmers: this.farmersCache.size,
+      loadedProfiles: this.profilesCache.size,
+      loadedStats: this.statsCache.size,
+      templatesPath: this.templatesPath,
+      farmerIds: Array.from(this.farmersCache.keys()),
+      pathExists: false
+    };
+
+    // Check if path exists
+    try {
+      await fs.access(this.templatesPath);
+      status.pathExists = true;
+    } catch (error) {
+      status.pathExists = false;
+    }
+
+    return status;
+  }
+
+  /**
+   * Force re-initialization of the service
+   * Useful for recovering from errors
+   */
+  async forceReinitialization(): Promise<void> {
+    console.log('[FarmersService] 🔄 Force re-initialization requested');
+    this.farmersCache.clear();
+    this.profilesCache.clear();
+    this.statsCache.clear();
+    this.initializationAttempts = 0;
+    this.isInitialized = false;
+    this.initializationError = null;
+
+    this.initializationPromise = this.initializeWithRetry();
+    await this.initializationPromise;
   }
 }
 

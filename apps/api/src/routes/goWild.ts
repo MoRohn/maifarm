@@ -2,10 +2,177 @@ import { Router, Request, Response } from 'express';
 import { goWildManager } from '../services/goWildManager';
 import { goWildManagerV2 } from '../services/goWildManagerV2';
 import { enhancedIntegration } from '../services/enhancedIntegration';
-// Create SafetyManager stub
+import { authenticateToken, AuthRequest } from '../middleware/auth';
+// SafetyManager for GoWild boundary validation
+interface BoundaryConfig {
+  maxCpuPercent?: number;
+  maxMemoryMB?: number;
+  maxDiskIOMBps?: number;
+  maxDurationMinutes?: number;
+  idleTimeoutMinutes?: number;
+  maxApiCallsPerMinute?: number;
+  maxTotalApiCalls?: number;
+  allowedApiEndpoints?: string[];
+  blockedApiEndpoints?: string[];
+  allowedPaths?: string[];
+  blockedPaths?: string[];
+  maxFileOperations?: number;
+  maxFileSizeMB?: number;
+  allowedDomains?: string[];
+  blockedDomains?: string[];
+  maxBandwidthMBps?: number;
+  maxConnections?: number;
+}
+
+interface SafetyBoundary {
+  id?: string;
+  name?: string;
+  type?: 'resource' | 'time' | 'api' | 'filesystem' | 'network';
+  enabled?: boolean;
+  config?: BoundaryConfig;
+}
+
+interface BoundaryViolation {
+  boundaryType: string;
+  field: string;
+  message: string;
+  value: any;
+}
+
 class SafetyManager {
-  checkSafety() { return true; }
-  static getInstance() { return new SafetyManager(); }
+  private static instance: SafetyManager;
+
+  // Safety limits for GoWild mode
+  private static readonly LIMITS = {
+    maxDurationMinutes: 120,      // Max 2 hours
+    minDurationMinutes: 5,        // Min 5 minutes
+    maxCpuPercent: 90,            // Max 90% CPU
+    maxMemoryMB: 8192,            // Max 8GB RAM
+    maxApiCallsPerMinute: 1000,   // Max 1000 API calls/min
+    maxTotalApiCalls: 100000,     // Max 100k total API calls
+    maxConnections: 50,           // Max 50 concurrent connections
+    maxFileSizeMB: 100,           // Max 100MB per file
+    maxBandwidthMBps: 100,        // Max 100MB/s bandwidth
+  };
+
+  static getInstance(): SafetyManager {
+    if (!SafetyManager.instance) {
+      SafetyManager.instance = new SafetyManager();
+    }
+    return SafetyManager.instance;
+  }
+
+  checkSafety(): boolean {
+    return true;
+  }
+
+  async validateBoundaries(boundaries: SafetyBoundary[] | undefined): Promise<{ isValid: boolean; violations: BoundaryViolation[] }> {
+    const violations: BoundaryViolation[] = [];
+
+    // Empty or undefined boundaries are valid (use defaults)
+    if (!boundaries || !Array.isArray(boundaries) || boundaries.length === 0) {
+      return { isValid: true, violations: [] };
+    }
+
+    for (const boundary of boundaries) {
+      if (!boundary || typeof boundary !== 'object') continue;
+
+      const config = boundary.config;
+      if (!config) continue;
+
+      // Validate resource boundaries
+      if (config.maxCpuPercent !== undefined) {
+        if (config.maxCpuPercent < 0 || config.maxCpuPercent > SafetyManager.LIMITS.maxCpuPercent) {
+          violations.push({
+            boundaryType: 'resource',
+            field: 'maxCpuPercent',
+            message: `CPU limit must be between 0 and ${SafetyManager.LIMITS.maxCpuPercent}%`,
+            value: config.maxCpuPercent
+          });
+        }
+      }
+
+      if (config.maxMemoryMB !== undefined) {
+        if (config.maxMemoryMB < 0 || config.maxMemoryMB > SafetyManager.LIMITS.maxMemoryMB) {
+          violations.push({
+            boundaryType: 'resource',
+            field: 'maxMemoryMB',
+            message: `Memory limit must be between 0 and ${SafetyManager.LIMITS.maxMemoryMB}MB`,
+            value: config.maxMemoryMB
+          });
+        }
+      }
+
+      // Validate time boundaries
+      if (config.maxDurationMinutes !== undefined) {
+        if (config.maxDurationMinutes < SafetyManager.LIMITS.minDurationMinutes ||
+            config.maxDurationMinutes > SafetyManager.LIMITS.maxDurationMinutes) {
+          violations.push({
+            boundaryType: 'time',
+            field: 'maxDurationMinutes',
+            message: `Duration must be between ${SafetyManager.LIMITS.minDurationMinutes} and ${SafetyManager.LIMITS.maxDurationMinutes} minutes`,
+            value: config.maxDurationMinutes
+          });
+        }
+      }
+
+      // Validate API boundaries
+      if (config.maxApiCallsPerMinute !== undefined) {
+        if (config.maxApiCallsPerMinute < 0 || config.maxApiCallsPerMinute > SafetyManager.LIMITS.maxApiCallsPerMinute) {
+          violations.push({
+            boundaryType: 'api',
+            field: 'maxApiCallsPerMinute',
+            message: `API rate limit must be between 0 and ${SafetyManager.LIMITS.maxApiCallsPerMinute}/minute`,
+            value: config.maxApiCallsPerMinute
+          });
+        }
+      }
+
+      // Validate network boundaries
+      if (config.maxConnections !== undefined) {
+        if (config.maxConnections < 0 || config.maxConnections > SafetyManager.LIMITS.maxConnections) {
+          violations.push({
+            boundaryType: 'network',
+            field: 'maxConnections',
+            message: `Max connections must be between 0 and ${SafetyManager.LIMITS.maxConnections}`,
+            value: config.maxConnections
+          });
+        }
+      }
+
+      // Validate filesystem boundaries
+      if (config.maxFileSizeMB !== undefined) {
+        if (config.maxFileSizeMB < 0 || config.maxFileSizeMB > SafetyManager.LIMITS.maxFileSizeMB) {
+          violations.push({
+            boundaryType: 'filesystem',
+            field: 'maxFileSizeMB',
+            message: `Max file size must be between 0 and ${SafetyManager.LIMITS.maxFileSizeMB}MB`,
+            value: config.maxFileSizeMB
+          });
+        }
+      }
+
+      // Validate path arrays for dangerous patterns
+      const dangerousPaths = ['/', '/etc', '/usr', '/bin', '/sbin', '/var', '/root', '/home'];
+      if (config.allowedPaths) {
+        for (const p of config.allowedPaths) {
+          if (dangerousPaths.includes(p)) {
+            violations.push({
+              boundaryType: 'filesystem',
+              field: 'allowedPaths',
+              message: `Dangerous system path not allowed: ${p}`,
+              value: p
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      isValid: violations.length === 0,
+      violations
+    };
+  }
 }
 
 import { WebSocketManager } from '../websocket/websocketManager';
@@ -58,6 +225,10 @@ router.post('/', upload.array('files', 10), async (req: Request, res: Response) 
   try {
     const { prompt, timeout, autoScale = true, maxAgents = 5 } = req.body;
     const uploadedFiles = req.files as Express.Multer.File[];
+
+    // Get userId from authenticated user or use default dev user
+    const DEV_USER_ID = '9652ef27-3208-47a1-aa53-e7fcdffddb07';
+    const userId = (req as any).user?.userId || (req as any).user?.id || DEV_USER_ID;
 
     if (!prompt) {
       return res.status(400).json({ 
@@ -148,14 +319,20 @@ router.post('/', upload.array('files', 10), async (req: Request, res: Response) 
 
     // Create the farm in database first
     const { farmService } = await import('../services/unified/farmService');
+
+    // Get AI provider from settings (global setting, not per-farm)
+    const { settingsService } = await import('../services/settingsService');
+    const aiProvider = await settingsService.getSetting('AI_PROVIDER') || process.env.AI_PROVIDER || 'claude';
+
     const farm = await farmService.createFarm({
       id: farmId,
       name: `GoWild: ${prompt.slice(0, 50)}`,
       description: enhancedPrompt,
       prompt: enhancedPrompt,
       numberOfAgents: maxAgents,
-      provider: 'claude',
-      mode: 'go-wild',
+      provider: aiProvider, // Use global AI provider from settings
+      userId, // Required for farm creation
+      mode: 'go_wild',
       timeout: effectiveTimeout * 1000, // Convert to milliseconds
       type: 'gowild',
       status: 'launching',
@@ -278,28 +455,29 @@ router.post('/start', async (req: Request, res: Response) => {
   }
 });
 
-// Get exploration session
+// Get exploration session by farm ID
 router.get('/session/:farmId', async (req: Request, res: Response) => {
   try {
     const { farmId } = req.params;
-    const session = await goWildManager.getSession(farmId);
+    // Use getSessionByFarmId to look up by farm ID (not session ID)
+    const session = goWildManager.getSessionByFarmId(farmId);
 
     if (!session) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'No active session found' 
+      return res.status(404).json({
+        success: false,
+        error: 'No active session found for this farm'
       });
     }
 
-    res.json({ 
-      success: true, 
-      data: session 
+    res.json({
+      success: true,
+      data: session
     });
   } catch (error) {
     logger.error('Failed to get session:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to get session' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get session'
     });
   }
 });
@@ -553,7 +731,8 @@ router.post('/sessions/:id/rollback/:checkpointId', async (req: Request, res: Re
 });
 
 // Emergency stop all sessions
-router.post('/emergency-stop', async (req: Request, res: Response) => {
+// SECURITY FIX: Added authenticateToken middleware to prevent unauthenticated access
+router.post('/emergency-stop', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     let results;
     

@@ -3,6 +3,18 @@ import { persist } from 'zustand/middleware'
 import { ColorScheme, COLOR_SCHEMES } from '@/types/theme'
 import { themeService } from '@/services/themeService'
 
+// FIX: Helper to get effective theme based on system preference
+const getEffectiveTheme = (theme: 'light' | 'dark' | 'system'): 'light' | 'dark' => {
+  if (theme === 'system') {
+    // Respect system preference when 'system' is selected
+    if (typeof window !== 'undefined') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return 'dark'; // Default to dark for SSR
+  }
+  return theme;
+};
+
 interface ThemeState {
   theme: 'light' | 'dark' | 'system'
   colorScheme: ColorScheme
@@ -20,9 +32,11 @@ interface ThemeState {
   setAnimations: (enabled: boolean) => void
   setReduceMotion: (enabled: boolean) => void
   applyTheme: () => void
-  saveChanges: () => void
+  saveChanges: () => Promise<void>
   discardChanges: () => void
-  resetToDefault: () => void
+  resetToDefault: () => Promise<void>
+  hydrateFromServer: () => Promise<void>
+  persistTheme: () => Promise<void>
 }
 
 const defaultColorScheme = COLOR_SCHEMES.find(s => s.id === 'forest-walk') || COLOR_SCHEMES[0];
@@ -42,19 +56,27 @@ export const useThemeStore = create<ThemeState>()(
       setTheme: (theme) => {
         set({ theme });
         const state = get();
-        themeService.applyColorScheme(state.colorScheme, theme === 'system' ? 'dark' : theme);
+        // FIX: Respect system theme preference when 'system' is selected
+        const effectiveTheme = getEffectiveTheme(theme);
+
+        // Update class immediately
+        document.documentElement.classList.remove('light', 'dark');
+        document.documentElement.classList.add(effectiveTheme);
+
+        themeService.applyColorScheme(state.colorScheme, effectiveTheme);
+        void get().persistTheme();
       },
       
       setColorScheme: (scheme) => {
-        set({ 
+        set({
           colorScheme: scheme,
           primaryColor: scheme.primary,
           accentColor: scheme.accent
         });
-        const effectiveTheme = get().theme === 'system' 
-          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-          : get().theme;
-        themeService.applyColorScheme(scheme, effectiveTheme as 'light' | 'dark');
+        // FIX: Respect system theme preference
+        const effectiveTheme = getEffectiveTheme(get().theme);
+        themeService.applyColorScheme(scheme, effectiveTheme);
+        void get().persistTheme();
       },
       
       setPendingColorScheme: (scheme) => {
@@ -67,40 +89,47 @@ export const useThemeStore = create<ThemeState>()(
       setPrimaryColor: (color) => {
         set({ primaryColor: color, hasUnsavedChanges: true });
       },
-      
+
       setAccentColor: (color) => {
         set({ accentColor: color, hasUnsavedChanges: true });
       },
-      
+
       setAnimations: (enabled) => {
         set({ animations: enabled });
         document.documentElement.classList.toggle('no-animations', !enabled);
+        void get().persistTheme();
       },
       
       setReduceMotion: (enabled) => {
         set({ reduceMotion: enabled });
         document.documentElement.classList.toggle('reduce-motion', enabled);
+        void get().persistTheme();
       },
       
       applyTheme: () => {
         const state = get();
-        themeService.applyColorScheme(state.colorScheme, state.theme === 'system' ? 'dark' : state.theme);
+        // FIX: Respect system theme preference
+        const effectiveTheme = getEffectiveTheme(state.theme);
+        themeService.applyColorScheme(state.colorScheme, effectiveTheme);
       },
       
-      saveChanges: () => {
+      saveChanges: async () => {
         const state = get();
+        // FIX: Respect system theme preference
+        const effectiveTheme = getEffectiveTheme(state.theme);
+
         if (state.pendingColorScheme) {
           const customScheme: ColorScheme = {
             ...state.pendingColorScheme,
             primary: state.primaryColor,
             accent: state.accentColor
           };
-          set({ 
+          set({
             colorScheme: customScheme,
             pendingColorScheme: null,
             hasUnsavedChanges: false
           });
-          themeService.applyColorScheme(customScheme, state.theme === 'system' ? 'dark' : state.theme);
+          themeService.applyColorScheme(customScheme, effectiveTheme);
         } else if (state.hasUnsavedChanges) {
           const customScheme: ColorScheme = {
             id: 'custom',
@@ -108,12 +137,13 @@ export const useThemeStore = create<ThemeState>()(
             primary: state.primaryColor,
             accent: state.accentColor
           };
-          set({ 
+          set({
             colorScheme: customScheme,
             hasUnsavedChanges: false
           });
-          themeService.applyColorScheme(customScheme, state.theme === 'system' ? 'dark' : state.theme);
+          themeService.applyColorScheme(customScheme, effectiveTheme);
         }
+        await get().persistTheme();
       },
       
       discardChanges: () => {
@@ -126,7 +156,7 @@ export const useThemeStore = create<ThemeState>()(
         });
       },
       
-      resetToDefault: () => {
+      resetToDefault: async () => {
         set({
           colorScheme: defaultColorScheme,
           primaryColor: defaultColorScheme.primary,
@@ -135,14 +165,100 @@ export const useThemeStore = create<ThemeState>()(
           hasUnsavedChanges: false
         });
         themeService.resetToDefault();
+        await get().persistTheme();
+      },
+
+      hydrateFromServer: async () => {
+        try {
+          const response = await fetch('/api/settings');
+          if (!response.ok) {
+            throw new Error('Failed to load theme settings');
+          }
+          const data = await response.json();
+          const themeSettings = data?.settings?.theme;
+          if (!themeSettings) {
+            return;
+          }
+
+          const {
+            theme,
+            colorScheme,
+            primaryColor,
+            accentColor,
+            animations,
+            reduceMotion,
+          } = themeSettings;
+
+          const scheme: ColorScheme = {
+            id: colorScheme?.id || defaultColorScheme.id,
+            name: colorScheme?.name || defaultColorScheme.name,
+            primary: primaryColor || colorScheme?.primary || defaultColorScheme.primary,
+            accent: accentColor || colorScheme?.accent || defaultColorScheme.accent,
+            primaryRGB: colorScheme?.primaryRGB,
+            accentRGB: colorScheme?.accentRGB,
+          };
+
+          // FIX: Respect system theme preference
+          const effectiveTheme = getEffectiveTheme(theme || 'dark');
+
+          set({
+            theme: theme || 'dark',
+            colorScheme: scheme,
+            primaryColor: scheme.primary,
+            accentColor: scheme.accent,
+            animations: animations ?? true,
+            reduceMotion: reduceMotion ?? false,
+            pendingColorScheme: null,
+            hasUnsavedChanges: false,
+          });
+
+          themeService.applyColorScheme(scheme, effectiveTheme);
+        } catch (error) {
+          console.error('[ThemeStore] Failed to hydrate theme settings:', error);
+        }
+      },
+
+      persistTheme: async () => {
+        const state = get();
+        try {
+          const payload = {
+            theme: state.theme,
+            colorScheme: {
+              id: state.colorScheme.id,
+              name: state.colorScheme.name,
+              primary: state.primaryColor,
+              accent: state.accentColor,
+            },
+            primaryColor: state.primaryColor,
+            accentColor: state.accentColor,
+            animations: state.animations,
+            reduceMotion: state.reduceMotion,
+          };
+
+          await fetch('/api/settings/theme', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: payload }),
+          });
+        } catch (error) {
+          console.error('[ThemeStore] Failed to persist theme settings:', error);
+        }
       }
     }),
     {
       name: 'maifarm-theme',
       onRehydrateStorage: () => (state) => {
-        // Apply saved theme on app load
+        // Theme is already applied by index.html script
+        // Only update if there's a mismatch (e.g., user changed theme in another tab)
         if (state) {
-          themeService.applyColorScheme(state.colorScheme, state.theme === 'system' ? 'dark' : state.theme);
+          const currentThemeClass = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+          // FIX: Respect system theme preference
+          const expectedTheme = getEffectiveTheme(state.theme);
+
+          // Only re-apply if there's a mismatch
+          if (currentThemeClass !== expectedTheme) {
+            themeService.applyColorScheme(state.colorScheme, expectedTheme);
+          }
         }
       }
     }

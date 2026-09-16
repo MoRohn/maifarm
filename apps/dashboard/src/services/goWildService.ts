@@ -1,7 +1,7 @@
 import { GoWildSession, GoWildConfig } from '@/types/goWild';
 
-const API_BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:4567/api';
-const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:4567';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const WS_BASE = import.meta.env.VITE_WS_URL || '';
 
 class GoWildService {
   private wsConnections: Map<string, WebSocket> = new Map();
@@ -117,9 +117,14 @@ class GoWildService {
   }
 
   async saveDefaultConfig(config: GoWildConfig): Promise<void> {
-    // Save to localStorage for client-side persistence
-    localStorage.setItem('goWildDefaultConfig', JSON.stringify(config));
-    
+    // Save to localStorage for client-side persistence (with iOS Safari private browsing protection)
+    try {
+      localStorage.setItem('goWildDefaultConfig', JSON.stringify(config));
+    } catch {
+      // iOS Safari private browsing mode - localStorage unavailable
+      console.warn('[GoWildService] localStorage unavailable (iOS Safari private mode?) - config not persisted');
+    }
+
     // Also try to save to backend if available
     try {
       const response = await fetch(`${API_BASE}/go-wild/config/default`, {
@@ -140,14 +145,19 @@ class GoWildService {
   }
 
   async getDefaultConfig(): Promise<GoWildConfig | null> {
-    // First try to get from localStorage
-    const stored = localStorage.getItem('goWildDefaultConfig');
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch (error) {
-        console.error('Failed to parse stored config:', error);
+    // First try to get from localStorage (with iOS Safari private browsing protection)
+    try {
+      const stored = localStorage.getItem('goWildDefaultConfig');
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch (error) {
+          console.error('Failed to parse stored config:', error);
+        }
       }
+    } catch {
+      // iOS Safari private browsing mode - localStorage unavailable
+      console.warn('[GoWildService] localStorage unavailable (iOS Safari private mode?)');
     }
 
     // Fallback to backend

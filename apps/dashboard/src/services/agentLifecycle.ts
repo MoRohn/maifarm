@@ -275,6 +275,7 @@ class AgentLifecycle {
       id: agentId,
       instanceId,
       poolId: request.poolId,
+      farmId: request.poolId, // Use poolId as farmId for agent lifecycle
       name: `${request.agentType}-${agentId.slice(0, 8)}`,
       type: request.agentType,
       status: 'idle',
@@ -283,6 +284,9 @@ class AgentLifecycle {
       cpu: 0,
       lastActive: new Date(),
       capabilities: request.capabilities,
+      agentNumber: 0, // Will be assigned by caller
+      createdAt: new Date(),
+      updatedAt: new Date(),
       state: {
         current: 'initializing',
         transitionTime: new Date(),
@@ -294,6 +298,20 @@ class AgentLifecycle {
         consecutiveFailures: 0,
       },
       resources: {
+        // Required cpu and memory objects
+        cpu: {
+          allocated: request.resources.cpu,
+          used: 0,
+          limit: request.resources.cpu,
+          usage: 0
+        },
+        memory: {
+          allocated: request.resources.memory,
+          used: '0',
+          limit: request.resources.memory,
+          usage: 0
+        },
+        // Legacy structure support
         allocated: request.resources,
         used: { cpu: 0, memory: 0, disk: 0 },
         limits: request.resources,
@@ -434,8 +452,12 @@ class AgentLifecycle {
   }
 
   private checkMemory(agent: AgentInstance): HealthCheck {
-    const memoryUsed = agent.resources.used?.memory ?? agent.resources.memory?.used ?? 0;
-    const memoryAllocated = agent.resources.allocated?.memory ?? agent.resources.memory?.allocated ?? 1;
+    // Use numeric 'usage' property or convert/fallback legacy values
+    const memoryUsedRaw = agent.resources.used?.memory ?? agent.resources.memory?.usage ?? 0;
+    const memoryAllocatedRaw = agent.resources.allocated?.memory ?? agent.resources.memory?.allocated ?? 1;
+    // Ensure numeric values
+    const memoryUsed = typeof memoryUsedRaw === 'number' ? memoryUsedRaw : 0;
+    const memoryAllocated = typeof memoryAllocatedRaw === 'number' ? memoryAllocatedRaw : 1;
     const memoryUsage = memoryUsed / memoryAllocated;
     
     return {

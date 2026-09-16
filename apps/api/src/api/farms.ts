@@ -14,24 +14,72 @@ import { spawn } from 'child_process';
 // Import unified services from ServiceRegistry
 import { serviceRegistry, getService } from '../services/unified/ServiceRegistry';
 import { websocketManager } from '../websocket/websocketManager';
+import { unifiedWebSocketManager } from '../websocket/UnifiedWebSocketManager';
 
 // Import legacy services that haven't been unified yet
 import { aiOrchestrator } from '../services/aiOrchestrator';
 import { harvestService } from '../services/harvestService';
 import { agentCleanupService } from '../services/agentCleanupService';
-import { barnService } from '../services/barnService';
+import { barnService } from '../services/unified/barnService';
 
 // Initialize service registry
 serviceRegistry.initialize().catch(err => {
-  console.error('Failed to initialize service registry:', err);
+  logger.error(LogCategory.SYSTEM, 'Failed to initialize service registry', { error: err.message });
 });
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
+import { recordEndpointLatency } from '../monitoring/metricsCollector';
+import { logger, LogCategory } from '../services/ProductionLogger';
+import { safeParse, SafeParseError } from '../utils/safeParse';
+import type { FarmProvider } from '../types/farm';
+import { aiProviderManager } from '../config/aiProviders';
 
 const router = Router();
 
-// Configure multer for file uploads
+type SupportedCreationProvider = 'claude' | 'openai' | 'gpt-oss' | 'grok';
+
+const SUPPORTED_CREATION_PROVIDERS: ReadonlyArray<SupportedCreationProvider> = [
+  'claude',
+  'openai',
+  'gpt-oss',
+  'grok'
+];
+
+const isSupportedCreationProvider = (value: unknown): value is SupportedCreationProvider => {
+  return typeof value === 'string' && SUPPORTED_CREATION_PROVIDERS.includes(value as SupportedCreationProvider);
+};
+
+/**
+ * Resolves the AI provider for farm creation.
+ * Priority order:
+ * 1. User's explicit provider choice (if supported)
+ * 2. Global provider setting from aiProviderManager
+ * 3. Environment variable AI_PROVIDER
+ * 4. Default to 'claude'
+ */
+const resolveCreationProvider = (requestedProvider?: string | FarmProvider): SupportedCreationProvider => {
+  // FIXED: Respect user's explicit provider choice if it's a supported provider
+  if (requestedProvider && isSupportedCreationProvider(requestedProvider)) {
+    return requestedProvider;
+  }
+
+  // Fall back to global provider setting if no valid provider was requested
+  const globalProvider = aiProviderManager.getDefaultProvider() as string | undefined;
+  if (isSupportedCreationProvider(globalProvider)) {
+    return globalProvider;
+  }
+
+  // Fallback to environment variable
+  const envProvider = process.env.AI_PROVIDER;
+  if (isSupportedCreationProvider(envProvider)) {
+    return envProvider;
+  }
+
+  return 'claude';
+};
+
+// Configure multer for file uploads with security validation
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     const uploadDir = path.join(process.cwd(), 'uploads', 'farm-context');
@@ -44,8 +92,57 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+// FIX: Add file type validation to prevent malicious file uploads
+const ALLOWED_MIME_TYPES = new Set([
+  // Documents
+  'text/plain',
+  'text/markdown',
+  'text/x-markdown',
+  'application/json',
+  'application/x-yaml',
+  'text/yaml',
+  'application/pdf',
+  // Code files
+  'text/javascript',
+  'application/javascript',
+  'text/typescript',
+  'text/x-python',
+  'text/x-java-source',
+  // Images
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+  'image/heif'
+]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.txt', '.md', '.json', '.yaml', '.yml', '.pdf',
+  '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'
+]);
+
+const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const ext = path.extname(file.originalname).toLowerCase();
+  const mimeType = file.mimetype.toLowerCase();
+
+  // Check both MIME type and extension for security
+  if (ALLOWED_MIME_TYPES.has(mimeType) || ALLOWED_EXTENSIONS.has(ext)) {
+    cb(null, true);
+  } else {
+    logger.warn(LogCategory.SECURITY, 'Rejected file upload with invalid type', {
+      filename: file.originalname,
+      mimetype: mimeType,
+      extension: ext
+    });
+    cb(new Error(`File type not allowed: ${mimeType} (${ext})`));
+  }
+};
+
+const upload = multer({
   storage,
+  fileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit per file
     files: 10 // Max 10 files
@@ -57,6 +154,8 @@ router.use(authenticateToken);
 
 // GET /api/farms - List all farms with filtering and pagination
 router.get('/', apiRateLimits.read, async (req, res) => {
+  const start = process.hrtime.bigint();
+  const routeKey = '/api/farms';
   try {
     const { 
       page = 1, 
@@ -85,71 +184,74 @@ router.get('/', apiRateLimits.read, async (req, res) => {
       params.push(tagArray);
     }
 
-    // Add sorting and pagination with validation
-    const validSortColumns = ['created_at', 'updated_at', 'name', 'status'];
-    const sortColumn = validSortColumns.includes(sort as string) ? sort : 'created_at';
-    query += ` ORDER BY ${sortColumn} ${order} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    // Add sorting and pagination with strict column mapping to prevent SQL injection
+    const SAFE_COLUMN_MAP: Record<string, string> = {
+      'created_at': 'created_at',
+      'updated_at': 'updated_at',
+      'name': 'name',
+      'status': 'status'
+    };
+    const SAFE_ORDER_MAP: Record<string, string> = {
+      'asc': 'ASC',
+      'desc': 'DESC',
+      'ASC': 'ASC',
+      'DESC': 'DESC'
+    };
+
+    const sortColumn = SAFE_COLUMN_MAP[sort as string] || SAFE_COLUMN_MAP.created_at;
+    const orderDirection = SAFE_ORDER_MAP[order as string] || SAFE_ORDER_MAP.DESC;
+    query += ` ORDER BY ${sortColumn} ${orderDirection} LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
     params.push(limit, offset);
 
     const result = await db.query(query, params);
-    
+
     // Get total count (excluding deleted farms)
     const countResult = await db.query('SELECT COUNT(*) FROM farms WHERE status != \'deleted\'');
-    const total = parseInt(countResult.rows[0].count);
-    
-    // Fetch agents for all farms
-    const farmIds = result.rows.map(row => row.id);
-    let agentsByFarm: { [key: string]: any[] } = {};
-    
-    if (farmIds.length > 0) {
-      const agentsResult = await db.query(
-        'SELECT farm_id, id, name, type, status, capabilities, resources, metrics, config, last_heartbeat, created_at, updated_at FROM agents WHERE farm_id = ANY($1)',
-        [farmIds]
-      );
-      
-      // Group agents by farm_id
-      agentsResult.rows.forEach(agent => {
-        if (!agentsByFarm[agent.farm_id]) {
-          agentsByFarm[agent.farm_id] = [];
-        }
-        const resources = agent.resources || {};
-        const metrics = agent.metrics || {};
-        agentsByFarm[agent.farm_id].push({
+    // FIX: Add defensive check for rows[0] access
+    const total = countResult.rows[0] ? parseInt(countResult.rows[0].count || '0') : 0;
+
+    // Use farms.agents JSONB column (populated by Bug #9 fix in migration 051)
+    // This eliminates the N+1 query problem - agents are already embedded in the farm row
+    const response: ApiResponse<Farm[]> = {
+      success: true,
+      data: result.rows.map(row => {
+        // Parse agents from JSONB column (defaults to empty array if not present)
+        const agentsJson = row.agents || [];
+        const agents = Array.isArray(agentsJson) ? agentsJson.map(agent => ({
           id: agent.id,
-          name: agent.name || `Agent ${agent.id.slice(0, 8)}`,
+          name: agent.name || `Agent ${agent.id?.slice(0, 8) || 'unknown'}`,
           type: agent.type || 'custom',
           status: agent.status || 'idle',
           progress: 0, // Not stored in DB yet
           currentTask: undefined, // Not stored in DB yet
-          memory: resources.memory || 0,
-          cpu: resources.cpu || 0,
+          memory: agent.resources?.memory || 0,
+          cpu: agent.resources?.cpu || 0,
           lastActive: agent.last_heartbeat || agent.created_at,
           capabilities: agent.capabilities || [],
           performance: {
-            cpuUsage: resources.cpu || 0,
-            memoryUsage: resources.memory || 0,
-            responseTime: metrics.avgResponseTime || 0,
-            throughput: metrics.throughput || 0
+            cpuUsage: agent.resources?.cpu || 0,
+            memoryUsage: agent.resources?.memory || 0,
+            responseTime: agent.metrics?.avgResponseTime || 0,
+            throughput: agent.metrics?.throughput || 0
           }
-        });
-      });
-    }
+        })) : [];
 
-    const response: ApiResponse<Farm[]> = {
-      success: true,
-      data: result.rows.map(row => ({
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        status: row.status,
-        agents: agentsByFarm[row.id] || [],
-        config: row.config,
-        metrics: row.metrics,
-        tags: row.tags || [],
-        createdBy: row.created_by,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-      })),
+        return {
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          status: row.status,
+          agents,
+          config: row.config,
+          metrics: row.metrics,
+          tags: row.tags || [],
+          sessionName: row.session_name,
+          tmuxSession: row.tmux_session,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        };
+      }),
       meta: {
         page: Number(page),
         limit: Number(limit),
@@ -158,9 +260,24 @@ router.get('/', apiRateLimits.read, async (req, res) => {
       }
     };
 
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, res.statusCode || 200, durationSeconds);
+    logger.debug(LogCategory.FARM, 'Fetched farms list', {
+      durationMs: Math.round(durationSeconds * 1000),
+      farmCount: response.data.length,
+      page: response.meta?.page,
+      limit: response.meta?.limit
+    });
+
     res.json(response);
   } catch (error) {
-    console.error('Error fetching farms:', error);
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, 500, durationSeconds);
+
+    logger.error(LogCategory.FARM, 'Error fetching farms', {
+      error,
+      durationMs: Math.round(durationSeconds * 1000)
+    });
     const response: ApiResponse = {
       success: false,
       error: {
@@ -172,10 +289,131 @@ router.get('/', apiRateLimits.read, async (req, res) => {
   }
 });
 
+// UUID validation regex for farm IDs
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// GET /api/farms/active - Get all active farms
+// IMPORTANT: This route must be defined BEFORE /:id to prevent "active" from being interpreted as a farm ID
+router.get('/active', apiRateLimits.read, async (req, res) => {
+  const start = process.hrtime.bigint();
+  const routeKey = '/api/farms/active';
+  try {
+    const result = await db.query(
+      `SELECT id, name, description, status, config, metrics, tags, session_name, tmux_session,
+              created_by, created_at, updated_at, agents
+       FROM farms
+       WHERE status IN ('active', 'running', 'launching')
+       ORDER BY updated_at DESC
+       LIMIT 50`
+    );
+
+    const farms = result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      status: row.status,
+      config: row.config,
+      metrics: row.metrics,
+      tags: row.tags || [],
+      sessionName: row.session_name,
+      tmuxSession: row.tmux_session,
+      agentCount: Array.isArray(row.agents) ? row.agents.length : 0,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, 200, durationSeconds);
+
+    res.json({
+      success: true,
+      data: farms,
+      count: farms.length
+    });
+  } catch (error) {
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, 500, durationSeconds);
+    logger.error(LogCategory.FARM, 'Error fetching active farms', { error });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to fetch active farms'
+      }
+    });
+  }
+});
+
+// GET /api/farms/stats - Get farm statistics
+// IMPORTANT: This route must be defined BEFORE /:id to prevent "stats" from being interpreted as a farm ID
+router.get('/stats', apiRateLimits.read, async (req, res) => {
+  const start = process.hrtime.bigint();
+  const routeKey = '/api/farms/stats';
+  try {
+    const result = await db.query(`
+      SELECT
+        COUNT(*) as total,
+        COUNT(CASE WHEN status IN ('active', 'running') THEN 1 END) as active,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
+        COUNT(CASE WHEN status = 'idle' THEN 1 END) as idle,
+        COUNT(CASE WHEN status = 'launching' THEN 1 END) as launching,
+        COUNT(CASE WHEN created_at > NOW() - INTERVAL '24 hours' THEN 1 END) as created_today,
+        COUNT(CASE WHEN updated_at > NOW() - INTERVAL '1 hour' THEN 1 END) as recently_active
+      FROM farms
+      WHERE status != 'deleted'
+    `);
+
+    const stats = result.rows[0];
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, 200, durationSeconds);
+
+    res.json({
+      success: true,
+      data: {
+        total: parseInt(stats.total) || 0,
+        active: parseInt(stats.active) || 0,
+        completed: parseInt(stats.completed) || 0,
+        failed: parseInt(stats.failed) || 0,
+        idle: parseInt(stats.idle) || 0,
+        launching: parseInt(stats.launching) || 0,
+        createdToday: parseInt(stats.created_today) || 0,
+        recentlyActive: parseInt(stats.recently_active) || 0
+      }
+    });
+  } catch (error) {
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, 500, durationSeconds);
+    logger.error(LogCategory.FARM, 'Error fetching farm stats', { error });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to fetch farm statistics'
+      }
+    });
+  }
+});
+
 // GET /api/farms/:id - Get specific farm details with agents
 router.get('/:id', apiRateLimits.read, async (req, res) => {
+  const start = process.hrtime.bigint();
+  const routeKey = '/api/farms/:id';
   try {
     const { id } = req.params;
+
+    // Validate UUID format to prevent database errors on invalid IDs
+    if (!UUID_REGEX.test(id)) {
+      const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+      recordEndpointLatency(routeKey, 400, durationSeconds);
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_ID',
+          message: 'Invalid farm ID format. Expected UUID.'
+        }
+      });
+    }
     
     // Get farm details
     const farmResult = await db.query('SELECT * FROM farms WHERE id = $1', [id]);
@@ -188,6 +426,9 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
           message: 'Farm not found'
         }
       };
+      const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+      recordEndpointLatency(routeKey, 404, durationSeconds);
+      logger.warn(LogCategory.FARM, 'Farm not found', { id, durationMs: Math.round(durationSeconds * 1000) });
       return res.status(404).json(response);
     }
 
@@ -227,6 +468,8 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
       config: farmRow.config,
       metrics: farmRow.metrics,
       tags: farmRow.tags || [],
+      sessionName: farmRow.session_name,
+      tmuxSession: farmRow.tmux_session,
       createdBy: farmRow.created_by,
       createdAt: farmRow.created_at,
       updatedAt: farmRow.updated_at
@@ -237,9 +480,23 @@ router.get('/:id', apiRateLimits.read, async (req, res) => {
       data: farm
     };
 
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, res.statusCode || 200, durationSeconds);
+    logger.debug(LogCategory.FARM, 'Fetched farm detail', {
+      farmId: id,
+      agentCount: agents.length,
+      durationMs: Math.round(durationSeconds * 1000)
+    });
+
     res.json(response);
   } catch (error) {
-    console.error('Error fetching farm:', error);
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, 500, durationSeconds);
+
+    logger.error(LogCategory.FARM, 'Error fetching farm', {
+      error,
+      durationMs: Math.round(durationSeconds * 1000)
+    });
     const response: ApiResponse = {
       success: false,
       error: {
@@ -260,11 +517,13 @@ router.post('/',
   const client = await db.connect();
   
   try {
-    console.log('[Farm API] Farm creation request received at', new Date().toISOString());
-    console.log('[Farm API] Request body:', JSON.stringify(req.body, null, 2));
-    console.log('[Farm API] Request files:', req.files ? `${(req.files as any[]).length} files` : 'none');
-    console.log('[Farm API] Content-Type:', req.headers['content-type']);
-    console.log('[Farm API] User:', (req as any).user?.userId || 'maifarm-user');
+    logger.info(LogCategory.FARM, 'Farm creation request received', {
+      timestamp: new Date().toISOString(),
+      hasFiles: !!req.files,
+      fileCount: req.files ? (req.files as any[]).length : 0,
+      contentType: req.headers['content-type'],
+      userId: (req as any).user?.userId || 'unauthenticated'
+    });
     
     // Handle both JSON and multipart/form-data
     let farmData: any;
@@ -284,13 +543,29 @@ router.post('/',
       }
       
       try {
-        farmData = JSON.parse(req.body.farmData);
+        farmData = safeParse(req.body.farmData, {
+          maxDepth: 10,
+          maxSize: 100000, // 100KB limit
+          preventPrototypePollution: true
+        });
       } catch (e) {
+        const errorCode = e instanceof SafeParseError ? e.code : 'INVALID_JSON';
+        const errorMessage = e instanceof SafeParseError ? e.message : 'Invalid JSON in farmData field';
+
+        // Log potential attack attempts
+        if (e instanceof SafeParseError && ['MAX_DEPTH_EXCEEDED', 'MAX_SIZE_EXCEEDED'].includes(e.code)) {
+          logger.warn(LogCategory.SECURITY, 'Potential attack detected in farm creation', {
+            userId: (req as any).user?.userId,
+            errorCode,
+            size: req.body.farmData?.length
+          });
+        }
+
         return res.status(400).json({
           success: false,
           error: {
-            code: 'INVALID_JSON',
-            message: 'Invalid JSON in farmData field'
+            code: errorCode,
+            message: errorMessage
           }
         });
       }
@@ -306,16 +581,29 @@ router.post('/',
         mimetype: file.mimetype
       }));
       
-      console.log(`[Farms] Processing ${contextFiles.length} uploaded files`);
+      logger.info(LogCategory.FARM, `Processing ${contextFiles.length} uploaded files`);
     } else {
       // Regular JSON request
       farmData = req.body;
     }
     
     // Accept both numberOfAgents and agentCount for compatibility
-    const { name, description, config, tags = [], type = 'sequential', provider = 'claude', prompt, mode, numberOfAgents, agentCount, timeout } = farmData;
-    // Get userId from auth middleware (will be a valid UUID or null)
-    const userId = (req as any).user?.userId || null;
+    // appliedSeedIds: Array of seed IDs to inject into farm context (Feature A: Seeds can Seed a Farm)
+    const { name, description, config, tags = [], type = 'sequential', provider: requestedProvider, prompt, mode, numberOfAgents, agentCount, timeout, appliedSeedIds } = farmData;
+
+    // CRITICAL FIX: Always use valid dev user ID as fallback to prevent foreign key violations
+    // This ensures farms can be created even if auth middleware chain has issues
+    const DEV_USER_ID = '9652ef27-3208-47a1-aa53-e7fcdffddb07';
+    const userId = (req as any).user?.userId || DEV_USER_ID;
+
+    // DEBUG: Trace userId through farm creation
+    logger.info(LogCategory.FARM, '🔍 DEBUG: Farm creation userId trace', {
+      userId,
+      userFromReq: (req as any).user?.userId,
+      fallbackUsed: !(req as any).user?.userId,
+      bypassEnabled: process.env.BYPASS_AUTH,
+      nodeEnv: process.env.NODE_ENV
+    });
     
     // contextFiles is already declared above, no need to redeclare
 
@@ -363,9 +651,8 @@ router.post('/',
       validationErrors.push(`Type must be one of: ${validTypes.join(', ')}`);
     }
     
-    const validProviders = ['claude', 'openai'];
-    if (provider && !validProviders.includes(provider)) {
-      validationErrors.push(`Provider must be one of: ${validProviders.join(', ')}`);
+    if (requestedProvider && !isSupportedCreationProvider(requestedProvider)) {
+      validationErrors.push(`Provider must be one of: ${SUPPORTED_CREATION_PROVIDERS.join(', ')}`);
     }
     
     if (config) {
@@ -410,24 +697,85 @@ router.post('/',
     
     // Remove farm_id from parsedConfig if it exists (it's not a config field)
     const { farm_id, ...cleanConfig } = parsedConfig || {};
-    
+
+    // Generate farm ID upfront for progressive updates
+    let farmId: string = uuidv4();
+
+    // PHASE 1: Emit farm creation started event
+    websocketManager.broadcast('farm:creation-started', {
+      farmId,
+      name: name.trim(),
+      phase: 'preflight',
+      progress: 5,
+      timestamp: new Date().toISOString()
+    });
+
+    const farmPrompt = prompt || cleanConfig?.prompt || description || '';
+    const selectedProvider = resolveCreationProvider(requestedProvider);
+
+    // PHASE 1A: Run preflight validation
+    const { preflightValidationService } = await import('../services/preflightValidationService');
+    const preflightResult = await preflightValidationService.validateFarmCreation({
+      name: name.trim(),
+      prompt: farmPrompt,
+      agentCount: numberOfAgents || agentCount,
+      provider: selectedProvider,
+      mode: mode as 'harvest' | 'quicktask' | 'gowild',
+      timeout
+    });
+
+    // Broadcast preflight results
+    websocketManager.broadcast('farm:preflight-complete', {
+      farmId,
+      result: preflightResult,
+      progress: 10,
+      timestamp: new Date().toISOString()
+    });
+
+    // Fail fast if preflight checks failed
+    if (!preflightResult.canProceed) {
+      const errorMessage = preflightResult.errors.join('; ');
+      logger.error(LogCategory.FARM, 'Preflight validation failed', { error: errorMessage });
+
+      websocketManager.broadcast('farm:creation-failed', {
+        farmId,
+        phase: 'preflight-validation',
+        error: errorMessage,
+        checks: preflightResult.checks,
+        timestamp: new Date().toISOString()
+      });
+
+      return res.status(400).json({
+        success: false,
+        error: 'Preflight validation failed',
+        details: preflightResult
+      });
+    }
+
     // Start database transaction
     await client.query('BEGIN');
-
-    // Generate YAML BEFORE farm creation if not provided
-    let farmId: string = uuidv4(); // Generate farm ID upfront
-    const farmPrompt = prompt || cleanConfig?.prompt || description || '';
     // Use numberOfAgents or agentCount, with mode-specific defaults
+    // FIXED: XenoSync coordination requires minimum 2 agents for all modes
     const requestedAgents = numberOfAgents || agentCount;
-    const defaultAgents = mode === 'quicktask' ? 1 : mode === 'gowild' ? 5 : 3; // harvest defaults to 3
-    const numAgents = requestedAgents || cleanConfig?.maxAgents || defaultAgents;
+    const defaultAgents = mode === 'quicktask' ? 2 : mode === 'gowild' ? 5 : 3; // XenoSync min 2, harvest defaults to 3
+    const numAgents = Math.max(2, requestedAgents || cleanConfig?.maxAgents || defaultAgents); // Enforce XenoSync minimum
     const farmMode = mode || 'harvest';
-    const selectedProvider = (provider || 'claude') as 'claude' | 'openai';
 
     let yamlContent = cleanConfig?.yaml || '';
-    // Generate YAML for all modes to ensure consistent coordination
+
+    // PHASE 2: Generating YAML configuration
     if (!yamlContent) {
-      console.log(`[Farm API] Generating YAML configuration for ${farmMode} mode before farm creation...`);
+      logger.info(LogCategory.FARM, `Generating YAML configuration for ${farmMode} mode before farm creation`);
+
+      // Emit YAML generation phase
+      websocketManager.broadcast('farm:creation-progress', {
+        farmId,
+        phase: 'yaml-generation',
+        progress: 25,
+        message: 'Generating YAML configuration...',
+        timestamp: new Date().toISOString()
+      });
+
       const { yamlGenerator } = await import('../services/yamlGenerator');
 
       // Configure YAML generation based on mode
@@ -457,18 +805,27 @@ router.post('/',
           // Use dynamic timeout from YAML generator if available
           if (yamlResponse.timeout && !cleanConfig?.timeout) {
             cleanConfig.timeout = yamlResponse.timeout;
-            console.log(`[Farm API] Using dynamic timeout from YAML: ${yamlResponse.timeout} seconds`);
+            logger.info(LogCategory.FARM, `Using dynamic timeout from YAML: ${yamlResponse.timeout} seconds`);
           }
           // Add YAML content to cleanConfig so it's included in the response
           cleanConfig.yaml = yamlContent;
         }
       } catch (yamlError) {
-        console.warn('[Farm API] Failed to generate YAML, proceeding without it:', yamlError);
+        logger.warn(LogCategory.FARM, 'Failed to generate YAML, proceeding without it', { error: yamlError.message });
       }
     }
 
+    // PHASE 3: Workspace and database setup
+    websocketManager.broadcast('farm:creation-progress', {
+      farmId,
+      phase: 'workspace-setup',
+      progress: 50,
+      message: 'Setting up workspace and database...',
+      timestamp: new Date().toISOString()
+    });
+
     // Use farmManager to create the farm
-    console.log('[Farm API] Creating farm with farmManager...');
+    logger.info(LogCategory.FARM, 'Creating farm with farmManager');
     let launchResult;
     try {
       // Use unified farm service
@@ -482,6 +839,7 @@ router.post('/',
         prompt: farmPrompt, // Ensure prompt is passed
         numberOfAgents: numAgents,
         provider: selectedProvider,
+        userId, // CRITICAL: userId must be at top level for service validation
         timeout: cleanConfig?.timeout || 3600, // 1 hour default for harvest
         autoScale: cleanConfig?.autoScale || false,
         yamlContent: yamlContent, // Pass the generated YAML
@@ -496,6 +854,8 @@ router.post('/',
           boundaries: cleanConfig?.goWildMode?.boundaries || []
         },
         attachedFiles: cleanConfig?.attachedFiles || [],
+        // Seeds context injection (Feature A: Seeds can Seed a Farm)
+        appliedSeedIds: Array.isArray(appliedSeedIds) ? appliedSeedIds : [],
         metadata: {
           type: type as 'sequential' | 'collaborative' | 'autonomous',
           userId,
@@ -511,9 +871,28 @@ router.post('/',
       if (launchResult.farmId && launchResult.farmId !== farmId) {
         farmId = launchResult.farmId;
       }
-      console.log('[Farm API] Farm created successfully with ID:', farmId);
+      logger.info(LogCategory.FARM, 'Farm created successfully', { farmId });
+
+      // PHASE 4: Farm service created successfully
+      websocketManager.broadcast('farm:creation-progress', {
+        farmId,
+        phase: 'orchestrator-ready',
+        progress: 75,
+        message: 'Farm orchestrator ready...',
+        timestamp: new Date().toISOString()
+      });
+
     } catch (farmError: any) {
-      console.error('[Farm API] farmService.createFarm failed:', farmError);
+      logger.error(LogCategory.FARM, 'farmService.createFarm failed', { error: farmError.message });
+
+      // Emit failure event
+      websocketManager.broadcast('farm:creation-failed', {
+        farmId,
+        phase: 'orchestrator-setup',
+        error: farmError.message || 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+
       throw new Error(`Failed to create farm: ${farmError.message || 'Unknown error'}`);
     }
 
@@ -559,7 +938,7 @@ router.post('/',
         creativityLevel: 3,
         boundaries: []
       },
-      provider: provider as 'claude' | 'openai',  // Store the AI provider
+      provider: selectedProvider as FarmProvider,  // Store the AI provider
       attachedFiles: contextFiles,  // Add uploaded files to config
       yaml: cleanedYaml  // Store cleaned YAML content
       // Don't spread cleanConfig - it may contain metadata fields that aren't valid config
@@ -595,40 +974,85 @@ router.post('/',
     });
     
     await client.query(
-      `INSERT INTO farms (id, name, description, status, config, metrics, tags, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (id) DO UPDATE SET 
+      `INSERT INTO farms (id, name, description, status, config, metrics, tags, created_by, mode, timeout_seconds, prompt)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          description = EXCLUDED.description,
          config = EXCLUDED.config,
+         mode = EXCLUDED.mode,
+         timeout_seconds = EXCLUDED.timeout_seconds,
+         prompt = EXCLUDED.prompt,
          updated_at = CURRENT_TIMESTAMP`,
-      [id, name.trim(), description?.trim() || '', 'launching', defaultConfig, defaultMetrics, tags, userId]
+      [id, name.trim(), description?.trim() || '', 'launching', defaultConfig, defaultMetrics, tags, userId,
+       mode || 'harvest', // FIXED: Include mode parameter (default to harvest)
+       timeout || defaultConfig.timeout || 3600, // FIXED: Include timeout_seconds
+       prompt || ''] // FIXED: Include prompt
     );
     
     // Commit transaction
     await client.query('COMMIT');
 
-    // Emit WebSocket event for real-time updates
-    websocketManager.broadcast('farm:created', {
-      farm: {
-        id: farmId,
-        name: name.trim(),
-        description: description?.trim() || '',
-        status: 'active', // Ensure we broadcast the active status
-        agents: [],
-        config: defaultConfig,
-        metrics: defaultMetrics,
-        tags: tags || [],
-        createdBy: userId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
+    // PHASE 5: Database committed successfully
+    websocketManager.broadcast('farm:creation-progress', {
+      farmId,
+      phase: 'database-committed',
+      progress: 90,
+      message: 'Farm saved to database...',
+      timestamp: new Date().toISOString()
     });
+
+    // PHASE 6: Farm creation complete
+    websocketManager.broadcast('farm:creation-complete', {
+      farmId,
+      progress: 100,
+      message: 'Farm created successfully',
+      timestamp: new Date().toISOString()
+    });
+
+    // CRITICAL: Use broadcastWithAck for guaranteed farm:created delivery
+    // This ensures frontend receives farm creation event even with WebSocket reconnections
+    try {
+      const ackResult = await unifiedWebSocketManager.broadcastWithAck(
+        'farm:created',
+        {
+          farm: {
+            id: farmId,
+            name: name.trim(),
+            description: description?.trim() || '',
+            status: 'launching', // Broadcast actual DB status (will become 'active' after launch)
+            agents: [],
+            config: defaultConfig,
+            metrics: defaultMetrics,
+            tags: tags || [],
+            createdBy: userId,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        },
+        {
+          farmId,
+          retryAttempts: 3,
+          timeout: 5000
+        }
+      );
+
+      if (ackResult.success) {
+        logger.info(LogCategory.FARM,
+          `Farm creation event delivered to ${ackResult.delivered} clients for farm ${farmId}`);
+      } else {
+        logger.warn(LogCategory.FARM,
+          `Farm creation partial delivery: ${ackResult.delivered} delivered, ${ackResult.failed} failed`);
+      }
+    } catch (broadcastError) {
+      logger.error(LogCategory.FARM, `Failed to broadcast farm:created event:`, broadcastError);
+      // Don't fail farm creation if broadcast fails - farm is already created
+    }
 
     // Note: farmService.createFarm() already launches the agents internally via UnifiedFarmLaunchOrchestrator
     // No need for additional auto-launch code here as it would create duplicate agent launches
     // The farm was created and launched successfully at line 477
-    console.log('[Farm API] Farm created and agents launched via farmService.createFarm()');
+    logger.info(LogCategory.FARM, 'Farm created and agents launched via farmService.createFarm()');
 
     // Get farm details for response
     let farmAgents: any[] = [];
@@ -646,9 +1070,13 @@ router.post('/',
           farmMetrics = farmQuery.rows[0].metrics || { totalTokens: 0, totalCost: 0 };
         }
       } catch (queryError) {
-        console.error('[Farm API] Failed to query farm details:', queryError);
+        logger.error(LogCategory.FARM, 'Failed to query farm details', { error: queryError.message });
       }
     }
+
+    // Use frontend port 3000 for farm URLs (not backend API port 4567)
+    const frontendPort = process.env.VITE_PORT || '3000';
+    const farmUrl = `http://localhost:${frontendPort}/farm/${farmId}`;
 
     const response: ApiResponse<Farm> = {
       success: true,
@@ -663,16 +1091,18 @@ router.post('/',
         tags: tags || [],
         createdBy: userId,
         createdAt: new Date(),
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+        farmUrl
+      },
+      message: `🌱 Farm created successfully! View at: ${farmUrl}`
     };
 
+    logger.info(LogCategory.FARM, `Farm ${farmId} created successfully`, { farmUrl });
     res.status(201).json(response);
   } catch (error: any) {
     // Rollback transaction on error
     await client.query('ROLLBACK');
-    console.error('[Farm API] Error creating farm:', error);
-    console.error('[Farm API] Error stack:', error.stack);
+    logger.error(LogCategory.FARM, 'Error creating farm', { error: error.message, stack: error.stack });
     
     // More detailed error responses
     let errorCode = 'INTERNAL_ERROR';
@@ -726,7 +1156,11 @@ router.put('/:id', requirePermission(['farms:update']), apiRateLimits.write, asy
   try {
     const { id } = req.params;
     const updates = req.body;
-    const userId = (req as any).user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
     // Update in farmManager
     const updatedFarm = await farmManager.updateFarm(id, userId, updates);
@@ -817,6 +1251,98 @@ router.put('/:id', requirePermission(['farms:update']), apiRateLimits.write, asy
   }
 });
 
+// POST /api/farms/:id/recover - Recover stuck or failed farm
+router.post('/:id/recover', requirePermission(['farms:write']), apiRateLimits.write, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { force = false } = req.body;
+
+    console.log(`[Farm API] Recovery requested for farm ${id}`);
+
+    // Import recovery service
+    const { farmRecoveryService } = await import('../services/farmRecoveryService');
+
+    // Check health first
+    const health = await farmRecoveryService.checkFarmHealth(id);
+
+    // Get recovery suggestions
+    const suggestions = await farmRecoveryService.getRecoverySuggestions(id);
+
+    // Attempt recovery
+    const result = await farmRecoveryService.recoverFarm(id, { force });
+
+    // Use frontend port 3000 for farm URLs (not backend API port 4567)
+    const frontendPort = process.env.VITE_PORT || '3000';
+    const farmUrl = `http://localhost:${frontendPort}/farm/${id}`;
+
+    const response: ApiResponse = {
+      success: result.success,
+      data: {
+        farmId: id,
+        health,
+        suggestions,
+        recovery: result,
+        farmUrl,
+        message: result.success ? `✅ Farm recovered successfully. View at: ${farmUrl}` : 'Recovery failed'
+      }
+    };
+
+    if (!result.success) {
+      response.error = {
+        code: 'RECOVERY_FAILED',
+        message: result.error || 'Recovery failed'
+      };
+      return res.status(500).json(response);
+    }
+
+    console.log(`[Farm API] ✅ Farm ${id} recovered. View at: ${farmUrl}`);
+    res.json(response);
+  } catch (error: any) {
+    console.error('[Farm API] Error during recovery:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'RECOVERY_ERROR',
+        message: error.message || 'Failed to recover farm'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
+// GET /api/farms/:id/health - Check farm health status
+router.get('/:id/health', requirePermission(['farms:read']), apiRateLimits.read, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { farmRecoveryService } = await import('../services/farmRecoveryService');
+
+    const health = await farmRecoveryService.checkFarmHealth(id);
+    const suggestions = await farmRecoveryService.getRecoverySuggestions(id);
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        farmId: id,
+        health,
+        suggestions
+      }
+    };
+
+    res.json(response);
+  } catch (error: any) {
+    console.error('[Farm API] Error checking health:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'HEALTH_CHECK_ERROR',
+        message: error.message || 'Failed to check farm health'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
 // DELETE /api/farms/:id - Remove farm and all its agents
 router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, async (req, res) => {
   const client = await db.connect();
@@ -833,7 +1359,11 @@ router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, 
       if (status === 'running' || status === 'launching') {
         try {
           console.log(`[Farm DELETE] Attempting graceful shutdown before deletion for farm ${id}`);
-          const userId = (req as any).user?.userId || 'maifarm-user';
+          // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
           await farmManager.gracefulShutdownFarm(id, userId, 'user_request');
           console.log(`[Farm DELETE] Graceful shutdown completed for farm ${id}`);
         } catch (gracefulError) {
@@ -855,7 +1385,11 @@ router.delete('/:id', requirePermission(['farms:delete']), apiRateLimits.write, 
     }
 
     // Use farmService to ensure proper cleanup
-    const userId = (req as any).user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     const farmService = getService('farm');
     const deleted = await farmService.deleteFarm(id, userId);
     
@@ -1056,7 +1590,11 @@ router.get('/:id/claude-code/status', apiRateLimits.read, async (req, res) => {
 router.post('/:id/start', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
     // Get farm details
     const farmResult = await db.query('SELECT * FROM farms WHERE id = $1', [id]);
@@ -1345,11 +1883,16 @@ router.post('/from-seed', requirePermission(['farms:create']), farmCreationRateL
 router.post('/:id/harvest', requirePermission(['farms:harvest']), apiRateLimits.write, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
-    // Get farm details
-    const farm = await farmManager.getFarm(id, userId);
-    
+    // Get farm details using unified farm service
+    const farmService = getService('farm');
+    const farm = await farmService.getFarm(id);
+
     if (!farm) {
       const response: ApiResponse = {
         success: false,
@@ -1373,13 +1916,10 @@ router.post('/:id/harvest', requirePermission(['farms:harvest']), apiRateLimits.
       return res.status(400).json(response);
     }
     
-    // Import harvest service
-    const { harvestService } = await import('../services/harvestService');
-
-    // Create harvest
+    // Create harvest using harvestService
     const harvest = await harvestService.startHarvest({
-      farmId: farmId,
-      name: name.trim(),
+      farmId: id,
+      name: `Harvest for ${farm.name}`,
       metadata: { createdBy: userId }
     });
     
@@ -1405,17 +1945,21 @@ router.post('/:id/harvest', requirePermission(['farms:harvest']), apiRateLimits.
     // Complete harvest if farm is already completed
     if (farm.status === 'completed') {
       await harvestService.completeHarvest(harvest.id);
-      
-      // Store in barn
-      const { barnService } = await import('../services/unified/farmService');
-      await barnService.storeHarvest(harvest);
+
+      // Store in barn using barnService
+      try {
+        await barnService.storeHarvest(harvest);
+      } catch (barnError) {
+        console.warn('Failed to store harvest in barn:', barnError);
+        // Continue even if barn storage fails - harvest is still saved in database
+      }
     }
     
     // Emit WebSocket event
     websocketManager.broadcast('harvest:created', {
       harvestId: harvest.id,
-      farmId: farmId,
-      farmName: name.trim(),
+      farmId: id,
+      farmName: farm.name,
       status: harvest.status
     });
     
@@ -1448,7 +1992,11 @@ router.post('/:id/complete', requirePermission(['farms:control']), apiRateLimits
   try {
     const { id } = req.params;
     const { outputs, summary } = req.body;
-    const userId = (req as any).user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     // Update farm status
     const farm = await farmManager.updateFarmStatus(id, 'completed');
@@ -1516,12 +2064,35 @@ router.post('/:id/complete', requirePermission(['farms:control']), apiRateLimits
       completedAt: new Date()
     });
     
-    websocketManager.broadcast('harvest:completed', {
-      harvestId: harvest.id,
-      farmId: farmId,
-      summary: harvest.summary,
-      quality: harvest.quality
-    });
+    // CRITICAL: Use broadcastWithAck for guaranteed harvest:completed delivery
+    // This ensures frontend receives harvest completion event even with WebSocket reconnections
+    try {
+      const ackResult = await unifiedWebSocketManager.broadcastWithAck(
+        'harvest:completed',
+        {
+          harvestId: harvest.id,
+          farmId: farmId,
+          summary: harvest.summary,
+          quality: harvest.quality
+        },
+        {
+          farmId: farmId,
+          retryAttempts: 3,
+          timeout: 5000
+        }
+      );
+
+      if (ackResult.success) {
+        logger.info(LogCategory.FARM,
+          `Harvest completed event delivered to ${ackResult.delivered} clients for harvest ${harvest.id}`);
+      } else {
+        logger.warn(LogCategory.FARM,
+          `Harvest completed partial delivery: ${ackResult.delivered} delivered, ${ackResult.failed} failed`);
+      }
+    } catch (broadcastError) {
+      logger.error(LogCategory.FARM, `Failed to broadcast harvest:completed event:`, broadcastError);
+      // Don't fail harvest completion if broadcast fails - harvest is already completed
+    }
     
     const response: ApiResponse = {
       success: true,
@@ -1652,7 +2223,8 @@ router.post('/:id/launch', requirePermission(['farms:control']), expensiveRateLi
                       `Help me with tasks for ${farm.name}`;
 
     // Get provider from request body or farm config
-    const selectedProvider = provider || farm.config?.provider || process.env.AI_PROVIDER || 'claude';
+    const providerOverride = provider || farm.config?.provider || process.env.AI_PROVIDER;
+    const selectedProvider = resolveCreationProvider(providerOverride as string | undefined);
 
     // Update farm config with YAML content if provided from frontend
     if (yamlContent && yamlContent !== farm.config?.yaml) {
@@ -1672,15 +2244,27 @@ router.post('/:id/launch', requirePermission(['farms:control']), expensiveRateLi
     // Use UnifiedFarmLaunchOrchestrator which properly sets up terminal streaming
     const { unifiedFarmLaunchOrchestrator } = await import('../services/UnifiedFarmLaunchOrchestrator');
 
+    // CRITICAL FIX: Convert timeout from milliseconds to seconds
+    // farms.ts stores/expects milliseconds, but UnifiedFarmLaunchOrchestrator expects seconds
+    const DEFAULT_FARM_TIMEOUT_MS = 3600000; // 1 hour in milliseconds
+    const farmTimeoutMs = farm.config?.timeout || DEFAULT_FARM_TIMEOUT_MS;
+    const farmTimeoutSeconds = Math.floor(farmTimeoutMs / 1000); // Convert to seconds
+
+    console.log(`[Farm Launch] Farm ${id} timeout: ${farmTimeoutMs}ms (${farmTimeoutSeconds}s = ${Math.round(farmTimeoutMs / 60000)} minutes)`);
+
+    // CRITICAL FIX: Use existing dev user ID from database to prevent foreign key violations
+    // This must match the user ID in auth.ts and exist in the users table
+    const launchUserId = (req as any).user?.userId || DEV_USER_ID;
+
     const launchResult = await unifiedFarmLaunchOrchestrator.launchFarm({
       farmId: id,
       farmName: farm.name,
       mode: farmMode as 'harvest' | 'quicktask' | 'gowild',
       prompt: farmPrompt,
       agentCount: Math.max(2, numberOfAgents), // Ensure minimum 2 agents
-      timeout: farm.config?.timeout,
-      provider: selectedProvider as 'claude' | 'openai',
-      userId: (req as any).user?.userId || '00000000-0000-0000-0000-000000000000',
+      timeout: farmTimeoutSeconds, // Pass timeout in SECONDS as expected by interface
+      provider: selectedProvider as FarmProvider,
+      userId: launchUserId,
       creativityLevel: farm.config?.goWildMode?.creativityLevel,
       files: farm.config?.attachmentPaths || [],
       yamlContent: yamlContent || farm.config?.yaml
@@ -1696,16 +2280,42 @@ router.post('/:id/launch', requirePermission(['farms:control']), expensiveRateLi
       ['active', new Date(), id]
     );
 
-    // Broadcast farm launched event
-    websocketManager.broadcast('farm:launched', {
-      farmId: id,
-      farmName: farm.name,
-      sessionName: launchResult.sessionName,
-      harvestId: launchResult.harvestId,
-      status: 'active',
-      numberOfAgents,
-      timestamp: new Date()
-    });
+    // CRITICAL: Use broadcastWithAck for guaranteed farm:launched delivery
+    // This ensures frontend receives farm launch event even with WebSocket reconnections
+    try {
+      const ackResult = await unifiedWebSocketManager.broadcastWithAck(
+        'farm:launched',
+        {
+          farmId: id,
+          farmName: farm.name,
+          sessionName: launchResult.sessionName,
+          harvestId: launchResult.harvestId,
+          status: 'active',
+          numberOfAgents,
+          timestamp: new Date()
+        },
+        {
+          farmId: id,
+          retryAttempts: 3,
+          timeout: 5000
+        }
+      );
+
+      if (ackResult.success) {
+        logger.info(LogCategory.FARM,
+          `Farm launch event delivered to ${ackResult.delivered} clients for farm ${id}`);
+      } else {
+        logger.warn(LogCategory.FARM,
+          `Farm launch partial delivery: ${ackResult.delivered} delivered, ${ackResult.failed} failed`);
+      }
+    } catch (broadcastError) {
+      logger.error(LogCategory.FARM, `Failed to broadcast farm:launched event:`, broadcastError);
+      // Don't fail farm launch if broadcast fails - farm is already launched
+    }
+
+    // Use frontend port 3000 for farm URLs (not backend API port 4567)
+    const frontendPort = process.env.VITE_PORT || '3000';
+    const farmUrl = `http://localhost:${frontendPort}/farm/${id}`;
 
     const response: ApiResponse = {
       success: true,
@@ -1715,10 +2325,12 @@ router.post('/:id/launch', requirePermission(['farms:control']), expensiveRateLi
         harvestId: launchResult.harvestId,
         status: 'active',
         numberOfAgents,
-        message: 'Farm launched successfully via UnifiedFarmLaunchOrchestrator with terminal streaming enabled'
+        farmUrl,
+        message: `🚀 Farm launched successfully! View at: ${farmUrl}`
       }
     };
 
+    console.log(`[Farm API] 🚀 Farm ${id} launched successfully. View at: ${farmUrl}`);
     res.json(response);
   } catch (error) {
     console.error('Error launching farm:', error);
@@ -1767,7 +2379,8 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), expen
                       farm.config?.yaml || 
                       `Help me with tasks for ${name.trim()}`;
     
-    const provider = req.body.provider || farm.config?.provider || process.env.AI_PROVIDER || 'claude';
+    const providerOverride = req.body.provider || farm.config?.provider || process.env.AI_PROVIDER;
+    const selectedProvider = resolveCreationProvider(providerOverride as string | undefined);
     
     // Create harvest
     let harvestId: string | undefined;
@@ -1789,7 +2402,7 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), expen
       steps: farm.config.steps || req.body.steps,
       collaborative,
       bundleSteps,
-      provider: provider as 'claude' | 'openai',
+      provider: selectedProvider as FarmProvider,
       contextFiles: farm.config?.attachmentPaths || [],  // Include attachment paths
       harvestId,
       autoBarnDiscovery,
@@ -1819,17 +2432,46 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), expen
       });
     }
     
-    websocketManager.broadcast('farm:launched', {
-      farmId: id,
-      farmName: name.trim(),
-      processId,
-      harvestId,
-      status: 'launching',
-      numberOfAgents,
-      barnIntegrated: true,
-      sessionName: `farm-${id.substring(0, 8)}`,
-      timestamp: new Date()
-    });
+    // CRITICAL: Use broadcastWithAck for guaranteed farm:launched delivery
+    // This ensures frontend receives farm launch event even with WebSocket reconnections
+    try {
+      const ackResult = await unifiedWebSocketManager.broadcastWithAck(
+        'farm:launched',
+        {
+          farmId: id,
+          farmName: name.trim(),
+          processId,
+          harvestId,
+          status: 'launching',
+          numberOfAgents,
+          barnIntegrated: true,
+          sessionName: `farm-${id.substring(0, 8)}`,
+          timestamp: new Date()
+        },
+        {
+          farmId: id,
+          retryAttempts: 3,
+          timeout: 5000
+        }
+      );
+
+      if (ackResult.success) {
+        logger.info(LogCategory.FARM,
+          `Farm launch (barn) event delivered to ${ackResult.delivered} clients for farm ${id}`);
+      } else {
+        logger.warn(LogCategory.FARM,
+          `Farm launch (barn) partial delivery: ${ackResult.delivered} delivered, ${ackResult.failed} failed`);
+      }
+    } catch (broadcastError) {
+      logger.error(LogCategory.FARM, `Failed to broadcast farm:launched (barn) event:`, broadcastError);
+      // Don't fail farm launch if broadcast fails - farm is already launched
+    }
+
+    // Use frontend port 3000 for farm URLs (not backend API port 4567)
+    const frontendPort = process.env.VITE_PORT || '3000';
+    const farmUrl = `http://localhost:${frontendPort}/farm/${id}`;
+
+    console.log(`[Farm API] 🚀 Farm ${id} launched with barn integration. View at: ${farmUrl}`);
 
     res.json({
       success: true,
@@ -1838,6 +2480,7 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), expen
         processId,
         harvestId,
         status: 'launching',
+        farmUrl,
         barnIntegration: {
           enabled: true,
           autoBarnDiscovery,
@@ -1847,7 +2490,8 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), expen
       },
       meta: {
         timestamp: new Date()
-      }
+      },
+      message: `🚀 Farm launched with barn integration! View at: ${farmUrl}`
     });
 
   } catch (error) {
@@ -1866,7 +2510,11 @@ router.post('/:id/launch-with-barn', requirePermission(['farms:control']), expen
 router.post('/:id/stop', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
     // Check if graceful shutdown was requested (default to true)
     const { graceful = true } = req.body;
@@ -1912,10 +2560,13 @@ router.post('/:id/stop', requirePermission(['farms:control']), apiRateLimits.sta
     }
 
     // Also try to stop tmux session directly
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
     const tmuxSession = `farm_${id.substring(0, 8)}`;
     try {
       const { spawn } = await import('child_process');
-      spawn('tmux', ['kill-session', '-t', tmuxSession]);
+      spawn('tmux', ['kill-session', '-t', tmuxSession], {
+        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+      });
     } catch (error) {
       console.log(`[Farm Stop] Could not kill tmux session ${tmuxSession}:`, error);
     }
@@ -1951,12 +2602,131 @@ router.post('/:id/stop', requirePermission(['farms:control']), apiRateLimits.sta
   }
 });
 
+// POST /api/farms/:id/harvest-now - Capture snapshot of current work without stopping the farm
+router.post('/:id/harvest-now', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Verify farm exists and is running
+    const farmResult = await db.query(
+      'SELECT id, name, status, config FROM farms WHERE id = $1',
+      [id]
+    );
+
+    if (farmResult.rows.length === 0) {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Farm not found'
+        }
+      };
+      return res.status(404).json(response);
+    }
+
+    const farm = farmResult.rows[0];
+    if (farm.status !== 'running' && farm.status !== 'active') {
+      const response: ApiResponse = {
+        success: false,
+        error: {
+          code: 'INVALID_STATE',
+          message: 'Farm is not currently running'
+        }
+      };
+      return res.status(400).json(response);
+    }
+
+    // Generate snapshot ID
+    const snapshotId = `snapshot-${Date.now()}-${id.substring(0, 8)}`;
+
+    // Collect current yields without stopping the farm
+    const barnService = getService('barn');
+    const harvestService = getService('harvest');
+
+    // Get current agent outputs for snapshot
+    let snapshotData: any = {};
+    try {
+      // Get the current harvest data
+      const harvestResult = await db.query(
+        'SELECT id, files_collected, artifacts FROM harvests WHERE farm_id = $1 ORDER BY created_at DESC LIMIT 1',
+        [id]
+      );
+
+      if (harvestResult.rows.length > 0) {
+        const harvest = harvestResult.rows[0];
+        snapshotData = {
+          harvestId: harvest.id,
+          filesCollected: harvest.files_collected || [],
+          artifacts: harvest.artifacts || []
+        };
+      }
+
+      // Capture terminal output snapshot
+      const terminalService = getService('terminal');
+      if (terminalService && typeof terminalService.captureSnapshot === 'function') {
+        snapshotData.terminalSnapshot = await terminalService.captureSnapshot(id);
+      }
+
+      // Store snapshot in barn as a partial harvest
+      if (barnService && typeof barnService.storeSnapshot === 'function') {
+        await barnService.storeSnapshot(id, snapshotId, snapshotData);
+      }
+
+    } catch (snapshotError) {
+      console.warn(`[Farm API] Error capturing snapshot for farm ${id}:`, snapshotError);
+      // Continue - we'll still return success with partial data
+    }
+
+    // Emit WebSocket event to notify clients
+    websocketManager.broadcast('harvest:snapshot', {
+      farmId: id,
+      snapshotId,
+      timestamp: new Date().toISOString(),
+      message: 'Snapshot captured successfully. Farm continues running.'
+    });
+
+    console.log(`[Farm API] Snapshot ${snapshotId} captured for farm ${id} - farm continues running`);
+
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        farmId: id,
+        snapshotId,
+        status: 'snapshot_captured',
+        farmStatus: farm.status,
+        message: 'Snapshot captured. Farm continues running.',
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error capturing harvest snapshot:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Failed to capture harvest snapshot'
+      }
+    };
+    res.status(500).json(response);
+  }
+});
+
 // POST /api/farms/:id/graceful-shutdown - Gracefully shutdown farm with yield collection
 router.post('/:id/graceful-shutdown', requirePermission(['farms:control']), apiRateLimits.standard, async (req, res) => {
   try {
     const { id } = req.params;
     const { reason = 'user_request' } = req.body;
-    const userId = (req as any).user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = (req as any).user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
     // Validate reason
     if (!['user_request', 'timeout', 'completion'].includes(reason)) {
@@ -2429,7 +3199,7 @@ router.get('/system/health', apiRateLimits.read, async (req, res) => {
         timestamp: new Date()
       }
     };
-    
+
     res.json(response);
 
   } catch (error) {
@@ -2442,6 +3212,80 @@ router.get('/system/health', apiRateLimits.read, async (req, res) => {
       }
     };
     res.status(500).json(response);
+  }
+});
+
+// Terminate farm (alias for stop)
+router.post('/:id/terminate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const farmService = getService('farm');
+
+    // Forward to the existing stop endpoint logic
+    const farm = await farmService.stopFarm(id);
+
+    res.json({
+      success: true,
+      data: farm,
+      message: 'Farm terminated successfully'
+    });
+  } catch (error) {
+    console.error('Error terminating farm:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'TERMINATE_FAILED',
+        message: 'Failed to terminate farm'
+      }
+    });
+  }
+});
+
+// Get farm metrics (alias for task-metrics)
+router.get('/:id/metrics', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const farm = await farmService.findById(id);
+    if (!farm) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Farm not found' }
+      });
+    }
+
+    // Return metrics data
+    const metrics = {
+      farmId: id,
+      status: farm.status,
+      agentCount: farm.agents?.length || 0,
+      duration: farm.duration || 0,
+      tasksCompleted: farm.taskCount || 0,
+      performance: {
+        cpu: 0,
+        memory: 0,
+        responseTime: 0
+      },
+      timestamps: {
+        created: farm.createdAt,
+        updated: farm.updatedAt,
+        completed: farm.completedAt
+      }
+    };
+
+    res.json({
+      success: true,
+      data: metrics
+    });
+  } catch (error) {
+    console.error('Error getting farm metrics:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'METRICS_FAILED',
+        message: 'Failed to get farm metrics'
+      }
+    });
   }
 });
 

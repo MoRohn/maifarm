@@ -1,8 +1,10 @@
 import { logger, LogCategory } from '../utils/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { pathConfig } from '../config/paths';
 
 const execAsync = promisify(exec);
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 class AgentCleanupService {
   private static instance: AgentCleanupService;
@@ -29,9 +31,10 @@ class AgentCleanupService {
       logger.info(LogCategory.CLEANUP, `Starting cleanup for farm ${farmId} agents`);
 
       // Kill any tmux sessions related to this farm
-      const sessionName = `farm-${farmId}`;
+      // Session name format: farm-${farmId.substring(0, 8)} (first 8 chars of UUID)
+      const sessionName = `farm-${farmId.substring(0, 8)}`;
       try {
-        await execAsync(`TMUX_TMPDIR=/tmp tmux kill-session -t ${sessionName} 2>/dev/null || true`);
+        await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux kill-session -t ${sessionName} 2>/dev/null || true`);
         logger.info(LogCategory.CLEANUP, `Killed tmux session for farm ${farmId}`);
       } catch (error) {
         // Ignore errors - session might not exist
@@ -50,7 +53,7 @@ class AgentCleanupService {
 
     try {
       // Kill all farm-related tmux sessions
-      await execAsync(`TMUX_TMPDIR=/tmp tmux list-sessions 2>/dev/null | grep "^farm-" | cut -d: -f1 | xargs -I {} tmux kill-session -t {} 2>/dev/null || true`);
+        await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions 2>/dev/null | grep "^farm-" | cut -d: -f1 | xargs -I {} tmux kill-session -t {} 2>/dev/null || true`);
       logger.info(LogCategory.CLEANUP, 'Cleaned up all farm tmux sessions');
     } catch (error) {
       logger.error(LogCategory.CLEANUP, 'Error during global cleanup:', error);

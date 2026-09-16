@@ -4,7 +4,7 @@
 -- This migration creates monitoring, logging, metrics, and analytics tables
 -- Consolidates: 002_monitoring_schema, 007_token_usage, 013_thinking_strategy, 018_performance
 
-BEGIN;
+-- Transaction removed to prevent foreign key reference issues
 
 -- ============================================
 -- METRICS
@@ -273,72 +273,72 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- ============================================
 
 -- Metrics indexes (optimized for time-series queries)
-CREATE INDEX idx_metrics_timestamp ON metrics(timestamp DESC);
-CREATE INDEX idx_metrics_source_timestamp ON metrics(source, timestamp DESC);
-CREATE INDEX idx_metrics_source_id_timestamp ON metrics(source_id, timestamp DESC);
-CREATE INDEX idx_metrics_type_name ON metrics(type, name);
-CREATE INDEX idx_metrics_hourly_source ON metrics(source, date_trunc('hour', timestamp));
+CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON metrics(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_metrics_source_timestamp ON metrics(source, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_metrics_source_id_timestamp ON metrics(source_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_metrics_type_name ON metrics(type, name);
+CREATE INDEX IF NOT EXISTS idx_metrics_hourly_source ON metrics(source, date_trunc('hour', timestamp));
 
 -- Logs indexes (optimized for searching and filtering)
-CREATE INDEX idx_logs_timestamp ON logs(timestamp DESC);
-CREATE INDEX idx_logs_level ON logs(level);
-CREATE INDEX idx_logs_source ON logs(source);
-CREATE INDEX idx_logs_correlation_id ON logs(correlation_id);
-CREATE INDEX idx_logs_agent_id ON logs(agent_id);
-CREATE INDEX idx_logs_farm_id ON logs(farm_id);
-CREATE INDEX idx_logs_user_id ON logs(user_id);
-CREATE INDEX idx_logs_message_fulltext ON logs USING gin(to_tsvector('english', message));
+CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level);
+CREATE INDEX IF NOT EXISTS idx_logs_source ON logs(source);
+CREATE INDEX IF NOT EXISTS idx_logs_correlation_id ON logs(correlation_id);
+CREATE INDEX IF NOT EXISTS idx_logs_agent_id ON logs(agent_id);
+CREATE INDEX IF NOT EXISTS idx_logs_farm_id ON logs(farm_id);
+CREATE INDEX IF NOT EXISTS idx_logs_user_id ON logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_logs_message_fulltext ON logs USING gin(to_tsvector('english', message));
 
 -- Health checks indexes
-CREATE INDEX idx_health_checks_timestamp ON health_checks(timestamp DESC);
-CREATE INDEX idx_health_checks_status ON health_checks(status);
-CREATE INDEX idx_health_checks_service ON health_checks(service);
+CREATE INDEX IF NOT EXISTS idx_health_checks_timestamp ON health_checks(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_health_checks_status ON health_checks(status);
+CREATE INDEX IF NOT EXISTS idx_health_checks_service ON health_checks(service);
 
 -- Agent health indexes
-CREATE INDEX idx_agent_health_status ON agent_health_checks(status);
-CREATE INDEX idx_agent_health_farm ON agent_health_checks(farm_id);
-CREATE INDEX idx_agent_health_agent ON agent_health_checks(agent_id);
-CREATE INDEX idx_agent_health_checked ON agent_health_checks(checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_health_status ON agent_health_checks(status);
+CREATE INDEX IF NOT EXISTS idx_agent_health_farm ON agent_health_checks(farm_id);
+CREATE INDEX IF NOT EXISTS idx_agent_health_agent ON agent_health_checks(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_health_checked ON agent_health_checks(checked_at DESC);
 
 -- Token usage indexes (optimized for cost analysis)
-CREATE INDEX idx_token_usage_timestamp ON token_usage(timestamp DESC);
-CREATE INDEX idx_token_usage_provider ON token_usage(provider);
-CREATE INDEX idx_token_usage_farm_id ON token_usage(farm_id);
-CREATE INDEX idx_token_usage_agent_id ON token_usage(agent_id);
-CREATE INDEX idx_token_usage_model ON token_usage(model);
-CREATE INDEX idx_token_usage_cost_queries ON token_usage(total_cost DESC);
-CREATE INDEX idx_token_usage_provider_timestamp ON token_usage(provider, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_token_usage_timestamp ON token_usage(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_token_usage_provider ON token_usage(provider);
+CREATE INDEX IF NOT EXISTS idx_token_usage_farm_id ON token_usage(farm_id);
+CREATE INDEX IF NOT EXISTS idx_token_usage_agent_id ON token_usage(agent_id);
+CREATE INDEX IF NOT EXISTS idx_token_usage_model ON token_usage(model);
+CREATE INDEX IF NOT EXISTS idx_token_usage_cost_queries ON token_usage(total_cost DESC);
+CREATE INDEX IF NOT EXISTS idx_token_usage_provider_timestamp ON token_usage(provider, timestamp DESC);
 
 -- Alerts indexes
-CREATE INDEX idx_alerts_timestamp ON alerts(timestamp DESC);
-CREATE INDEX idx_alerts_severity ON alerts(severity);
-CREATE INDEX idx_alerts_source ON alerts(source);
-CREATE INDEX idx_alerts_acknowledged ON alerts(acknowledged);
-CREATE INDEX idx_alerts_resolved ON alerts(resolved);
-CREATE INDEX idx_alerts_active ON alerts(acknowledged, resolved) 
+CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_alerts_source ON alerts(source);
+CREATE INDEX IF NOT EXISTS idx_alerts_acknowledged ON alerts(acknowledged);
+CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts(resolved);
+CREATE INDEX IF NOT EXISTS idx_alerts_active ON alerts(acknowledged, resolved) 
     WHERE acknowledged = FALSE AND resolved = FALSE;
 
 -- Alert rules indexes
-CREATE INDEX idx_alert_rules_enabled ON alert_rules(enabled);
-CREATE INDEX idx_alert_rules_severity ON alert_rules(severity);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled ON alert_rules(enabled);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_severity ON alert_rules(severity);
 
 -- Thinking metrics indexes
-CREATE INDEX idx_thinking_metrics_task_id ON thinking_metrics(task_id);
-CREATE INDEX idx_thinking_metrics_level ON thinking_metrics(thinking_level);
-CREATE INDEX idx_thinking_metrics_created_at ON thinking_metrics(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_thinking_metrics_task_id ON thinking_metrics(task_id);
+CREATE INDEX IF NOT EXISTS idx_thinking_metrics_level ON thinking_metrics(thinking_level);
+CREATE INDEX IF NOT EXISTS idx_thinking_metrics_created_at ON thinking_metrics(created_at DESC);
 
 -- Thinking recommendations index
-CREATE INDEX idx_thinking_recommendations_hash ON thinking_recommendations(task_hash);
+CREATE INDEX IF NOT EXISTS idx_thinking_recommendations_hash ON thinking_recommendations(task_hash);
 
 -- Provider metrics indexes
-CREATE INDEX idx_provider_metrics_provider ON provider_metrics(provider);
-CREATE INDEX idx_provider_metrics_measured ON provider_metrics(measured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider ON provider_metrics(provider);
+CREATE INDEX IF NOT EXISTS idx_provider_metrics_measured ON provider_metrics(measured_at DESC);
 
 -- Audit logs indexes
-CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
-CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
-CREATE INDEX idx_audit_logs_action ON audit_logs(action);
-CREATE INDEX idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
 
 -- ============================================
 -- PARTITIONING FOR HIGH-VOLUME TABLES
@@ -354,7 +354,5 @@ CREATE INDEX idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
 
 -- Example: Partition logs by week
 -- CREATE TABLE logs_partitioned (LIKE logs INCLUDING ALL) PARTITION BY RANGE (timestamp);
--- CREATE TABLE logs_2025_w01 PARTITION OF logs_partitioned 
+-- CREATE TABLE logs_2025_w01 PARTITION OF logs_partitioned
 --     FOR VALUES FROM ('2025-01-01') TO ('2025-01-08');
-
-COMMIT;

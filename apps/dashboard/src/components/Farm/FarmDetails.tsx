@@ -44,27 +44,59 @@ export function FarmDetails() {
   const loadFarmData = async () => {
     try {
       setLoading(true);
-      const [farmData, healthData, insightsData] = await Promise.all([
+
+      // FIX: Use Promise.allSettled to handle partial failures gracefully
+      // This ensures we show farm data even if health or insights APIs fail
+      const [farmResult, healthResult, insightsResult] = await Promise.allSettled([
         farmOrchestrationService.getFarm(farmId!),
         farmOrchestrationService.getFarmHealth(farmId!),
         predictiveAnalyticsService.analyzeFarmPerformance({ id: farmId! } as Farm)
       ]);
 
-      if (farmData) {
+      // Handle farm data (required)
+      if (farmResult.status === 'fulfilled' && farmResult.value) {
+        const farmData = farmResult.value;
         setFarm(farmData);
-        // Transform health data to match FarmHealthStatus interface
-        setHealth({
-          farmId: farmId!,
-          status: healthData.status,
-          checks: {
-            agentAvailability: healthData.agents.healthy > 0,
-            resourceUtilization: healthData.resources.cpu < 90,
-            workflowExecution: true, // Default to true for now
-            connectivity: true // Default to true for now
-          },
-          lastChecked: new Date()
-        });
-        setInsights(insightsData);
+
+        // Handle health data (optional - use defaults if failed)
+        if (healthResult.status === 'fulfilled' && healthResult.value) {
+          const healthData = healthResult.value;
+          setHealth({
+            farmId: farmId!,
+            status: healthData.status,
+            checks: {
+              agentAvailability: healthData.agents?.healthy > 0,
+              resourceUtilization: (healthData.resources?.cpu ?? 0) < 90,
+              workflowExecution: true,
+              connectivity: true
+            },
+            lastChecked: new Date()
+          });
+        } else {
+          // Set default health if fetch failed
+          console.warn('Health check failed, using defaults:', healthResult.status === 'rejected' ? healthResult.reason : 'no data');
+          setHealth({
+            farmId: farmId!,
+            status: 'unknown',
+            checks: {
+              agentAvailability: true,
+              resourceUtilization: true,
+              workflowExecution: true,
+              connectivity: true
+            },
+            lastChecked: new Date()
+          });
+        }
+
+        // Handle insights data (optional)
+        if (insightsResult.status === 'fulfilled' && insightsResult.value) {
+          setInsights(insightsResult.value);
+        } else {
+          console.warn('Insights fetch failed:', insightsResult.status === 'rejected' ? insightsResult.reason : 'no data');
+        }
+      } else {
+        // Farm data fetch failed - this is a critical error
+        console.error('Failed to load farm data:', farmResult.status === 'rejected' ? farmResult.reason : 'no data');
       }
     } catch (error) {
       console.error('Failed to load farm data:', error);
@@ -169,7 +201,7 @@ export function FarmDetails() {
 
       {/* Health Status */}
       {health && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className={`p-4 rounded-lg ${health.checks.agentAvailability ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-red-900/20'}`}>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Agent Availability</span>
@@ -238,7 +270,7 @@ export function FarmDetails() {
       {/* Tab Content */}
       <div className="mt-6">
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Metrics */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <h3 className="text-lg font-medium mb-4">Farm Metrics</h3>

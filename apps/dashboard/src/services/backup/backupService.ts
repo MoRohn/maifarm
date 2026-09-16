@@ -54,6 +54,19 @@ export class BackupService {
     this.scheduleBackups();
   }
 
+  /**
+   * Safely get auth token from localStorage with iOS Safari private browsing protection
+   */
+  private getAuthToken(): string | null {
+    try {
+      return localStorage.getItem('auth_token');
+    } catch {
+      // iOS Safari private browsing mode - return null
+      console.warn('[BackupService] localStorage unavailable (iOS Safari private mode?)');
+      return null;
+    }
+  }
+
   private scheduleBackups(): void {
     if (this.config.schedule === 'manual') {
       return;
@@ -238,7 +251,7 @@ export class BackupService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'Authorization': `Bearer ${this.getAuthToken()}`,
       },
       body: JSON.stringify({
         filename,
@@ -258,7 +271,7 @@ export class BackupService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'Authorization': `Bearer ${this.getAuthToken()}`,
       },
       body: JSON.stringify({
         filename,
@@ -278,7 +291,7 @@ export class BackupService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'Authorization': `Bearer ${this.getAuthToken()}`,
       },
       body: JSON.stringify({
         filename,
@@ -298,7 +311,7 @@ export class BackupService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'Authorization': `Bearer ${this.getAuthToken()}`,
       },
       body: JSON.stringify({
         filename,
@@ -317,7 +330,7 @@ export class BackupService {
     try {
       const response = await fetch('/api/backup/list', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          'Authorization': `Bearer ${this.getAuthToken()}`,
         },
       });
 
@@ -393,7 +406,7 @@ export class BackupService {
   private async fetchBackup(backupId: string): Promise<string> {
     const response = await fetch(`/api/backup/${backupId}`, {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'Authorization': `Bearer ${this.getAuthToken()}`,
       },
     });
 
@@ -427,7 +440,7 @@ export class BackupService {
     await fetch(`/api/backup/${backupId}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'Authorization': `Bearer ${this.getAuthToken()}`,
       },
     });
   }

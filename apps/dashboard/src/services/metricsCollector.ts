@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { 
+import {
   Metric,
   MetricType,
   AgentMetrics,
@@ -8,10 +8,17 @@ import {
   AggregationType,
   TimeRange
 } from '@/types/metrics';
-import { FarmMetrics } from '@/types';
+import { FarmMetrics, Agent } from '@/types';
 import { prometheusService } from './prometheus';
 import { useWebSocketStore } from '@/store/websocketStore';
 import { useFarmStore } from '@/store/farmStore';
+
+// Helper function to safely get agents as Agent array
+function getAgentsAsObjects(agents: Agent[] | string[]): Agent[] {
+  if (agents.length === 0) return [];
+  if (typeof agents[0] === 'string') return []; // If string IDs, return empty
+  return agents as Agent[];
+}
 
 interface MetricBuffer {
   metrics: Metric[];
@@ -154,24 +161,33 @@ export class MetricsCollector extends EventEmitter {
     const farms = useFarmStore.getState().farms;
 
     farms.forEach(farm => {
-      const farmMetrics: FarmMetrics & { farmId: string } = {
+      // Use helper to safely get agents as objects
+      const agents = getAgentsAsObjects(farm.agents);
+      const agentCount = agents.length || 1; // Avoid division by zero
+
+      // Calculate resource usage
+      let totalCpu = 0;
+      let totalMemory = 0;
+      agents.forEach(a => {
+        const cpuVal = a.resources?.cpu;
+        totalCpu += typeof cpuVal === 'number' ? cpuVal : 0;
+        const memVal = a.resources?.memory;
+        totalMemory += typeof memVal === 'number' ? memVal : 0;
+      });
+
+      const farmMetrics: Partial<FarmMetrics> & { farmId: string; totalAgents?: number; activeAgents?: number } = {
         farmId: farm.id,
-        totalAgents: farm.agents.length,
-        activeAgents: farm.agents.filter(a => a.status === 'active' || a.status === 'working').length,
+        totalAgents: agents.length,
+        activeAgents: agents.filter(a => a.status === 'active' || a.status === 'working').length,
         resourceUtilization: {
-          cpu: farm.agents.reduce((sum, a) => sum + (typeof a.resources?.cpu === 'number' ? a.resources.cpu : (a.resources?.cpu?.usage ?? 0)), 0) / farm.agents.length,
-          memory: farm.agents.reduce((sum, a) => sum + (typeof a.resources?.memory === 'number' ? a.resources.memory : (a.resources?.memory?.usage ?? 0)), 0) / farm.agents.length,
+          cpu: totalCpu / agentCount,
+          memory: totalMemory / agentCount,
           disk: 0
         },
-        // taskCompletionRate: 95 + Math.random() * 5, // TODO: Calculate from actual data
-        // avgResponseTime: Math.random() * 50,
-        // errorCount: Math.floor(Math.random() * 10)
-        // throughput: Math.random() * 5000,
-        timestamp: Date.now()
       };
 
-      // Update Prometheus metrics
-      prometheusService.updateFarmMetrics(farmMetrics);
+      // Update Prometheus metrics (cast to satisfy type requirement)
+      prometheusService.updateFarmMetrics(farmMetrics as FarmMetrics);
 
       // Create individual metrics
       metrics.push(

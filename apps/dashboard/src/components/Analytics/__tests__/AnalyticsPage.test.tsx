@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import { BrowserRouter } from 'react-router-dom';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AnalyticsPage } from '../AnalyticsPage';
 import { useFarmStore } from '@/store/farmStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
@@ -9,9 +9,9 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { analyticsService } from '@/services/analyticsService';
 
 // Mock stores and hooks
-vi.mock('../../../store/farmStore');
-vi.mock('../../../store/analyticsStore');
-vi.mock('../../../store/userStore', () => ({
+jest.mock('../../../store/farmStore');
+jest.mock('../../../store/analyticsStore');
+jest.mock('../../../store/userStore', () => ({
   useUserStore: () => ({
     user: {
       id: '1',
@@ -21,28 +21,28 @@ vi.mock('../../../store/userStore', () => ({
     }
   })
 }));
-vi.mock('../../../store/themeStore', () => ({
+jest.mock('../../../store/themeStore', () => ({
   useThemeStore: () => ({
     theme: 'light'
   })
 }));
-vi.mock('../../../hooks/useWebSocket');
-vi.mock('../../../services/analyticsService');
+jest.mock('../../../hooks/useWebSocket');
+jest.mock('../../../services/analyticsService');
 
 // Mock chart components
-vi.mock('../Charts/RealTimeChart', () => ({
+jest.mock('../Charts/RealTimeChart', () => ({
   RealTimeChart: () => <div data-testid="realtime-chart">RealTimeChart</div>
 }));
-vi.mock('../Charts/CPUGPUChart', () => ({
+jest.mock('../Charts/CPUGPUChart', () => ({
   CPUGPUChart: () => <div data-testid="cpu-gpu-chart">CPUGPUChart</div>
 }));
-vi.mock('../Charts/HarvestChart', () => ({
+jest.mock('../Charts/HarvestChart', () => ({
   HarvestChart: () => <div data-testid="harvest-chart">HarvestChart</div>
 }));
-vi.mock('../Charts/CostBreakdown', () => ({
+jest.mock('../Charts/CostBreakdown', () => ({
   CostBreakdown: () => <div data-testid="cost-breakdown">CostBreakdown</div>
 }));
-vi.mock('../Charts/AgentEfficiencyChart', () => ({
+jest.mock('../Charts/AgentEfficiencyChart', () => ({
   AgentEfficiencyChart: () => <div data-testid="agent-efficiency-chart">AgentEfficiencyChart</div>
 }));
 
@@ -76,7 +76,7 @@ const mockTaskCompletions = [
 describe('AnalyticsPage', () => {
   beforeEach(() => {
     // Reset mocks
-    vi.clearAllMocks();
+    jest.clearAllMocks();
 
     // Mock store implementations
     (useFarmStore as any).mockReturnValue({
@@ -89,9 +89,9 @@ describe('AnalyticsPage', () => {
       timeSeriesData: [],
       agentPerformance: [],
       taskCompletions: mockTaskCompletions,
-      setMetrics: vi.fn(),
-      updateTimeSeriesData: vi.fn(),
-      setLoading: vi.fn()
+      setMetrics: jest.fn(),
+      updateTimeSeriesData: jest.fn(),
+      setLoading: jest.fn()
     });
 
     (useWebSocket as any).mockReturnValue({
@@ -99,10 +99,10 @@ describe('AnalyticsPage', () => {
       lastMessage: null
     });
 
-    (analyticsService as any).calculateAggregatedMetrics = vi.fn().mockResolvedValue({});
-    (analyticsService as any).generateMockTimeSeriesData = vi.fn().mockReturnValue([]);
-    (analyticsService as any).exportToCSV = vi.fn();
-    (analyticsService as any).refreshMetrics = vi.fn().mockResolvedValue({});
+    (analyticsService as any).calculateAggregatedMetrics = jest.fn().mockResolvedValue({});
+    (analyticsService as any).generateMockTimeSeriesData = jest.fn().mockReturnValue([]);
+    (analyticsService as any).exportToCSV = jest.fn();
+    (analyticsService as any).refreshMetrics = jest.fn().mockResolvedValue({});
   });
 
   const renderWithRouter = (component: React.ReactElement) => {
@@ -168,9 +168,9 @@ describe('AnalyticsPage', () => {
       timeSeriesData: [],
       agentPerformance: mockAgentPerformance,
       taskCompletions: mockTaskCompletions,
-      setMetrics: vi.fn(),
-      updateTimeSeriesData: vi.fn(),
-      setLoading: vi.fn()
+      setMetrics: jest.fn(),
+      updateTimeSeriesData: jest.fn(),
+      setLoading: jest.fn()
     });
 
     renderWithRouter(<AnalyticsPage />);

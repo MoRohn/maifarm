@@ -161,10 +161,10 @@ export class ResourceManager extends EventEmitter {
     // Check limits before allocation
     if (pool.limits.maxItems && pool.items.size >= pool.limits.maxItems) {
       // Try to evict old resources
-      this.evictOldestResource(type);
+      const evicted = this.evictOldestResource(type);
 
-      // Check again
-      if (pool.items.size >= pool.limits.maxItems) {
+      // Check again - if we couldn't evict or still at limit, reject
+      if (!evicted || pool.items.size >= pool.limits.maxItems) {
         logger.warn(LogCategory.SYSTEM, `Resource limit reached for ${type}`);
         this.emit('limit:reached', type, pool.limits.maxItems);
         return false;
@@ -294,11 +294,9 @@ export class ResourceManager extends EventEmitter {
           break;
 
         case ResourceType.TIMER:
-          // Clear timer/interval
-          if (typeof resource === 'object' && resource._onTimeout) {
+          // Clear timer/interval (clearTimeout works for both in Node.js)
+          if (resource) {
             clearTimeout(resource);
-          } else {
-            clearInterval(resource);
           }
           break;
 

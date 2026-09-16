@@ -179,15 +179,14 @@ export const useTerminalOutput = ({
   }, [getOutputKey]);
 
   // Auto-scroll terminal to bottom
+  // PERFORMANCE FIX: Removed double RAF - single RAF is sufficient for scroll
   const scrollToBottom = useCallback((sessionId: string, agentId: number) => {
     const key = getOutputKey(sessionId, agentId);
     const terminalElement = terminalRefs.current[key];
-    
+
     if (terminalElement) {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          terminalElement.scrollTop = terminalElement.scrollHeight;
-        });
+        terminalElement.scrollTop = terminalElement.scrollHeight;
       });
     }
   }, [getOutputKey]);

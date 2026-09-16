@@ -114,7 +114,7 @@ export type OrchestrationStrategy = 'round-robin' | 'least-loaded' | 'priority' 
 /**
  * AI Provider type
  */
-export type AIProvider = 'claude' | 'openai' | 'qwen' | 'ollama';
+export type AIProvider = 'claude' | 'openai' | 'grok' | 'llama' | 'ollama';
 
 /**
  * Complete farm interface
@@ -335,7 +335,17 @@ export type WebSocketEvent =
   | 'harvest:ready'
   | 'harvest:collected'
   | 'harvest:failed'
-  
+
+  // Incubation events
+  | 'incubation:started'
+  | 'incubation:auto-started'
+  | 'incubation:stage-progress'
+  | 'incubation:paused'
+  | 'incubation:resumed'
+  | 'incubation:stopped'
+  | 'incubation:completed'
+  | 'incubation:failed'
+
   // Metrics events
   | 'metrics:update'
   | 'metrics:agent'
@@ -443,11 +453,124 @@ export const TIMING = {
 } as const;
 
 // ============================================
+// Farmer Group Types
+// ============================================
+
+/**
+ * Farmer group for organizing farmer templates
+ */
+export interface FarmerGroup {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  displayOrder: number;
+  isSystem: boolean;
+  isActive: boolean;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  farmerCount?: number;
+  farmers?: string[];
+}
+
+/**
+ * Farmer group member mapping
+ */
+export interface FarmerGroupMember {
+  id: string;
+  groupId: string;
+  farmerId: string;
+  displayOrder: number;
+  addedAt: Date;
+}
+
+/**
+ * Real database-backed farmer statistics
+ */
+export interface FarmerDbStats {
+  id: string;
+  farmerId: string;
+  totalUses: number;
+  successfulFarms: number;
+  failedFarms: number;
+  cancelledFarms: number;
+  totalAgentsSpawned: number;
+  avgCompletionTimeSeconds: number | null;
+  minCompletionTimeSeconds: number | null;
+  maxCompletionTimeSeconds: number | null;
+  avgRating: number;
+  ratingCount: number;
+  lastUsedAt: Date | null;
+  lastSuccessfulAt: Date | null;
+  successRate: number;
+}
+
+/**
+ * User rating for a farmer template
+ */
+export interface FarmerRating {
+  id: string;
+  farmerId: string;
+  userId: string;
+  farmId: string | null;
+  rating: number;
+  review: string | null;
+  isPublic: boolean;
+  helpfulCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * User preferences for farmer templates
+ */
+export interface UserFarmerPreference {
+  id: string;
+  userId: string;
+  farmerId: string;
+  isFavorite: boolean;
+  useCount: number;
+  lastUsedAt: Date | null;
+}
+
+/**
+ * DTO for creating a farmer group
+ */
+export interface CreateFarmerGroupDTO {
+  name: string;
+  slug?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  displayOrder?: number;
+  createdBy?: string;
+}
+
+/**
+ * DTO for updating a farmer group
+ */
+export interface UpdateFarmerGroupDTO {
+  name?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+// ============================================
 // Export type guards
 // ============================================
 
 export function isAgent(obj: any): obj is Agent {
   return obj && typeof obj.id === 'string' && typeof obj.farmId === 'string';
+}
+
+export function isFarmerGroup(obj: any): obj is FarmerGroup {
+  return obj && typeof obj.id === 'string' && typeof obj.slug === 'string' && typeof obj.name === 'string';
 }
 
 export function isFarm(obj: any): obj is Farm {

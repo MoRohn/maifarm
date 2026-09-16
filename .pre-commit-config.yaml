@@ -15,3 +15,10 @@ repos:
         additional_dependencies:
           - pydantic>=2.5
           - pydantic-settings>=2.1
+  - repo: local
+    hooks:
+      - id: clean-runtime-dirs
+        name: Clean MaiFarm runtime directories
+        entry: tools/scripts/maintenance/clean-runtime-dirs.sh
+        language: script
+        pass_filenames: false

@@ -69,8 +69,14 @@ export class ColumnEnsurer {
     },
     {
       table: 'users',
-      column: 'last_login',
-      type: 'TIMESTAMP',
+      column: 'last_login_at',
+      type: 'TIMESTAMP WITH TIME ZONE',
+      nullable: true
+    },
+    {
+      table: 'users',
+      column: 'setup_completed_at',
+      type: 'TIMESTAMP WITH TIME ZONE',
       nullable: true
     },
     // agents columns

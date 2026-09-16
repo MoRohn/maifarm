@@ -1,8 +1,10 @@
 import { logger, LogCategory } from '../utils/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { pathConfig } from '../config/paths';
 
 const execAsync = promisify(exec);
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 interface TmuxSessionHealth {
   sessionName: string;
@@ -31,7 +33,7 @@ class TmuxHealthManager {
 
       // Check if session exists
       const { stdout: sessionList } = await execAsync(
-        `TMUX_TMPDIR=/tmp tmux list-sessions 2>/dev/null || echo ""`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions 2>/dev/null || echo ""`
       );
 
       const exists = sessionList.includes(sessionName);
@@ -50,13 +52,13 @@ class TmuxHealthManager {
 
       // Get window count
       const { stdout: windowOutput } = await execAsync(
-        `TMUX_TMPDIR=/tmp tmux list-windows -t ${sessionName} 2>/dev/null | wc -l`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-windows -t ${sessionName} 2>/dev/null | wc -l`
       );
       const windowCount = parseInt(windowOutput.trim()) || 0;
 
       // Get pane count
       const { stdout: paneOutput } = await execAsync(
-        `TMUX_TMPDIR=/tmp tmux list-panes -t ${sessionName} 2>/dev/null | wc -l`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-panes -t ${sessionName} 2>/dev/null | wc -l`
       );
       const paneCount = parseInt(paneOutput.trim()) || 0;
 
@@ -85,7 +87,7 @@ class TmuxHealthManager {
   async checkAllSessions(): Promise<Map<string, TmuxSessionHealth>> {
     try {
       const { stdout } = await execAsync(
-        `TMUX_TMPDIR=/tmp tmux list-sessions -F "#{session_name}" 2>/dev/null || echo ""`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions -F "#{session_name}" 2>/dev/null || echo ""`
       );
 
       const sessions = stdout.trim().split('\n').filter(s => s);
@@ -113,7 +115,7 @@ class TmuxHealthManager {
       if (!health.exists) {
         // Try to recreate the session
         await execAsync(
-          `TMUX_TMPDIR=/tmp tmux new-session -d -s ${sessionName}`
+          `TMUX_TMPDIR="${tmuxTmpDir}" tmux new-session -d -s ${sessionName}`
         );
         logger.info(LogCategory.TMUX, `Recreated session: ${sessionName}`);
         return true;
@@ -122,9 +124,9 @@ class TmuxHealthManager {
       // Session exists, check if it needs repair
       if (health.windowCount === 0) {
         // Create a default window
-        await execAsync(
-          `TMUX_TMPDIR=/tmp tmux new-window -t ${sessionName}:0`
-        );
+      await execAsync(
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux new-window -t ${sessionName}:0`
+      );
         logger.info(LogCategory.TMUX, `Added default window to session: ${sessionName}`);
       }
 

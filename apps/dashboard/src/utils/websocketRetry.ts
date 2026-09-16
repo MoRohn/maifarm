@@ -11,7 +11,8 @@ export class WebSocketRetryManager {
   private retryCount = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private isRetrying = false;
-  private cancelled = false;
+  private stopRequested = false;
+  private pendingResolve: ((value: boolean) => void) | null = null;
 
   constructor(private config: WebSocketRetryConfig) {}
 
@@ -23,53 +24,71 @@ export class WebSocketRetryManager {
 
     this.isRetrying = true;
     this.retryCount = 0;
-    this.cancelled = false;
+    this.stopRequested = false;
 
-    while (this.retryCount < this.config.maxRetries && !this.cancelled) {
-      // Don't delay on first attempt
-      if (this.retryCount > 0) {
-        const delay = this.calculateDelay();
-        
-        if (this.config.onRetry) {
-          this.config.onRetry(this.retryCount, delay);
-        }
-
-        await this.delay(delay);
-        
-        if (this.cancelled) {
-          break;
-        }
-      }
-
-      try {
-        const success = await connectFn();
-        if (success) {
-          this.reset();
-          return true;
-        }
-      } catch (error) {
-        // Only log if not backend unavailable warning
-        if (typeof window !== 'undefined' && !(window as any).__backendWarningShown) {
-          console.error(`Connection attempt ${this.retryCount + 1} failed:`, error);
-        }
-      }
-
-      this.retryCount++;
-    }
-
-    // Max retries reached
-    if (!this.cancelled && this.config.onMaxRetriesReached) {
-      this.config.onMaxRetriesReached();
-    }
-
-    this.isRetrying = false;
-    this.retryCount = 0;
-    return false;
+    return new Promise<boolean>((resolve) => {
+      this.pendingResolve = resolve;
+      // Don't await here - let it run asynchronously
+      this.executeAttempt(connectFn).catch((error) => {
+        console.error('Unexpected error in retry execution:', error);
+        this.resolve(false);
+      });
+    });
   }
 
-  private calculateDelay(): number {
+  private async executeAttempt(connectFn: () => Promise<boolean>): Promise<void> {
+    if (this.stopRequested) {
+      this.resolve(false);
+      return;
+    }
+
+    const attemptNumber = this.retryCount + 1;
+
+    try {
+      const success = await connectFn();
+      if (success) {
+        this.resolve(true);
+        return;
+      }
+    } catch (error) {
+      if (typeof window !== 'undefined' && !(window as any).__backendWarningShown) {
+        console.error(`Connection attempt ${attemptNumber} failed:`, error);
+      }
+    }
+
+    this.retryCount = attemptNumber;
+
+    if (this.stopRequested) {
+      this.resolve(false);
+      return;
+    }
+
+    if (this.retryCount >= this.config.maxRetries) {
+      if (this.config.onMaxRetriesReached) {
+        this.config.onMaxRetriesReached();
+      }
+      this.resolve(false);
+      return;
+    }
+
+    const delay = this.calculateDelay(this.retryCount);
+
+    if (this.config.onRetry) {
+      this.config.onRetry(this.retryCount, delay);
+    }
+
+    this.retryTimer = setTimeout(() => {
+      // Don't await - the promise chain is maintained through pendingResolve
+      this.executeAttempt(connectFn).catch((error) => {
+        console.error('Error during retry attempt:', error);
+        this.resolve(false);
+      });
+    }, delay);
+  }
+
+  private calculateDelay(attemptNumber: number): number {
     const delay = Math.min(
-      this.config.initialDelay * Math.pow(this.config.backoffMultiplier, this.retryCount - 1),
+      this.config.initialDelay * Math.pow(this.config.backoffMultiplier, Math.max(0, attemptNumber - 1)),
       this.config.maxDelay
     );
     
@@ -78,25 +97,15 @@ export class WebSocketRetryManager {
     return Math.floor(delay + jitter);
   }
 
-  private delay(ms: number): Promise<void> {
+  reset() {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
-    
-    return new Promise(resolve => {
-      this.retryTimer = setTimeout(resolve, ms);
-    });
-  }
-
-  reset() {
     this.retryCount = 0;
     this.isRetrying = false;
-    this.cancelled = false;
-    if (this.retryTimer) {
-      clearTimeout(this.retryTimer);
-      this.retryTimer = null;
-    }
+    this.stopRequested = false;
+    this.pendingResolve = null;
   }
 
   getRetryCount(): number {
@@ -108,8 +117,41 @@ export class WebSocketRetryManager {
   }
 
   cancel() {
-    this.cancelled = true;
-    this.reset();
+    if (!this.isRetrying) {
+      return;
+    }
+
+    this.stopRequested = true;
+
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+
+    if (this.pendingResolve) {
+      const resolve = this.pendingResolve;
+      this.pendingResolve = null;
+      this.retryCount = 0;
+      this.isRetrying = false;
+      resolve(false);
+    }
+  }
+
+  private resolve(success: boolean) {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+
+    const resolve = this.pendingResolve;
+    this.pendingResolve = null;
+    this.retryCount = 0;
+    this.isRetrying = false;
+    this.stopRequested = false;
+
+    if (resolve) {
+      resolve(success);
+    }
   }
 }
 

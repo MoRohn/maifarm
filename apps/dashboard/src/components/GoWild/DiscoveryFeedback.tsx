@@ -55,8 +55,8 @@ const typeConfig = {
   },
   pattern: {
     icon: CodeBracketIcon,
-    color: 'text-purple-600',
-    bgColor: 'bg-purple-50',
+    color: 'text-burnt-600',
+    bgColor: 'bg-burnt-50',
     label: 'Pattern'
   },
   warning: {
@@ -70,7 +70,7 @@ const typeConfig = {
 const impactColors = {
   low: 'text-gray-500',
   medium: 'text-blue-500',
-  high: 'text-purple-500',
+  high: 'text-burnt-500',
   breakthrough: 'text-red-500'
 };
 
@@ -153,8 +153,8 @@ export const DiscoveryFeedback: React.FC<DiscoveryFeedbackProps> = ({
             <p className="text-2xl font-bold text-green-600">{stats.implemented}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Implemented</p>
           </div>
-          <div className="text-center p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-            <p className="text-2xl font-bold text-purple-600">{stats.breakthrough}</p>
+          <div className="text-center p-3 bg-burnt-50 dark:bg-burnt-900/20 rounded-lg">
+            <p className="text-2xl font-bold text-burnt-600">{stats.breakthrough}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Breakthroughs</p>
           </div>
         </div>

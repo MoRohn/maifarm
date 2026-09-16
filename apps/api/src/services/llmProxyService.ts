@@ -3,6 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs/promises';
+import { logger, LogCategory } from '../utils/logger';
 
 interface LLMProxyConfig {
   port: number;
@@ -10,7 +11,7 @@ interface LLMProxyConfig {
   providers: {
     openai?: boolean;
     anthropic?: boolean;
-    qwen?: boolean;
+    llama?: boolean;
     ollama?: boolean;
   };
 }
@@ -57,7 +58,7 @@ export class LLMProxyService extends EventEmitter {
       providers: {
         openai: process.env.OPENAI_API_KEY ? true : false,
         anthropic: process.env.ANTHROPIC_API_KEY ? true : false,
-        qwen: false,
+        llama: false,
         ollama: process.env.OLLAMA_BASE_URL ? true : false
       },
       ...config
@@ -77,7 +78,7 @@ export class LLMProxyService extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log('LLM proxy is already running');
+      logger.info(LogCategory.SERVICES, 'LLM proxy is already running');
       return;
     }
 
@@ -101,7 +102,7 @@ export class LLMProxyService extends EventEmitter {
       // Handle stdout
       this.proxyProcess.stdout?.on('data', (data) => {
         const message = data.toString();
-        console.log(`[LLM Proxy]: ${message}`);
+        logger.debug(LogCategory.SERVICES, `LLM Proxy: ${message}`);
         if (message.includes('Uvicorn running on')) {
           this.isRunning = true;
           this.emit('started');
@@ -110,12 +111,12 @@ export class LLMProxyService extends EventEmitter {
 
       // Handle stderr
       this.proxyProcess.stderr?.on('data', (data) => {
-        console.error(`[LLM Proxy Error]: ${data.toString()}`);
+        logger.error(LogCategory.SERVICES, `LLM Proxy Error: ${data.toString()}`);
       });
 
       // Handle process exit
       this.proxyProcess.on('exit', (code) => {
-        console.log(`LLM proxy exited with code ${code}`);
+        logger.info(LogCategory.SERVICES, `LLM proxy exited with code ${code}`);
         this.isRunning = false;
         this.emit('stopped', code);
       });
@@ -126,9 +127,9 @@ export class LLMProxyService extends EventEmitter {
       // Start health monitoring
       this.startHealthCheck();
 
-      console.log(`LLM proxy started on http://${this.config.host}:${this.config.port}`);
+      logger.info(LogCategory.SERVICES, `LLM proxy started on http://${this.config.host}:${this.config.port}`);
     } catch (error) {
-      console.error('Failed to start LLM proxy:', error);
+      logger.error(LogCategory.SERVICES, 'Failed to start LLM proxy:', error);
       throw error;
     }
   }
@@ -165,7 +166,7 @@ export class LLMProxyService extends EventEmitter {
       try {
         await this.health();
       } catch (error) {
-        console.error('LLM proxy health check failed:', error);
+        logger.error(LogCategory.SERVICES, 'LLM proxy health check failed:', error);
         this.emit('unhealthy', error);
       }
     }, 30000); // Check every 30 seconds
@@ -206,7 +207,7 @@ export class LLMProxyService extends EventEmitter {
     }
 
     this.isRunning = false;
-    console.log('LLM proxy stopped');
+    logger.info(LogCategory.SERVICES, 'LLM proxy stopped');
   }
 
   /**
@@ -225,7 +226,7 @@ export class LLMProxyService extends EventEmitter {
       const response = await this.axiosClient.post('/chat/completions', request);
       return response.data;
     } catch (error: any) {
-      console.error('LLM proxy completion error:', error.response?.data || error.message);
+      logger.error(LogCategory.SERVICES, 'LLM proxy completion error:', error.response?.data || error.message);
       throw error;
     }
   }
@@ -254,7 +255,7 @@ export class LLMProxyService extends EventEmitter {
         }
       }
     } catch (error: any) {
-      console.error('LLM proxy stream error:', error.response?.data || error.message);
+      logger.error(LogCategory.SERVICES, 'LLM proxy stream error:', error.response?.data || error.message);
       throw error;
     }
   }
@@ -280,9 +281,9 @@ export class LLMProxyService extends EventEmitter {
   }
 
   /**
-   * Send a Qwen-specific completion request
+   * Send a Llama-specific completion request
    */
-  async qwenCompletion(
+  async llamaCompletion(
     messages: CompletionRequest['messages'],
     options?: {
       temperature?: number;
@@ -290,7 +291,7 @@ export class LLMProxyService extends EventEmitter {
       useLocal?: boolean;
     }
   ): Promise<CompletionResponse> {
-    const model = options?.useLocal ? 'ollama/qwen' : 'qwen/qwen-coder-480b';
+    const model = options?.useLocal ? 'ollama/llama' : 'llama/llama-coder-480b';
     
     return this.completion({
       model,

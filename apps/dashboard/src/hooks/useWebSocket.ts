@@ -80,21 +80,31 @@ export function useWebSocket(options: Partial<UseWebSocketOptions> = {}): UseWeb
     }
   }, []);
 
+  // FIX: Store cleanup timeout ID in a ref to properly clear it on re-mount
+  // The previous implementation had a bug where the nested return was ignored
+  const cleanupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
+    // Clear any pending cleanup timeout from a previous rapid unmount
+    if (cleanupTimeoutRef.current) {
+      clearTimeout(cleanupTimeoutRef.current);
+      cleanupTimeoutRef.current = null;
+    }
+
     connect();
+
     return () => {
       // Only release on actual component unmount, not on prop changes
       // This prevents unnecessary disconnections during re-renders
       // Use a timeout to ensure we're actually unmounting and not just re-rendering
-      const timeoutId = setTimeout(() => {
+      cleanupTimeoutRef.current = setTimeout(() => {
         if (!hasReleasedRef.current) {
           wsManager.release();
           hasReleasedRef.current = true;
         }
         socketRef.current = null;
+        cleanupTimeoutRef.current = null;
       }, 100); // Small delay to handle rapid mount/unmount cycles
-      
-      return () => clearTimeout(timeoutId);
     };
   }, []); // Remove dependencies to prevent reconnection on prop changes
   

@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AuthCredentials, AuthResponse, AuthUser } from '@/types/security';
+import { AuthCredentials, AuthResponse, AuthUser, EncryptedData } from '@/types/security';
 import { securityService } from '@/services/securityService';
-import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 
 export function useAuthentication() {
-  const navigate = useNavigate();
   const [user, setUser] = useState<AuthUser | null>(securityService.user);
   const [isAuthenticated, setIsAuthenticated] = useState(securityService.isAuthenticated);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,12 +28,11 @@ export function useAuthentication() {
 
     try {
       const response = await securityService.login(credentials);
-      
+
       if (response.success) {
         setUser(response.user!);
         setIsAuthenticated(true);
         toast.success('Welcome back!');
-        navigate('/home');
         return response;
       } else {
         setError(response.error || 'Login failed');
@@ -49,23 +46,50 @@ export function useAuthentication() {
     } finally {
       setIsLoading(false);
     }
-  }, [navigate]);
+  }, []);
+
+  const bypassAuthForDevelopment = useCallback(async (): Promise<AuthResponse | null> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await securityService.bypassForDevelopment();
+      if (response.success && response.user) {
+        setUser(response.user);
+        setIsAuthenticated(true);
+        toast('Development session ready', { icon: '🛠️' });
+        return response;
+      }
+      if (response.error) {
+        setError(response.error);
+        toast.error(response.error);
+      }
+      return response;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Bypass failed';
+      setError(message);
+      toast.error(message);
+      return { success: false, error: message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const logout = useCallback(async () => {
     setIsLoading(true);
-    
+
     try {
       await securityService.logout();
       setUser(null);
       setIsAuthenticated(false);
       toast.success('Logged out successfully');
-      navigate('/login');
+      // Navigation should be handled by the component calling this
     } catch (err) {
       toast.error('Logout failed');
     } finally {
       setIsLoading(false);
     }
-  }, [navigate]);
+  }, []);
 
   const refreshSession = useCallback(async (): Promise<boolean> => {
     try {
@@ -91,7 +115,7 @@ export function useAuthentication() {
     return encrypted.data;
   }, []);
 
-  const decrypt = useCallback(async (encryptedData: any): Promise<string> => {
+  const decrypt = useCallback(async (encryptedData: EncryptedData): Promise<string> => {
     return securityService.decrypt(encryptedData);
   }, []);
 
@@ -109,23 +133,17 @@ export function useAuthentication() {
     hasPermission,
     encrypt,
     decrypt,
+    bypassAuthForDevelopment,
     
     // Direct access to service
     securityService
   };
 }
 
-// Hook for requiring authentication
+// Hook for requiring authentication - must be used within Router context
 export function useRequireAuth(redirectTo: string = '/login') {
-  const navigate = useNavigate();
   const { isAuthenticated } = useAuthentication();
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate(redirectTo);
-    }
-  }, [isAuthenticated, navigate, redirectTo]);
-
+  // Navigation removed - component should handle redirect
   return isAuthenticated;
 }
 

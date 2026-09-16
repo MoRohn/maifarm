@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
-import request from 'supertest';
 import { io as ioClient, Socket as ClientSocket } from 'socket.io-client';
+
+const request = require('supertest');
 import {
   createMockFarm,
   createMockAgent,

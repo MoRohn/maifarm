@@ -186,7 +186,7 @@ export class APIConnectionManager extends EventEmitter {
       case AIProvider.OPENAI:
         headers['Authorization'] = `Bearer ${config.apiKey}`;
         break;
-      case AIProvider.QWEN:
+      case AIProvider.LLAMA:
         headers['Authorization'] = `Bearer ${config.apiKey}`;
         headers['X-DashScope-SSE'] = 'enable';
         break;

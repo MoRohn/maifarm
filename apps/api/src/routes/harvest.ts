@@ -121,8 +121,13 @@ router.post('/:farmId/collect', async (req: AuthRequest, res: Response) => {
 
     const harvest = await harvestService.startHarvest(farmId, farm.name, userId);
 
-    // Emit WebSocket event
-    req.app.get('wsServer')?.broadcast('harvest:started', harvest);
+    // Emit WebSocket event with guaranteed delivery
+    const { unifiedWebSocketManager } = await import('../websocket/UnifiedWebSocketManager.js');
+    await unifiedWebSocketManager.broadcastWithAck(
+      'harvest:started',
+      { harvest },
+      { farmId: harvest.farmId, retryAttempts: 3, timeout: 5000 }
+    );
 
     res.json({
       success: true,
@@ -158,8 +163,14 @@ router.post('/:id/complete', async (req: AuthRequest, res: Response) => {
     // barnService already imported at top
     const barnEntry = await barnService.storeHarvest(harvest);
 
-    // Emit WebSocket events
-    req.app.get('wsServer')?.broadcast('harvest:completed', harvest);
+    // Emit WebSocket events with guaranteed delivery
+    const { unifiedWebSocketManager } = await import('../websocket/UnifiedWebSocketManager.js');
+    await unifiedWebSocketManager.broadcastWithAck(
+      'harvest:completed',
+      { harvest },
+      { farmId: harvest.farmId, retryAttempts: 3, timeout: 5000 }
+    );
+    // barn:stored is not critical, can use regular broadcast
     req.app.get('wsServer')?.broadcast('barn:stored', barnEntry);
 
     res.json({
@@ -215,13 +226,21 @@ router.get('/terminal/sessions', async (req: AuthRequest, res: Response) => {
     // spawn already imported at top
     
     // List all tmux sessions that look like farm or claude_agents sessions
-    const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}']);
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
+    const listSessions = spawn('tmux', ['list-sessions', '-F', '#{session_name}'], {
+      env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+    });
     let output = '';
-    
+
     listSessions.stdout?.on('data', (data: Buffer) => {
       output += data.toString();
     });
-    
+
+    // FIX: Add error handler to prevent unhandled rejection if spawn fails
+    listSessions.on('error', (err) => {
+      console.error('Error spawning tmux list-sessions:', err);
+    });
+
     await new Promise(resolve => listSessions.on('exit', resolve));
     
     let sessions = output.trim().split('\n').filter(line => 
@@ -254,9 +273,17 @@ router.get('/terminal/sessions', async (req: AuthRequest, res: Response) => {
     // Get details for each session
     const sessionDetails = await Promise.all(sessions.map(async (sessionName) => {
       const paneCount = await new Promise<number>((resolve) => {
-        const countPanes = spawn('tmux', ['list-panes', '-t', `${sessionName}:0`, '-F', '#{pane_index}']);
+        // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
+        const countPanes = spawn('tmux', ['list-panes', '-t', `${sessionName}:0`, '-F', '#{pane_index}'], {
+          env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        });
         let paneOutput = '';
         countPanes.stdout?.on('data', (data: Buffer) => { paneOutput += data.toString(); });
+        // FIX: Add error handler to prevent unhandled rejection
+        countPanes.on('error', (err) => {
+          console.error(`Error spawning tmux list-panes for ${sessionName}:`, err);
+          resolve(0);
+        });
         countPanes.on('exit', () => {
           const count = paneOutput.trim().split('\n').filter(Boolean).length;
           resolve(count);
@@ -302,24 +329,33 @@ router.get('/terminal/:sessionName/:agentId', async (req: AuthRequest, res: Resp
     // spawn already imported at top
     
     // Capture terminal output from tmux pane
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
     const captureProcess = spawn('tmux', [
       'capture-pane',
       '-t', `${sessionName}:0.${agentId}`,
       '-p',
       '-S', `-${lines}` // Get last N lines
-    ]);
-    
+    ], {
+      env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+    });
+
     let output = '';
     let errorOutput = '';
-    
+
     captureProcess.stdout?.on('data', (data: Buffer) => {
       output += data.toString();
     });
-    
+
     captureProcess.stderr?.on('data', (data: Buffer) => {
       errorOutput += data.toString();
     });
-    
+
+    // FIX: Add error handler to prevent unhandled rejection if spawn fails
+    captureProcess.on('error', (err) => {
+      console.error('Error spawning tmux capture-pane:', err);
+      errorOutput += err.message;
+    });
+
     const exitCode = await new Promise<number>(resolve => {
       captureProcess.on('exit', (code) => resolve(code || 0));
     });
@@ -372,15 +408,25 @@ router.post('/terminal/:sessionName/:agentId/command', async (req: AuthRequest, 
     }
     
     // Send command to tmux pane
+    // FIX: Add TMUX_TMPDIR for cross-process tmux visibility (critical per CLAUDE.md)
     const sendProcess = spawn('tmux', [
       'send-keys',
       '-t', `${sessionName}:0.${agentId}`,
       command,
       'C-m' // Enter key
-    ]);
-    
+    ], {
+      env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+    });
+
+    // FIX: Add error handler to prevent unhandled rejection if spawn fails
+    let spawnError: Error | null = null;
+    sendProcess.on('error', (err) => {
+      console.error('Error spawning tmux send-keys:', err);
+      spawnError = err;
+    });
+
     const exitCode = await new Promise<number>(resolve => {
-      sendProcess.on('exit', (code) => resolve(code || 0));
+      sendProcess.on('exit', (code) => resolve(spawnError ? 1 : (code || 0)));
     });
     
     if (exitCode !== 0) {

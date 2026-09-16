@@ -334,15 +334,7 @@ export class MemoryManager extends EventEmitter {
   /**
    * Get detailed memory report
    */
-  getMemoryReport(): {
-    stats: ReturnType<typeof this.getMemoryStats>;
-    services: { name: string; memory: number }[];
-    trackedResources: {
-      eventListeners: number;
-      intervals: number;
-      timeouts: number;
-    };
-  } {
+  getMemoryReport() {
     const stats = this.getMemoryStats();
 
     const services = Array.from(this.services.entries()).map(([name, service]) => ({

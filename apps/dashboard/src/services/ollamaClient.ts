@@ -13,7 +13,7 @@ interface OllamaStatus {
   configured: boolean;
   model?: string;
   totalModels: number;
-  qwenModels: OllamaModel[];
+  llamaModels: OllamaModel[];
   recommendations?: any[];
 }
 
@@ -55,9 +55,9 @@ class OllamaClient {
       ]);
 
       const allModels = modelsRes.data.models || [];
-      const qwenModels = allModels.filter((m: OllamaModel) => 
-        m.name.toLowerCase().includes('qwen') || 
-        m.model?.toLowerCase().includes('qwen')
+      const llamaModels = allModels.filter((m: OllamaModel) => 
+        m.name.toLowerCase().includes('llama') || 
+        m.model?.toLowerCase().includes('llama')
       );
 
       return {
@@ -65,7 +65,7 @@ class OllamaClient {
         configured: statusRes.data.configured,
         model: statusRes.data.model,
         totalModels: allModels.length,
-        qwenModels,
+        llamaModels,
         recommendations: recommendedRes.data.recommendations
       };
     } catch (error) {
@@ -74,7 +74,7 @@ class OllamaClient {
         running: false,
         configured: false,
         totalModels: 0,
-        qwenModels: []
+        llamaModels: []
       };
     }
   }
@@ -128,7 +128,7 @@ class OllamaClient {
   }
 
   /**
-   * Configure Qwen Local provider
+   * Configure Llama Local provider
    */
   async configure(config: {
     modelName: string;
@@ -139,7 +139,7 @@ class OllamaClient {
       const response = await this.client.post('/configure', config);
       return response.data;
     } catch (error) {
-      console.error('Error configuring Qwen Local:', error);
+      console.error('Error configuring Llama Local:', error);
       throw error;
     }
   }

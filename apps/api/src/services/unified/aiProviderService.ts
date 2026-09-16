@@ -21,7 +21,9 @@ import {
 export enum AIProvider {
   CLAUDE = 'claude',
   OPENAI = 'openai',
-  QWEN = 'qwen',
+  // CRITICAL FIX: Added GROK provider
+  GROK = 'grok',
+  LLAMA = 'llama',
   OLLAMA = 'ollama',
   GPT_OSS = 'gpt_oss'
 }
@@ -276,18 +278,18 @@ class UnifiedAIProviderService extends EventEmitter {
       lastUsed: new Date()
     });
 
-    // Qwen configuration
-    this.providers.set(AIProvider.QWEN, {
+    // Llama configuration
+    this.providers.set(AIProvider.LLAMA, {
       config: {
-        provider: AIProvider.QWEN,
-        apiEndpoint: process.env.QWEN_API_ENDPOINT || 'https://dashscope.aliyuncs.com/api/v1',
-        model: process.env.QWEN_MODEL || 'qwen-max',
-        enabled: process.env.QWEN_ENABLED === 'true',
+        provider: AIProvider.LLAMA,
+        apiEndpoint: process.env.LLAMA_API_ENDPOINT || 'https://dashscope.aliyuncs.com/api/v1',
+        model: process.env.LLAMA_MODEL || 'llama-max',
+        enabled: process.env.LLAMA_ENABLED === 'true',
         isLocal: false,
         maxTokens: 8192,
         temperature: 0.7,
         contextWindow: 32768,
-        cliCommand: 'qwen',
+        cliCommand: 'llama',
         costPerToken: {
           input: 0.002,
           output: 0.006
@@ -304,12 +306,12 @@ class UnifiedAIProviderService extends EventEmitter {
         }
       },
       health: {
-        provider: AIProvider.QWEN,
+        provider: AIProvider.LLAMA,
         healthy: false,
         lastChecked: new Date(),
         availability: 0
       },
-      metrics: this.createEmptyMetrics(AIProvider.QWEN),
+      metrics: this.createEmptyMetrics(AIProvider.LLAMA),
       lastUsed: new Date()
     });
   }
@@ -458,7 +460,7 @@ class UnifiedAIProviderService extends EventEmitter {
           'Content-Type': 'application/json'
         };
 
-      case AIProvider.QWEN:
+      case AIProvider.LLAMA:
         return {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
@@ -554,8 +556,8 @@ class UnifiedAIProviderService extends EventEmitter {
       case AIProvider.OLLAMA:
         return this.executeOllamaRequest(instance, request);
 
-      case AIProvider.QWEN:
-        return this.executeQwenRequest(instance, request);
+      case AIProvider.LLAMA:
+        return this.executeLlamaRequest(instance, request);
 
       default:
         throw new Error(`Unsupported provider: ${provider}`);
@@ -689,9 +691,9 @@ class UnifiedAIProviderService extends EventEmitter {
   }
 
   /**
-   * Execute Qwen request
+   * Execute Llama request
    */
-  private async executeQwenRequest(
+  private async executeLlamaRequest(
     instance: ProviderInstance,
     request: ProviderRequest
   ): Promise<ProviderResponse> {
@@ -715,7 +717,7 @@ class UnifiedAIProviderService extends EventEmitter {
 
     return {
       id: response.data.request_id,
-      provider: AIProvider.QWEN,
+      provider: AIProvider.LLAMA,
       model: instance.config.model,
       content: response.data.output.text,
       usage: {
@@ -790,9 +792,9 @@ class UnifiedAIProviderService extends EventEmitter {
    */
   private getFallbackProvider(currentProvider: AIProvider): AIProvider | null {
     const fallbackMap: Record<AIProvider, AIProvider[]> = {
-      [AIProvider.CLAUDE]: [AIProvider.OPENAI, AIProvider.QWEN],
-      [AIProvider.OPENAI]: [AIProvider.CLAUDE, AIProvider.QWEN],
-      [AIProvider.QWEN]: [AIProvider.CLAUDE, AIProvider.OPENAI],
+      [AIProvider.CLAUDE]: [AIProvider.OPENAI, AIProvider.LLAMA],
+      [AIProvider.OPENAI]: [AIProvider.CLAUDE, AIProvider.LLAMA],
+      [AIProvider.LLAMA]: [AIProvider.CLAUDE, AIProvider.OPENAI],
       [AIProvider.OLLAMA]: [AIProvider.CLAUDE],
       [AIProvider.GPT_OSS]: [AIProvider.OPENAI]
     };

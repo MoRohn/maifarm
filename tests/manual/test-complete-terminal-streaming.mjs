@@ -107,7 +107,7 @@ async function main() {
     // Step 3: Verify pipe-pane is set up
     console.log('\n📋 Step 3: Verifying pipe-pane setup...');
 
-    const terminalDir = `/Users/rohnspringfield/maifarm/var/maibarn/terminals/${farmId}`;
+    const terminalDir = `${process.env.MAIFARM_ROOT || process.cwd()}/var/maibarn/terminals/${farmId}`;
 
     if (await fileExists(terminalDir)) {
       console.log(`✅ Terminal directory exists: ${terminalDir}`);

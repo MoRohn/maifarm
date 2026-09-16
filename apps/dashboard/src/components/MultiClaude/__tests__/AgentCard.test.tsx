@@ -1,12 +1,12 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import '@testing-library/jest-dom';
 import userEvent from '@testing-library/user-event';
 import { AgentCard } from '../AgentCard';
 import { MultiClaudeAgent } from '@/types/multiClaude';
 
 // Mock framer-motion
-vi.mock('framer-motion', () => ({
+jest.mock('framer-motion', () => ({
   motion: {
     div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
     button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
@@ -14,7 +14,7 @@ vi.mock('framer-motion', () => ({
 }));
 
 // Mock AgentTerminalOutput component
-vi.mock('../AgentTerminalOutput', () => ({
+jest.mock('../AgentTerminalOutput', () => ({
   AgentTerminalOutput: ({ output }: any) => (
     <div data-testid="terminal-output">
       {output.map((line: string, i: number) => (
@@ -38,13 +38,13 @@ describe('AgentCard', () => {
   };
 
   const mockHandlers = {
-    onCommand: vi.fn(),
-    onPrompt: vi.fn(),
-    onRemove: vi.fn(),
+    onCommand: jest.fn(),
+    onPrompt: jest.fn(),
+    onRemove: jest.fn(),
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   it('renders agent information correctly', () => {
@@ -107,10 +107,10 @@ describe('AgentCard', () => {
     expect(mockHandlers.onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onCommand with correct command when control buttons are clicked', () => {
+  it('calls onCommand with start when start button is clicked', () => {
     render(
       <AgentCard
-        agent={mockAgent}
+        agent={{ ...mockAgent, status: 'ready' }}
         {...mockHandlers}
       />
     );
@@ -118,10 +118,28 @@ describe('AgentCard', () => {
     const startButton = screen.getByTitle('Start Agent');
     fireEvent.click(startButton);
     expect(mockHandlers.onCommand).toHaveBeenCalledWith('start');
+  });
+
+  it('calls onCommand with pause when pause button is clicked', () => {
+    render(
+      <AgentCard
+        agent={{ ...mockAgent, status: 'working' }}
+        {...mockHandlers}
+      />
+    );
 
     const pauseButton = screen.getByTitle('Pause Agent');
     fireEvent.click(pauseButton);
     expect(mockHandlers.onCommand).toHaveBeenCalledWith('pause');
+  });
+
+  it('calls onCommand with reset when reset button is clicked', () => {
+    render(
+      <AgentCard
+        agent={mockAgent}
+        {...mockHandlers}
+      />
+    );
 
     const resetButton = screen.getByTitle('Reset Agent');
     fireEvent.click(resetButton);
@@ -154,7 +172,7 @@ describe('AgentCard', () => {
 
   it('handles prompt input and submission', async () => {
     const user = userEvent.setup();
-    
+
     render(
       <AgentCard
         agent={mockAgent}
@@ -163,17 +181,27 @@ describe('AgentCard', () => {
     );
 
     const promptInput = screen.getByPlaceholderText('Enter prompt for this agent...');
-    await user.type(promptInput, 'Test prompt');
-    
-    const sendButton = screen.getByTitle('Send Prompt');
-    await user.click(sendButton);
 
-    expect(mockHandlers.onPrompt).toHaveBeenCalledWith('Test prompt');
+    // FIX: Wrap state-updating interactions in act() to prevent React warnings
+    await act(async () => {
+      await user.type(promptInput, 'Test prompt');
+    });
+
+    const sendButton = screen.getByTitle('Send Prompt');
+
+    await act(async () => {
+      await user.click(sendButton);
+    });
+
+    // Wait for state updates to settle before asserting
+    await waitFor(() => {
+      expect(mockHandlers.onPrompt).toHaveBeenCalledWith('Test prompt');
+    });
   });
 
   it('clears prompt input after submission', async () => {
     const user = userEvent.setup();
-    
+
     render(
       <AgentCard
         agent={mockAgent}
@@ -182,17 +210,27 @@ describe('AgentCard', () => {
     );
 
     const promptInput = screen.getByPlaceholderText('Enter prompt for this agent...') as HTMLTextAreaElement;
-    await user.type(promptInput, 'Test prompt');
-    
-    const sendButton = screen.getByTitle('Send Prompt');
-    await user.click(sendButton);
 
-    expect(promptInput.value).toBe('');
+    // FIX: Wrap state-updating interactions in act() to prevent React warnings
+    await act(async () => {
+      await user.type(promptInput, 'Test prompt');
+    });
+
+    const sendButton = screen.getByTitle('Send Prompt');
+
+    await act(async () => {
+      await user.click(sendButton);
+    });
+
+    // Wait for state updates to settle before asserting
+    await waitFor(() => {
+      expect(promptInput.value).toBe('');
+    });
   });
 
   it('handles Enter key for prompt submission', async () => {
     const user = userEvent.setup();
-    
+
     render(
       <AgentCard
         agent={mockAgent}
@@ -201,14 +239,21 @@ describe('AgentCard', () => {
     );
 
     const promptInput = screen.getByPlaceholderText('Enter prompt for this agent...');
-    await user.type(promptInput, 'Test prompt{Enter}');
 
-    expect(mockHandlers.onPrompt).toHaveBeenCalledWith('Test prompt');
+    // FIX: Wrap state-updating interactions in act() to prevent React warnings
+    await act(async () => {
+      await user.type(promptInput, 'Test prompt{Enter}');
+    });
+
+    // Wait for all state updates to settle before asserting
+    await waitFor(() => {
+      expect(mockHandlers.onPrompt).toHaveBeenCalledWith('Test prompt');
+    });
   });
 
   it('does not submit on Shift+Enter', async () => {
     const user = userEvent.setup();
-    
+
     render(
       <AgentCard
         agent={mockAgent}
@@ -217,9 +262,16 @@ describe('AgentCard', () => {
     );
 
     const promptInput = screen.getByPlaceholderText('Enter prompt for this agent...');
-    await user.type(promptInput, 'Test prompt{Shift>}{Enter}{/Shift}');
 
-    expect(mockHandlers.onPrompt).not.toHaveBeenCalled();
+    // FIX: Wrap state-updating interactions in act() to prevent React warnings
+    await act(async () => {
+      await user.type(promptInput, 'Test prompt{Shift>}{Enter}{/Shift}');
+    });
+
+    // Wait for state updates to settle before asserting
+    await waitFor(() => {
+      expect(mockHandlers.onPrompt).not.toHaveBeenCalled();
+    });
   });
 
   it('disables send button when prompt is empty', () => {

@@ -2,7 +2,11 @@ import { logger } from '../utils/logger';
 
 export enum AIProvider {
   CLAUDE = 'claude',
-  OPENAI = 'openai'
+  OPENAI = 'openai',
+  GROK = 'grok',
+  GEMINI = 'gemini',
+  GPT_OSS = 'gpt-oss',
+  LLAMA = 'llama'
 }
 
 export interface AIProviderConfig {
@@ -49,30 +53,81 @@ class AIProviderConfigManager implements AIProviderManager {
   }
   
   private initializeProvidersSync(): void {
+    // Initialize with default values ONLY (no .env reading)
+    // Claude Opus 4.5 is the default model for MaiFarm
     this.providers.set(AIProvider.CLAUDE, {
       provider: AIProvider.CLAUDE,
       apiKey: '',
-      apiEndpoint: process.env.CLAUDE_API_ENDPOINT || 'https://api.anthropic.com/v1',
-      model: process.env.CLAUDE_MODEL || 'claude-3-sonnet-20240229',
-      enabled: false,
-      maxTokens: 4096,
+      apiEndpoint: 'https://api.anthropic.com/v1',
+      model: 'claude-opus-4-5-20251101',  // Default to Opus 4.5
+      enabled: false, // Disabled until user configures
+      maxTokens: 16384,
       temperature: 0.7,
       contextWindow: 200000,
       cliCommand: 'claude'
     });
-    
+
     this.providers.set(AIProvider.OPENAI, {
       provider: AIProvider.OPENAI,
       apiKey: '',
-      apiEndpoint: process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1',
-      model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
-      enabled: false,
-      maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS || '8192'),
-      temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.7'),
+      apiEndpoint: 'https://api.openai.com/v1',
+      model: 'gpt-4o',  // Updated to GPT-4o - latest flagship model
+      enabled: false, // Disabled until user configures
+      maxTokens: 16384,
+      temperature: 0.7,
       contextWindow: 128000,
       cliCommand: 'openai-cli'
     });
-    
+
+    this.providers.set(AIProvider.GEMINI, {
+      provider: AIProvider.GEMINI,
+      apiKey: '',
+      apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+      model: 'gemini-1.5-pro',  // Gemini 1.5 Pro - latest model
+      enabled: false, // Disabled until user configures
+      maxTokens: 8192,
+      temperature: 0.7,
+      contextWindow: 1000000,  // 1M token context window
+      cliCommand: 'gemini'
+    });
+
+    this.providers.set(AIProvider.GROK, {
+      provider: AIProvider.GROK,
+      apiKey: '',
+      apiEndpoint: 'https://api.x.ai/v1',
+      model: 'grok-2',
+      enabled: false, // Disabled until user configures
+      maxTokens: 8192,
+      temperature: 0.7,
+      contextWindow: 128000,
+      cliCommand: 'grok'
+    });
+
+    this.providers.set(AIProvider.GPT_OSS, {
+      provider: AIProvider.GPT_OSS,
+      apiKey: '',
+      apiEndpoint: 'http://localhost:8000/v1',
+      model: 'openai/gpt-oss-20b',
+      enabled: true, // Local provider, enabled by default
+      maxTokens: 8192,
+      temperature: 0.6,
+      contextWindow: 131072,
+      cliCommand: 'gpt-oss',
+      isLocal: true
+    });
+
+    this.providers.set(AIProvider.LLAMA, {
+      provider: AIProvider.LLAMA,
+      apiKey: '',
+      apiEndpoint: 'http://localhost:8001/v1',
+      model: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
+      enabled: true, // Local provider, enabled by default
+      maxTokens: 8192,
+      temperature: 0.7,
+      contextWindow: 128000,
+      cliCommand: 'llama',
+      isLocal: true
+    });
   }
 
   private async loadApiKeyFromDatabase(provider: string): Promise<string | null> {
@@ -132,101 +187,174 @@ class AIProviderConfigManager implements AIProviderManager {
   }
 
   private async initializeProviders(): Promise<void> {
-    // Load API keys from database first
-    const [claudeDbKey, openaiDbKey] = await Promise.all([
+    // Load API keys from database ONLY (no .env fallback)
+    const [claudeDbKey, openaiDbKey, grokDbKey, geminiDbKey] = await Promise.all([
       this.loadApiKeyFromDatabase('claude'),
-      this.loadApiKeyFromDatabase('openai')
+      this.loadApiKeyFromDatabase('openai'),
+      this.loadApiKeyFromDatabase('grok'),
+      this.loadApiKeyFromDatabase('gemini')
     ]);
-    
-    // Check if database keys are test/placeholder values and fall back to env if so
+
+    // Check if database keys are test/placeholder values
     const isTestKey = (key: string | null) => {
       return key && (
-        key.startsWith('test-') || 
-        key.startsWith('sk-test-') || 
+        key.startsWith('test-') ||
+        key.startsWith('sk-test-') ||
         key === 'your-api-key-here' ||
         key.length < 30 // Real API keys are typically longer
       );
     };
-    
-    // Use database keys if valid, otherwise fall back to environment variables
+
+    // Use database keys if valid, NO fallback to environment variables
     const claudeKey = (!isTestKey(claudeDbKey) ? claudeDbKey : null) || '';
     const openaiKey = (!isTestKey(openaiDbKey) ? openaiDbKey : null) || '';
-    
+    const grokKey = (!isTestKey(grokDbKey) ? grokDbKey : null) || '';
+    const geminiKey = (!isTestKey(geminiDbKey) ? geminiDbKey : null) || '';
+
     // Log key sources for debugging
     if (claudeKey && !isTestKey(claudeKey)) {
-      logger.debug('[AIProviderManager] Claude API key loaded from: database');
-      process.env.ANTHROPIC_API_KEY = claudeKey;
-      process.env.CLAUDE_API_KEY = claudeKey;
+      logger.debug('[AIProviderManager] Claude API key loaded from database');
+      // Do NOT set global environment variables - keep per-user
     } else {
-      logger.warn('[AIProviderManager] No valid Claude API key stored by user');
-      delete process.env.ANTHROPIC_API_KEY;
-      delete process.env.CLAUDE_API_KEY;
+      logger.debug('[AIProviderManager] No valid Claude API key stored by user (clean slate)');
     }
 
     if (openaiKey && !isTestKey(openaiKey)) {
-      logger.debug('[AIProviderManager] OpenAI API key loaded from: database');
-      process.env.OPENAI_API_KEY = openaiKey;
+      logger.debug('[AIProviderManager] OpenAI API key loaded from database');
+      // Do NOT set global environment variables - keep per-user
     } else {
-      delete process.env.OPENAI_API_KEY;
+      logger.debug('[AIProviderManager] No valid OpenAI API key stored by user (clean slate)');
     }
-    
-    
+
+    if (grokKey && !isTestKey(grokKey)) {
+      logger.debug('[AIProviderManager] Grok API key loaded from database');
+      // Do NOT set global environment variables - keep per-user
+    } else {
+      logger.debug('[AIProviderManager] No valid Grok API key stored by user (clean slate)');
+    }
+
+    if (geminiKey && !isTestKey(geminiKey)) {
+      logger.debug('[AIProviderManager] Gemini API key loaded from database');
+      // Do NOT set global environment variables - keep per-user
+    } else {
+      logger.debug('[AIProviderManager] No valid Gemini API key stored by user (clean slate)');
+    }
+
+
     // Log API key status for debugging (database only)
     logger.debug('[AIProviders] Claude API key from DB:', claudeDbKey ? 'Found (length: ' + claudeDbKey.length + ')' : 'Not found');
     logger.debug('[AIProviders] OpenAI API key from DB:', openaiDbKey ? 'Found (length: ' + openaiDbKey.length + ')' : 'Not found');
+    logger.debug('[AIProviders] Grok API key from DB:', grokDbKey ? 'Found (length: ' + grokDbKey.length + ')' : 'Not found');
+    logger.debug('[AIProviders] Gemini API key from DB:', geminiDbKey ? 'Found (length: ' + geminiDbKey.length + ')' : 'Not found');
     
-    // Claude configuration - Use valid keys only
+    // Claude configuration - Use database keys only
     const claudeConfig: AIProviderConfig = {
       provider: AIProvider.CLAUDE,
-      apiKey: claudeKey || '',  // Use the validated key (database or env)
-      apiEndpoint: process.env.CLAUDE_API_ENDPOINT || 'https://api.anthropic.com/v1',
-      model: process.env.CLAUDE_MODEL || 'claude-3-sonnet-20240229',
+      apiKey: claudeKey || '',
+      apiEndpoint: 'https://api.anthropic.com/v1',
+      model: 'claude-opus-4-5-20251101',  // Updated to Opus 4.5 - most advanced model
       enabled: !!claudeKey && !isTestKey(claudeKey), // Only enabled if valid key exists
-      maxTokens: 4096,
+      maxTokens: 16384,
       temperature: 0.7,
       contextWindow: 200000,
       cliCommand: 'claude'
     };
 
-
-    // OpenAI GPT-4 configuration - Use valid keys only
+    // OpenAI GPT-4o configuration - Use database keys only
     const openaiConfig: AIProviderConfig = {
       provider: AIProvider.OPENAI,
-      apiKey: openaiKey || '',  // Use the validated key (database or env)
-      apiEndpoint: process.env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1',
-      model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
+      apiKey: openaiKey || '',
+      apiEndpoint: 'https://api.openai.com/v1',
+      model: 'gpt-4o',  // Updated to GPT-4o - latest flagship model
       enabled: !!openaiKey && !isTestKey(openaiKey),
-      maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS || '8192'),
-      temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.7'),
-      contextWindow: 128000, // GPT-4 Turbo has 128K context window
-      cliCommand: 'openai-cli' // Will need to configure OpenAI CLI tool
+      maxTokens: 16384,
+      temperature: 0.7,
+      contextWindow: 128000,
+      cliCommand: 'openai-cli'
     };
 
+    // Grok (xAI) configuration - Use database keys only
+    const grokConfig: AIProviderConfig = {
+      provider: AIProvider.GROK,
+      apiKey: grokKey || '',
+      apiEndpoint: 'https://api.x.ai/v1',
+      model: 'grok-2',
+      enabled: !!grokKey && !isTestKey(grokKey),
+      maxTokens: 8192,
+      temperature: 0.7,
+      contextWindow: 128000,
+      cliCommand: 'grok'
+    };
+
+    // Gemini (Google AI) configuration - Use database keys only
+    const geminiConfig: AIProviderConfig = {
+      provider: AIProvider.GEMINI,
+      apiKey: geminiKey || '',
+      apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+      model: 'gemini-1.5-pro',  // Gemini 1.5 Pro - latest flagship model
+      enabled: !!geminiKey && !isTestKey(geminiKey),
+      maxTokens: 8192,
+      temperature: 0.7,
+      contextWindow: 1000000,  // 1M token context window
+      cliCommand: 'gemini'
+    };
 
     this.providers.set(AIProvider.CLAUDE, claudeConfig);
     this.providers.set(AIProvider.OPENAI, openaiConfig);
+    this.providers.set(AIProvider.GROK, grokConfig);
+    this.providers.set(AIProvider.GEMINI, geminiConfig);
+
+    // GPT-OSS configuration - Local provider, no API key needed
+    const gptOssConfig: AIProviderConfig = {
+      provider: AIProvider.GPT_OSS,
+      apiKey: '',
+      apiEndpoint: 'http://localhost:8000/v1',
+      model: 'openai/gpt-oss-20b',
+      enabled: true, // Always enabled (local provider)
+      maxTokens: 8192,
+      temperature: 0.6,
+      contextWindow: 131072,
+      cliCommand: 'gpt-oss',
+      isLocal: true
+    };
+
+    // Llama configuration - Local provider, no API key needed
+    const llamaConfig: AIProviderConfig = {
+      provider: AIProvider.LLAMA,
+      apiKey: '',
+      apiEndpoint: 'http://localhost:8001/v1',
+      model: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
+      enabled: true, // Always enabled (local provider)
+      maxTokens: 8192,
+      temperature: 0.7,
+      contextWindow: 128000,
+      cliCommand: 'llama',
+      isLocal: true
+    };
+
+    this.providers.set(AIProvider.GPT_OSS, gptOssConfig);
+    this.providers.set(AIProvider.LLAMA, llamaConfig);
   }
 
   private determineDefaultProvider(): AIProvider {
-    const envProvider = process.env.AI_PROVIDER?.toLowerCase();
+    // No environment variable check - pure user preference based
+    // Default to GPT-OSS as it's always available locally
+    const preferenceOrder: AIProvider[] = [
+      AIProvider.GPT_OSS,
+      AIProvider.CLAUDE,
+      AIProvider.OPENAI,
+      AIProvider.GROK,
+      AIProvider.LLAMA
+    ];
 
-    if (envProvider) {
-      const providerEnum = envProvider as AIProvider;
-      if (this.isProviderEnabled(providerEnum)) {
-        return providerEnum;
+    for (const provider of preferenceOrder) {
+      if (this.isProviderEnabled(provider)) {
+        return provider;
       }
     }
 
-    if (this.isProviderEnabled(AIProvider.CLAUDE)) {
-      return AIProvider.CLAUDE;
-    }
-
-    if (this.isProviderEnabled(AIProvider.OPENAI)) {
-      return AIProvider.OPENAI;
-    }
-
-    // Fallback to Claude even if disabled; callers will receive an error until user configures a key
-    return AIProvider.CLAUDE;
+    // Fallback to GPT-OSS (local provider, always available)
+    return AIProvider.GPT_OSS;
   }
 
   async getProviderWithRefresh(provider?: AIProvider): Promise<AIProviderConfig> {
@@ -264,23 +392,35 @@ class AIProviderConfigManager implements AIProviderManager {
     }
 
     this.defaultProvider = provider;
-    process.env.AI_PROVIDER = provider;
+    // Do NOT set global environment variable - keep per-user
     logger.info('[AIProviderManager] Default provider set to', provider);
   }
 
   isProviderEnabled(provider: AIProvider): boolean {
     const config = this.providers.get(provider);
     if (!config) return false;
-    
-    // Claude is always enabled
-    if (provider === AIProvider.CLAUDE) return true;
-    
-    // Check if OpenAI has necessary configuration
+
+    if (config.isLocal) {
+      return config.enabled !== false;
+    }
+
+    if (provider === AIProvider.CLAUDE) {
+      return config.enabled && config.apiKey !== '';
+    }
+
     if (provider === AIProvider.OPENAI) {
       return config.enabled && config.apiKey !== '';
     }
-    
-    return false;
+
+    if (provider === AIProvider.GROK) {
+      return config.enabled && config.apiKey !== '';
+    }
+
+    if (provider === AIProvider.GEMINI) {
+      return config.enabled && config.apiKey !== '';
+    }
+
+    return config.enabled;
   }
 
   getAllProviders(): AIProviderConfig[] {
@@ -295,6 +435,7 @@ class AIProviderConfigManager implements AIProviderManager {
 
   /**
    * Get environment variables for running commands with specific provider
+   * FIXED: Removed duplicate Claude logic from unreachable else block
    */
   getProviderEnvironment(provider: AIProvider): Record<string, string> {
     const config = this.getProvider(provider);
@@ -303,7 +444,7 @@ class AIProviderConfigManager implements AIProviderManager {
       AI_PROVIDER: provider
     };
 
-    // CRITICAL FIX: Add ANTHROPIC_API_KEY for Claude provider
+    // Set provider-specific environment variables
     if (provider === AIProvider.CLAUDE) {
       if (config.apiKey) {
         env.ANTHROPIC_API_KEY = config.apiKey;
@@ -311,9 +452,9 @@ class AIProviderConfigManager implements AIProviderManager {
       }
       env.CLAUDE_API_ENDPOINT = config.apiEndpoint;
       env.CLAUDE_MODEL = config.model;
-      
+
       // Log for debugging
-      logger.debug('[AIProviderManager] Setting Claude environment - API Key:', 
+      logger.debug('[AIProviderManager] Setting Claude environment - API Key:',
         config.apiKey ? `Present (${config.apiKey.length} chars)` : 'MISSING');
     } else if (provider === AIProvider.OPENAI) {
       env.OPENAI_API_KEY = config.apiKey;
@@ -321,21 +462,48 @@ class AIProviderConfigManager implements AIProviderManager {
       env.OPENAI_MODEL = config.model;
       env.OPENAI_MAX_TOKENS = String(config.maxTokens);
       env.OPENAI_TEMPERATURE = String(config.temperature);
-      
+
       if (process.env.USE_LLM_PROXY === 'true') {
         env.CLAUDE_CODE_ROUTER = 'openai';
         env.USE_LLM_PROXY = 'true';
         env.LLM_PROXY_URL = process.env.LLM_PROXY_URL || 'http://localhost:8001';
       }
-    } else {
-      // Claude provider - set both API key environment variables
-      env.ANTHROPIC_API_KEY = config.apiKey;
-      env.CLAUDE_API_KEY = config.apiKey;
-      env.CLAUDE_API_ENDPOINT = config.apiEndpoint;
-      env.CLAUDE_MODEL = config.model;
-      
+    } else if (provider === AIProvider.GROK) {
+      if (config.apiKey) {
+        env.GROK_API_KEY = config.apiKey;
+        env.XAI_API_KEY = config.apiKey;
+      }
+      env.GROK_API_ENDPOINT = config.apiEndpoint;
+      env.GROK_MODEL = config.model;
+      env.GROK_MAX_TOKENS = String(config.maxTokens ?? 8192);
+      env.GROK_TEMPERATURE = String(config.temperature ?? 0.7);
+
       // Log for debugging
-      logger.debug('[AIProviders] Setting Claude environment - API key:', config.apiKey ? `Configured (length: ${config.apiKey.length})` : 'NOT CONFIGURED');
+      logger.debug('[AIProviderManager] Setting Grok environment - API Key:',
+        config.apiKey ? `Present (${config.apiKey.length} chars)` : 'MISSING');
+    } else if (provider === AIProvider.GPT_OSS) {
+      env.GPT_OSS_HOST = config.apiEndpoint;
+      env.GPT_OSS_MODEL = config.model;
+      env.GPT_OSS_MAX_TOKENS = String(config.maxTokens ?? 8192);
+      env.GPT_OSS_TEMPERATURE = String(config.temperature ?? 0.6);
+    } else if (provider === AIProvider.LLAMA) {
+      env.LLAMA_API_ENDPOINT = config.apiEndpoint;
+      env.LLAMA_MODEL = config.model;
+      env.LLAMA_MAX_TOKENS = String(config.maxTokens ?? 8192);
+      env.LLAMA_TEMPERATURE = String(config.temperature ?? 0.7);
+    } else if (provider === AIProvider.GEMINI) {
+      if (config.apiKey) {
+        env.GOOGLE_API_KEY = config.apiKey;
+        env.GEMINI_API_KEY = config.apiKey;
+      }
+      env.GEMINI_API_ENDPOINT = config.apiEndpoint;
+      env.GEMINI_MODEL = config.model;
+      env.GEMINI_MAX_TOKENS = String(config.maxTokens ?? 8192);
+      env.GEMINI_TEMPERATURE = String(config.temperature ?? 0.7);
+
+      // Log for debugging
+      logger.debug('[AIProviderManager] Setting Gemini environment - API Key:',
+        config.apiKey ? `Present (${config.apiKey.length} chars)` : 'MISSING');
     }
 
     return env;
@@ -377,9 +545,9 @@ class AIProviderConfigManager implements AIProviderManager {
       return;
     }
 
-    this.defaultProvider = AIProvider.CLAUDE;
-    process.env.AI_PROVIDER = AIProvider.CLAUDE;
-    logger.info('[AIProviderManager] Default provider reset to claude');
+    this.defaultProvider = AIProvider.GPT_OSS;
+    // Do NOT set global environment variable - keep per-user
+    logger.info('[AIProviderManager] Default provider reset to gpt-oss (local provider always available)');
   }
 }
 

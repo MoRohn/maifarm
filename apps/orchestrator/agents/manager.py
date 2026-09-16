@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -65,7 +66,8 @@ class AgentManager:
         self._supervisor = supervisor
         self._handles: dict[str, RunHandle] = {}
         self._lock = asyncio.Lock()
-        self._run_records: dict[str, dict[str, Any]] = {}
+        self._run_records: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._run_records_cap = settings.runengine_inmemory_history_cap if hasattr(settings, "runengine_inmemory_history_cap") else 500
 
     async def register_run(self, request: RunRequest) -> RunHandle:
         handle = RunHandle.create(request)
@@ -149,6 +151,24 @@ class AgentManager:
             handle.cancel_event.set()
             return True
 
+    async def finalize_without_execution(
+        self,
+        request: RunRequest,
+        *,
+        status: str,
+        detail: str | None = None,
+    ) -> None:
+        """Persist and emit terminal state for runs that never started."""
+        error = detail if status == "failed" else None
+        await self._persist_run(request, status=status, error=error)
+        await self._hub.emit_status(request.session_id, request.agent_id, status=status, detail=detail)
+        await self._supervisor.update_phase(request.run_id, status)
+        async with self._lock:
+            handle = self._handles.pop(request.run_id, None)
+        if handle:
+            handle.finished.set()
+        await self._supervisor.unregister_agent(request.run_id)
+
     async def is_cancelled(self, run_id: str) -> bool:
         async with self._lock:
             handle = self._handles.get(run_id)
@@ -213,6 +233,7 @@ class AgentManager:
             await self._memory.append_event(request.run_id, "status", {"status": "start"})
             record = self._run_records.setdefault(request.run_id, {})
             record["status"] = "running"
+            self._run_records.move_to_end(request.run_id)
         elif event.phase == "delta":
             await self._hub.emit_agent_event(
                 request.session_id,
@@ -231,11 +252,15 @@ class AgentManager:
                 content_delta=event.content_delta,
                 tool_call=event.tool_call,
             )
+            record = self._run_records.setdefault(request.run_id, {})
+            record["status"] = "running"
+            self._run_records.move_to_end(request.run_id)
         elif event.phase == "end":
             await self._hub.emit_agent_event(request.session_id, request.agent_id, phase="end")
             await self._memory.append_event(request.run_id, "status", {"status": "end"})
             record = self._run_records.setdefault(request.run_id, {})
             record["status"] = "succeeded"
+            self._run_records.move_to_end(request.run_id)
         elif event.phase == "error":
             await self._hub.emit_agent_event(
                 request.session_id,
@@ -245,6 +270,7 @@ class AgentManager:
             )
             record = self._run_records.setdefault(request.run_id, {})
             record["status"] = "failed"
+            self._run_records.move_to_end(request.run_id)
 
     async def _persist_run(self, request: RunRequest, status: str, error: str | None = None) -> None:
         async with self._session_factory() as session:
@@ -284,6 +310,13 @@ class AgentManager:
             "error": error,
             "created_at": datetime.now(timezone.utc),
         }
+        self._run_records.move_to_end(request.run_id)
+        self._prune_run_records()
+
+    def _prune_run_records(self) -> None:
+        """Keep the in-memory fallback store bounded to avoid unbounded growth."""
+        while len(self._run_records) > self._run_records_cap:
+            self._run_records.popitem(last=False)
 
     @property
     def active_runs(self) -> list[str]:

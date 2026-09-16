@@ -6,6 +6,32 @@ import { BarnItem } from '../../src/types/barn';
 
 const router = Router();
 
+// GET /api/barn - Get all barn items (base endpoint)
+router.get('/', async (req, res) => {
+  try {
+    const filter = {
+      type: req.query.type as BarnItem['type'],
+      category: req.query.category as string,
+      tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
+      folderId: req.query.folderId as string,
+      searchQuery: req.query.search as string
+    };
+
+    const items = await barnService.findAll(filter);
+    res.json({
+      success: true,
+      data: items,
+      count: items.length
+    });
+  } catch (error) {
+    logger.error('Failed to get barn items:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve barn items'
+    });
+  }
+});
+
 // Get barn statistics
 router.get('/stats', async (req, res) => {
   try {
@@ -144,17 +170,58 @@ router.post('/items/:id/use', async (req, res) => {
   }
 });
 
-// Delete barn item
+// Bulk delete items - MUST come BEFORE single delete route
+router.delete('/items/bulk', async (req, res) => {
+  try {
+    const { itemIds } = req.body;
+
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Item IDs array is required'
+      });
+    }
+
+    const result = await barnService.bulkDelete(itemIds);
+    res.json({
+      success: result.success,
+      data: result
+    });
+  } catch (error) {
+    logger.error('Failed to bulk delete barn items:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to bulk delete barn items'
+    });
+  }
+});
+
+// Delete barn item - MUST come AFTER bulk delete route
 router.delete('/items/:id', async (req, res) => {
   try {
     await barnService.deleteItem(req.params.id);
-    res.status(204).send();
+    res.json({
+      success: true,
+      message: 'Barn item deleted successfully'
+    });
   } catch (error) {
     logger.error('Failed to delete barn item:', error);
     if ((error as Error).message === 'Barn item not found') {
-      res.status(404).json({ error: 'Barn item not found' });
+      res.status(404).json({
+        success: false,
+        error: 'Barn item not found'
+      });
+    } else if ((error as Error).message === 'Barn item already deleted') {
+      res.status(410).json({
+        success: false,
+        error: 'Barn item already deleted'
+      });
     } else {
-      res.status(500).json({ error: 'Failed to delete barn item' });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to delete barn item',
+        details: (error as Error).message
+      });
     }
   }
 });
@@ -215,32 +282,6 @@ router.post('/cleanup', async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: 'Failed to cleanup barn storage' 
-    });
-  }
-});
-
-// Bulk delete items
-router.delete('/items/bulk', async (req, res) => {
-  try {
-    const { itemIds } = req.body;
-    
-    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Item IDs array is required' 
-      });
-    }
-    
-    const result = await barnService.bulkDelete(itemIds);
-    res.json({ 
-      success: result.success, 
-      data: result 
-    });
-  } catch (error) {
-    logger.error('Failed to bulk delete barn items:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to bulk delete barn items' 
     });
   }
 });
@@ -705,21 +746,170 @@ router.post('/catalog/track-usage', async (req, res) => {
 router.post('/catalog/resolve', async (req, res) => {
   try {
     const { reference } = req.body;
-    
+
     if (!reference) {
       return res.status(400).json({ error: 'Reference is required' });
     }
-    
+
     const item = await barnCatalogService.resolveReference(reference);
-    
+
     if (!item) {
       return res.status(404).json({ error: 'Reference could not be resolved' });
     }
-    
+
     res.json(item);
   } catch (error) {
     logger.error('Failed to resolve reference:', error);
     res.status(500).json({ error: 'Failed to resolve reference' });
+  }
+});
+
+// Search barn items
+router.get('/search', async (req, res) => {
+  try {
+    const { query, type, category, tags, limit = 50 } = req.query;
+
+    const filter = {
+      searchQuery: query as string,
+      type: type as BarnItem['type'],
+      category: category as string,
+      tags: tags ? (tags as string).split(',') : undefined
+    };
+
+    const items = await barnService.findAll(filter);
+    const limitedItems = items.slice(0, Number(limit));
+
+    res.json({
+      success: true,
+      data: limitedItems,
+      total: items.length,
+      query: query || ''
+    });
+  } catch (error) {
+    logger.error('Failed to search barn items:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to search barn items'
+    });
+  }
+});
+
+// Export barn data
+router.get('/export', async (req, res) => {
+  try {
+    const { format = 'json', type, category } = req.query;
+
+    const filter = {
+      type: type as BarnItem['type'],
+      category: category as string
+    };
+
+    const items = await barnService.findAll(filter);
+
+    let exportData: string;
+    let contentType: string;
+    let filename: string;
+
+    switch (format) {
+      case 'csv':
+        contentType = 'text/csv';
+        filename = 'barn-export.csv';
+        // Simple CSV export
+        const headers = 'id,name,type,category,createdAt\n';
+        const rows = items.map(item =>
+          `"${item.id}","${item.name}","${item.type}","${item.category || ''}","${item.createdAt}"`
+        ).join('\n');
+        exportData = headers + rows;
+        break;
+      case 'md':
+        contentType = 'text/markdown';
+        filename = 'barn-export.md';
+        exportData = `# Barn Export\n\n` +
+          items.map(item =>
+            `## ${item.name}\n- Type: ${item.type}\n- Category: ${item.category || 'N/A'}\n- Created: ${item.createdAt}\n`
+          ).join('\n');
+        break;
+      default:
+        contentType = 'application/json';
+        filename = 'barn-export.json';
+        exportData = JSON.stringify({ items, exportedAt: new Date().toISOString() }, null, 2);
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(exportData);
+  } catch (error) {
+    logger.error('Failed to export barn data:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to export barn data'
+    });
+  }
+});
+
+// Generate seed from barn item
+router.post('/items/:id/seed', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description } = req.body;
+
+    const item = await barnService.findById(id);
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        error: 'Barn item not found'
+      });
+    }
+
+    // Create a seed configuration from the barn item
+    const seed = {
+      id: `seed-${Date.now()}`,
+      name: name || `Seed from ${item.name}`,
+      description: description || `Generated from barn item: ${item.name}`,
+      sourceItemId: id,
+      sourceType: item.type,
+      config: {
+        template: item.metadata?.template || 'default',
+        parameters: item.metadata?.parameters || {}
+      },
+      createdAt: new Date().toISOString()
+    };
+
+    res.status(201).json({
+      success: true,
+      data: seed
+    });
+  } catch (error) {
+    logger.error('Failed to create seed from barn item:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create seed from barn item'
+    });
+  }
+});
+
+// Get barn items by harvest ID
+router.get('/harvests/:harvestId', async (req, res) => {
+  try {
+    const { harvestId } = req.params;
+
+    const filter = {
+      harvestId: harvestId
+    };
+
+    const items = await barnService.findAll(filter);
+
+    res.json({
+      success: true,
+      data: items,
+      harvestId
+    });
+  } catch (error) {
+    logger.error('Failed to get barn items by harvest:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve barn items for harvest'
+    });
   }
 });
 

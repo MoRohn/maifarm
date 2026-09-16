@@ -9,6 +9,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { logger } from '../utils/logger';
 import { LogCategory } from '../utils/structuredLogger';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 const execAsync = promisify(exec);
 
@@ -358,7 +361,7 @@ export class OptimizedSessionLifecycleManager extends EventEmitter {
     }
     
     try {
-      await execAsync(`TMUX_TMPDIR=/tmp tmux has-session -t "${sessionId}" 2>/dev/null`);
+      await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux has-session -t "${sessionId}" 2>/dev/null`);
       this.sessionExistenceCache.set(sessionId, { exists: true, timestamp: now });
       return true;
     } catch {
@@ -378,7 +381,7 @@ export class OptimizedSessionLifecycleManager extends EventEmitter {
       for (const window of windowTargets) {
         try {
           const result = await execAsync(
-            `TMUX_TMPDIR=/tmp tmux list-panes -t "${sessionId}:${window}" -F '#{pane_index}' 2>/dev/null`
+            `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-panes -t "${sessionId}:${window}" -F '#{pane_index}' 2>/dev/null`
           );
           const panes = result.stdout.trim().split('\n').filter(Boolean);
           if (panes.length > 0) {

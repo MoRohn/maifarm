@@ -49,7 +49,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <Sparkles className="w-5 h-5 text-burnt-600 dark:text-burnt-400" />
             <label className="text-sm font-medium text-gray-900 dark:text-white">
               Creativity Level
             </label>
@@ -88,7 +88,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Target className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <Target className="w-5 h-5 text-burnt-600 dark:text-burnt-400" />
             <label className="text-sm font-medium text-gray-900 dark:text-white">
               Exploration Depth
             </label>
@@ -115,7 +115,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Brain className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <Brain className="w-5 h-5 text-burnt-600 dark:text-burnt-400" />
             <label className="text-sm font-medium text-gray-900 dark:text-white">
               Thinking Depth
             </label>
@@ -186,7 +186,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
             focusAreas: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
           })}
           disabled={disabled}
-          className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-burnt-500 focus:border-transparent"
         />
       </div>
 
@@ -218,7 +218,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
                   checked={localConfig.boundaries.allowExternalAPIs}
                   onChange={(e) => handleBoundaryUpdate({ allowExternalAPIs: e.target.checked })}
                   disabled={disabled}
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  className="rounded border-gray-300 text-burnt-600 focus:ring-burnt-500"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">
                   Allow External API Calls
@@ -231,7 +231,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
                   checked={localConfig.boundaries.allowFileSystem}
                   onChange={(e) => handleBoundaryUpdate({ allowFileSystem: e.target.checked })}
                   disabled={disabled}
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  className="rounded border-gray-300 text-burnt-600 focus:ring-burnt-500"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">
                   Allow File System Access
@@ -244,7 +244,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
                   checked={localConfig.boundaries.allowNetworkRequests}
                   onChange={(e) => handleBoundaryUpdate({ allowNetworkRequests: e.target.checked })}
                   disabled={disabled}
-                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  className="rounded border-gray-300 text-burnt-600 focus:ring-burnt-500"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">
                   Allow Network Requests
@@ -264,7 +264,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
                 })}
                 disabled={disabled}
                 rows={3}
-                className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-burnt-500 focus:border-transparent"
               />
             </div>
           </div>
@@ -278,7 +278,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
           height: 20px;
           border-radius: 50%;
           background: white;
-          border: 2px solid #a855f7;
+          border: 2px solid #e25a1e;
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
@@ -288,7 +288,7 @@ const CreativityControls: React.FC<CreativityControlsProps> = ({
           height: 20px;
           border-radius: 50%;
           background: white;
-          border: 2px solid #a855f7;
+          border: 2px solid #e25a1e;
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }

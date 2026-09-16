@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { pathConfig } from '../config/paths';
 import { projectCoordinator } from './projectWorkspaceCoordinator';
-import { barnService } from './barnService';
+import { barnService } from './unified/barnService';
 import { harvestService } from './harvestService';
 import { fileManager } from './fileManagerService';
 import { db } from '../database/connection';
@@ -51,7 +51,8 @@ export class XenoSyncBarnIntegration extends EventEmitter {
   constructor() {
     super();
     const paths = pathConfig.getPaths();
-    this.barnRoot = path.join(paths.BARN_ITEMS_DIR);
+    // CRITICAL FIX: Use BARN_ITEMS instead of non-existent BARN_ITEMS_DIR
+    this.barnRoot = path.join(paths.BARN_ITEMS);
     this.harvestRoot = path.join(paths.HARVESTS_DIR);
     
     // Listen for project merge events

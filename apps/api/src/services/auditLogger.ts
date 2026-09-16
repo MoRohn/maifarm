@@ -8,8 +8,7 @@ import * as path from 'path';
 import { promisify } from 'util';
 import crypto from 'crypto';
 import { db } from '../database/connection';
-import { logger } from '../utils/logger';
-import { LogCategory } from '../utils/logger';
+import { logger, LogCategory } from '../services/ProductionLogger';
 
 const appendFile = promisify(fs.appendFile);
 const mkdir = promisify(fs.mkdir);
@@ -294,28 +293,33 @@ export class AuditLogger {
    */
   private async writeToDatabase(event: AuditEvent): Promise<void> {
     try {
+      // Map to existing table schema:
+      // action, resource_type, resource_id, details (JSONB), ip_address, user_agent, timestamp, user_id
+      const details = {
+        eventType: event.eventType,
+        severity: event.severity,
+        sessionId: event.sessionId,
+        result: event.result,
+        message: event.message,
+        metadata: event.metadata,
+        hash: event.hash
+      };
+
       await db.query(
         `INSERT INTO audit_logs (
-          id, timestamp, event_type, severity, user_id, session_id,
-          ip_address, user_agent, resource, resource_id, action,
-          result, message, metadata, hash
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          id, user_id, action, resource_type, resource_id,
+          details, ip_address, user_agent, timestamp
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           event.id,
-          event.timestamp,
-          event.eventType,
-          event.severity,
           event.userId,
-          event.sessionId,
+          event.action || event.eventType, // Use action if available, else eventType
+          event.resource || 'system', // resource becomes resource_type
+          event.resourceId,
+          JSON.stringify(details), // Store extra fields in details JSONB
           event.ipAddress,
           event.userAgent,
-          event.resource,
-          event.resourceId,
-          event.action,
-          event.result,
-          event.message,
-          JSON.stringify(event.metadata),
-          event.hash
+          event.timestamp
         ]
       );
     } catch (error: any) {

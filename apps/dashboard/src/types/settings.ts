@@ -181,26 +181,58 @@ export interface NotificationSettings {
   enabled: boolean;
   sound: boolean;
   desktop: boolean;
-  email: EmailNotificationSettings;
-  triggers: NotificationTriggers;
-  bundleNotifications?: boolean;
-}
-
-export interface EmailNotificationSettings {
-  enabled: boolean;
-  address: string;
-  frequency: 'immediate' | 'hourly' | 'daily' | 'weekly';
-}
-
-export interface NotificationTriggers {
-  farmComplete: boolean;
-  farmError: boolean;
-  agentError: boolean;
-  lowCredits: boolean;
-  systemUpdate: boolean;
-  aiSuggestions: boolean;
-  aiDiscovery: boolean;
-  [key: string]: boolean;
+  email: {
+    enabled: boolean;
+    address: string;
+    frequency: 'immediate' | 'hourly' | 'daily' | 'weekly';
+  };
+  quietHours?: {
+    enabled: boolean;
+    start: string;
+    end: string;
+  };
+  types: {
+    farmStart: {
+      enabled: boolean;
+      channels: {
+        email: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+    };
+    farmComplete: {
+      enabled: boolean;
+      channels: {
+        email: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+    };
+    agentError: {
+      enabled: boolean;
+      channels: {
+        email: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+    };
+    resourceAlert: {
+      enabled: boolean;
+      channels: {
+        email: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+    };
+    aiDiscovery: {
+      enabled: boolean;
+      channels: {
+        email: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+    };
+  };
 }
 
 export interface LanguageSettings {

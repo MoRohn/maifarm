@@ -1,5 +1,6 @@
 import { Request, Response, Router } from 'express';
-import { db } from '../database/connection';
+import { settingsService } from '../services/settingsService';
+import { logger, LogCategory } from '../utils/logger';
 
 const router = Router();
 
@@ -25,11 +26,11 @@ router.get('/orchestrator', async (req: Request, res: Response) => {
 router.post('/xenosync', async (req: Request, res: Response) => {
   // XenoSync is mandatory - ignore any attempt to disable it
   const { enabled } = req.body;
-  
+
   if (enabled === false) {
-    console.log('[Settings] Attempt to disable XenoSync ignored - XenoSync is mandatory');
+    logger.info(LogCategory.SYSTEM, 'Attempt to disable XenoSync ignored - XenoSync is mandatory');
   }
-  
+
   res.json({
     success: true,
     enabled: true
@@ -39,11 +40,11 @@ router.post('/xenosync', async (req: Request, res: Response) => {
 // Save orchestrator preference - no-op, always xenosync
 router.post('/orchestrator', async (req: Request, res: Response) => {
   const { orchestrator } = req.body;
-  
+
   if (orchestrator !== 'xenosync') {
-    console.log(`[Settings] Attempt to set orchestrator to '${orchestrator}' ignored - XenoSync is mandatory`);
+    logger.info(LogCategory.SYSTEM, `Attempt to set orchestrator to '${orchestrator}' ignored - XenoSync is mandatory`);
   }
-  
+
   res.json({
     success: true,
     orchestrator: 'xenosync'
@@ -53,21 +54,13 @@ router.post('/orchestrator', async (req: Request, res: Response) => {
 // Get all settings
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const result = await db.query(
-      `SELECT key, value, updated_at FROM settings ORDER BY key`
-    );
-    
-    const settings = result.rows.reduce((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {} as Record<string, any>);
-    
+    const settings = await settingsService.getAllSystemSettings();
     res.json({
       success: true,
       settings
     });
   } catch (error) {
-    console.error('Error fetching settings:', error);
+    logger.error(LogCategory.SYSTEM, 'Error fetching settings:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch settings'
@@ -89,26 +82,40 @@ router.post('/:key', async (req: Request, res: Response) => {
     }
     
     // Upsert the setting
-    await db.query(
-      `INSERT INTO settings (key, value, updated_at) 
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (key) 
-       DO UPDATE SET value = $2, updated_at = NOW()`,
-      [key, value]
-    );
-    
-    console.log(`[Settings] Setting '${key}' updated`);
-    
+    const persisted = await settingsService.setSetting(key, value);
+    if (!persisted) {
+      throw new Error('Failed to persist setting');
+    }
+
+    logger.info(LogCategory.SYSTEM, `Setting '${key}' updated`);
+
     res.json({
       success: true,
       key,
       value
     });
   } catch (error) {
-    console.error('Error updating setting:', error);
+    logger.error(LogCategory.SYSTEM, 'Error updating setting:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to update setting'
+    });
+  }
+});
+
+// Get performance metrics
+router.get('/metrics', (req: Request, res: Response) => {
+  try {
+    const metrics = settingsService.getMetrics();
+    res.json({
+      success: true,
+      metrics
+    });
+  } catch (error) {
+    logger.error(LogCategory.SYSTEM, 'Error fetching settings metrics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch metrics'
     });
   }
 });

@@ -1,213 +1,394 @@
-import { useEffect, useRef, useCallback, RefObject, useState } from 'react';
-import { useMediaQuery } from './useResponsive';
+/**
+ * useAccessibility - Custom React hooks for accessibility features
+ * Provides easy-to-use hooks for common accessibility patterns
+ */
 
-interface UseAccessibilityOptions {
-  role?: string;
-  label?: string;
-  description?: string;
-  live?: 'polite' | 'assertive' | 'off';
-  atomic?: boolean;
-  relevant?: string;
+import { useEffect, useRef, useCallback, useState } from 'react';
+import {
+  announcer,
+  focusManager,
+  handleKeyboardNavigation,
+  prefersReducedMotion,
+  prefersHighContrast,
+  announceRouteChange,
+  type AriaLive,
+  type KeyboardNavigationOptions,
+  KEYS,
+} from '@/utils/accessibility';
+
+/**
+ * Hook for screen reader announcements
+ */
+export function useAnnouncer() {
+  const announce = useCallback((
+    message: string,
+    politeness: AriaLive = 'polite',
+    delay?: number
+  ) => {
+    announcer.announce(message, politeness, delay);
+  }, []);
+
+  const announceError = useCallback((message: string) => {
+    announcer.announceError(message);
+  }, []);
+
+  const announceSuccess = useCallback((message: string) => {
+    announcer.announceSuccess(message);
+  }, []);
+
+  return {
+    announce,
+    announceError,
+    announceSuccess,
+  };
 }
 
-export const useAccessibility = <T extends HTMLElement = HTMLElement>(
-  options: UseAccessibilityOptions = {}
-) => {
-  const ref = useRef<T>(null);
-  const { role, label, description, live, atomic, relevant } = options;
+/**
+ * Hook for focus trapping
+ */
+export function useFocusTrap(
+  isActive: boolean = true,
+  containerRef?: React.RefObject<HTMLElement>
+) {
+  const internalRef = useRef<HTMLElement>(null);
+  const ref = containerRef || internalRef;
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-
-    if (role) element.setAttribute('role', role);
-    if (label) element.setAttribute('aria-label', label);
-    if (description) element.setAttribute('aria-describedby', description);
-    if (live) element.setAttribute('aria-live', live);
-    if (atomic !== undefined) element.setAttribute('aria-atomic', String(atomic));
-    if (relevant) element.setAttribute('aria-relevant', relevant);
-
-    return () => {
-      if (role) element.removeAttribute('role');
-      if (label) element.removeAttribute('aria-label');
-      if (description) element.removeAttribute('aria-describedby');
-      if (live) element.removeAttribute('aria-live');
-      if (atomic !== undefined) element.removeAttribute('aria-atomic');
-      if (relevant) element.removeAttribute('aria-relevant');
-    };
-  }, [role, label, description, live, atomic, relevant]);
+    if (isActive && ref.current) {
+      cleanupRef.current = focusManager.trapFocus(ref.current);
+      return () => {
+        cleanupRef.current?.();
+        cleanupRef.current = null;
+      };
+    }
+  }, [isActive, ref]);
 
   return ref;
-};
+}
 
-export const useFocusTrap = <T extends HTMLElement = HTMLElement>(
-  isActive = true
-): RefObject<T> => {
-  const ref = useRef<T>(null);
-
-  useEffect(() => {
-    if (!isActive || !ref.current) return;
-
-    const container = ref.current;
-    const focusableElements = container.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-
-    if (focusableElements.length === 0) return;
-
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-
-      if (e.shiftKey) {
-        if (document.activeElement === firstElement) {
-          e.preventDefault();
-          lastElement.focus();
-        }
-      } else {
-        if (document.activeElement === lastElement) {
-          e.preventDefault();
-          firstElement.focus();
-        }
-      }
-    };
-
-    container.addEventListener('keydown', handleKeyDown);
-    firstElement.focus();
-
-    return () => {
-      container.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isActive]);
-
-  return ref;
-};
-
-export const useAnnouncement = () => {
-  const announcementRef = useRef<HTMLDivElement | null>(null);
+/**
+ * Hook for keyboard navigation
+ */
+export function useKeyboardNavigation(
+  options: KeyboardNavigationOptions,
+  deps: React.DependencyList = []
+) {
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    handleKeyboardNavigation(e, options);
+  }, deps);
 
   useEffect(() => {
-    const announcement = document.createElement('div');
-    announcement.setAttribute('role', 'status');
-    announcement.setAttribute('aria-live', 'polite');
-    announcement.setAttribute('aria-atomic', 'true');
-    announcement.className = 'sr-only';
-    document.body.appendChild(announcement);
-    announcementRef.current = announcement;
-
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.body.removeChild(announcement);
-      announcementRef.current = null;
+      document.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [handleKeyDown]);
 
-  const announce = useCallback((message: string, priority: 'polite' | 'assertive' = 'polite') => {
-    if (!announcementRef.current) return;
+  return handleKeyDown;
+}
 
-    announcementRef.current.setAttribute('aria-live', priority);
-    announcementRef.current.textContent = message;
-
-    // Clear after announcement
-    setTimeout(() => {
-      if (announcementRef.current) {
-        announcementRef.current.textContent = '';
-      }
-    }, 1000);
-  }, []);
-
-  return announce;
-};
-
-export const useKeyboardNavigation = <T extends HTMLElement = HTMLElement>(
-  items: RefObject<T>[],
+/**
+ * Hook for arrow key navigation
+ */
+export function useArrowNavigation(
+  itemCount: number,
   options: {
     orientation?: 'horizontal' | 'vertical' | 'both';
     loop?: boolean;
     onSelect?: (index: number) => void;
+    onEscape?: () => void;
+    initialIndex?: number;
   } = {}
-) => {
-  const { orientation = 'vertical', loop = true, onSelect } = options;
-  const [activeIndex, setActiveIndex] = useState(0);
+) {
+  const {
+    orientation = 'vertical',
+    loop = true,
+    onSelect,
+    onEscape,
+    initialIndex = -1,
+  } = options;
+
+  const [focusedIndex, setFocusedIndex] = useState(initialIndex);
+
+  const moveFocus = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
+    setFocusedIndex(current => {
+      let newIndex = current;
+
+      if (direction === 'up' || (direction === 'left' && orientation !== 'vertical')) {
+        newIndex = current - 1;
+        if (newIndex < 0) {
+          newIndex = loop ? itemCount - 1 : 0;
+        }
+      } else if (direction === 'down' || (direction === 'right' && orientation !== 'vertical')) {
+        newIndex = current + 1;
+        if (newIndex >= itemCount) {
+          newIndex = loop ? 0 : itemCount - 1;
+        }
+      }
+
+      return newIndex;
+    });
+  }, [itemCount, loop, orientation]);
+
+  useKeyboardNavigation({
+    onArrowUp: orientation !== 'horizontal' ? () => moveFocus('up') : undefined,
+    onArrowDown: orientation !== 'horizontal' ? () => moveFocus('down') : undefined,
+    onArrowLeft: orientation !== 'vertical' ? () => moveFocus('left') : undefined,
+    onArrowRight: orientation !== 'vertical' ? () => moveFocus('right') : undefined,
+    onHome: () => setFocusedIndex(0),
+    onEnd: () => setFocusedIndex(itemCount - 1),
+    onEnter: () => {
+      if (focusedIndex >= 0 && focusedIndex < itemCount) {
+        onSelect?.(focusedIndex);
+      }
+    },
+    onEscape: onEscape,
+  }, [itemCount, orientation, loop, focusedIndex, onSelect, onEscape]);
+
+  return {
+    focusedIndex,
+    setFocusedIndex,
+    moveFocus,
+  };
+}
+
+/**
+ * Hook for managing focus restoration
+ */
+export function useFocusRestore() {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const saveFocus = useCallback(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+  }, []);
+
+  const restoreFocus = useCallback(() => {
+    if (previousFocusRef.current && previousFocusRef.current.focus) {
+      previousFocusRef.current.focus();
+      previousFocusRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      let nextIndex = activeIndex;
+    return () => {
+      restoreFocus();
+    };
+  }, [restoreFocus]);
 
-      switch (e.key) {
-        case 'ArrowUp':
-          if (orientation === 'vertical' || orientation === 'both') {
-            e.preventDefault();
-            nextIndex = activeIndex - 1;
-          }
-          break;
-        case 'ArrowDown':
-          if (orientation === 'vertical' || orientation === 'both') {
-            e.preventDefault();
-            nextIndex = activeIndex + 1;
-          }
-          break;
-        case 'ArrowLeft':
-          if (orientation === 'horizontal' || orientation === 'both') {
-            e.preventDefault();
-            nextIndex = activeIndex - 1;
-          }
-          break;
-        case 'ArrowRight':
-          if (orientation === 'horizontal' || orientation === 'both') {
-            e.preventDefault();
-            nextIndex = activeIndex + 1;
-          }
-          break;
-        case 'Home':
-          e.preventDefault();
-          nextIndex = 0;
-          break;
-        case 'End':
-          e.preventDefault();
-          nextIndex = items.length - 1;
-          break;
-        case 'Enter':
-        case ' ':
-          e.preventDefault();
-          onSelect?.(activeIndex);
-          return;
-        default:
-          return;
-      }
+  return {
+    saveFocus,
+    restoreFocus,
+  };
+}
 
-      if (loop) {
-        nextIndex = (nextIndex + items.length) % items.length;
-      } else {
-        nextIndex = Math.max(0, Math.min(items.length - 1, nextIndex));
-      }
+/**
+ * Hook for detecting user preferences
+ */
+export function useAccessibilityPreferences() {
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion());
+  const [highContrast, setHighContrast] = useState(prefersHighContrast());
 
-      setActiveIndex(nextIndex);
-      items[nextIndex]?.current?.focus();
+  useEffect(() => {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const contrastQuery = window.matchMedia('(prefers-contrast: high)');
+
+    const handleMotionChange = (e: MediaQueryListEvent) => {
+      setReducedMotion(e.matches);
     };
 
-    const activeItem = items[activeIndex]?.current;
-    if (activeItem) {
-      activeItem.addEventListener('keydown', handleKeyDown);
-      return () => activeItem.removeEventListener('keydown', handleKeyDown);
+    const handleContrastChange = (e: MediaQueryListEvent) => {
+      setHighContrast(e.matches);
+    };
+
+    // Modern browsers
+    if (motionQuery.addEventListener) {
+      motionQuery.addEventListener('change', handleMotionChange);
+      contrastQuery.addEventListener('change', handleContrastChange);
+
+      return () => {
+        motionQuery.removeEventListener('change', handleMotionChange);
+        contrastQuery.removeEventListener('change', handleContrastChange);
+      };
     }
-  }, [activeIndex, items, orientation, loop, onSelect]);
 
-  return { activeIndex, setActiveIndex };
-};
+    // Legacy browsers
+    motionQuery.addListener?.(handleMotionChange);
+    contrastQuery.addListener?.(handleContrastChange);
 
-export const useHighContrast = () => {
-  return useMediaQuery('(prefers-contrast: high)');
-};
+    return () => {
+      motionQuery.removeListener?.(handleMotionChange);
+      contrastQuery.removeListener?.(handleContrastChange);
+    };
+  }, []);
 
-export const useColorScheme = () => {
-  const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
-  const prefersLight = useMediaQuery('(prefers-color-scheme: light)');
-  
   return {
-    prefersDark,
-    prefersLight,
-    scheme: prefersDark ? 'dark' : 'light',
+    reducedMotion,
+    highContrast,
   };
-};
+}
+
+/**
+ * Hook for roving tabindex pattern
+ */
+export function useRovingTabIndex(
+  itemCount: number,
+  options: {
+    orientation?: 'horizontal' | 'vertical';
+    loop?: boolean;
+  } = {}
+) {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const getTabIndex = useCallback((index: number) => {
+    return index === activeIndex ? 0 : -1;
+  }, [activeIndex]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent, index: number) => {
+    const { orientation = 'horizontal', loop = true } = options;
+
+    let newIndex = index;
+    let handled = false;
+
+    if ((orientation === 'horizontal' && e.key === KEYS.ARROW_RIGHT) ||
+        (orientation === 'vertical' && e.key === KEYS.ARROW_DOWN)) {
+      newIndex = index + 1;
+      if (newIndex >= itemCount) {
+        newIndex = loop ? 0 : itemCount - 1;
+      }
+      handled = true;
+    } else if ((orientation === 'horizontal' && e.key === KEYS.ARROW_LEFT) ||
+               (orientation === 'vertical' && e.key === KEYS.ARROW_UP)) {
+      newIndex = index - 1;
+      if (newIndex < 0) {
+        newIndex = loop ? itemCount - 1 : 0;
+      }
+      handled = true;
+    } else if (e.key === KEYS.HOME) {
+      newIndex = 0;
+      handled = true;
+    } else if (e.key === KEYS.END) {
+      newIndex = itemCount - 1;
+      handled = true;
+    }
+
+    if (handled) {
+      e.preventDefault();
+      setActiveIndex(newIndex);
+
+      // Focus the new element
+      const element = e.currentTarget.parentElement?.children[newIndex] as HTMLElement;
+      element?.focus();
+    }
+  }, [itemCount, options]);
+
+  return {
+    activeIndex,
+    getTabIndex,
+    handleKeyDown,
+  };
+}
+
+/**
+ * Hook for managing live regions
+ */
+export function useLiveRegion(
+  ariaLive: AriaLive = 'polite',
+  ariaAtomic: boolean = true
+) {
+  const [message, setMessage] = useState('');
+  const regionRef = useRef<HTMLDivElement>(null);
+
+  const announce = useCallback((text: string) => {
+    setMessage('');
+    setTimeout(() => setMessage(text), 100);
+  }, []);
+
+  return {
+    regionProps: {
+      ref: regionRef,
+      role: 'status',
+      'aria-live': ariaLive,
+      'aria-atomic': ariaAtomic,
+      'aria-relevant': 'additions text',
+      className: 'sr-only',
+    },
+    announce,
+    message,
+  };
+}
+
+/**
+ * Hook for skip navigation links
+ */
+export function useSkipLinks(targets: Array<{ id: string; label: string }>) {
+  const [isVisible, setIsVisible] = useState(false);
+
+  const handleFocus = useCallback(() => {
+    setIsVisible(true);
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    setIsVisible(false);
+  }, []);
+
+  const skipTo = useCallback((targetId: string) => {
+    const element = document.getElementById(targetId);
+    if (element) {
+      element.focus();
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
+  return {
+    isVisible,
+    handleFocus,
+    handleBlur,
+    skipTo,
+    targets,
+  };
+}
+
+/**
+ * Hook for managing ARIA descriptions
+ */
+export function useAriaDescriptions() {
+  const [descriptions, setDescriptions] = useState<Map<string, string>>(new Map());
+  const idCounterRef = useRef(0);
+
+  const addDescription = useCallback((text: string): string => {
+    const id = `aria-desc-${Date.now()}-${++idCounterRef.current}`;
+    setDescriptions(prev => new Map(prev).set(id, text));
+    return id;
+  }, []);
+
+  const removeDescription = useCallback((id: string) => {
+    setDescriptions(prev => {
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const updateDescription = useCallback((id: string, text: string) => {
+    setDescriptions(prev => new Map(prev).set(id, text));
+  }, []);
+
+  return {
+    descriptions,
+    addDescription,
+    removeDescription,
+    updateDescription,
+  };
+}
+
+/**
+ * Hook for route change announcements
+ */
+export function useRouteAnnouncer() {
+  useEffect(() => {
+    // Get current route from window location
+    const pageName = document.title || 'New page';
+    announceRouteChange(pageName);
+  }, []);
+}

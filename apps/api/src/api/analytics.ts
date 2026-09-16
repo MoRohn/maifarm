@@ -1,23 +1,58 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { ApiResponse } from '../types/api';
-import { authenticateToken } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
-import { metricsCollector } from '../monitoring/metricsCollector';
 import { analyticsService } from '../gateway/services/AnalyticsService';
-import { taskCountService } from '../services/taskCountService';
+import { recordEndpointLatency } from '../monitoring/metricsCollector';
+import { logger, LogCategory } from '../services/ProductionLogger';
 import * as os from 'os';
 import * as fs from 'fs';
-import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+const TIME_WINDOW_PRESETS: Record<string, number> = {
+  '15m': 15 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '6h': 6 * 60 * 60 * 1000,
+  '12h': 12 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '3d': 3 * 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000
+};
+
+const STORAGE_CACHE_TTL_MS = Number(process.env.ANALYTICS_STORAGE_CACHE_MS || 60000);
+const COST_CACHE_TTL_MS = Number(process.env.ANALYTICS_COST_CACHE_MS || 60000);
+
+let storageCache: { data: ResourceMetrics['storage']; expiresAt: number } | null = null;
+let costCache: { key: string; data: ClaudeCodeCosts; expiresAt: number } | null = null;
+
+function resolveTimeWindowMs(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.min(value, TIME_WINDOW_PRESETS['30d']);
+  }
+
+  if (typeof value === 'string') {
+    if (TIME_WINDOW_PRESETS[value]) {
+      return TIME_WINDOW_PRESETS[value];
+    }
+
+    const numeric = Number.parseInt(value, 10);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return Math.min(numeric, TIME_WINDOW_PRESETS['30d']);
+    }
+  }
+
+  return TIME_WINDOW_PRESETS['24h'];
+}
+
+function createCacheKey(windowStart: Date): string {
+  return windowStart.toISOString();
+}
 
 const router = Router();
-
-// Analytics modes tracking
-interface AnalyticsModes {
-  farmCreation: boolean;
-  goWild: boolean;
-  quickTask: boolean;
-}
 
 // Base analytics endpoint - redirects to metrics
 router.get('/', apiRateLimits.read, (req, res) => {
@@ -43,11 +78,18 @@ interface ResourceMetrics {
     free: number;
     percentage: number;
   };
+  storage: {
+    total: number;
+    used: number;
+    available: number;
+    percentage: number;
+  };
   gpu?: {
     usage: number;
     memory: number;
     temperature?: number;
     name?: string;
+    count: number;
   };
 }
 
@@ -122,93 +164,154 @@ function getMemoryMetrics(): ResourceMetrics['memory'] {
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
-  
+
   return {
-    total: totalMem,
-    used: usedMem,
-    free: freeMem,
+    total: totalMem / (1024 ** 3), // Convert to GB
+    used: usedMem / (1024 ** 3),
+    free: freeMem / (1024 ** 3),
     percentage: Math.round((usedMem / totalMem) * 100)
   };
 }
 
-// Helper function to get Claude Code costs
-async function getClaudeCodeCosts(): Promise<ClaudeCodeCosts> {
+// Helper function to get storage metrics
+async function getStorageMetrics(): Promise<ResourceMetrics['storage']> {
+  if (storageCache && storageCache.expiresAt > Date.now()) {
+    return storageCache.data;
+  }
+
+  const fallback: ResourceMetrics['storage'] = {
+    total: 500,
+    used: 250,
+    available: 250,
+    percentage: 50
+  };
+
+  if (process.env.NODE_ENV === 'test') {
+    storageCache = {
+      data: fallback,
+      expiresAt: Date.now() + STORAGE_CACHE_TTL_MS
+    };
+    return fallback;
+  }
+
   try {
-    // Read from Claude coordination file if available
-    const coordinationFile = '/tmp/claude_coordination/active_agents.json';
-    let activeAgentsData: any = {};
-    
-    if (fs.existsSync(coordinationFile)) {
-      const data = fs.readFileSync(coordinationFile, 'utf-8');
-      activeAgentsData = JSON.parse(data);
+    const { stdout } = await execAsync('df -k / | tail -1');
+    const parts = stdout.trim().split(/\s+/);
+
+    if (parts.length >= 5) {
+      const totalKB = parseInt(parts[1], 10);
+      const usedKB = parseInt(parts[2], 10);
+      const availableKB = parseInt(parts[3], 10);
+      const percentageStr = parts[4];
+      const percentage = parseInt(percentageStr.replace('%', ''), 10);
+
+      const data: ResourceMetrics['storage'] = {
+        total: totalKB / (1024 ** 2),
+        used: usedKB / (1024 ** 2),
+        available: availableKB / (1024 ** 2),
+        percentage: Math.min(100, Math.max(0, percentage))
+      };
+
+      storageCache = {
+        data,
+        expiresAt: Date.now() + STORAGE_CACHE_TTL_MS
+      };
+
+      return data;
     }
-    
-    // Calculate costs based on API usage (mock data for now, real integration would use Claude API billing)
-    const apiCostPerCall = 0.002; // $0.002 per API call (example)
-    const computeCostPerMinute = 0.001; // $0.001 per minute (example)
-    
-    // Get cost data from database or calculate
-    const costsResult = await db.query(`
-      SELECT 
-        COUNT(*) as total_calls,
-        AVG(response_time) as avg_response_time,
+  } catch (error) {
+    logger.warn(LogCategory.PERFORMANCE, 'Failed to collect storage metrics, using fallback', { error });
+  }
+
+  storageCache = {
+    data: fallback,
+    expiresAt: Date.now() + STORAGE_CACHE_TTL_MS
+  };
+
+  return fallback;
+}
+
+// Helper function to get Claude Code costs
+async function getClaudeCodeCosts(windowStart: Date): Promise<ClaudeCodeCosts> {
+  const cacheKey = createCacheKey(windowStart);
+  if (costCache && costCache.key === cacheKey && costCache.expiresAt > Date.now()) {
+    return costCache.data;
+  }
+
+  try {
+    const apiCostPerCall = 0.002;
+    const computeCostPerMinute = 0.001;
+
+    const costsResult = await db.query(
+      `SELECT 
+        COUNT(*) AS total_calls,
+        AVG(response_time) AS avg_response_time,
         farm_id,
         agent_id,
-        DATE(created_at) as date
+        DATE(created_at) AS date
       FROM tasks
-      WHERE created_at >= NOW() - INTERVAL '30 days'
-      GROUP BY farm_id, agent_id, DATE(created_at)
-    `).catch(() => ({ rows: [] }));
-    
-    const costByAgent: { [key: string]: number } = {};
-    const costByFarm: { [key: string]: number } = {};
+      WHERE created_at >= $1
+      GROUP BY farm_id, agent_id, DATE(created_at)`,
+      [windowStart]
+    ).catch(() => ({ rows: [] }));
+
+    const costByAgent: Record<string, number> = {};
+    const costByFarm: Record<string, number> = {};
     const dailyCosts: Array<{ date: string; cost: number; apiCalls: number }> = [];
-    
+
     let totalApiCost = 0;
     let totalComputeCost = 0;
-    
+
     costsResult.rows.forEach((row: any) => {
-      const apiCost = (row.total_calls || 0) * apiCostPerCall;
-      const computeCost = (row.avg_response_time || 0) * computeCostPerMinute / 60;
+      const totalCalls = Number(row.total_calls || 0);
+      const avgResponseMs = Number(row.avg_response_time || 0);
+      const apiCost = totalCalls * apiCostPerCall;
+      const computeCost = (avgResponseMs / 60000) * computeCostPerMinute;
       const totalCost = apiCost + computeCost;
-      
+
       if (row.agent_id) {
         costByAgent[row.agent_id] = (costByAgent[row.agent_id] || 0) + totalCost;
       }
+
       if (row.farm_id) {
         costByFarm[row.farm_id] = (costByFarm[row.farm_id] || 0) + totalCost;
       }
-      
+
       totalApiCost += apiCost;
       totalComputeCost += computeCost;
-    });
-    
-    // Add mock daily costs for visualization
-    const today = new Date();
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
+
       dailyCosts.push({
-        date: date.toISOString().split('T')[0],
-        cost: Math.random() * 10 + 5, // Mock data
-        apiCalls: Math.floor(Math.random() * 1000 + 500)
+        date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
+        cost: totalCost,
+        apiCalls: totalCalls
       });
-    }
-    
-    return {
-      totalCost: totalApiCost + totalComputeCost,
+    });
+
+    const totalCost = totalApiCost + totalComputeCost;
+    const result: ClaudeCodeCosts = {
+      totalCost,
       costByAgent,
       costByFarm,
       costBreakdown: {
         api: totalApiCost,
         compute: totalComputeCost,
-        storage: totalApiCost * 0.1, // Mock 10% of API cost
-        network: totalApiCost * 0.05 // Mock 5% of API cost
+        storage: totalCost * 0.1,
+        network: totalCost * 0.05
       },
       dailyCosts
     };
+
+    if (COST_CACHE_TTL_MS > 0) {
+      costCache = {
+        key: cacheKey,
+        data: result,
+        expiresAt: Date.now() + COST_CACHE_TTL_MS
+      };
+    }
+
+    return result;
   } catch (error) {
-    console.error('Error calculating Claude Code costs:', error);
+    logger.warn(LogCategory.PERFORMANCE, 'Error calculating Claude Code costs', { error });
     return {
       totalCost: 0,
       costByAgent: {},
@@ -221,108 +324,114 @@ async function getClaudeCodeCosts(): Promise<ClaudeCodeCosts> {
 
 // GET /api/analytics/metrics - Get comprehensive analytics metrics
 router.get('/metrics', apiRateLimits.read, async (req, res) => {
+  const start = process.hrtime.bigint();
+  const routeKey = '/api/analytics/metrics';
+  const rawTimeRange = (req.query.timeRange ?? '24h') as string | number;
+  const windowMs = resolveTimeWindowMs(rawTimeRange);
+  const windowStart = new Date(Date.now() - windowMs);
+
   try {
-    const { timeRange = '24h' } = req.query;
-    
-    // Get resource metrics
     const resourceMetrics: ResourceMetrics = {
       cpu: getCPUMetrics(),
       memory: getMemoryMetrics(),
-      // GPU metrics would require specific libraries like nvidia-ml-py
+      storage: await getStorageMetrics()
     };
-    
-    // Get Claude Code costs
-    const claudeCosts = await getClaudeCodeCosts();
-    
-    // Get agent efficiency metrics
-    const agentResult = await db.query(`
-      SELECT 
-        a.id as agent_id,
-        a.name as agent_name,
-        COUNT(CASE WHEN t.status = 'completed' THEN 1 END) as tasks_completed,
-        COUNT(t.id) as tasks_total,
-        AVG(CASE WHEN t.status = 'completed' AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL 
-          THEN EXTRACT(EPOCH FROM (t.completed_at - t.started_at)) * 1000 
-          ELSE t.response_time END) as avg_response_time,
-        COUNT(CASE WHEN t.status = 'failed' THEN 1 END) as errors,
-        MAX(t.updated_at) as last_active
+
+    const claudeCosts = await getClaudeCodeCosts(windowStart);
+
+    const agentResult = await db.query(
+      `SELECT 
+        a.id AS agent_id,
+        a.farm_id,
+        a.name AS agent_name,
+        a.type AS agent_type,
+        COALESCE(COUNT(t.id), 0) AS tasks_total,
+        COALESCE(COUNT(*) FILTER (WHERE t.status = 'completed'), 0) AS tasks_completed,
+        COALESCE(COUNT(*) FILTER (WHERE t.status = 'failed'), 0) AS errors,
+        COALESCE(AVG(
+          CASE 
+            WHEN t.status = 'completed' AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
+              THEN EXTRACT(EPOCH FROM (t.completed_at - t.started_at)) * 1000
+            ELSE NULL
+          END
+        ), 0) AS avg_response_time,
+        MAX(t.updated_at) AS last_active
       FROM agents a
-      LEFT JOIN tasks t ON a.id = t.agent_id
-      WHERE t.created_at >= NOW() - INTERVAL '${timeRange}'
-      GROUP BY a.id, a.name
-    `).catch(() => ({ rows: [] }));
-    
-    const agentEfficiency: AgentEfficiencyMetrics[] = await Promise.all(
-      agentResult.rows.map(async (row: any) => {
-        // Get task count based on files created by this agent
-        const farmId = row.farm_id;
-        const agentIndex = row.config?.agentIndex || 0;
-        const tasksCompleted = farmId 
-          ? await taskCountService.countTasksForAgent(farmId, agentIndex)
-          : parseInt(row.tasks_completed || 0);
-        
-        const tasksTotal = parseInt(row.tasks_total || tasksCompleted);
-        const successRate = tasksTotal > 0 ? (tasksCompleted / tasksTotal) * 100 : 0;
-        
-        return {
-          agentId: row.agent_id,
-          agentName: row.agent_name,
-          tasksCompleted,
-          tasksTotal,
-          successRate,
-          averageResponseTime: parseFloat(row.avg_response_time || 0),
-          errorRate: row.tasks_total > 0 ? (row.errors / row.tasks_total) * 100 : 0,
-          costPerTask: claudeCosts.costByAgent[row.agent_id] 
-            ? claudeCosts.costByAgent[row.agent_id] / (tasksCompleted || 1)
-            : 0,
-          efficiency: row.tasks_total > 0 && row.avg_response_time > 0
-            ? (tasksCompleted / row.avg_response_time) * (tasksCompleted / tasksTotal)
-            : 0,
-          lastActive: new Date(row.last_active || Date.now())
-        };
-      })
-    );
-    
-    // Get task completion metrics
-    const taskResult = await db.query(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
-        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-        AVG(CASE WHEN status = 'completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL 
-          THEN EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000 
-          ELSE response_time END) as avg_completion_time
+      LEFT JOIN tasks t
+        ON t.agent_id = a.id
+       AND t.created_at >= $1
+      GROUP BY a.id, a.farm_id, a.name, a.type`,
+      [windowStart]
+    ).catch(() => ({ rows: [] }));
+
+    const agentEfficiency: AgentEfficiencyMetrics[] = agentResult.rows.map((row: any) => {
+      const tasksCompleted = Number(row.tasks_completed || 0);
+      const tasksTotal = Number(row.tasks_total || 0);
+      const avgResponseTime = Number(row.avg_response_time || 0);
+      const errorRate = tasksTotal > 0 ? (Number(row.errors || 0) / tasksTotal) * 100 : 0;
+      const costForAgent = claudeCosts.costByAgent[row.agent_id] || 0;
+      const costPerTask = tasksCompleted > 0 ? costForAgent / tasksCompleted : 0;
+      const efficiency = tasksTotal > 0 && avgResponseTime > 0
+        ? (tasksCompleted / avgResponseTime) * (tasksCompleted / tasksTotal)
+        : 0;
+
+      return {
+        agentId: row.agent_id,
+        agentName: row.agent_name,
+        tasksCompleted,
+        tasksTotal,
+        successRate: tasksTotal > 0 ? (tasksCompleted / tasksTotal) * 100 : 0,
+        averageResponseTime: avgResponseTime,
+        errorRate,
+        costPerTask,
+        efficiency,
+        lastActive: row.last_active ? new Date(row.last_active) : new Date(windowStart)
+      };
+    });
+
+    const taskResult = await db.query(
+      `SELECT 
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+        COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+        COUNT(*) FILTER (WHERE status IN ('pending', 'queued', 'assigned', 'processing')) AS pending,
+        AVG(CASE WHEN status = 'completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000
+          ELSE response_time END) AS avg_completion_time
       FROM tasks
-      WHERE created_at >= NOW() - INTERVAL '${timeRange}'
-    `).catch(() => ({ rows: [{}] }));
-    
+      WHERE created_at >= $1`,
+      [windowStart]
+    ).catch(() => ({ rows: [{}] }));
+
     const taskRow = taskResult.rows[0] || {};
+    const totalTasks = parseInt(taskRow.total || 0, 10);
+    const completedTasks = parseInt(taskRow.completed || 0, 10);
+    const failedTasks = parseInt(taskRow.failed || 0, 10);
+    const pendingTasks = parseInt(taskRow.pending || 0, 10);
+
     const taskCompletion: TaskCompletionMetrics = {
-      totalTasks: parseInt(taskRow.total || 0),
-      completedTasks: parseInt(taskRow.completed || 0),
-      failedTasks: parseInt(taskRow.failed || 0),
-      pendingTasks: parseInt(taskRow.pending || 0),
+      totalTasks,
+      completedTasks,
+      failedTasks,
+      pendingTasks,
       averageCompletionTime: parseFloat(taskRow.avg_completion_time || 0),
-      completionRate: taskRow.total > 0 
-        ? (taskRow.completed / taskRow.total) * 100 
-        : 0,
-      trendsHourly: [] // Would be populated with hourly data
+      completionRate: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
+      trendsHourly: []
     };
-    
-    // Get harvest analytics
-    const harvestResult = await db.query(`
-      SELECT 
-        COUNT(*) as total_harvests,
-        AVG(yield_value) as avg_yield,
-        SUM(yield_value) as total_yield,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_harvests
+
+    const harvestResult = await db.query(
+      `SELECT 
+        COUNT(*) AS total_harvests,
+        AVG(yield_value) AS avg_yield,
+        SUM(yield_value) AS total_yield,
+        COUNT(*) FILTER (WHERE status IN ('completed', 'ready')) AS successful_harvests
       FROM harvests
-      WHERE created_at >= NOW() - INTERVAL '${timeRange}'
-    `).catch(() => ({ rows: [{}] }));
-    
+      WHERE created_at >= $1`,
+      [windowStart]
+    ).catch(() => ({ rows: [{}] }));
+
     const harvestData = harvestResult.rows[0] || {};
-    
+
     const response: ApiResponse = {
       success: true,
       data: {
@@ -331,30 +440,51 @@ router.get('/metrics', apiRateLimits.read, async (req, res) => {
         agentEfficiency,
         taskCompletion,
         harvestAnalytics: {
-          totalHarvests: parseInt(harvestData.total_harvests || 0),
+          totalHarvests: parseInt(harvestData.total_harvests || 0, 10),
           averageYield: parseFloat(harvestData.avg_yield || 0),
           totalYield: parseFloat(harvestData.total_yield || 0),
           successRate: harvestData.total_harvests > 0
             ? (harvestData.successful_harvests / harvestData.total_harvests) * 100
             : 0
         },
+        windowStart,
+        windowMs,
         timestamp: new Date()
       }
     };
-    
+
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, res.statusCode || 200, durationSeconds);
+    logger.debug(LogCategory.METRICS, 'Analytics metrics computed', {
+      durationMs: Math.round(durationSeconds * 1000),
+      windowMs
+    });
+
     res.json(response);
   } catch (error) {
-    console.error('Error fetching analytics metrics:', error);
-    
-    // Return mock data if database is unavailable
+    const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+    recordEndpointLatency(routeKey, 500, durationSeconds);
+
+    logger.error(LogCategory.METRICS, 'Error fetching analytics metrics', {
+      error,
+      durationMs: Math.round(durationSeconds * 1000)
+    });
+
     const response: ApiResponse = {
       success: true,
       data: {
         resourceMetrics: {
           cpu: getCPUMetrics(),
-          memory: getMemoryMetrics()
+          memory: getMemoryMetrics(),
+          storage: await getStorageMetrics()
         },
-        claudeCosts: await getClaudeCodeCosts(),
+        claudeCosts: {
+          totalCost: 0,
+          costByAgent: {},
+          costByFarm: {},
+          costBreakdown: { api: 0, compute: 0, storage: 0, network: 0 },
+          dailyCosts: []
+        },
         agentEfficiency: [],
         taskCompletion: {
           totalTasks: 0,
@@ -371,10 +501,12 @@ router.get('/metrics', apiRateLimits.read, async (req, res) => {
           totalYield: 0,
           successRate: 0
         },
+        windowStart,
+        windowMs,
         timestamp: new Date()
       }
     };
-    
+
     res.json(response);
   }
 });
@@ -410,8 +542,12 @@ router.get('/farm-yield', apiRateLimits.read, async (req, res) => {
 // GET /api/analytics/costs - Get detailed Claude Code cost analytics
 router.get('/costs', apiRateLimits.read, async (req, res) => {
   try {
-    const costs = await getClaudeCodeCosts();
-    
+    const rawTimeRange = (req.query.timeRange ?? '30d') as string | number;
+    const windowMs = resolveTimeWindowMs(rawTimeRange);
+    const windowStart = new Date(Date.now() - windowMs);
+
+    const costs = await getClaudeCodeCosts(windowStart);
+
     const response: ApiResponse = {
       success: true,
       data: costs
@@ -434,9 +570,33 @@ router.get('/costs', apiRateLimits.read, async (req, res) => {
 router.get('/agent-efficiency', apiRateLimits.read, async (req, res) => {
   try {
     const { timeRange = '24h', sortBy = 'efficiency' } = req.query;
-    
+
+    // SECURITY FIX: Validate timeRange against whitelist to prevent SQL injection
+    const allowedTimeRanges: Record<string, string> = {
+      '15m': '15 minutes',
+      '1h': '1 hour',
+      '6h': '6 hours',
+      '12h': '12 hours',
+      '24h': '24 hours',
+      '3d': '3 days',
+      '7d': '7 days',
+      '30d': '30 days'
+    };
+    const safeTimeRange = allowedTimeRanges[timeRange as string] || '24 hours';
+
+    // SECURITY FIX: Whitelist sortBy columns to prevent SQL injection
+    const allowedSortColumns: Record<string, string> = {
+      'efficiency': '(completed::float / NULLIF(total, 0))',
+      'completed': 'completed',
+      'total': 'total',
+      'avg_time': 'avg_time',
+      'failures': 'failures',
+      'name': 'a.name'
+    };
+    const safeSortBy = allowedSortColumns[sortBy as string] || '(completed::float / NULLIF(total, 0))';
+
     const result = await db.query(`
-      SELECT 
+      SELECT
         a.id,
         a.name,
         a.type,
@@ -446,9 +606,9 @@ router.get('/agent-efficiency', apiRateLimits.read, async (req, res) => {
         COUNT(CASE WHEN t.status = 'failed' THEN 1 END) as failures
       FROM agents a
       LEFT JOIN tasks t ON a.id = t.agent_id
-      WHERE t.created_at >= NOW() - INTERVAL '${timeRange}'
+      WHERE t.created_at >= NOW() - INTERVAL '${safeTimeRange}'
       GROUP BY a.id, a.name, a.type
-      ORDER BY ${sortBy === 'efficiency' ? '(completed::float / NULLIF(total, 0))' : sortBy} DESC
+      ORDER BY ${safeSortBy} DESC
     `).catch(() => ({ rows: [] }));
     
     const response: ApiResponse = {
@@ -475,7 +635,14 @@ router.get('/cpu-gpu', apiRateLimits.read, async (req, res) => {
     const metrics: ResourceMetrics = {
       cpu: getCPUMetrics(),
       memory: getMemoryMetrics(),
-      // GPU metrics would require nvidia-smi or similar
+      storage: await getStorageMetrics(),
+      gpu: {
+        usage: 0,
+        memory: 0,
+        temperature: undefined,
+        name: undefined,
+        count: 0
+      }
     };
     
     const response: ApiResponse = {
@@ -707,21 +874,56 @@ router.post('/track', apiRateLimits.write, async (req, res) => {
 router.get('/standardized-tasks', apiRateLimits.read, async (req, res) => {
   try {
     const metrics = await analyticsService.getStandardizedTaskMetrics();
-    
+
     const response: ApiResponse = {
       success: true,
       data: metrics
     };
-    
+
     res.json(response);
   } catch (error) {
     console.error('Error getting standardized task metrics:', error);
-    
+
     const response: ApiResponse = {
       success: false,
       error: { code: 'FETCH_ERROR', message: 'Failed to get standardized task metrics' }
     };
-    
+
+    res.status(500).json(response);
+  }
+});
+
+// GET /api/metrics/system - Get real-time system metrics (CPU, Memory, Storage, GPU)
+// This endpoint is used by the Analytics page for system resource cards
+router.get('/system', apiRateLimits.read, async (req, res) => {
+  try {
+    const metrics: ResourceMetrics = {
+      cpu: getCPUMetrics(),
+      memory: getMemoryMetrics(),
+      storage: await getStorageMetrics(),
+      gpu: {
+        usage: 0, // Would require nvidia-smi or similar
+        memory: 0,
+        temperature: undefined,
+        name: undefined,
+        count: 0
+      }
+    };
+
+    const response: ApiResponse = {
+      success: true,
+      data: metrics
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error fetching system metrics:', error);
+
+    const response: ApiResponse = {
+      success: false,
+      error: { code: 'FETCH_ERROR', message: 'Failed to fetch system metrics' }
+    };
+
     res.status(500).json(response);
   }
 });

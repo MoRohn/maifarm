@@ -80,8 +80,8 @@ class CentralizedStateCoordinator extends EventEmitter {
   private entities: Map<string, StateEntity> = new Map();
   private subscriptions: Map<string, StateSubscription> = new Map();
   private pendingChanges: StateChange[] = [];
-  private reconciliationInterval: NodeJS.Timer | null = null;
-  private persistenceInterval: NodeJS.Timer | null = null;
+  private reconciliationInterval: NodeJS.Timeout | null = null;
+  private persistenceInterval: NodeJS.Timeout | null = null;
   private readonly REDIS_PREFIX = 'state:';
   private readonly REDIS_TTL = 3600; // 1 hour
   private readonly PERSISTENCE_INTERVAL = 10000; // 10 seconds
@@ -130,7 +130,7 @@ class CentralizedStateCoordinator extends EventEmitter {
     } catch (error) {
       throw new MaiFarmError(
         ErrorCode.INTERNAL_SERVER,
-        `Failed to initialize state coordinator: ${error.message}`,
+        `Failed to initialize state coordinator: ${(error as Error).message}`,
         ErrorSeverity.CRITICAL
       );
     }
@@ -498,7 +498,8 @@ class CentralizedStateCoordinator extends EventEmitter {
       for (const key of keys) {
         const data = await redis.get(key);
         if (data) {
-          const entity = JSON.parse(data);
+          const dataStr = typeof data === 'string' ? data : data.toString();
+          const entity = JSON.parse(dataStr);
           entity.createdAt = new Date(entity.createdAt);
           entity.updatedAt = new Date(entity.updatedAt);
           this.entities.set(entity.id, entity);
@@ -596,7 +597,7 @@ class CentralizedStateCoordinator extends EventEmitter {
   private async clearRedisCache(): Promise<void> {
     const keys = await redis.keys(`${this.REDIS_PREFIX}*`);
     if (keys.length > 0) {
-      await redis.del(...keys);
+      await redis.del(keys as [string, ...string[]]);
     }
   }
 
@@ -752,14 +753,16 @@ class CentralizedStateCoordinator extends EventEmitter {
     const keys = await redis.keys(`${this.REDIS_PREFIX}*`);
 
     for (const key of keys) {
-      const entityId = key.replace(this.REDIS_PREFIX, '');
+      const keyStr = typeof key === 'string' ? key : key.toString();
+      const entityId = keyStr.replace(this.REDIS_PREFIX, '');
       const stateEntity = this.entities.get(entityId);
 
       if (!stateEntity) {
         // Entity in Redis but not in state
-        const data = await redis.get(key);
+        const data = await redis.get(keyStr);
         if (data) {
-          const entity = JSON.parse(data);
+          const dataStr = typeof data === 'string' ? data : data.toString();
+          const entity = JSON.parse(dataStr);
           entity.createdAt = new Date(entity.createdAt);
           entity.updatedAt = new Date(entity.updatedAt);
           this.entities.set(entityId, entity);

@@ -419,13 +419,15 @@ export const HarvestDashboardView: React.FC<HarvestDashboardViewProps> = ({
             <div className="flex items-center gap-2">
               <Cpu className="w-4 h-4 text-gray-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                CPU: {agents.reduce((acc, a) => acc + (a.metrics?.cpu || 0), 0) / agents.length || 0}%
+                {/* FIX: Prevent division by zero when agents array is empty */}
+                CPU: {agents.length > 0 ? Math.round(agents.reduce((acc, a) => acc + (a.metrics?.cpu || 0), 0) / agents.length) : 0}%
               </span>
             </div>
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 text-gray-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                Memory: {agents.reduce((acc, a) => acc + (a.metrics?.memory || 0), 0) / agents.length || 0}%
+                {/* FIX: Prevent division by zero when agents array is empty */}
+                Memory: {agents.length > 0 ? Math.round(agents.reduce((acc, a) => acc + (a.metrics?.memory || 0), 0) / agents.length) : 0}%
               </span>
             </div>
           </div>

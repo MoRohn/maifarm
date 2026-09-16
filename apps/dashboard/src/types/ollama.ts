@@ -18,7 +18,7 @@ export interface OllamaStatus {
   isRunning: boolean;
   modelsPath: string;
   availableModels: OllamaModel[];
-  qwenModelInstalled: boolean;
+  llamaModelInstalled: boolean;
   recommendedModels: RecommendedModel[];
 }
 

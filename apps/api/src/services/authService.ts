@@ -126,7 +126,7 @@ export class AuthService {
     }
 
     // Update last login
-    await db.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
+    await db.query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
 
     // Generate tokens
     const accessToken = this.generateAccessToken(user);
@@ -141,7 +141,7 @@ export class AuthService {
       permissions: this.extractPermissions(user.roles),
       createdAt: user.created_at,
       updatedAt: user.updated_at,
-      lastLogin: new Date(),
+      lastLogin: user.last_login_at ? new Date(user.last_login_at) : new Date(),
       mfaEnabled: user.mfa_enabled || false,
       isActive: user.is_active !== false
     };
@@ -250,11 +250,16 @@ export class AuthService {
   }
 
   private generateAccessToken(user: any): string {
+    // Combine permissions from roles and direct user permissions
+    const rolePermissions = this.extractPermissions(user.roles);
+    const userPermissions = user.permissions || [];
+    const allPermissions = Array.from(new Set([...rolePermissions, ...userPermissions]));
+
     const payload: Omit<AuthToken, 'exp' | 'iat'> = {
       userId: user.id,
       email: user.email,
-      roles: user.roles.map((r: any) => r.name),
-      permissions: this.extractPermissions(user.roles)
+      roles: user.roles.map((r: any) => typeof r === 'string' ? r : r.name),
+      permissions: allPermissions
     };
 
     return jwt.sign(payload, JWT_SECRET, {

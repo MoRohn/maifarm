@@ -40,11 +40,19 @@ export function useAnalytics(farmId?: string) {
   const loadAnalytics = async () => {
     try {
       setLoading(true);
-      await Promise.all([
+      // FIX: Use Promise.allSettled to ensure all operations complete even if one fails
+      const results = await Promise.allSettled([
         loadMetrics(),
         loadInsights(),
         loadReports()
       ]);
+      // Log any failures for debugging
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          const operationNames = ['metrics', 'insights', 'reports'];
+          console.error(`Failed to load ${operationNames[index]}:`, result.reason);
+        }
+      });
     } catch (error) {
       console.error('Failed to load analytics:', error);
     } finally {
@@ -93,16 +101,28 @@ export function useAnalytics(farmId?: string) {
     try {
       const report = await reportingService.generateReport(name, type, format, config);
       setReports(prev => [report, ...prev]);
-      
-      // Poll for report completion
+
+      // FIX: Track interval for cleanup and add max attempts to prevent infinite polling
+      let attempts = 0;
+      const maxAttempts = 60; // Max 60 seconds of polling
+
       const checkInterval = setInterval(async () => {
-        const updatedReport = await reportingService.getReport(report.id);
-        if (updatedReport && updatedReport.status !== 'generating') {
+        attempts++;
+        try {
+          const updatedReport = await reportingService.getReport(report.id);
+          if (updatedReport && updatedReport.status !== 'generating') {
+            clearInterval(checkInterval);
+            setReports(prev => prev.map(r => r.id === report.id ? updatedReport : r));
+          } else if (attempts >= maxAttempts) {
+            clearInterval(checkInterval);
+            console.warn(`Report ${report.id} polling timeout after ${maxAttempts} seconds`);
+          }
+        } catch (pollError) {
+          console.error('Error polling report status:', pollError);
           clearInterval(checkInterval);
-          setReports(prev => prev.map(r => r.id === report.id ? updatedReport : r));
         }
       }, 1000);
-      
+
       return report;
     } catch (error) {
       console.error('Failed to generate report:', error);

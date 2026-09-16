@@ -23,6 +23,13 @@ interface FarmContext {
   agentPool: Map<string, Agent>;
 }
 
+// Helper function to safely get agents as Agent array
+function getAgentsAsObjects(agents: Agent[] | string[]): Agent[] {
+  if (agents.length === 0) return [];
+  if (typeof agents[0] === 'string') return []; // If string IDs, return empty - lookup needed
+  return agents as Agent[];
+}
+
 export class FarmOrchestrationService extends EventEmitter {
   private farms: Map<string, FarmContext> = new Map();
   private templates: Map<string, FarmTemplate> = new Map();
@@ -235,25 +242,18 @@ export class FarmOrchestrationService extends EventEmitter {
       config: {
         yaml: undefined,
         autoScale: true,
-        maxAgents: 10,
-        retryPolicy: {
-          enabled: true,
-          maxRetries: 3,
-          backoffMultiplier: 2
-        }
+        maxAgents: 10
       },
       metrics: {
         totalTasks: 0,
         completedTasks: 0,
         failedTasks: 0,
-        avgCompletionTime: 0,
-        resourceUsage: {
+        queuedTasks: 0,
+        efficiency: 1,
+        resourceUtilization: {
           cpu: 0,
-          memory: 0,
-          network: 0
-        },
-        collaborationScore: 1,
-        efficiency: 1
+          memory: 0
+        }
       },
       template: template?.id,
       resources: {
@@ -362,8 +362,9 @@ export class FarmOrchestrationService extends EventEmitter {
           for (let i = 0; i < agentConfig.count; i++) {
             const agent = await this.provisionAgent(farm.id, agentConfig);
             context.agentPool.set(agent.id, agent);
-            farm.agents.push(agent);
-            
+            // Use type assertion since we're adding Agent objects
+            (farm.agents as Agent[]).push(agent);
+
             // Update progress
             const totalAgents = template.configuration.agents.reduce((sum, ac) => sum + ac.count, 0);
             steps[1].progress = ((farm.agents.length / totalAgents) * 100);
@@ -457,20 +458,22 @@ export class FarmOrchestrationService extends EventEmitter {
 
   private async provisionAgent(farmId: string, config: any): Promise<Agent> {
     const agentId = uuidv4();
-    
+
     const agent: Agent = {
       id: agentId,
       name: `Agent-${agentId.slice(0, 8)}`,
       type: config.type as 'builder' | 'reviewer' | 'tester' | 'documenter' | 'custom',
-      status: 'provisioning',
+      status: 'initializing', // Use valid AgentStatus
       progress: 0,
       memory: 0,
       cpu: 0,
       lastActive: new Date(),
-      capabilities: config.capabilities,
       farmId,
+      agentNumber: 0, // Will be set by caller
+      createdAt: new Date(),
+      updatedAt: new Date(),
       lifecycle: {
-        state: 'provisioning',
+        state: 'initializing', // Use valid AgentStatus
         phase: 'provisioning',
         startTime: new Date(),
         lastUpdate: new Date(),
@@ -480,33 +483,22 @@ export class FarmOrchestrationService extends EventEmitter {
         }
       },
       resources: {
-        cpu: {
-          usage: 0,
-          allocated: config.resources.cpu,
-          limit: config.resources.cpu
-        },
-        memory: {
-          usage: 0,
-          allocated: this.parseMemoryString(config.resources.memory),
-          limit: this.parseMemoryString(config.resources.memory)
-        },
-        network: {
-          inbound: '0KB/s',
-          outbound: '0KB/s'
-        },
-        cpuUsage: 0,
-        memoryUsage: 0
+        cpu: 0,
+        memory: 0
       },
       metrics: {
         tasksCompleted: 0,
-        successRate: 1.0,
-        averageTaskDuration: 0,
+        tasksFailed: 0,
+        averageExecutionTime: 0,
         uptime: 0,
-        tasksFailed: 0
+        efficiency: 1.0
       },
       tasks: [],
       metadata: {
-        environment: config.environment || {}
+        environment: config.environment || {},
+        capabilities: config.capabilities,
+        allocatedCpu: config.resources.cpu,
+        allocatedMemory: this.parseMemoryString(config.resources.memory)
       }
     };
 
@@ -544,24 +536,17 @@ export class FarmOrchestrationService extends EventEmitter {
   // This method is implemented later in the file
 
   private collectFarmMetrics(farm: Farm) {
-    // Simulate metric collection
-    farm.agents.forEach(agent => {
+    // Simulate metric collection - use helper to get agents safely
+    const agents = getAgentsAsObjects(farm.agents);
+    agents.forEach(agent => {
       if (agent.resources) {
-        // Update CPU usage
-        if (agent.resources.cpu) {
-          agent.resources.cpu.usage = Math.random() * 0.8 + 0.1; // 10-90%
-          agent.resources.cpuUsage = agent.resources.cpu.usage;
-        }
-        
-        // Update memory usage
-        if (agent.resources.memory) {
-          const totalMem = agent.resources.memory.allocated || 4096; // MB
-          const usedMem = Math.random() * totalMem * 0.8;
-          agent.resources.memory.usage = usedMem / totalMem;
-          agent.resources.memoryUsage = agent.resources.memory.usage;
-        }
+        // Update CPU usage - resources.cpu is now a number
+        agent.resources.cpu = Math.random() * 0.8 + 0.1; // 10-90%
+
+        // Update memory usage - resources.memory is now a number
+        agent.resources.memory = Math.random() * 0.8 + 0.1; // 10-90%
       }
-      
+
       // Update metrics
       if (agent.metrics) {
         agent.metrics.uptime += 30; // seconds
@@ -570,7 +555,7 @@ export class FarmOrchestrationService extends EventEmitter {
         }
       }
     });
-    
+
     this.updateResourceUsage(farm);
     this.emit('metrics:updated', { farmId: farm.id, resources: farm.resources });
   }
@@ -580,20 +565,21 @@ export class FarmOrchestrationService extends EventEmitter {
   private async checkAgentHealth(agent: Agent): Promise<boolean> {
     // Simulate health check
     await this.delay(100);
-    
-    const cpuUsage = agent.resources?.cpu?.usage || 0;
-    const memUsage = agent.resources?.memory?.usage || 0;
-    
+
+    // resources.cpu and resources.memory are now numbers (0-1 range)
+    const cpuUsage = agent.resources?.cpu || 0;
+    const memUsage = agent.resources?.memory || 0;
+
     const cpuHealthy = cpuUsage < 0.9;
     const memHealthy = memUsage < 0.9;
-    
+
     if (agent.lifecycle) {
       agent.lifecycle.health = {
         status: cpuHealthy && memHealthy ? 'healthy' : 'degraded',
         lastCheck: new Date()
       };
     }
-    
+
     // Store health check details in metadata
     if (!agent.metadata) {
       agent.metadata = {};
@@ -605,43 +591,44 @@ export class FarmOrchestrationService extends EventEmitter {
       memUsage,
       timestamp: new Date()
     };
-    
+
     return cpuHealthy && memHealthy;
   }
 
   async scaleAgents(farmId: string, agentType: string, delta: number): Promise<void> {
     const context = this.farms.get(farmId);
     if (!context) throw new Error('Farm not found');
-    
+
     const { farm } = context;
-    
+
     if (delta > 0) {
       // Scale up
       const templateId = farm.template;
       const template = templateId ? this.templates.get(templateId) : undefined;
-      const agentConfig = template?.configuration.agents.find((a: any) => a.type === agentType);
       if (!template) throw new Error('Agent type not found in template');
-      
+
       for (let i = 0; i < delta; i++) {
         const agent = await this.provisionAgent(farmId, template);
         context.agentPool.set(agent.id, agent);
-        farm.agents.push(agent);
+        // Use type assertion since we're adding Agent objects
+        (farm.agents as Agent[]).push(agent);
       }
-      
+
       this.emit('farm:scaled', { farmId, agentType, delta, action: 'up' });
     } else if (delta < 0) {
-      // Scale down
-      const agentsToRemove = farm.agents
+      // Scale down - get agents safely
+      const agents = getAgentsAsObjects(farm.agents);
+      const agentsToRemove = agents
         .filter(a => a.type === agentType && a.status === 'idle')
         .slice(0, Math.abs(delta));
-      
+
       for (const agent of agentsToRemove) {
         await this.terminateAgent(farm, agent);
       }
-      
+
       this.emit('farm:scaled', { farmId, agentType, delta: Math.abs(delta), action: 'down' });
     }
-    
+
     this.updateResourceUsage(farm);
   }
 
@@ -914,18 +901,20 @@ export class FarmOrchestrationService extends EventEmitter {
 
   private updateResourceUsage(farm: Farm): void {
     if (!farm.resources) return;
-    
-    // Calculate actual usage based on agents
+
+    // Calculate actual usage based on agents - use helper to get agents safely
     let totalCpuUsed = 0;
     let totalMemoryUsed = 0;
-    
-    farm.agents.forEach(agent => {
+
+    const agents = getAgentsAsObjects(farm.agents);
+    agents.forEach(agent => {
       if (agent.resources) {
-        totalCpuUsed += agent.resources.cpuUsage || 0;
-        totalMemoryUsed += agent.resources.memoryUsage || 0;
+        // resources.cpu and resources.memory are now numbers
+        totalCpuUsed += agent.resources.cpu || 0;
+        totalMemoryUsed += agent.resources.memory || 0;
       }
     });
-    
+
     farm.resources.cpu.used = totalCpuUsed;
     farm.resources.memory.used = totalMemoryUsed;
     farm.resources.cpu.percentage = farm.resources.cpu.total > 0 ? (totalCpuUsed / farm.resources.cpu.total) * 100 : 0;
@@ -939,8 +928,9 @@ export class FarmOrchestrationService extends EventEmitter {
   }
 
   private async validateAgentHealth(farm: Farm): Promise<boolean> {
-    // Validate all agents are healthy
-    return farm.agents.every(agent => 
+    // Validate all agents are healthy - use helper to get agents safely
+    const agents = getAgentsAsObjects(farm.agents);
+    return agents.every(agent =>
       agent.status === 'active' || agent.status === 'idle'
     );
   }
@@ -954,7 +944,9 @@ export class FarmOrchestrationService extends EventEmitter {
   private async terminateAgent(farm: Farm, agent: Agent): Promise<void> {
     // Terminate an agent
     console.log(`Terminating agent ${agent.id}`);
-    farm.agents = farm.agents.filter(a => a.id !== agent.id);
+    // Use type assertion since we're filtering Agent objects
+    const agents = getAgentsAsObjects(farm.agents);
+    farm.agents = agents.filter(a => a.id !== agent.id);
   }
 }
 

@@ -22,38 +22,38 @@ const ModelDownloadGuide: React.FC<ModelDownloadGuideProps> = ({ modelName, onCl
   const [error, setError] = useState<string | null>(null);
 
   const modelInfo: Record<string, ModelInfo> = {
-    'qwen2.5-coder:32b': {
-      name: 'Qwen2.5 Coder 32B',
+    'llama2.5-coder:32b': {
+      name: 'Llama2.5 Coder 32B',
       size: '~19GB',
       ram: '32GB+ recommended',
       description: 'Best performance for complex code generation tasks'
     },
-    'qwen2.5-coder:7b': {
-      name: 'Qwen2.5 Coder 7B',
+    'llama2.5-coder:7b': {
+      name: 'Llama2.5 Coder 7B',
       size: '~4.7GB',
       ram: '16GB recommended',
       description: 'Balanced performance and resource usage'
     },
-    'qwen2.5-coder:1.5b': {
-      name: 'Qwen2.5 Coder 1.5B',
+    'llama2.5-coder:1.5b': {
+      name: 'Llama2.5 Coder 1.5B',
       size: '~1GB',
       ram: '8GB minimum',
       description: 'Lightweight model for basic tasks'
     },
-    'qwen2.5:32b': {
-      name: 'Qwen2.5 32B',
+    'llama2.5:32b': {
+      name: 'Llama2.5 32B',
       size: '~19GB',
       ram: '32GB+ recommended',
       description: 'General purpose model with strong reasoning'
     },
-    'qwen2.5:14b': {
-      name: 'Qwen2.5 14B',
+    'llama2.5:14b': {
+      name: 'Llama2.5 14B',
       size: '~8.5GB',
       ram: '16GB recommended',
       description: 'Medium-sized general model'
     },
-    'qwen2.5:7b': {
-      name: 'Qwen2.5 7B',
+    'llama2.5:7b': {
+      name: 'Llama2.5 7B',
       size: '~4.7GB',
       ram: '16GB recommended',
       description: 'Efficient general purpose model'
@@ -117,7 +117,7 @@ const ModelDownloadGuide: React.FC<ModelDownloadGuideProps> = ({ modelName, onCl
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Download Qwen Model
+            Download Llama Model
           </h2>
           <button
             onClick={onClose}

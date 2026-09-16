@@ -17,8 +17,9 @@ import { FarmCard } from './FarmCard';
 import { ThemedAccent } from '../common/ThemedLayout';
 import { StatsCard } from './StatsCard';
 import { QuickActions } from './QuickActions';
+import { CapabilitiesSection } from './CapabilitiesSection';
 import { RecentActivity, ActivityItem } from './RecentActivity';
-import { FarmChatWizard } from '../Farm/FarmChatWizardSafe';
+import { UnifiedFarmChatWizard } from '../Farm/UnifiedFarmChatWizard';
 import { HarvestSection } from '../Harvest/HarvestSection';
 import { DynamicLogo } from '../common/DynamicLogo';
 import CompactorAnimation from '../common/CompactorAnimation';
@@ -32,6 +33,9 @@ import { unifiedMetricsService } from '@/services/unifiedMetricsService';
 import { MetricName, formatMetricValue, getMetricUnit } from '@/types/metrics';
 import { createMockFarm } from '@/utils/mockFarmData';
 import { toast } from 'react-hot-toast';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { AIEngineQuickSetupModal } from '../Onboarding/AIEngineQuickSetupModal';
+// ConceptQuadExplainer moved to Settings Info section
 
 interface DashboardProps {
   className?: string;
@@ -46,9 +50,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const redirectedFarmsRef = useRef<Set<string>>(new Set());
+
+  // Prevent redirect loops by tracking component mount
+  useEffect(() => {
+    console.log('[Dashboard] Mounted successfully');
+    return () => console.log('[Dashboard] Unmounting');
+  }, []);
   
   const { user } = useUserStore();
-  const { farms, activeFarms, recentFarms, stats, fetchFarms, addFarm, updateFarm } = useFarmStore();
+  const { farms, activeFarms, recentFarms, stats, fetchFarms, addFarm, updateFarm, error: farmsError, loading: farmsLoading } = useFarmStore();
   const theme = useThemeStore((state) => state.theme);
   const { connected: isConnected, subscribe } = useWebSocketStore();
   
@@ -61,27 +71,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     url: import.meta.env.VITE_API_URL || 'http://localhost:4567'
   });
 
-  // Set up unified metrics
+  // Set up unified metrics - DISABLED to prevent refresh loop
+  // Metrics will be fetched once on mount and updated via WebSocket events only
   useEffect(() => {
-    // Subscribe to metrics updates
-    const handleMetricsUpdate = (updatedMetrics: any) => {
-      setMetrics(updatedMetrics);
-    };
-    
-    unifiedMetricsService.on('metrics:updated', handleMetricsUpdate);
-    
-    // Connect WebSocket to metrics service
-    if (socket) {
-      unifiedMetricsService.connectWebSocket(socket);
-      
-      // Subscribe to metrics updates via WebSocket
-      socket.emit('metrics:subscribe');
-    }
-    
-    // Start periodic updates
-    unifiedMetricsService.startPeriodicUpdates(30000); // 30 seconds
-    
-    // Initial fetch
+    if (!socket) return;
+
+    // Initial fetch only
     setMetricsLoading(true);
     setMetricsError(null);
     unifiedMetricsService.fetchMetrics()
@@ -94,14 +89,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
         setMetricsError('Failed to load metrics. Please try again later.');
         setMetricsLoading(false);
       });
-    
+
+    // No periodic updates - only WebSocket events will update metrics
     return () => {
-      unifiedMetricsService.off('metrics:updated', handleMetricsUpdate);
-      if (socket) {
-        socket.emit('metrics:unsubscribe');
-      }
+      // Cleanup
     };
-  }, [socket]);
+  }, []); // Empty deps - run once only
 
   // Set up WebSocket alerts
   useEffect(() => {
@@ -141,6 +134,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
   }, []);
 
   useEffect(() => {
+    // Fetch farms once on mount
     fetchFarms().then(() => {
       // After fetching farms, refresh metrics to get accurate counts
       unifiedMetricsService.refreshMetrics().then(() => {
@@ -149,7 +143,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     }).catch(error => {
       console.error('Failed to fetch farms:', error);
     });
-  }, [fetchFarms]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   useEffect(() => {
     const checkDarkMode = () => {
@@ -177,44 +172,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
-  // Auto-redirect to Harvest page when farm becomes active
+  // Auto-redirect disabled to prevent navigation loops
+  // Users can manually navigate to harvest pages by clicking farm cards
   useEffect(() => {
     if (!isConnected || !subscribe) return;
 
     const handleFarmStatusUpdate = (data: any) => {
       const farmId = data.farmId || data.id;
       const newStatus = data.status;
-      
-      console.log('[Dashboard] Farm status update:', { farmId, newStatus, currentPath: window.location.pathname });
-      
-      // Check if this farm just became active and hasn't been redirected yet
+
+      console.log('[Dashboard] Farm status update:', { farmId, newStatus });
+
+      // Just show a notification, don't auto-redirect
       if (farmId && (newStatus === 'active' || newStatus === 'running')) {
-        // Don't redirect if we're already on a harvest page
-        if (window.location.pathname.includes('/harvest/')) {
-          console.log('[Dashboard] Already on harvest page, skipping redirect');
-          return;
-        }
-        
-        // Check if we haven't already redirected for this farm
-        if (!redirectedFarmsRef.current.has(farmId)) {
+        // Get current farms from store to avoid dependency
+        const currentFarms = useFarmStore.getState().farms;
+        const farm = currentFarms.find(f => f.id === farmId);
+        if (farm && !redirectedFarmsRef.current.has(farmId)) {
           redirectedFarmsRef.current.add(farmId);
-          
-          // Find the farm in the store
-          const farm = farms.find(f => f.id === farmId);
-          if (farm) {
-            // Show notification
-            toast.success(`🚀 ${farm.name} is now active! Redirecting to Harvest view...`, {
-              duration: 3000,
-            });
-            
-            // Redirect through concept explainer after a short delay
-            setTimeout(() => {
-              const mode = farm?.metadata?.isQuickTask ? 'quicktask' : 'farm';
-              const transitionUrl = `/farm/${farmId}/transition/${mode}`;
-              console.log('[Dashboard] Redirecting to concept explainer:', transitionUrl);
-              navigate(transitionUrl);
-            }, 1500);
-          }
+          // FIX: Ensure farm.name exists to avoid "undefined is now active!" toast
+          const displayName = farm.name || 'Your farm';
+          toast.success(`🚀 ${displayName} is now active!`, {
+            duration: 3000,
+          });
         }
       }
     };
@@ -231,80 +211,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
       unsubscribeFarmRunning();
       unsubscribeFarmLaunched();
     };
-  }, [isConnected, subscribe, farms, navigate]);
+  }, [isConnected, subscribe]); // Removed farms and navigate dependencies
 
-  // Initialize metrics fetching
-  useEffect(() => {
-    const initializeMetrics = async () => {
-      try {
-        setMetricsLoading(true);
-        await unifiedMetricsService.refreshMetrics();
-        setMetrics(unifiedMetricsService.getMetrics());
-        setMetricsLoading(false);
-      } catch (error) {
-        // Don't log error for initial load if backend is not available
-        // The apiClient already handles this and provides mock data
-        if (isConnected) {
-          console.error('Failed to load metrics:', error);
-        }
-        setMetricsLoading(false);
-      }
-    };
+  // REMOVED: Duplicate metrics initialization that was causing refresh loop
+  // Metrics are now initialized once in the first useEffect above
 
-    initializeMetrics();
-    
-    // Start periodic updates with retry logic - more frequent updates
-    unifiedMetricsService.startMetricsUpdates(3000); // Update every 3 seconds
-
-    // Subscribe to WebSocket metrics updates
-    if (isConnected) {
-      console.log('Dashboard: WebSocket connected, ready for metrics updates');
-    }
-
-    // Refresh metrics when connection state changes
-    if (isConnected) {
-      initializeMetrics();
-    }
-
-    return () => {
-      unifiedMetricsService.stopMetricsUpdates();
-    };
-  }, [isConnected]);
-
-  // Handle WebSocket events to refresh metrics
+  // Handle WebSocket events to refresh metrics - THROTTLED to prevent loops
   useEffect(() => {
     if (!socket) return;
 
-    const handleFarmUpdate = () => {
-      // Refresh metrics when farms are updated
-      setTimeout(() => {
-        unifiedMetricsService.refreshMetrics().then(() => {
-          setMetrics(unifiedMetricsService.getMetrics());
-        });
-      }, 500); // Small delay to allow database to update
+    let metricsUpdateTimeout: NodeJS.Timeout | null = null;
+
+    const throttledMetricsUpdate = () => {
+      // Throttle metrics updates to max once per 5 seconds
+      if (metricsUpdateTimeout) return;
+
+      metricsUpdateTimeout = setTimeout(() => {
+        unifiedMetricsService.refreshMetrics()
+          .then(() => {
+            setMetrics(unifiedMetricsService.getMetrics());
+          })
+          .catch(err => console.error('Metrics refresh error:', err))
+          .finally(() => {
+            metricsUpdateTimeout = null;
+          });
+      }, 5000); // 5 second throttle
     };
 
-    const handleHarvestUpdate = () => {
-      // Refresh metrics when harvests are updated
-      setTimeout(() => {
-        unifiedMetricsService.refreshMetrics().then(() => {
-          setMetrics(unifiedMetricsService.getMetrics());
-        });
-      }, 500);
-    };
-
-    // Listen to various events that should trigger metrics update
-    socket.on('farm:created', handleFarmUpdate);
-    socket.on('farm:status', handleFarmUpdate);
-    socket.on('farm:deleted', handleFarmUpdate);
-    socket.on('farm:completed', handleFarmUpdate);
-    socket.on('agent:status', handleFarmUpdate);
-    socket.on('agent:updated', handleFarmUpdate);
-    socket.on('harvest:ready', handleHarvestUpdate);
-    socket.on('harvest:completed', handleHarvestUpdate);
-    socket.on('harvest:collected', handleHarvestUpdate);
+    // Listen to ONLY critical events
+    socket.on('farm:created', throttledMetricsUpdate);
+    socket.on('farm:completed', throttledMetricsUpdate);
+    socket.on('harvest:completed', throttledMetricsUpdate);
     socket.on('metrics:update', (data: any) => {
-      // Direct metrics update from server
+      // Direct metrics update from server - no throttle needed
       if (data.dashboard) {
         setMetrics(prev => ({
           ...prev,
@@ -317,25 +256,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
     });
 
     return () => {
-      socket.off('farm:created', handleFarmUpdate);
-      socket.off('farm:status', handleFarmUpdate);
-      socket.off('farm:deleted', handleFarmUpdate);
-      socket.off('farm:completed', handleFarmUpdate);
-      socket.off('agent:status', handleFarmUpdate);
-      socket.off('agent:updated', handleFarmUpdate);
-      socket.off('harvest:ready', handleHarvestUpdate);
-      socket.off('harvest:completed', handleHarvestUpdate);
-      socket.off('harvest:collected', handleHarvestUpdate);
+      if (metricsUpdateTimeout) clearTimeout(metricsUpdateTimeout);
+      socket.off('farm:created', throttledMetricsUpdate);
+      socket.off('farm:completed', throttledMetricsUpdate);
+      socket.off('harvest:completed', throttledMetricsUpdate);
       socket.off('metrics:update');
     };
   }, [socket]);
 
-  // Handle WebSocket metrics updates
-  useEffect(() => {
-    if (lastMessage) {
-      unifiedMetricsService.handleWebSocketMetrics(lastMessage);
-    }
-  }, [lastMessage]);
+  // REMOVED: Duplicate lastMessage handler causing refresh loop
+  // WebSocket events are already handled in the useEffect above
 
   // Handle WebSocket farm and agent updates
   useEffect(() => {
@@ -362,9 +292,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
       
       // Update farm in store
       if (farmId) {
-        useFarmStore.getState().updateFarm(farmId, { status });
+        // FIX: Wrap store update in try-catch to prevent handler crash
+        try {
+          useFarmStore.getState().updateFarm(farmId, { status });
+        } catch (storeError) {
+          console.error('[Dashboard] Failed to update farm in store:', storeError);
+        }
       }
-      
+
       // Add activity based on status
       const activityStore = useActivityStore.getState();
       switch (status) {
@@ -484,7 +419,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           <div className="p-2 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg">
             <Home className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
             Home
           </h1>
         </motion.div>
@@ -499,7 +434,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           className="mb-8"
         >
           <div className="text-left mb-6">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">
               Welcome MaiFarmer!
             </h2>
             <p className="text-gray-600 dark:text-gray-400">
@@ -508,13 +443,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           </div>
         </motion.section>
 
-        {/* Quick Actions */}
+        {/* Capabilities Sections - Device & App */}
+        <motion.section
+          {...fadeIn}
+          transition={{ delay: 0.15 }}
+          className="mb-8"
+        >
+          <CapabilitiesSection />
+        </motion.section>
+
+        {/* User Profile and Quick Actions Grid */}
         <motion.section
           {...fadeIn}
           transition={{ delay: 0.2 }}
           className="mb-8"
         >
-          <QuickActions />
+          <div className="w-full">
+            {/* Quick Actions - now spans full width */}
+            <QuickActions />
+          </div>
         </motion.section>
 
         {/* Stats Overview */}
@@ -523,6 +470,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           transition={{ delay: 0.3 }}
           className="mb-8"
         >
+          {/* UX FIX: Display metrics error with retry button */}
+          {metricsError && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-apple-lg p-4 mb-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-amber-800 dark:text-amber-200">Failed to load metrics</h4>
+                    <p className="text-sm text-amber-600 dark:text-amber-300">{metricsError}</p>
+                  </div>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    setMetricsLoading(true);
+                    setMetricsError(null);
+                    unifiedMetricsService.fetchMetrics()
+                      .then(() => {
+                        setMetrics(unifiedMetricsService.getMetrics());
+                        setMetricsLoading(false);
+                        toast.success('Metrics loaded successfully');
+                      })
+                      .catch((error) => {
+                        console.error('Failed to fetch metrics:', error);
+                        setMetricsError('Failed to load metrics. Please try again later.');
+                        setMetricsLoading(false);
+                      });
+                  }}
+                  disabled={metricsLoading}
+                  className="px-4 py-2 text-sm font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 transition-colors disabled:opacity-50"
+                >
+                  {metricsLoading ? 'Retrying...' : 'Retry'}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatsCard
               title="Live Farms"
@@ -555,6 +544,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           </div>
         </motion.section>
 
+        {/* Concept Explainer removed - now available in Settings > Info */}
 
         {/* All Farms */}
         <motion.section
@@ -579,6 +569,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
             </div>
           </div>
 
+          {/* Error State Display */}
+          {farmsError && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-apple-lg p-4 mb-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-red-800 dark:text-red-200">Failed to load farms</h4>
+                    <p className="text-sm text-red-600 dark:text-red-300">{farmsError}</p>
+                  </div>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => fetchFarms()}
+                  disabled={farmsLoading}
+                  className="px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors disabled:opacity-50"
+                >
+                  {farmsLoading ? 'Retrying...' : 'Retry'}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
           {farms && farms.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <AnimatePresence mode="popLayout">
@@ -598,7 +616,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           ) : (
             <motion.div
               {...fadeIn}
-              className="bg-gray-100 dark:bg-gray-900 rounded-apple-lg p-8 text-center border border-gray-200 dark:border-gray-800"
+              className="bg-gray-100/70 dark:bg-gray-800/50 backdrop-blur-xl rounded-apple-lg p-8 text-center border border-gray-200/40 dark:border-gray-700/40"
             >
               <Grid3x3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
@@ -625,7 +643,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
           transition={{ delay: 0.45 }}
           className="mb-8"
         >
-          <HarvestSection />
+          <ErrorBoundary>
+            <HarvestSection />
+          </ErrorBoundary>
         </motion.section>
 
         {/* Recent Activity */}
@@ -649,11 +669,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ className }) => {
         </motion.section>
       </div>
 
-      {/* Farm Creator Modal - Using FarmChatWizard for harvest mode */}
-      <FarmChatWizard
+      {/* Farm Creator Modal - Using UnifiedFarmChatWizard for enhanced experience */}
+      <UnifiedFarmChatWizard
         isOpen={showFarmCreator}
         onClose={() => setShowFarmCreator(false)}
+        initialMode="new-farm"
       />
+
+      {/* AI Engine Quick Setup Modal - Appears on first load */}
+      <AIEngineQuickSetupModal />
     </div>
   );
 };

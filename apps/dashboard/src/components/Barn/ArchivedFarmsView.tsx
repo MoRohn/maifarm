@@ -57,6 +57,7 @@ export const ArchivedFarmsView: React.FC<ArchivedFarmsViewProps> = ({ onSelectAr
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('archivedAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [isUndoing, setIsUndoing] = useState(false);
 
   useEffect(() => {
     // Fetch archived farms on mount
@@ -83,13 +84,10 @@ export const ArchivedFarmsView: React.FC<ArchivedFarmsViewProps> = ({ onSelectAr
   };
 
   const handleSortChange = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('desc');
-    }
-    setFilter({ sortBy: field, sortOrder: sortOrder === 'asc' ? 'desc' : 'asc' });
+    const nextOrder = sortBy === field ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'desc';
+    setSortBy(field);
+    setSortOrder(nextOrder);
+    setFilter({ sortBy: field, sortOrder: nextOrder });
   };
 
   const handleRestoreFarm = async (e: React.MouseEvent, farmId: string, farmName: string) => {
@@ -99,6 +97,8 @@ export const ArchivedFarmsView: React.FC<ArchivedFarmsViewProps> = ({ onSelectAr
       try {
         await restoreFarm({ farmId });
         toast.success(`Farm "${farmName}" restored successfully`);
+        await fetchArchivedFarms();
+        fetchArchiveStats();
       } catch (error) {
         toast.error(`Failed to restore farm "${farmName}"`);
       }
@@ -112,6 +112,8 @@ export const ArchivedFarmsView: React.FC<ArchivedFarmsViewProps> = ({ onSelectAr
       try {
         await deleteArchive(archiveId);
         toast.success(`Archive for "${farmName}" deleted permanently`);
+        await fetchArchivedFarms();
+        fetchArchiveStats();
       } catch (error) {
         toast.error(`Failed to delete archive for "${farmName}"`);
       }
@@ -121,6 +123,27 @@ export const ArchivedFarmsView: React.FC<ArchivedFarmsViewProps> = ({ onSelectAr
   const categories = ['development', 'production', 'testing', 'experiment', 'demo'];
 
   const totalPages = Math.ceil(totalArchives / pageSize);
+
+  const recentArchive = archivedFarms[0];
+  const recentArchivedDate = recentArchive ? new Date(recentArchive.archivedAt) : null;
+  const showRecentBanner = Boolean(
+    recentArchivedDate && Date.now() - recentArchivedDate.getTime() < 5 * 60 * 1000
+  );
+
+  const handleUndoRecent = async () => {
+    if (!recentArchive || isUndoing) return;
+    setIsUndoing(true);
+    try {
+      await restoreFarm({ farmId: recentArchive.farmId });
+      toast.success(`Restored "${recentArchive.farmName}"`);
+      await fetchArchivedFarms();
+      fetchArchiveStats();
+    } catch (error) {
+      toast.error(`Unable to restore "${recentArchive.farmName}"`);
+    } finally {
+      setIsUndoing(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -187,6 +210,40 @@ export const ArchivedFarmsView: React.FC<ArchivedFarmsViewProps> = ({ onSelectAr
           </div>
         </div>
       </div>
+
+      {showRecentBanner && recentArchive && recentArchivedDate && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-primary-200 bg-primary-50/80 p-4 text-sm text-primary-800 dark:border-primary-900/40 dark:bg-primary-900/20 dark:text-primary-100"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">Recently archived</p>
+              <p className="mt-1 text-xs opacity-80">
+                "{recentArchive.farmName}" archived {formatDistanceToNow(recentArchivedDate, { addSuffix: true })}.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleUndoRecent}
+                disabled={isUndoing}
+                className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-primary-600 shadow-sm transition hover:bg-primary-100 disabled:cursor-progress disabled:opacity-60 dark:bg-primary-800/40 dark:text-primary-50 dark:hover:bg-primary-700/40"
+              >
+                {isUndoing ? 'Restoring…' : 'Undo' }
+              </button>
+              <button
+                onClick={() => onSelectArchive(recentArchive.id)}
+                className="rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-700 transition hover:border-primary-300 hover:bg-primary-100/40 dark:border-primary-800/40 dark:text-primary-100 dark:hover:bg-primary-900/30"
+              >
+                View details
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Filters */}
       <AnimatePresence>

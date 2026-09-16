@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import subprocess
 from collections.abc import Awaitable
 from pathlib import Path
@@ -80,7 +81,7 @@ class ToolRegistry:
         if not path.is_file():
             raise ValueError(f"Not a file: {path}")
 
-        content = path.read_text(encoding="utf-8")
+        content = await asyncio.to_thread(path.read_text, encoding="utf-8")
         return {"content": content, "path": str(path)}
 
     async def _write_file(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -116,7 +117,10 @@ class ToolRegistry:
         cmd = args["cmd"]
 
         # Parse command
-        parts = cmd.split()
+        try:
+            parts = shlex.split(cmd)
+        except ValueError as exc:
+            raise ValueError(f"Invalid command: {cmd}") from exc
         if not parts:
             raise ValueError("Empty command")
 
@@ -127,13 +131,14 @@ class ToolRegistry:
 
         # Execute with timeout
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 parts,
                 capture_output=True,
                 text=True,
                 timeout=30.0,
                 cwd=self._workspace_root,
-                check=False
+                check=False,
             )
             return {
                 "stdout": result.stdout,

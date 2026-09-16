@@ -27,7 +27,7 @@ socket.on('connect', () => {
   socket.emit('harvest:collect-files', {
     harvestId: 'cfd2a29c-6c0f-4275-a087-b2963742a68a',
     farmId: '87c70ed4-59b1-46be-b825-b57bdc03a7d7',
-    workspacePath: '/Users/rohnspringfield/maifarm/maibarn/workspaces/active/harvest-demo-1754926713'
+    workspacePath: `${process.cwd()}/maibarn/workspaces/active/harvest-demo-1754926713`
   });
   
   // Update harvest status

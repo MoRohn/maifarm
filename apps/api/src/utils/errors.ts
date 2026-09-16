@@ -259,6 +259,86 @@ export function handleUncaughtException(error: Error): void {
   }
 }
 
+/**
+ * JSON validation utility to prevent database crashes
+ * Validates that data can be safely serialized to JSON before database insertion
+ */
+export interface JSONValidationResult {
+  valid: boolean;
+  error?: string;
+  sanitized?: any;
+}
+
+export function validateJSON(data: any, context?: string): JSONValidationResult {
+  try {
+    // First check if data is undefined or null
+    if (data === undefined || data === null) {
+      return { valid: true, sanitized: data };
+    }
+
+    // Attempt to stringify and parse to ensure valid JSON
+    const stringified = JSON.stringify(data);
+    const parsed = JSON.parse(stringified);
+
+    // Check for circular references (would have thrown above)
+    // Check for NaN and Infinity which are invalid in JSON
+    const hasInvalidNumbers = JSON.stringify(parsed) !== stringified;
+
+    if (hasInvalidNumbers) {
+      return {
+        valid: false,
+        error: `Invalid JSON: contains NaN or Infinity${context ? ` in ${context}` : ''}`
+      };
+    }
+
+    return { valid: true, sanitized: parsed };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      valid: false,
+      error: `Invalid JSON${context ? ` in ${context}` : ''}: ${errorMessage}`
+    };
+  }
+}
+
+/**
+ * Sanitize JSON data for database storage
+ * Removes invalid values and converts them to safe equivalents
+ */
+export function sanitizeJSONForDB(data: any): any {
+  if (data === null || data === undefined) {
+    return data;
+  }
+
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeJSONForDB(item));
+  }
+
+  if (typeof data === 'object') {
+    const sanitized: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value === undefined) {
+        continue; // Skip undefined values
+      }
+      if (typeof value === 'number' && !isFinite(value)) {
+        sanitized[key] = null; // Convert NaN/Infinity to null
+      } else if (typeof value === 'object') {
+        sanitized[key] = sanitizeJSONForDB(value);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+
+  // Handle primitive types
+  if (typeof data === 'number' && !isFinite(data)) {
+    return null;
+  }
+
+  return data;
+}
+
 // Register global error handlers
 process.on('unhandledRejection', handleUnhandledRejection);
 process.on('uncaughtException', handleUncaughtException);
@@ -276,4 +356,6 @@ export default {
   asyncHandler,
   errorHandler,
   notFoundHandler,
+  validateJSON,
+  sanitizeJSONForDB,
 };

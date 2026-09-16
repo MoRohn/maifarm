@@ -247,11 +247,19 @@ export class SyncService {
   }
 
   private async fetchWithAbort<T>(url: string): Promise<T> {
+    // Safe localStorage access for iOS Safari private browsing
+    let authToken: string | null = null;
+    try {
+      authToken = localStorage.getItem('auth_token');
+    } catch (storageError) {
+      console.warn('[SyncService] localStorage unavailable for auth token:', storageError);
+    }
+
     const response = await fetch(url, {
       signal: this.abortController?.signal,
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-      },
+      headers: authToken ? {
+        'Authorization': `Bearer ${authToken}`,
+      } : {},
     });
 
     if (!response.ok) {
@@ -265,12 +273,24 @@ export class SyncService {
     const url = `/api/${entity}${data.id ? `/${data.id}` : ''}`;
     const method = data.id ? 'PUT' : 'POST';
 
+    // Safe localStorage access for iOS Safari private browsing
+    let authToken: string | null = null;
+    try {
+      authToken = localStorage.getItem('auth_token');
+    } catch (storageError) {
+      console.warn('[SyncService] localStorage unavailable for auth token:', storageError);
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     const response = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-      },
+      headers,
       body: JSON.stringify(data),
       signal: this.abortController?.signal,
     });

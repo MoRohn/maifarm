@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import { toast } from 'react-hot-toast';
+import {
   KeyIcon,
   PlusIcon,
   TrashIcon,
@@ -78,8 +79,14 @@ export const ApiKeyManager: React.FC = () => {
   };
 
   const loadStoredApiKeys = () => {
-    // Load from localStorage for persistence
-    const storedKeys = localStorage.getItem('maifarm_api_keys');
+    // Load from localStorage for persistence (with iOS Safari private browsing safety)
+    let storedKeys: string | null = null;
+    try {
+      storedKeys = localStorage.getItem('maifarm_api_keys');
+    } catch (e) {
+      console.warn('Failed to access localStorage:', e);
+      return; // Exit early if localStorage is not available
+    }
     if (storedKeys) {
       try {
         const parsed = JSON.parse(storedKeys);
@@ -163,9 +170,13 @@ export const ApiKeyManager: React.FC = () => {
         
         if (!response.ok) {
           console.error('Failed to configure Claude API key on server');
+          toast.error('Failed to configure Claude API key on server');
+        } else {
+          toast.success('Claude API key configured successfully');
         }
       } catch (error) {
         console.error('Error configuring Claude API key:', error);
+        toast.error('Failed to configure Claude API key. Please try again.');
       }
     }
 
@@ -187,18 +198,26 @@ export const ApiKeyManager: React.FC = () => {
         
         if (!response.ok) {
           console.error('Failed to configure OpenAI API key on server');
+          toast.error('Failed to configure OpenAI API key on server');
+        } else {
+          toast.success('OpenAI API key configured successfully');
         }
       } catch (error) {
         console.error('Error configuring OpenAI API key:', error);
+        toast.error('Failed to configure OpenAI API key. Please try again.');
       }
     }
 
     const updated = [...apiKeys, key];
     setApiKeys(updated);
     updatePreferences({ apiKeys: updated });
-    
-    // Save to localStorage for persistence
-    localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
+
+    // Save to localStorage for persistence (with iOS Safari private browsing safety)
+    try {
+      localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Failed to save API keys to localStorage:', e);
+    }
     
     // Refresh key status if we just added one
     if (newKey.service === 'Claude') {
@@ -217,9 +236,13 @@ export const ApiKeyManager: React.FC = () => {
     const updated = apiKeys.filter(key => key.id !== id);
     setApiKeys(updated);
     updatePreferences({ apiKeys: updated });
-    
-    // Update localStorage
-    localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
+
+    // Update localStorage (with iOS Safari private browsing safety)
+    try {
+      localStorage.setItem('maifarm_api_keys', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Failed to update API keys in localStorage:', e);
+    }
     
     // If deleting API key, refresh status
     if (keyToDelete?.service === 'Claude') {

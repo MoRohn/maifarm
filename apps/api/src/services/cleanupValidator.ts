@@ -184,7 +184,8 @@ export class CleanupValidator extends EventEmitter {
 
     try {
       // Check workspace directory
-      const workspacePath = path.join(pathConfig.getPath('WORKSPACE_ROOT'), farmId);
+      // CRITICAL FIX: Use getFarmWorkspacePath() instead of non-existent WORKSPACE_ROOT constant
+      const workspacePath = pathConfig.getFarmWorkspacePath(farmId, false);
       
       try {
         await fs.access(workspacePath);
@@ -282,7 +283,8 @@ export class CleanupValidator extends EventEmitter {
 
     try {
       // Check for tmux sessions
-      const sessionName = `farm-${farmId}`;
+      // Session name format: farm-${farmId.substring(0, 8)} (first 8 chars of UUID)
+      const sessionName = `farm-${farmId.substring(0, 8)}`;
       try {
         const { stdout } = await execAsync(`tmux list-sessions 2>/dev/null | grep "^${sessionName}:" || true`);
         

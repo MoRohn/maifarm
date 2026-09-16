@@ -406,7 +406,7 @@ class FarmService {
   async getClaudeCodeStatus(farmId: string): Promise<any> {
     try {
       const response = await api.get(`/api/farms/${farmId}/claude-code/status`);
-      
+
       if (response.data.success && response.data.data) {
         return response.data.data;
       } else {
@@ -417,6 +417,97 @@ class FarmService {
         throw new Error(error.response.data.error.message);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Harvest Now - Capture a snapshot of current work without stopping the farm
+   * Farm continues running after snapshot is captured
+   */
+  async harvestNow(farmId: string): Promise<{
+    success: boolean;
+    data?: {
+      farmId: string;
+      snapshotId: string;
+      status: string;
+      farmStatus: string;
+      message: string;
+      timestamp: string;
+    };
+    error?: {
+      code: string;
+      message: string;
+    };
+  }> {
+    try {
+      const response = await api.post(`/api/farms/${farmId}/harvest-now`);
+      return response.data;
+    } catch (error: any) {
+      console.error('[FarmService] Harvest now failed:', error);
+      return {
+        success: false,
+        error: {
+          code: error.response?.data?.error?.code || 'HARVEST_NOW_FAILED',
+          message: error.response?.data?.error?.message || error.message || 'Failed to capture snapshot'
+        }
+      };
+    }
+  }
+
+  /**
+   * Graceful Shutdown - Stop farm with yield collection
+   * Collects all yields before shutting down
+   */
+  async gracefulShutdown(farmId: string, reason: string = 'user_request'): Promise<{
+    success: boolean;
+    data?: any;
+    error?: {
+      code: string;
+      message: string;
+    };
+  }> {
+    try {
+      const response = await api.post(`/api/farms/${farmId}/graceful-shutdown`, {
+        reason
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('[FarmService] Graceful shutdown failed:', error);
+      return {
+        success: false,
+        error: {
+          code: error.response?.data?.error?.code || 'SHUTDOWN_FAILED',
+          message: error.response?.data?.error?.message || error.message || 'Failed to shutdown farm'
+        }
+      };
+    }
+  }
+
+  /**
+   * Stop Farm - Quick stop without graceful yield collection
+   */
+  async stopFarm(farmId: string, graceful: boolean = true): Promise<{
+    success: boolean;
+    data?: any;
+    error?: {
+      code: string;
+      message: string;
+    };
+  }> {
+    try {
+      const response = await api.post(`/api/farms/${farmId}/stop`, {
+        graceful
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error('[FarmService] Stop farm failed:', error);
+      return {
+        success: false,
+        error: {
+          code: error.response?.data?.error?.code || 'STOP_FAILED',
+          message: error.response?.data?.error?.message || error.message || 'Failed to stop farm'
+        }
+      };
     }
   }
 }
@@ -517,10 +608,28 @@ class WorkflowService {
     subscribers.push(callback);
     this.subscribers.set(workflowId, subscribers);
 
+    // FIX: Track consecutive errors to prevent infinite polling on persistent failures
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
+    let isCleanedUp = false;
+
+    // Helper to clean up interval and subscribers
+    const cleanup = () => {
+      if (isCleanedUp) return;
+      isCleanedUp = true;
+      clearInterval(interval);
+      this.subscribers.delete(workflowId);
+    };
+
     // Start polling for updates
     const interval = setInterval(async () => {
+      // FIX: Skip if already cleaned up
+      if (isCleanedUp) return;
+
       try {
         const status = await this.getWorkflowStatus(workflowId);
+        consecutiveErrors = 0; // Reset on success
+
         const extendedStatus: ExtendedWorkflowStatus = {
           ...status,
           workflowId,
@@ -532,17 +641,23 @@ class WorkflowService {
 
         // Stop polling if completed or failed
         if (status.status === 'completed' || status.status === 'failed') {
-          clearInterval(interval);
-          this.subscribers.delete(workflowId);
+          cleanup();
         }
       } catch (error) {
-        console.error('Failed to poll workflow status:', error);
+        consecutiveErrors++;
+        console.error(`Failed to poll workflow status (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, error);
+
+        // FIX: Stop polling after too many consecutive errors to prevent memory leak
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          console.error('Too many consecutive polling errors, stopping workflow subscription');
+          cleanup();
+        }
       }
     }, 2000);
 
     // Return unsubscribe function
     return () => {
-      clearInterval(interval);
+      cleanup();
       const subs = this.subscribers.get(workflowId) || [];
       const index = subs.indexOf(callback);
       if (index >= 0) subs.splice(index, 1);

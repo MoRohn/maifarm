@@ -134,7 +134,7 @@ export function AgentLifecycle({ farm, onScaleAgents, onRefresh }: AgentLifecycl
         </div>
 
         {/* Status Summary */}
-        <div className="mt-6 grid grid-cols-5 gap-4">
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
           {Object.entries(agentsByStatus).map(([status, count]) => (
             <div key={status} className="text-center">
               <div className="text-2xl font-semibold">{count}</div>

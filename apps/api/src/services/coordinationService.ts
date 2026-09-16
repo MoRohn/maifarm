@@ -1,7 +1,19 @@
 import { promises as fs } from 'fs';
+import { EventEmitter } from 'events';
 import { stateCoordinator, EntityType } from './unified/stateCoordinator';
 import { logger, LogCategory } from '../utils/logger';
 import { pathConfig } from '../config/paths';
+
+interface AgentHealthInfo {
+  agentId: string;
+  status: string;
+  lastSeen: Date | null;
+  healthy: boolean;
+  contextPercentage?: number;
+  cycleTime?: number;
+  lastHeartbeat?: Date | null;
+  errorCount?: number;
+}
 
 interface CoordinationAgentRecord {
   id?: string;
@@ -20,10 +32,12 @@ interface CoordinationAgentRecord {
   [key: string]: unknown;
 }
 
-class CoordinationService {
+class CoordinationService extends EventEmitter {
   private static instance: CoordinationService;
 
-  private constructor() {}
+  private constructor() {
+    super();
+  }
 
   static getInstance(): CoordinationService {
     if (!this.instance) {
@@ -60,8 +74,27 @@ class CoordinationService {
     return {
       farmId,
       status: farmState?.status || 'unknown',
-      agents: farmState?.agents || []
+      agents: (farmState?.metadata?.agents as any[]) || []
     };
+  }
+
+  /**
+   * Get coordination data for all farms
+   */
+  async getCoordinationData(): Promise<{ farms: any[]; agents: any[]; status: string }> {
+    try {
+      const farms = stateCoordinator.getEntitiesByType('farm' as EntityType);
+      const agents = stateCoordinator.getEntitiesByType('agent' as EntityType);
+
+      return {
+        farms: farms.map(f => ({ id: f.id, status: f.status, ...f.metadata })),
+        agents: agents.map(a => ({ id: a.id, status: a.status, ...a.metadata })),
+        status: 'active'
+      };
+    } catch (error) {
+      logger.error(LogCategory.COORDINATION, 'Error getting coordination data:', error);
+      return { farms: [], agents: [], status: 'error' };
+    }
   }
 
   // Add missing getActiveAgents method that multiple APIs are calling
@@ -191,6 +224,80 @@ class CoordinationService {
     } catch (error) {
       logger.error(LogCategory.COORDINATION, 'Error collecting completed work:', error);
       return [];
+    }
+  }
+
+  /**
+   * Get health summary for the entire system
+   */
+  getHealthSummary(): { totalAgents: number; healthyAgents: number; unhealthyAgents: number; status: string } {
+    try {
+      const agents = stateCoordinator.getEntitiesByType('agent' as EntityType);
+      const healthy = agents.filter(a => a.status === 'active' || a.status === 'running').length;
+
+      return {
+        totalAgents: agents.length,
+        healthyAgents: healthy,
+        unhealthyAgents: agents.length - healthy,
+        status: healthy > 0 ? 'healthy' : (agents.length > 0 ? 'degraded' : 'unknown')
+      };
+    } catch (error) {
+      logger.error(LogCategory.COORDINATION, 'Error getting health summary:', error);
+      return { totalAgents: 0, healthyAgents: 0, unhealthyAgents: 0, status: 'error' };
+    }
+  }
+
+  /**
+   * Get health status for all agents
+   */
+  async getAllAgentHealth(): Promise<AgentHealthInfo[]> {
+    try {
+      const agents = stateCoordinator.getEntitiesByType('agent' as EntityType);
+
+      return agents.map(agent => ({
+        agentId: agent.id,
+        status: agent.status || 'unknown',
+        lastSeen: agent.updatedAt || null,
+        healthy: agent.status === 'active' || agent.status === 'running',
+        contextPercentage: (agent.metadata as any)?.contextPercentage ?? 0,
+        cycleTime: (agent.metadata as any)?.cycleTime ?? 0,
+        lastHeartbeat: (agent.metadata as any)?.lastHeartbeat ?? null,
+        errorCount: (agent.metadata as any)?.errorCount ?? 0
+      }));
+    } catch (error) {
+      logger.error(LogCategory.COORDINATION, 'Error getting all agent health:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get health status for a specific agent
+   */
+  getAgentHealth(agentId: string): { status: string; lastSeen: Date | null; healthy: boolean } {
+    try {
+      // Try to find the agent in the state coordinator
+      const entity = stateCoordinator.getEntity(agentId);
+      if (entity) {
+        return {
+          status: entity.status || 'unknown',
+          lastSeen: entity.updatedAt || null,
+          healthy: entity.status === 'active' || entity.status === 'running'
+        };
+      }
+
+      // Return default health status if agent not found
+      return {
+        status: 'unknown',
+        lastSeen: null,
+        healthy: false
+      };
+    } catch (error) {
+      logger.error(LogCategory.COORDINATION, `Error getting agent health for ${agentId}:`, error);
+      return {
+        status: 'error',
+        lastSeen: null,
+        healthy: false
+      };
     }
   }
 }

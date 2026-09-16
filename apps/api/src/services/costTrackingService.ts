@@ -148,12 +148,37 @@ class CostTrackingService extends EventEmitter {
       }
     };
 
-    // Qwen pricing (estimated based on typical China AI pricing)
-    const qwenPricing: ProviderPricing = {
-      provider: AIProvider.QWEN,
+    // Grok pricing (xAI - as of January 2026)
+    const grokPricing: ProviderPricing = {
+      provider: AIProvider.GROK,
       models: {
-        'qwen-coder-480b': {
-          name: 'Qwen3-Coder 480B',
+        'grok-2': {
+          name: 'Grok-2',
+          inputPricePerMillion: 2.00,
+          outputPricePerMillion: 10.00,
+          contextWindow: 128000,
+          description: 'xAI flagship model with real-time data access',
+          active: true,
+          lastUpdated: new Date()
+        },
+        'grok-2-mini': {
+          name: 'Grok-2 Mini',
+          inputPricePerMillion: 0.50,
+          outputPricePerMillion: 2.00,
+          contextWindow: 128000,
+          description: 'Cost-effective Grok model for lighter workloads',
+          active: true,
+          lastUpdated: new Date()
+        }
+      }
+    };
+
+    // Llama pricing (estimated based on typical China AI pricing)
+    const llamaPricing: ProviderPricing = {
+      provider: AIProvider.LLAMA,
+      models: {
+        'llama-coder-480b': {
+          name: 'Llama3-Coder 480B',
           inputPricePerMillion: 0.50,  // Estimated competitive pricing
           outputPricePerMillion: 2.00,
           contextWindow: 256000,
@@ -161,26 +186,26 @@ class CostTrackingService extends EventEmitter {
           active: true,
           lastUpdated: new Date()
         },
-        'qwen-max': {
-          name: 'Qwen-Max',
+        'llama-max': {
+          name: 'Llama-Max',
           inputPricePerMillion: 2.00,
           outputPricePerMillion: 10.00,
           contextWindow: 32000,
-          description: 'Most capable Qwen model',
+          description: 'Most capable Llama model',
           active: true,
           lastUpdated: new Date()
         },
-        'qwen-plus': {
-          name: 'Qwen-Plus',
+        'llama-plus': {
+          name: 'Llama-Plus',
           inputPricePerMillion: 0.20,
           outputPricePerMillion: 1.00,
           contextWindow: 32000,
-          description: 'Balanced Qwen model',
+          description: 'Balanced Llama model',
           active: true,
           lastUpdated: new Date()
         },
-        'qwen-turbo': {
-          name: 'Qwen-Turbo',
+        'llama-turbo': {
+          name: 'Llama-Turbo',
           inputPricePerMillion: 0.10,
           outputPricePerMillion: 0.50,
           contextWindow: 8000,
@@ -192,7 +217,8 @@ class CostTrackingService extends EventEmitter {
     };
 
     this.pricingData.set(AIProvider.CLAUDE, claudePricing);
-    this.pricingData.set(AIProvider.QWEN, qwenPricing);
+    this.pricingData.set(AIProvider.GROK, grokPricing);
+    this.pricingData.set(AIProvider.LLAMA, llamaPricing);
 
     // Try to fetch latest pricing from APIs if available
     await this.updatePricingFromAPIs();
@@ -330,28 +356,47 @@ class CostTrackingService extends EventEmitter {
    */
   calculateAlternativeCost(usage: TokenUsage, alternativeProvider: AIProvider): CostCalculation {
     const alternativeUsage = { ...usage, provider: alternativeProvider };
-    
-    // For Qwen, adjust the model mapping
-    if (alternativeProvider === AIProvider.QWEN) {
-      // Map Claude models to comparable Qwen models
+
+    // For Llama, adjust the model mapping
+    if (alternativeProvider === AIProvider.LLAMA) {
+      // Map Claude/Grok models to comparable Llama models
       const modelMapping: { [key: string]: string } = {
-        'claude-3-opus-20240229': 'qwen-max',
-        'claude-3-5-sonnet-20241022': 'qwen-coder-480b',
-        'claude-3-5-sonnet-20240620': 'qwen-coder-480b',
-        'claude-3-haiku-20240307': 'qwen-turbo',
-        'claude-2.1': 'qwen-plus',
-        'claude-instant-1.2': 'qwen-turbo'
+        'claude-3-opus-20240229': 'llama-max',
+        'claude-3-5-sonnet-20241022': 'llama-coder-480b',
+        'claude-3-5-sonnet-20240620': 'llama-coder-480b',
+        'claude-3-haiku-20240307': 'llama-turbo',
+        'claude-2.1': 'llama-plus',
+        'claude-instant-1.2': 'llama-turbo',
+        'grok-2': 'llama-coder-480b',
+        'grok-2-mini': 'llama-turbo'
       };
-      alternativeUsage.model = modelMapping[usage.model] || 'qwen-coder-480b';
+      alternativeUsage.model = modelMapping[usage.model] || 'llama-coder-480b';
     } else if (alternativeProvider === AIProvider.CLAUDE) {
-      // Map Qwen models to comparable Claude models
+      // Map Llama/Grok models to comparable Claude models
       const modelMapping: { [key: string]: string } = {
-        'qwen-coder-480b': 'claude-3-5-sonnet-20241022',
-        'qwen-max': 'claude-3-opus-20240229',
-        'qwen-plus': 'claude-3-5-sonnet-20241022',
-        'qwen-turbo': 'claude-3-haiku-20240307'
+        'llama-coder-480b': 'claude-3-5-sonnet-20241022',
+        'llama-max': 'claude-3-opus-20240229',
+        'llama-plus': 'claude-3-5-sonnet-20241022',
+        'llama-turbo': 'claude-3-haiku-20240307',
+        'grok-2': 'claude-3-5-sonnet-20241022',
+        'grok-2-mini': 'claude-3-haiku-20240307'
       };
       alternativeUsage.model = modelMapping[usage.model] || 'claude-3-5-sonnet-20241022';
+    } else if (alternativeProvider === AIProvider.GROK) {
+      // Map Claude/Llama models to comparable Grok models
+      const modelMapping: { [key: string]: string } = {
+        'claude-3-opus-20240229': 'grok-2',
+        'claude-3-5-sonnet-20241022': 'grok-2',
+        'claude-3-5-sonnet-20240620': 'grok-2',
+        'claude-3-haiku-20240307': 'grok-2-mini',
+        'claude-2.1': 'grok-2',
+        'claude-instant-1.2': 'grok-2-mini',
+        'llama-coder-480b': 'grok-2',
+        'llama-max': 'grok-2',
+        'llama-plus': 'grok-2',
+        'llama-turbo': 'grok-2-mini'
+      };
+      alternativeUsage.model = modelMapping[usage.model] || 'grok-2';
     }
 
     return this.calculateCost(alternativeUsage);
@@ -387,7 +432,7 @@ class CostTrackingService extends EventEmitter {
     const costPerFarm = await this.getCostPerFarm(dayAgo);
 
     // Calculate comparison with alternative provider
-    const alternativeProvider = currentProvider === AIProvider.CLAUDE ? AIProvider.QWEN : AIProvider.CLAUDE;
+    const alternativeProvider = currentProvider === AIProvider.CLAUDE ? AIProvider.LLAMA : AIProvider.CLAUDE;
     const comparisonMetrics = await this.calculateProviderComparison(
       currentProvider,
       alternativeProvider,

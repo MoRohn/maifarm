@@ -119,3 +119,70 @@ export interface FarmerDetailResponse {
     stats: FarmerStats;
   };
 }
+
+// ============================================
+// Farmer Groups Types
+// ============================================
+
+export interface FarmerGroup {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  displayOrder: number;
+  isSystem: boolean;
+  isActive: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  farmerCount?: number;
+  farmers?: string[];
+}
+
+export interface FarmerDbStats {
+  id: string;
+  farmerId: string;
+  totalUses: number;
+  successfulFarms: number;
+  failedFarms: number;
+  cancelledFarms: number;
+  totalAgentsSpawned: number;
+  avgCompletionTimeSeconds: number | null;
+  minCompletionTimeSeconds: number | null;
+  maxCompletionTimeSeconds: number | null;
+  avgRating: number;
+  ratingCount: number;
+  lastUsedAt: string | null;
+  lastSuccessfulAt: string | null;
+  successRate: number;
+}
+
+export interface FarmerRating {
+  id: string;
+  farmerId: string;
+  userId: string;
+  farmId: string | null;
+  rating: number;
+  review: string | null;
+  isPublic: boolean;
+  helpfulCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FarmerGroupListResponse {
+  success: boolean;
+  data: FarmerGroup[];
+  count: number;
+}
+
+export interface FarmerGroupDetailResponse {
+  success: boolean;
+  data: {
+    group: FarmerGroup;
+    farmers: FarmerTemplate[];
+    count: number;
+  };
+}

@@ -15,15 +15,17 @@ interface ResponsiveState {
 export const useResponsive = (): ResponsiveState => {
   const [state, setState] = useState<ResponsiveState>(() => {
     if (typeof window === 'undefined') {
+      // FIX: Default to 'portrait' for SSR to avoid layout flash on mobile devices
+      // Most mobile users are in portrait mode, so this is the safer default
       return {
-        width: 1200,
-        height: 800,
-        breakpoint: 'xl',
-        isMobile: false,
+        width: 375, // iPhone default width
+        height: 812, // iPhone default height
+        breakpoint: 'sm',
+        isMobile: true,
         isTablet: false,
-        isDesktop: true,
-        isTouch: false,
-        orientation: 'landscape',
+        isDesktop: false,
+        isTouch: true,
+        orientation: 'portrait',
       };
     }
 
@@ -48,6 +50,11 @@ export const useResponsive = (): ResponsiveState => {
     const height = window.innerHeight;
     const breakpoint = getCurrentBreakpoint(width);
 
+    // iOS Safari 100vh FIX: Set CSS variable to actual viewport height
+    // This fixes the issue where 100vh includes the address bar on iOS Safari
+    // which causes content to be cut off at the bottom
+    document.documentElement.style.setProperty('--full-vh', `${height}px`);
+
     setState({
       width,
       height,
@@ -66,11 +73,12 @@ export const useResponsive = (): ResponsiveState => {
     // Initial measurement
     handleResize();
 
-    // Debounced resize handler
+    // Debounced resize handler - 50ms for smooth 60fps mobile experience
+    // (150ms was too long, causing visible layout stutter on device rotation)
     let timeoutId: ReturnType<typeof setTimeout>;
     const debouncedResize = () => {
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(handleResize, 150);
+      timeoutId = setTimeout(handleResize, 50);
     };
 
     window.addEventListener('resize', debouncedResize);

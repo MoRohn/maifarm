@@ -55,15 +55,27 @@ async function loadApiKeysFromDatabase() {
     );
     
     for (const row of result.rows) {
-      if (row.service === 'claude' || row.service === 'Claude') {
+      if (row.service === 'claude' || row.service === 'Claude' || row.service === 'anthropic') {
         const decryptedKey = decrypt(row.key_encrypted);
         if (decryptedKey) {
           process.env.ANTHROPIC_API_KEY = decryptedKey;
           process.env.CLAUDE_API_KEY = decryptedKey;
           console.log('[API Keys] Claude API key loaded from database');
         }
+      } else if (row.service === 'openai') {
+        const decryptedKey = decrypt(row.key_encrypted);
+        if (decryptedKey) {
+          process.env.OPENAI_API_KEY = decryptedKey;
+          console.log('[API Keys] OpenAI API key loaded from database');
+        }
+      } else if (row.service === 'grok' || row.service === 'xai') {
+        const decryptedKey = decrypt(row.key_encrypted);
+        if (decryptedKey) {
+          process.env.GROK_API_KEY = decryptedKey;
+          process.env.XAI_API_KEY = decryptedKey;
+          console.log('[API Keys] Grok API key loaded from database');
+        }
       }
-      // Add other services as needed
     }
   } catch (error) {
     console.error('[API Keys] Error loading from database:', error);
@@ -231,10 +243,10 @@ router.post('/apikeys', async (req: Request, res: Response) => {
     
     const normalizedService = service.toLowerCase();
 
-    if (normalizedService === 'qwen') {
+    if (normalizedService === 'llama') {
       return res.status(400).json({
         success: false,
-        error: 'Qwen API keys are no longer supported'
+        error: 'Llama API keys are no longer supported'
       });
     }
 
@@ -244,6 +256,9 @@ router.post('/apikeys', async (req: Request, res: Response) => {
       process.env.CLAUDE_API_KEY = apiKey;
     } else if (normalizedService === 'openai') {
       process.env.OPENAI_API_KEY = apiKey;
+    } else if (normalizedService === 'grok' || normalizedService === 'xai') {
+      process.env.GROK_API_KEY = apiKey;
+      process.env.XAI_API_KEY = apiKey;
     }
     
     // Refresh the AI provider configuration
@@ -306,6 +321,9 @@ router.delete('/apikeys/:id', async (req: Request, res: Response) => {
       delete process.env.CLAUDE_API_KEY;
     } else if (service === 'openai') {
       delete process.env.OPENAI_API_KEY;
+    } else if (service === 'grok' || service === 'xai') {
+      delete process.env.GROK_API_KEY;
+      delete process.env.XAI_API_KEY;
     }
 
     const { aiProviderManager } = await import('../config/aiProviders');

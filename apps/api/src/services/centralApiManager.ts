@@ -84,6 +84,7 @@ export class CentralApiManager extends EventEmitter {
   private requestQueues: Map<string, any> = new Map();
   private metricsBuffer: Map<string, any[]> = new Map();
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private metricsReportInterval: NodeJS.Timeout | null = null;
   private initializationPromise: Promise<void> | null = null;
   private isInitialized: boolean = false;
   
@@ -550,11 +551,11 @@ export class CentralApiManager extends EventEmitter {
   private getFallbackProvider(failedProvider: AIProvider): AIProvider | null {
     // Priority order for fallbacks
     const fallbackOrder: Record<AIProvider, AIProvider[]> = {
-      [AIProvider.CLAUDE]: [AIProvider.OPENAI, AIProvider.QWEN],
-      [AIProvider.OPENAI]: [AIProvider.CLAUDE, AIProvider.QWEN],
-      [AIProvider.QWEN]: [AIProvider.CLAUDE, AIProvider.OPENAI],
-      [AIProvider.QWEN_LOCAL]: [AIProvider.QWEN, AIProvider.CLAUDE],
-      [AIProvider.GPT_OSS]: [AIProvider.OPENAI, AIProvider.CLAUDE]
+      [AIProvider.CLAUDE]: [AIProvider.OPENAI, AIProvider.LLAMA],
+      [AIProvider.OPENAI]: [AIProvider.CLAUDE, AIProvider.LLAMA],
+      [AIProvider.LLAMA]: [AIProvider.CLAUDE, AIProvider.OPENAI],
+      [AIProvider.GPT_OSS]: [AIProvider.OPENAI, AIProvider.CLAUDE],
+      [AIProvider.GROK]: [AIProvider.OPENAI, AIProvider.CLAUDE]
     };
     
     const fallbacks = fallbackOrder[failedProvider] || [];
@@ -651,18 +652,18 @@ export class CentralApiManager extends EventEmitter {
    */
   private setupMetricsReporting(): void {
     // Report metrics every 10 seconds
-    setInterval(() => {
+    this.metricsReportInterval = setInterval(() => {
       const metrics = this.collectMetrics();
-      
+
       // Emit metrics event
       this.emit('metrics:collected', metrics);
-      
+
       // Broadcast to WebSocket
       websocketManager.broadcast('api:metrics', {
         metrics,
         timestamp: new Date()
       });
-      
+
       // Store in Redis for historical tracking
       this.storeMetricsInRedis(metrics);
     }, 10000);
@@ -779,21 +780,28 @@ export class CentralApiManager extends EventEmitter {
    */
   async shutdown(): Promise<void> {
     logger.info('[CentralApiManager] Shutting down...');
-    
+
     // Stop health monitoring
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
     }
-    
+
+    // Stop metrics reporting
+    if (this.metricsReportInterval) {
+      clearInterval(this.metricsReportInterval);
+      this.metricsReportInterval = null;
+    }
+
     // Clear all queues
     for (const queue of this.requestQueues.values()) {
       queue.clear();
     }
-    
+
     // Close all connections
     this.connectionPools.clear();
     this.requestQueues.clear();
-    
+
     logger.info('[CentralApiManager] Shutdown complete');
   }
 }

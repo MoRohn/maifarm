@@ -67,7 +67,13 @@ async def run_agent(
         metadata=request_body.metadata,
         tmux_pane_id=request_body.tmux_pane_id,
     )
-    await run_engine.enqueue(run_request)
+    try:
+        await run_engine.enqueue(run_request)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     return RunResponse(run_id=run_id, session_id=request_body.session_id, status="queued")
 
 

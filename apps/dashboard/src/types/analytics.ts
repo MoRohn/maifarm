@@ -302,6 +302,48 @@ export interface AnalyticsState {
   selectedTimeRange: TimeRange;
   refreshInterval: number;
   lastUpdated: Date | null;
+  engineMetrics: EngineAnalyticsMetric[];
+  engineCostSummary: EngineCostSummary | null;
+}
+
+export type EngineCircuitState = 'closed' | 'open' | 'half-open';
+
+export interface EngineAnalyticsMetric {
+  key: string;
+  provider: string;
+  totalRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalCostUsd: number;
+  p50LatencyMs: number | null;
+  p95LatencyMs: number | null;
+  lastError?: string;
+  circuitState: EngineCircuitState;
+  lastUpdated: number;
+}
+
+export interface EngineCostSummary {
+  totalCost: number;
+  totalRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  byProvider: Array<{
+    provider: string;
+    totalCost: number;
+    totalRequests: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    models: Array<{
+      model: string;
+      cost: number;
+      requests: number;
+      inputTokens: number;
+      outputTokens: number;
+      period: string;
+    }>;
+  }>;
 }
 
 export interface TimeRange {

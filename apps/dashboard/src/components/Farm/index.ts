@@ -15,3 +15,16 @@ export { FarmDetails } from './FarmDetails';
 export { AgentLifecycle } from './AgentLifecycle';
 export { CreateFarmFromSeed } from './CreateFarmFromSeed';
 export { CreateFarmFromFarmer } from './CreateFarmFromFarmer';
+
+// Unified Chat Wizard - Enhanced conversational farm creation
+export { UnifiedFarmChatWizard } from './UnifiedFarmChatWizard';
+export type { FarmMode, UnifiedFarmChatWizardProps } from './UnifiedFarmChatWizard';
+
+// Model-First Reasoning & DEMOCRITUS Causal Models (arxiv 2512.14474, arxiv 2512.07796)
+export { ProblemModelViewer } from './ProblemModelViewer';
+export { CausalGraphVisualization } from './CausalGraphVisualization';
+export { ModelVisualizationPanel } from './ModelVisualizationPanel';
+
+// Blerbz Plugins - Confidence & Continuation (inference-confidenz, inference-continuez)
+export { default as ConfidencePanel, ConfidenceBadge } from './ConfidencePanel';
+export { default as ContinuezControls } from './ContinuezControls';

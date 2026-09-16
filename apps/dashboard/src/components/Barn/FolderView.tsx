@@ -47,7 +47,7 @@ export const FolderView: React.FC<FolderViewProps> = ({ folder, harvestCount, on
         )}
         <div className="flex items-center justify-between text-xs text-gray-500">
           <span>{harvestCount} harvests</span>
-          <span>{folder.subFolderIds?.length || 0} folders</span>
+          <span>{(folder.subFolderIds ?? []).length} folders</span>
         </div>
       </div>
     </motion.div>

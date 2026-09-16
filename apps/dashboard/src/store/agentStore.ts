@@ -67,11 +67,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   updateAgent: (instanceId, updates) => {
     set(state => ({
-      agents: state.agents.map(agent => 
+      agents: state.agents.map(agent =>
         agent.instanceId === instanceId ? { ...agent, ...updates } : agent
       ),
-      selectedAgent: state.selectedAgent?.instanceId === instanceId 
-        ? { ...state.selectedAgent, ...updates } 
+      // FIX: Ensure selectedAgent is non-null before spreading
+      selectedAgent: state.selectedAgent && state.selectedAgent.instanceId === instanceId
+        ? { ...state.selectedAgent, ...updates }
         : state.selectedAgent
     }));
   },

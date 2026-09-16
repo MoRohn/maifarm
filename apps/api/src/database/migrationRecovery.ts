@@ -305,17 +305,25 @@ export class MigrationRecoverySystem {
 
   private async isTableHealthy(tableName: string): Promise<boolean> {
     try {
-      // Try to query the table
-      await this.pool.query(`SELECT 1 FROM ${tableName} LIMIT 1`);
-      
+      // Validate table name against whitelist to prevent SQL injection
+      const coreTables = ['farms', 'agents', 'harvests', 'seeds', 'users', 'api_keys',
+                          'token_usage', 'metrics', 'tasks', 'barn_items', 'schema_migrations',
+                          'gowild_sessions', 'health_checks', 'farm_lifecycle_events', 'security_audits'];
+      if (!coreTables.includes(tableName)) {
+        throw new Error(`Invalid table name: ${tableName}`);
+      }
+
+      // Use identifier quoting for safety
+      await this.pool.query(`SELECT 1 FROM "${tableName}" LIMIT 1`);
+
       // Check if it has columns
       const columns = await this.pool.query(
-        `SELECT COUNT(*) as count 
-         FROM information_schema.columns 
+        `SELECT COUNT(*) as count
+         FROM information_schema.columns
          WHERE table_schema = 'public' AND table_name = $1`,
         [tableName]
       );
-      
+
       return parseInt(columns.rows[0].count) > 0;
     } catch {
       return false;

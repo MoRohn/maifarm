@@ -1,5 +1,8 @@
 #!/bin/bash
 
+MAIFARM_ROOT="${MAIFARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+export MAIFARM_ROOT
+
 # Test Script for Robust Farm Launch Improvements
 # Tests all farm modes with various configurations to ensure high success rate
 
@@ -93,7 +96,7 @@ check_terminal_streaming() {
     log "  Checking terminal streaming for farm $farmId..."
 
     # Check if terminal output files exist
-    terminal_dir="/Users/rohnspringfield/maifarm/var/maibarn/terminals/$farmId"
+    terminal_dir="${MAIFARM_ROOT}/var/maibarn/terminals/$farmId"
 
     if [ -d "$terminal_dir" ]; then
         file_count=$(ls -1 "$terminal_dir"/agent-*.log 2>/dev/null | wc -l)

@@ -2,13 +2,66 @@ import {
   Harvest, 
   HarvestFilter, 
   HarvestExport, 
-  HarvestSummary 
+  HarvestSummary,
+  HarvestYield,
+  HarvestInsight
 } from '@/types/harvest';
 import apiClient from './apiClient';
 import { websocketService } from './websocket/websocketService';
 
-class HarvestService {
+declare const module: any;
+
+const generateId = (): string => {
+  const cryptoObj = (globalThis as any)?.crypto;
+  if (cryptoObj?.randomUUID) {
+    return cryptoObj.randomUUID();
+  }
+  return `yield-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const parseResult = (result: any): Harvest['results'][number] => ({
+  id: result.id || generateId(),
+  agentId: result.agentId || '',
+  agentName: result.agentName || result.agentId || 'Agent',
+  agentType: result.agentType || 'agent',
+  taskType: result.taskType || 'task',
+  content: result.content || '',
+  metadata: result.metadata || {},
+  timestamp: result.timestamp ? new Date(result.timestamp) : new Date(),
+  processingTime: result.processingTime ?? 0,
+  success: result.success ?? true,
+  error: result.error
+});
+
+const parseInsight = (insight: any): HarvestInsight => ({
+  id: insight.id || generateId(),
+  type: insight.type || 'summary',
+  title: insight.title || insight.id || 'Insight',
+  description: insight.description ?? insight.content ?? '',
+  importance: insight.importance || 'medium',
+  source: insight.source || {},
+  relatedResults: insight.relatedResults || [],
+  timestamp: insight.timestamp ? new Date(insight.timestamp) : new Date()
+});
+
+const parseYieldItem = (item: any): HarvestYield => ({
+  id: item.id || generateId(),
+  type: item.type || 'file',
+  name: item.name || item.filename || item.id || 'Yield Item',
+  description: item.description || item.summary || '',
+  mimeType: item.mimeType,
+  size: item.size,
+  location: item.location,
+  checksum: item.checksum,
+  data: item.data ?? item.content,
+  createdBy: item.createdBy,
+  createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+  metadata: item.metadata || {}
+});
+
+class HarvestServiceImpl {
   private baseUrl = '/api/harvest';
+  private harvestCache = new Map<string, Harvest>();
 
   constructor() {
     // Subscribe to harvest-related WebSocket events
@@ -55,15 +108,13 @@ class HarvestService {
     const url = queryString ? `${this.baseUrl}?${queryString}` : this.baseUrl;
     
     const response = await apiClient.get<any>(url);
-    // Handle both array and wrapped response formats
-    const harvests = Array.isArray(response.data) ? response.data : (response.data.data || []);
-    return harvests.map(harvest => this.parseHarvest(harvest));
+    const raw = this.unwrapResponse<any[]>(response, []);
+    return raw.map(harvest => this.parseHarvest(harvest));
   }
 
   async getSummaries(): Promise<HarvestSummary[]> {
     const response = await apiClient.get<any>(`${this.baseUrl}/summaries`);
-    // Handle both array and wrapped response formats
-    const summaries = Array.isArray(response.data) ? response.data : (response.data.data || []);
+    const summaries = this.unwrapResponse<any[]>(response, []);
     return summaries.map(summary => ({
       ...summary,
       completedAt: new Date(summary.completedAt),
@@ -75,8 +126,15 @@ class HarvestService {
   }
 
   async getById(id: string): Promise<Harvest> {
-    const response = await apiClient.get<Harvest>(`${this.baseUrl}/${id}`);
-    return this.parseHarvest(response.data);
+    const cached = this.harvestCache.get(id);
+    if (cached) {
+      return this.cloneHarvest(cached);
+    }
+
+    const response = await apiClient.get<any>(`${this.baseUrl}/${id}`);
+    const parsed = this.parseHarvest(this.unwrapResponse(response));
+    this.harvestCache.set(parsed.id, parsed);
+    return this.cloneHarvest(parsed);
   }
 
   // Alias for getById - some components expect this method name
@@ -86,17 +144,18 @@ class HarvestService {
 
   async getByFarmId(farmId: string): Promise<Harvest[]> {
     const response = await apiClient.get<any>(`${this.baseUrl}/farms/${farmId}`);
-    // Handle both array and wrapped response formats
-    const harvests = Array.isArray(response.data) ? response.data : (response.data.data || []);
+    const harvests = this.unwrapResponse<any[]>(response, []);
     return harvests.map(harvest => this.parseHarvest(harvest));
   }
 
   async startHarvest(farmId: string, farmName: string): Promise<Harvest> {
-    const response = await apiClient.post<Harvest>(
+    const response = await apiClient.post<any>(
       `/api/harvest/farms/${farmId}/harvest`,
       { farmName }
     );
-    return this.parseHarvest(response.data);
+    const parsed = this.parseHarvest(this.unwrapResponse(response));
+    this.harvestCache.set(parsed.id, parsed);
+    return this.cloneHarvest(parsed);
   }
 
   async exportHarvest(exportConfig: HarvestExport): Promise<Blob> {
@@ -109,28 +168,146 @@ class HarvestService {
   }
 
   async completeHarvest(id: string): Promise<Harvest> {
-    const response = await apiClient.post<Harvest>(`${this.baseUrl}/${id}/complete`);
-    return this.parseHarvest(response.data);
+    const response = await apiClient.post<any>(`${this.baseUrl}/${id}/complete`);
+    const parsed = this.parseHarvest(this.unwrapResponse(response));
+    this.harvestCache.delete(parsed.id);
+    return this.cloneHarvest(parsed);
+  }
+
+  async deleteHarvest(id: string): Promise<void> {
+    await apiClient.delete(`${this.baseUrl}/${id}`);
+    this.harvestCache.delete(id);
+  }
+
+  async updateHarvestTags(id: string, tags: string[]): Promise<Harvest> {
+    const response = await apiClient.patch<any>(`${this.baseUrl}/${id}/tags`, { tags });
+    const parsed = this.parseHarvest(this.unwrapResponse(response));
+    this.harvestCache.set(parsed.id, parsed);
+    return this.cloneHarvest(parsed);
+  }
+
+  async batchDelete(ids: string[]): Promise<{ deleted: number; failed: number }> {
+    const response = await apiClient.post<any>(`${this.baseUrl}/batch/delete`, { ids });
+    ids.forEach(id => this.harvestCache.delete(id));
+    return this.unwrapResponse<{ deleted: number; failed: number }>(response, { deleted: 0, failed: 0 });
+  }
+
+  async batchUpdateStatus(ids: string[], status: string): Promise<{ updated: number; failed: number }> {
+    const response = await apiClient.post<any>(`${this.baseUrl}/batch/status`, { ids, status });
+    ids.forEach(id => this.harvestCache.delete(id));
+    return this.unwrapResponse<{ updated: number; failed: number }>(response, { updated: 0, failed: 0 });
   }
 
   private parseHarvest(harvest: any): Harvest {
+    if (!harvest) {
+      throw new Error('Harvest not found');
+    }
+
+    const createdAt = harvest.createdAt ? new Date(harvest.createdAt) : new Date();
+    const startedAt = harvest.startedAt === null
+      ? null
+      : harvest.startedAt
+        ? new Date(harvest.startedAt)
+        : undefined;
+    const completedAt = harvest.completedAt === null
+      ? null
+      : harvest.completedAt
+        ? new Date(harvest.completedAt)
+        : undefined;
+
+    const results: Harvest['results'] = (harvest.results || []).map(parseResult);
+
+    let insights: Harvest['insights'] = (harvest.insights || []).map(parseInsight);
+
+    const yieldPayload = harvest.yield;
+    const yieldMetrics = !Array.isArray(yieldPayload) && typeof yieldPayload === 'object'
+      ? yieldPayload.metrics
+      : undefined;
+    let yieldItems: HarvestYield[] = [];
+
+    if (Array.isArray(yieldPayload)) {
+      yieldItems = yieldPayload.map(parseYieldItem);
+    } else if (yieldPayload && typeof yieldPayload === 'object') {
+      const artifacts = Array.isArray(yieldPayload.artifacts) ? yieldPayload.artifacts : [];
+      yieldItems = artifacts.map(parseYieldItem);
+
+      if (Array.isArray(yieldPayload.insights)) {
+        const yieldInsights = yieldPayload.insights.map(parseInsight);
+        insights = [...insights, ...yieldInsights];
+      }
+    }
+
+    const topLevelArtifacts = Array.isArray(harvest.artifacts)
+      ? harvest.artifacts.map(parseYieldItem)
+      : [];
+
+    const combinedArtifacts = [...yieldItems];
+    topLevelArtifacts.forEach(item => {
+      if (!combinedArtifacts.some(existing => existing.id === item.id)) {
+        combinedArtifacts.push(item);
+      }
+    });
+
+    const defaultSummary = {
+      description: '',
+      totalFiles: 0,
+      filesGenerated: 0,
+      filesFailed: 0,
+      totalTasks: 0,
+      completedTasks: 0,
+      failedTasks: 0,
+      duration: 0,
+      efficiency: 0,
+      agents: [],
+      fileCategories: {
+        text: 0,
+        code: 0,
+        image: 0,
+        data: 0,
+        config: 0,
+        other: 0
+      }
+    };
+
+    const quality = {
+      completeness: harvest.quality?.completeness ?? 0,
+      accuracy: harvest.quality?.accuracy ?? 0,
+      relevance: harvest.quality?.relevance ?? 0,
+      overallScore: harvest.quality?.overallScore
+        ?? yieldMetrics?.qualityScore
+        ?? 0
+    };
+
     return {
-      ...harvest,
-      createdAt: new Date(harvest.createdAt),
-      completedAt: harvest.completedAt ? new Date(harvest.completedAt) : undefined,
-      results: (harvest.results || []).map((result: any) => ({
-        ...result,
-        timestamp: new Date(result.timestamp)
-      })),
-      insights: (harvest.insights || []).map((insight: any) => ({
-        ...insight,
-        timestamp: new Date(insight.timestamp)
-      })),
-      // Note: 'artifacts' was replaced with 'yield' in the new data model
-      yield: harvest.yield?.map((item: any) => ({
-        ...item,
-        createdAt: item.createdAt ? new Date(item.createdAt) : new Date()
-      })) || []
+      id: harvest.id,
+      farmId: harvest.farmId,
+      farmName: harvest.farmName || '',
+      name: harvest.name || 'Harvest',
+      description: harvest.description || '',
+      type: harvest.type || 'workflow',
+      status: harvest.status || 'processing',
+      createdAt,
+      startedAt,
+      completedAt,
+      useCount: harvest.useCount ?? 0,
+      summary: {
+        ...defaultSummary,
+        ...(harvest.summary || {}),
+        fileCategories: {
+          ...defaultSummary.fileCategories,
+          ...(harvest.summary?.fileCategories || {})
+        }
+      },
+      farmConfig: harvest.farmConfig,
+      results,
+      insights,
+      yield: yieldItems.length ? yieldItems : combinedArtifacts,
+      artifacts: combinedArtifacts,
+      quality,
+      tags: harvest.tags || [],
+      farmerTemplateId: harvest.farmerTemplateId,
+      farmerTemplateName: harvest.farmerTemplateName,
+      exportFormats: harvest.exportFormats || ['json']
     };
   }
 
@@ -319,7 +496,56 @@ class HarvestService {
     websocketService.on('harvest:initial:data', callback);
     return () => websocketService.off('harvest:initial:data', callback);
   }
+
+  private unwrapResponse<T>(response: any, fallback?: T): T {
+    if (!response) {
+      if (fallback !== undefined) return fallback;
+      throw new Error('Invalid response');
+    }
+    if (response.data && response.data.data !== undefined) {
+      return response.data.data;
+    }
+    if (response.data !== undefined) {
+      return response.data;
+    }
+    if (fallback !== undefined) {
+      return fallback;
+    }
+    return response;
+  }
+
+  private cloneHarvest(harvest: Harvest): Harvest {
+    return {
+      ...harvest,
+      summary: {
+        ...harvest.summary,
+        fileCategories: {
+          ...harvest.summary.fileCategories
+        }
+      },
+      results: harvest.results.map(result => ({
+        ...result,
+        metadata: { ...result.metadata }
+      })),
+      insights: harvest.insights.map(insight => ({
+        ...insight,
+        source: { ...insight.source }
+      })),
+      yield: harvest.yield.map(item => ({
+        ...item,
+        metadata: item.metadata ? { ...item.metadata } : undefined,
+        createdBy: item.createdBy ? { ...item.createdBy } : undefined
+      })),
+      quality: { ...harvest.quality }
+    };
+  }
 }
 
-export const harvestService = new HarvestService();
-export type { HarvestService };
+export { HarvestServiceImpl as HarvestService };
+export type { HarvestServiceImpl as HarvestServiceType };
+export const harvestService = new HarvestServiceImpl();
+
+if (typeof module !== 'undefined' && module?.exports) {
+  module.exports.HarvestService = HarvestServiceImpl;
+  module.exports.harvestService = harvestService;
+}

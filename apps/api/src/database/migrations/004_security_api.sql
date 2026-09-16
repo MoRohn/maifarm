@@ -329,51 +329,51 @@ CREATE TABLE IF NOT EXISTS security_audit_trail (
 -- ============================================
 
 -- API Keys indexes
-CREATE INDEX idx_api_keys_user_id ON api_keys(user_id);
-CREATE INDEX idx_api_keys_service ON api_keys(service);
-CREATE INDEX idx_api_keys_key_hash ON api_keys(key_hash);
-CREATE INDEX idx_api_keys_active ON api_keys(is_active);
-CREATE INDEX idx_api_keys_expires_at ON api_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_service ON api_keys(service);
+CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(is_active);
+CREATE INDEX IF NOT EXISTS idx_api_keys_expires_at ON api_keys(expires_at);
 
 -- Security audits indexes
-CREATE INDEX idx_security_audits_type ON security_audits(audit_type);
-CREATE INDEX idx_security_audits_severity ON security_audits(severity);
-CREATE INDEX idx_security_audits_status ON security_audits(status);
-CREATE INDEX idx_security_audits_created_at ON security_audits(created_at DESC);
-CREATE INDEX idx_security_audits_resource ON security_audits(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_security_audits_type ON security_audits(audit_type);
+CREATE INDEX IF NOT EXISTS idx_security_audits_severity ON security_audits(severity);
+CREATE INDEX IF NOT EXISTS idx_security_audits_status ON security_audits(status);
+CREATE INDEX IF NOT EXISTS idx_security_audits_created_at ON security_audits(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_audits_resource ON security_audits(resource_type, resource_id);
 
 -- Vulnerabilities indexes
-CREATE INDEX idx_vulnerabilities_audit_id ON vulnerabilities(audit_id);
-CREATE INDEX idx_vulnerabilities_severity ON vulnerabilities(severity);
-CREATE INDEX idx_vulnerabilities_status ON vulnerabilities(status);
-CREATE INDEX idx_vulnerabilities_cve ON vulnerabilities(cve_id);
+CREATE INDEX IF NOT EXISTS idx_vulnerabilities_audit_id ON vulnerabilities(audit_id);
+CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity);
+CREATE INDEX IF NOT EXISTS idx_vulnerabilities_status ON vulnerabilities(status);
+CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve ON vulnerabilities(cve_id);
 
 -- Access tokens indexes
-CREATE INDEX idx_access_tokens_user_id ON access_tokens(user_id);
-CREATE INDEX idx_access_tokens_token_hash ON access_tokens(token_hash);
-CREATE INDEX idx_access_tokens_expires_at ON access_tokens(expires_at);
-CREATE INDEX idx_access_tokens_client_id ON access_tokens(client_id);
+CREATE INDEX IF NOT EXISTS idx_access_tokens_user_id ON access_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_access_tokens_token_hash ON access_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_access_tokens_expires_at ON access_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_access_tokens_client_id ON access_tokens(client_id);
 
 -- Permission grants indexes
-CREATE INDEX idx_permission_grants_grantee ON permission_grants(grantee_type, grantee_id);
-CREATE INDEX idx_permission_grants_resource ON permission_grants(resource_type, resource_id);
-CREATE INDEX idx_permission_grants_expires ON permission_grants(expires_at);
+CREATE INDEX IF NOT EXISTS idx_permission_grants_grantee ON permission_grants(grantee_type, grantee_id);
+CREATE INDEX IF NOT EXISTS idx_permission_grants_resource ON permission_grants(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_permission_grants_expires ON permission_grants(expires_at);
 
 -- Rate limits indexes
-CREATE INDEX idx_rate_limits_target ON rate_limits(target_type, target_id);
-CREATE INDEX idx_rate_limits_reset ON rate_limits(minute_reset_at, hour_reset_at);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_target ON rate_limits(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_reset ON rate_limits(minute_reset_at, hour_reset_at);
 
 -- Encryption keys indexes
-CREATE INDEX idx_encryption_keys_key_id ON encryption_keys(key_id);
-CREATE INDEX idx_encryption_keys_active ON encryption_keys(active);
-CREATE INDEX idx_encryption_keys_expires ON encryption_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_encryption_keys_key_id ON encryption_keys(key_id);
+CREATE INDEX IF NOT EXISTS idx_encryption_keys_active ON encryption_keys(active);
+CREATE INDEX IF NOT EXISTS idx_encryption_keys_expires ON encryption_keys(expires_at);
 
 -- Audit trail indexes
-CREATE INDEX idx_audit_trail_timestamp ON security_audit_trail(timestamp DESC);
-CREATE INDEX idx_audit_trail_event_type ON security_audit_trail(event_type);
-CREATE INDEX idx_audit_trail_actor ON security_audit_trail(actor_type, actor_id);
-CREATE INDEX idx_audit_trail_target ON security_audit_trail(target_type, target_id);
-CREATE INDEX idx_audit_trail_correlation ON security_audit_trail(correlation_id);
-CREATE INDEX idx_audit_trail_severity ON security_audit_trail(severity);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_timestamp ON security_audit_trail(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_event_type ON security_audit_trail(event_type);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_actor ON security_audit_trail(actor_type, actor_id);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_target ON security_audit_trail(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_correlation ON security_audit_trail(correlation_id);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_severity ON security_audit_trail(severity);
 
 COMMIT;

@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import {
   Search, Copy, Download, ChevronUp, ChevronDown, ChevronRight,
   FileCode, Image, Link, FolderOpen, Terminal as TerminalIcon
 } from 'lucide-react';
+import DOMPurify from 'dompurify';
 import { useTerminalTheme } from '../themes/TerminalThemeProvider';
 import { terminalLineAnimation, typewriterEffect } from '../animations/terminalAnimations';
 import { AnsiParser } from '@/utils/ansiParser';
@@ -118,12 +119,17 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
     }
   }, [enableSyntaxHighlight]);
 
+  // Helper function to escape HTML attributes
+  const escapeAttr = (str: string): string => {
+    return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  };
+
   // Parse and detect special content types
   const parseLineContent = useCallback((content: string): React.ReactNode => {
     // First, check if the content has ANSI codes and clean/parse them
     let cleanContent = content;
     let hasAnsi = false;
-    
+
     if (AnsiParser.hasAnsiCodes(content)) {
       hasAnsi = true;
       // Parse ANSI codes to HTML with proper styling
@@ -137,7 +143,7 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
-    
+
     // Detect file paths
     const filePathRegex = /([a-zA-Z0-9_\-./]+\.(ts|tsx|js|jsx|py|json|css|html|md|txt))(:\d+)?/g;
     // Detect URLs
@@ -146,22 +152,29 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
     const imageRegex = /([a-zA-Z0-9_\-./]+\.(png|jpg|jpeg|gif|svg|webp))/g;
 
     let result = cleanContent;
-    
+
     // Only apply these replacements if we haven't already parsed ANSI
     // to avoid breaking the HTML structure
     if (!hasAnsi) {
       // Replace file paths with clickable links
       if (onFileLinkClick) {
         result = result.replace(filePathRegex, (match, filePath, ext, lineNumber) => {
-          return `<span class="terminal-file-link" data-path="${filePath}" data-line="${lineNumber?.slice(1) || ''}">
+          const escapedPath = escapeAttr(filePath);
+          const escapedLine = escapeAttr(lineNumber?.slice(1) || '');
+          return `<span class="terminal-file-link" data-path="${escapedPath}" data-line="${escapedLine}">
             <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-file"></use></svg>${match}
           </span>`;
         });
       }
 
-      // Replace URLs with clickable links
+      // Replace URLs with clickable links (validate protocol first)
       result = result.replace(urlRegex, (url) => {
-        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="terminal-url-link">
+        // Only allow http and https protocols to prevent javascript: XSS
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          return url;
+        }
+        const escapedUrl = escapeAttr(url);
+        return `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer" class="terminal-url-link">
           <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-link"></use></svg>${url}
         </a>`;
       });
@@ -169,14 +182,25 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
       // Replace image paths with preview icons
       if (onImagePreview) {
         result = result.replace(imageRegex, (match, imagePath) => {
-          return `<span class="terminal-image-link" data-image="${imagePath}">
+          const escapedImage = escapeAttr(imagePath);
+          return `<span class="terminal-image-link" data-image="${escapedImage}">
             <svg class="inline w-3 h-3 mr-1"><use xlink:href="#icon-image"></use></svg>${match}
           </span>`;
         });
       }
     }
 
-    return <div dangerouslySetInnerHTML={{ __html: result }} />;
+    // FIX: Sanitize HTML to prevent XSS attacks from terminal output
+    // Allow safe HTML elements for styling but block scripts and event handlers
+    const sanitizedResult = DOMPurify.sanitize(result, {
+      ALLOWED_TAGS: ['span', 'a', 'div', 'svg', 'use', 'br', 'b', 'i', 'strong', 'em', 'code', 'pre'],
+      ALLOWED_ATTR: ['class', 'style', 'href', 'target', 'rel', 'data-path', 'data-line', 'data-image', 'xlink:href'],
+      ADD_ATTR: ['target', 'rel'],
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+      FORBID_ATTR: ['onerror', 'onclick', 'onload', 'onmouseover']
+    });
+
+    return <div dangerouslySetInnerHTML={{ __html: sanitizedResult }} />;
   }, [onFileLinkClick, onImagePreview]);
 
   // Toggle section collapse
@@ -243,8 +267,16 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
     code: '> ',
   };
 
-  // Trim lines if exceeding maxLines
-  const displayLines = lines.slice(-maxLines);
+  // PERFORMANCE: Memoize displayLines to prevent recalculation on every render
+  const displayLines = useMemo(() => lines.slice(-maxLines), [lines, maxLines]);
+
+  // ACCESSIBILITY: Handle keyboard navigation for line selection
+  const handleLineKeyDown = useCallback((e: React.KeyboardEvent, lineId: string) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleLineSelection(lineId, e.shiftKey);
+    }
+  }, []);
 
   return (
     <div className={`terminal-output-container relative ${className}`}>
@@ -274,14 +306,17 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
               className="absolute top-2 right-2 z-10 flex items-center space-x-2 bg-gray-800 rounded-lg px-3 py-2"
               style={{ backgroundColor: currentTheme.colors.background }}
             >
-              <Search className="w-4 h-4" style={{ color: currentTheme.colors.accent }} />
+              <label htmlFor="terminal-search" className="sr-only">Search terminal output</label>
+              <Search className="w-4 h-4" style={{ color: currentTheme.colors.accent }} aria-hidden="true" />
               <input
+                id="terminal-search"
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search output..."
                 className="bg-transparent outline-none text-sm"
                 style={{ color: currentTheme.colors.foreground }}
+                aria-label="Search terminal output"
               />
               <span className="text-xs" style={{ color: currentTheme.colors.brightBlack }}>
                 {searchResults.size > 0 ? `${currentSearchIndex + 1}/${searchResults.size}` : '0/0'}
@@ -346,16 +381,23 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
                 initial="hidden"
                 animate="visible"
                 exit="hidden"
+                role="listitem"
+                tabIndex={0}
                 className={`terminal-line ${isSelected ? 'bg-opacity-20' : ''} ${
                   isSearchMatch ? 'bg-yellow-500 bg-opacity-10' : ''
-                } hover:bg-opacity-10 hover:bg-gray-700 cursor-pointer px-2 py-0.5 rounded`}
+                } hover:bg-opacity-10 hover:bg-gray-700 active:bg-gray-600 cursor-pointer px-2 py-0.5 rounded focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 onClick={(e) => {
                   toggleLineSelection(line.id, e.shiftKey);
                   onLineClick?.(line);
                 }}
+                onKeyDown={(e) => handleLineKeyDown(e, line.id)}
                 style={{
                   backgroundColor: isSelected ? `${currentTheme.colors.selection}` : 'transparent',
+                  // iOS touch optimizations
+                  WebkitTapHighlightColor: 'transparent',
+                  touchAction: 'manipulation',
                 }}
+                aria-selected={isSelected}
               >
                 <div className="flex items-start space-x-2">
                   {/* Line Number */}
@@ -435,10 +477,16 @@ export const TerminalOutput: React.FC<TerminalOutputProps> = ({
 
         {/* Empty State */}
         {displayLines.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
+          <div
+            className="flex flex-col items-center justify-center h-full text-center"
+            role="status"
+            aria-live="polite"
+            aria-label="Terminal output is empty"
+          >
             <TerminalIcon
               className="w-12 h-12 mb-4 opacity-30"
               style={{ color: currentTheme.colors.brightBlack }}
+              aria-hidden="true"
             />
             <p style={{ color: currentTheme.colors.brightBlack }}>
               Waiting for output...

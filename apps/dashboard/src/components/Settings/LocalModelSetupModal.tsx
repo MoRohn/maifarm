@@ -51,7 +51,7 @@ const LocalModelSetupModal: React.FC<LocalModelSetupModalProps> = ({
 
   const steps = [
     { title: 'Check Ollama', description: 'Verify Ollama installation' },
-    { title: 'Select Model', description: 'Choose a Qwen model for your needs' },
+    { title: 'Select Model', description: 'Choose a Llama model for your needs' },
     { title: 'Install Model', description: 'Download and configure the model' },
     { title: 'Test Setup', description: 'Verify everything works' }
   ];
@@ -218,7 +218,7 @@ const LocalModelSetupModal: React.FC<LocalModelSetupModalProps> = ({
                           Ollama not detected
                         </h4>
                         <p className="text-sm text-amber-800 dark:text-amber-300 mb-4">
-                          Ollama is required to run Qwen models locally. It's free and easy to install.
+                          Ollama is required to run Llama models locally. It's free and easy to install.
                         </p>
                         <button
                           onClick={installOllama}
@@ -250,7 +250,7 @@ const LocalModelSetupModal: React.FC<LocalModelSetupModalProps> = ({
           <div className="space-y-6">
             <div className="mb-4">
               <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
-                Choose a Qwen Model
+                Choose a Llama Model
               </h4>
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Select a model based on your hardware and requirements.
@@ -428,7 +428,7 @@ const LocalModelSetupModal: React.FC<LocalModelSetupModalProps> = ({
                       Setup Complete!
                     </h4>
                     <p className="text-sm text-green-800 dark:text-green-300">
-                      {selectedModel} is ready to use. You can now create farms using your local Qwen model.
+                      {selectedModel} is ready to use. You can now create farms using your local Llama model.
                     </p>
                   </div>
                 </div>
@@ -488,7 +488,7 @@ const LocalModelSetupModal: React.FC<LocalModelSetupModalProps> = ({
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Setup Local Qwen Model
+                  Setup Local Llama Model
                 </h3>
                 <button
                   onClick={onClose}

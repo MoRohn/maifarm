@@ -6,7 +6,7 @@ import { ProviderManager } from '../services/ProviderManager.js';
 const router = Router();
 const manager = new ProviderManager();
 
-// Unified provider management (claude, openai, qwen, ollama)
+// Unified provider management (claude, openai, llama, ollama)
 router.get('/', asyncHandler(async (req, res) => {
   const providers = await manager.listProviders();
   res.json(providers);

@@ -6,8 +6,10 @@
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { logger, LogCategory } from '../utils/logger';
+import { pathConfig } from '../config/paths';
 
 const execAsync = promisify(exec);
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 export interface SessionVerificationResult {
   exists: boolean;
@@ -46,7 +48,7 @@ export class TmuxSessionVerifier {
     try {
       // Check if session exists
       const { stdout: sessionCheck } = await execAsync(
-        `TMUX_TMPDIR=/tmp tmux has-session -t ${sessionName} 2>&1`,
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux has-session -t ${sessionName} 2>&1`,
         { timeout: 5000 }
       );
 
@@ -54,7 +56,7 @@ export class TmuxSessionVerifier {
 
       // Get session details
       const { stdout: sessionInfo } = await execAsync(
-        `TMUX_TMPDIR=/tmp tmux list-windows -t ${sessionName} -F "#{window_name}" 2>&1`,
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-windows -t ${sessionName} -F "#{window_name}" 2>&1`,
         { timeout: 5000 }
       );
 
@@ -65,7 +67,7 @@ export class TmuxSessionVerifier {
 
         // Count panes in the first window
         const { stdout: paneInfo } = await execAsync(
-          `TMUX_TMPDIR=/tmp tmux list-panes -t ${sessionName}:${result.windowName} 2>&1 | wc -l`,
+          `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-panes -t ${sessionName}:${result.windowName} 2>&1 | wc -l`,
           { timeout: 5000 }
         );
 
@@ -160,7 +162,7 @@ export class TmuxSessionVerifier {
       // Kill existing session if it exists
       try {
         await execAsync(
-          `TMUX_TMPDIR=/tmp tmux kill-session -t ${sessionName} 2>/dev/null`
+          `TMUX_TMPDIR="${tmuxTmpDir}" tmux kill-session -t ${sessionName} 2>/dev/null`
         );
       } catch {
         // Ignore error if session doesn't exist
@@ -168,7 +170,7 @@ export class TmuxSessionVerifier {
 
       // Create new session with first pane
       await execAsync(
-        `TMUX_TMPDIR=/tmp tmux new-session -d -s ${sessionName} -n agents -x 200 -y 50`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux new-session -d -s ${sessionName} -n agents -x 200 -y 50`
       );
 
       // Create additional panes with proper verification
@@ -178,7 +180,7 @@ export class TmuxSessionVerifier {
         const targetPane = i === 1 ? `${sessionName}:agents.0` : `${sessionName}:agents`;
 
         await execAsync(
-          `TMUX_TMPDIR=/tmp tmux split-window ${direction} -t ${targetPane}`
+          `TMUX_TMPDIR="${tmuxTmpDir}" tmux split-window ${direction} -t ${targetPane}`
         );
 
         // Wait and verify pane was created
@@ -186,7 +188,7 @@ export class TmuxSessionVerifier {
 
         // Verify pane count
         const { stdout } = await execAsync(
-          `TMUX_TMPDIR=/tmp tmux list-panes -t ${sessionName}:agents 2>&1 | wc -l`
+          `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-panes -t ${sessionName}:agents 2>&1 | wc -l`
         );
         const currentPanes = parseInt(stdout.trim()) || 0;
 
@@ -198,7 +200,7 @@ export class TmuxSessionVerifier {
 
       // Apply tiled layout
       await execAsync(
-        `TMUX_TMPDIR=/tmp tmux select-layout -t ${sessionName}:agents tiled`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux select-layout -t ${sessionName}:agents tiled`
       );
 
       logger.info(LogCategory.TERMINAL,
@@ -224,7 +226,7 @@ export class TmuxSessionVerifier {
     try {
       // Kill existing session
       await execAsync(
-        `TMUX_TMPDIR=/tmp tmux kill-session -t ${sessionName} 2>/dev/null`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux kill-session -t ${sessionName} 2>/dev/null`
       );
     } catch {
       // Ignore if session doesn't exist
@@ -244,7 +246,7 @@ export class TmuxSessionVerifier {
     sessionName: string,
     callback: (healthy: boolean) => void,
     interval: number = 5000
-  ): NodeJS.Timer {
+  ): Promise<NodeJS.Timer> {
     const checkHealth = async () => {
       const verification = await this.verifySession(sessionName);
       const healthy = verification.exists && verification.accessible;
@@ -264,10 +266,10 @@ export class TmuxSessionVerifier {
   async ensureServerRunning(): Promise<boolean> {
     try {
       // Start server if not running
-      await execAsync('TMUX_TMPDIR=/tmp tmux start-server 2>/dev/null');
+      await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux start-server 2>/dev/null`);
 
       // Verify server is responsive
-      await execAsync('TMUX_TMPDIR=/tmp tmux list-commands >/dev/null 2>&1');
+      await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-commands >/dev/null 2>&1`);
 
       return true;
     } catch (error) {

@@ -67,23 +67,25 @@ export class PromptEnhancementEngine {
     let prompt = context.originalPrompt;
     
     // Add clear success criteria
-    if (!prompt.toLowerCase().includes('success') && !prompt.toLowerCase().includes('complete')) {
+    if (!/success criteria:/i.test(prompt)) {
       prompt += '\n\nSuccess Criteria: Task is complete when the requested outcome is achieved with working code/output.';
       enhancements.push('Added success criteria');
     }
     
     // Add time constraint emphasis
-    prompt = `[TIME-BOXED: ${context.timeoutMinutes || 5} minutes]\n\n${prompt}`;
-    enhancements.push('Added time constraint');
+    if (!prompt.startsWith('[TIME-BOXED')) {
+      prompt = `[TIME-BOXED: ${context.timeoutMinutes || 5} minutes]\n\n${prompt}`;
+      enhancements.push('Added time constraint');
+    }
     
     // Add efficiency directive
-    if (!prompt.toLowerCase().includes('efficient') && !prompt.toLowerCase().includes('quick')) {
+    if (!/Approach:.*direct solution/i.test(prompt)) {
       prompt += '\n\nApproach: Focus on the most direct solution. Avoid over-engineering.';
       enhancements.push('Added efficiency directive');
     }
     
     // Add output format if missing
-    if (!prompt.toLowerCase().includes('output') && !prompt.toLowerCase().includes('result')) {
+    if (!/Deliver:.*output/i.test(prompt)) {
       prompt += '\n\nDeliver: Clear, actionable output with any necessary code or documentation.';
       enhancements.push('Added output specification');
     }
@@ -99,8 +101,10 @@ export class PromptEnhancementEngine {
     
     // Add creativity amplifiers
     const creativityLevel = context.creativityLevel || 80;
-    prompt = `[CREATIVE MODE: ${creativityLevel}% Innovation Level]\n\n${prompt}`;
-    enhancements.push('Added creativity level');
+    if (!prompt.startsWith('[CREATIVE MODE')) {
+      prompt = `[CREATIVE MODE: ${creativityLevel}% Innovation Level]\n\n${prompt}`;
+      enhancements.push('Added creativity level');
+    }
     
     // Add exploration directives
     const explorationPhrases = [
@@ -112,22 +116,33 @@ export class PromptEnhancementEngine {
     ];
     
     const selectedPhrase = explorationPhrases[Math.floor(Math.random() * explorationPhrases.length)];
-    prompt += `\n\nCreative Directive: ${selectedPhrase}.`;
-    enhancements.push('Added exploration directive');
+    if (!/Creative Directive:/i.test(prompt)) {
+      prompt += `\n\nCreative Directive: ${selectedPhrase}.`;
+      enhancements.push('Added exploration directive');
+    }
     
     // Add innovation areas
     if (context.focusAreas && context.focusAreas.length > 0) {
-      prompt += `\n\nExploration Areas: ${context.focusAreas.join(', ')}`;
-      enhancements.push('Added focus areas');
+      if (!/Exploration Areas:/i.test(prompt)) {
+        prompt += `\n\nExploration Areas: ${context.focusAreas.join(', ')}`;
+        enhancements.push('Added focus areas');
+      }
     } else {
-      prompt += '\n\nExploration Areas: Architecture, User Experience, Performance, Integration';
-      enhancements.push('Added default exploration areas');
+      if (!/Exploration Areas:/i.test(prompt)) {
+        prompt += '\n\nExploration Areas: Architecture, User Experience, Performance, Integration';
+        enhancements.push('Added default exploration areas');
+      }
     }
     
     // Add creative freedom
-    prompt += '\n\nConstraints: Minimal - prioritize innovation over convention.';
-    prompt += '\nEncouraged: Experimental approaches, unique solutions, creative problem-solving.';
-    enhancements.push('Added creative freedom guidelines');
+    if (!/Constraints: Minimal/i.test(prompt)) {
+      prompt += '\n\nConstraints: Minimal - prioritize innovation over convention.';
+      enhancements.push('Added creative freedom constraints');
+    }
+    if (!/Encouraged:/i.test(prompt)) {
+      prompt += '\nEncouraged: Experimental approaches, unique solutions, creative problem-solving.';
+      enhancements.push('Added creative freedom guidelines');
+    }
     
     return prompt;
   }
@@ -139,42 +154,51 @@ export class PromptEnhancementEngine {
     let prompt = context.originalPrompt;
     
     // Add project structure
-    prompt = `[MULTI-AGENT PROJECT: ${context.numberOfAgents || 4} Specialized Agents]\n\n${prompt}`;
-    enhancements.push('Added agent allocation');
+    if (!prompt.startsWith('[MULTI-AGENT PROJECT')) {
+      prompt = `[MULTI-AGENT PROJECT: ${context.numberOfAgents || 4} Specialized Agents]\n\n${prompt}`;
+      enhancements.push('Added agent allocation');
+    }
     
     // Add component breakdown if available
     if (context.projectComponents && context.projectComponents.length > 0) {
       const componentList = context.projectComponents
         .map((c: any) => `• ${c.name}: ${c.description} (${c.agentCount} agent${c.agentCount > 1 ? 's' : ''})`)
         .join('\n');
-      
-      prompt += `\n\nProject Components:\n${componentList}`;
-      enhancements.push('Added component breakdown');
+      if (!/Project Components:/i.test(prompt)) {
+        prompt += `\n\nProject Components:\n${componentList}`;
+        enhancements.push('Added component breakdown');
+      }
     }
-    
+
     // Add collaboration directive
-    prompt += '\n\nCollaboration Strategy:';
-    prompt += '\n• Agents work on assigned components';
-    prompt += '\n• Share progress and integrate continuously';
-    prompt += '\n• Maintain consistency across components';
-    prompt += '\n• Document interfaces and dependencies';
-    enhancements.push('Added collaboration strategy');
-    
+    if (!/Collaboration Strategy:/i.test(prompt)) {
+      prompt += '\n\nCollaboration Strategy:';
+      prompt += '\n• Agents work on assigned components';
+      prompt += '\n• Share progress and integrate continuously';
+      prompt += '\n• Maintain consistency across components';
+      prompt += '\n• Document interfaces and dependencies';
+      enhancements.push('Added collaboration strategy');
+    }
+
     // Add quality standards
-    prompt += '\n\nQuality Standards:';
-    prompt += '\n• Production-ready code';
-    prompt += '\n• Comprehensive error handling';
-    prompt += '\n• Clear documentation';
-    prompt += '\n• Test coverage where applicable';
-    enhancements.push('Added quality standards');
-    
+    if (!/Quality Standards:/i.test(prompt)) {
+      prompt += '\n\nQuality Standards:';
+      prompt += '\n• Production-ready code';
+      prompt += '\n• Comprehensive error handling';
+      prompt += '\n• Clear documentation';
+      prompt += '\n• Test coverage where applicable';
+      enhancements.push('Added quality standards');
+    }
+
     // Add deliverables
-    prompt += '\n\nDeliverables:';
-    prompt += '\n• Working implementation of all components';
-    prompt += '\n• Integration between components';
-    prompt += '\n• Documentation and setup instructions';
-    enhancements.push('Added deliverables specification');
-    
+    if (!/Deliverables:/i.test(prompt)) {
+      prompt += '\n\nDeliverables:';
+      prompt += '\n• Working implementation of all components';
+      prompt += '\n• Integration between components';
+      prompt += '\n• Documentation and setup instructions';
+      enhancements.push('Added deliverables specification');
+    }
+
     return prompt;
   }
   
@@ -183,14 +207,14 @@ export class PromptEnhancementEngine {
    */
   private applyUniversalEnhancements(prompt: string, context: EnhancementContext, enhancements: string[]): string {
     // Add context from attachments
-    if (context.attachments && context.attachments.length > 0) {
+    if (context.attachments && context.attachments.length > 0 && !/Reference Files:/i.test(prompt)) {
       const fileList = context.attachments.map(f => f.name).join(', ');
       prompt += `\n\nReference Files: ${fileList}`;
       enhancements.push('Added file references');
     }
-    
+
     // Ensure clear action items
-    if (!prompt.toLowerCase().includes('step') && !prompt.toLowerCase().includes('task')) {
+    if (!prompt.toLowerCase().includes('step') && !prompt.toLowerCase().includes('task') && !prompt.trimStart().toLowerCase().startsWith('task:')) {
       const hasQuestionMark = prompt.includes('?');
       if (!hasQuestionMark) {
         // Add implicit action

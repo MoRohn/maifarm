@@ -6,6 +6,27 @@ import { farmService } from '@/services/farmService'
 const isActiveFarmStatus = (status: Farm['status']) =>
   status === 'active' || status === 'running'
 
+// Helper to safely get agents as Agent array
+// FIX: Preserve string IDs by converting them to minimal Agent objects with all required fields
+function getAgentsAsObjects(agents: Agent[] | string[]): Agent[] {
+  if (agents.length === 0) return [];
+  if (typeof agents[0] === 'string') {
+    // Convert string IDs to minimal agent objects to prevent data loss
+    const now = new Date();
+    return (agents as string[]).map((id, idx) => ({
+      id,
+      name: `Agent-${id.slice(0, 8)}`,
+      status: 'idle' as const,
+      farmId: '',
+      agentNumber: idx + 1,
+      type: 'custom' as const,
+      createdAt: now,
+      updatedAt: now
+    }));
+  }
+  return agents as Agent[];
+}
+
 interface FarmStats {
   activeFarms: number
   totalAgents: number
@@ -35,6 +56,7 @@ interface FarmState {
   reorderFarms: (startIndex: number, endIndex: number) => void
   reorderAgentsInFarm: (farmId: string, startIndex: number, endIndex: number) => void
   moveAgentBetweenFarms: (sourceFarmId: string, destFarmId: string, agentId: string, destIndex: number) => void
+  reset: () => void
 }
 
 export const useFarmStore = create<FarmState>()(
@@ -142,30 +164,67 @@ export const useFarmStore = create<FarmState>()(
       reorderAgentsInFarm: (farmId, startIndex, endIndex) => set((state) => ({
         farms: state.farms.map(farm => {
           if (farm.id === farmId && farm.agents) {
-            const agents = Array.from(farm.agents);
-            const [removed] = agents.splice(startIndex, 1);
-            agents.splice(endIndex, 0, removed);
-            return { ...farm, agents };
+            // Use helper to get agents as objects
+            const agents = getAgentsAsObjects(farm.agents);
+            if (agents.length === 0) return farm;
+            const reordered = [...agents];
+            const [removed] = reordered.splice(startIndex, 1);
+            reordered.splice(endIndex, 0, removed);
+            return { ...farm, agents: reordered };
           }
           return farm;
         })
       })),
 
       moveAgentBetweenFarms: (sourceFarmId, destFarmId, agentId, destIndex) => set((state) => {
-        const farms = [...state.farms];
-        const sourceFarm = farms.find(f => f.id === sourceFarmId);
-        const destFarm = farms.find(f => f.id === destFarmId);
-        
+        const sourceFarm = state.farms.find(f => f.id === sourceFarmId);
+        const destFarm = state.farms.find(f => f.id === destFarmId);
+
         if (!sourceFarm || !destFarm || !sourceFarm.agents || !destFarm.agents) return state;
-        
-        const agentIndex = sourceFarm.agents.findIndex(a => a.id === agentId);
+
+        // Use helper to get agents as objects
+        const sourceAgents = getAgentsAsObjects(sourceFarm.agents);
+        const destAgents = getAgentsAsObjects(destFarm.agents);
+
+        const agentIndex = sourceAgents.findIndex(a => a.id === agentId);
         if (agentIndex === -1) return state;
-        
-        const [agent] = sourceFarm.agents.splice(agentIndex, 1);
-        destFarm.agents.splice(destIndex, 0, agent);
-        
+
+        const [agent] = sourceAgents.splice(agentIndex, 1);
+        destAgents.splice(destIndex, 0, agent);
+
+        // FIX: Create new farm objects instead of mutating existing ones
+        // This preserves Zustand reactivity and prevents stale state bugs
+        const farms = state.farms.map(farm => {
+          if (farm.id === sourceFarmId) {
+            return { ...farm, agents: sourceAgents };
+          }
+          if (farm.id === destFarmId) {
+            return { ...farm, agents: destAgents };
+          }
+          return farm;
+        });
+
         return { farms };
       }),
+
+      reset: () => set(() => ({
+        farms: [],
+        activeFarms: [],
+        recentFarms: [],
+        stats: {
+          activeFarms: 0,
+          totalAgents: 0,
+          harvestsCompleted: 0,
+          yieldedItems: 0,
+        },
+        metrics: {
+          totalAgents: 0,
+          avgCpuUsage: 45,
+          efficiencyScore: 88,
+        },
+        loading: false,
+        error: null,
+      })),
     }),
     {
       name: 'maifarm-farms',

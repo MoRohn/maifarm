@@ -10,7 +10,7 @@ class MultiClaudeService {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:4567';
+    this.baseUrl = import.meta.env.VITE_API_URL || '/api';
     this.config = {
       maxAgents: 6,
       staggerDelay: 2,

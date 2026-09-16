@@ -10,8 +10,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { performance } from 'perf_hooks';
 import { logger, LogCategory } from '../utils/logger';
-import { pool } from '../database/connection';
-import { redis } from '../database/connection';
+import { db, redis } from '../database/connection';
 import { websocketManager } from '../websocket/websocketManager';
 
 interface SystemMetrics {
@@ -397,7 +396,7 @@ class ProductionMonitor extends EventEmitter {
   private async getDatabaseMetrics(): Promise<any> {
     try {
       const poolStats = (pool as any)._pool;
-      const queryResult = await pool.query(
+      const queryResult = await db.query(
         "SELECT COUNT(*) as count, AVG(EXTRACT(EPOCH FROM (now() - query_start))) as avg_time FROM pg_stat_activity WHERE state = 'active'"
       );
       
@@ -458,7 +457,7 @@ class ProductionMonitor extends EventEmitter {
    */
   private async getFarmMetrics(): Promise<any> {
     try {
-      const result = await pool.query(`
+      const result = await db.query(`
         SELECT 
           COUNT(*) FILTER (WHERE status = 'active') as active,
           COUNT(*) as total,
@@ -489,7 +488,7 @@ class ProductionMonitor extends EventEmitter {
    */
   private async getAgentMetrics(): Promise<any> {
     try {
-      const result = await pool.query(`
+      const result = await db.query(`
         SELECT 
           COUNT(*) FILTER (WHERE status = 'active') as active,
           COUNT(*) as total,
@@ -623,7 +622,7 @@ class ProductionMonitor extends EventEmitter {
     appMetrics: ApplicationMetrics
   ): Promise<void> {
     try {
-      await pool.query(`
+      await db.query(`
         INSERT INTO metrics (entity_type, entity_id, metric_name, metric_value, metric_data, timestamp)
         VALUES 
           ('system', 'cpu', 'usage', $1, $2, $3),
@@ -651,7 +650,7 @@ class ProductionMonitor extends EventEmitter {
    */
   private async persistAlert(alert: Alert): Promise<void> {
     try {
-      await pool.query(`
+      await db.query(`
         INSERT INTO alerts (alert_type, severity, title, message, details, status, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
       `, [

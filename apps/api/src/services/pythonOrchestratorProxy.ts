@@ -43,9 +43,12 @@ class PythonOrchestratorProxy extends EventEmitter {
   private client: AxiosInstance;
   private baseUrl: string;
   private isAvailable: boolean = false;
+  private enabled: boolean = false;
 
   private constructor() {
     super();
+    // Check if Python orchestrator proxy is enabled (optional service)
+    this.enabled = process.env.ENABLE_PYTHON_ORCHESTRATOR_PROXY === 'true';
     this.baseUrl = process.env.PYTHON_ORCHESTRATOR_URL || 'http://127.0.0.1:8000';
     this.client = axios.create({
       baseURL: this.baseUrl,
@@ -55,8 +58,10 @@ class PythonOrchestratorProxy extends EventEmitter {
       },
     });
 
-    // Check availability on startup
-    this.checkAvailability();
+    // Check availability on startup only if enabled
+    if (this.enabled) {
+      this.checkAvailability();
+    }
   }
 
   static getInstance(): PythonOrchestratorProxy {
@@ -67,6 +72,10 @@ class PythonOrchestratorProxy extends EventEmitter {
   }
 
   private async checkAvailability(): Promise<void> {
+    if (!this.enabled) {
+      return;
+    }
+
     try {
       const response = await this.client.get('/healthz', { timeout: 2000 });
       this.isAvailable = response.status === 200;
@@ -76,14 +85,21 @@ class PythonOrchestratorProxy extends EventEmitter {
       }
     } catch (error) {
       this.isAvailable = false;
-      logger.warn(LogCategory.FARM, 'Python orchestrator not available', {
+      // Log as debug instead of warn since this is an optional service
+      logger.debug(LogCategory.FARM, 'Python orchestrator not available (optional service)', {
         url: this.baseUrl,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        note: 'Set ENABLE_PYTHON_ORCHESTRATOR_PROXY=true to enable'
       });
     }
   }
 
   async runAgent(request: AgentRunRequest): Promise<AgentRunResponse | null> {
+    if (!this.enabled) {
+      logger.debug(LogCategory.FARM, 'Python orchestrator proxy is disabled');
+      return null;
+    }
+
     if (!this.isAvailable) {
       await this.checkAvailability();
       if (!this.isAvailable) {

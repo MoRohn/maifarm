@@ -162,7 +162,7 @@ For long-term maintainability, consider:
 
 ### Automated Validation
 ```bash
-./scripts/validate-database-schema.sh
+./scripts/db/validate-database-schema.sh
 ```
 **Last Run:** 2025-10-02
 **Result:** ✅ All checks passed

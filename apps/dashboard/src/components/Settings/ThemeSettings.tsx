@@ -19,8 +19,8 @@ interface ThemeSettingsProps {
 }
 
 const ThemeSettings: React.FC<ThemeSettingsProps> = ({ onChange }) => {
-  const { 
-    theme, 
+  const {
+    theme,
     colorScheme,
     primaryColor,
     accentColor,
@@ -28,21 +28,39 @@ const ThemeSettings: React.FC<ThemeSettingsProps> = ({ onChange }) => {
     reduceMotion,
     hasUnsavedChanges,
     setTheme,
-    setPendingColorScheme,
+    setColorScheme,
     setPrimaryColor,
     setAccentColor,
     setAnimations,
     setReduceMotion,
     saveChanges,
     discardChanges,
-    resetToDefault
+    resetToDefault,
+    hydrateFromServer,
   } = useThemeStore();
 
   const [selectedScheme, setSelectedScheme] = useState(colorScheme);
   const [tempPrimary, setTempPrimary] = useState(primaryColor);
   const [tempAccent, setTempAccent] = useState(accentColor);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  // FIX: Track timeout for cleanup
+  const confirmTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
+  // FIX: Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (confirmTimeoutRef.current) {
+        clearTimeout(confirmTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Hydrate from server only once on mount
+  useEffect(() => {
+    void hydrateFromServer();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync local state with store state only when they change
   useEffect(() => {
     setSelectedScheme(colorScheme);
     setTempPrimary(primaryColor);
@@ -59,7 +77,7 @@ const ThemeSettings: React.FC<ThemeSettingsProps> = ({ onChange }) => {
     setSelectedScheme(scheme);
     setTempPrimary(scheme.primary);
     setTempAccent(scheme.accent);
-    setPendingColorScheme(scheme);
+    setColorScheme(scheme);
     setPrimaryColor(scheme.primary);
     setAccentColor(scheme.accent);
     onChange?.('colorScheme', scheme);
@@ -68,7 +86,14 @@ const ThemeSettings: React.FC<ThemeSettingsProps> = ({ onChange }) => {
   const handleSaveChanges = () => {
     saveChanges();
     setShowSaveConfirm(true);
-    setTimeout(() => setShowSaveConfirm(false), 3000);
+    // FIX: Track timeout for proper cleanup
+    if (confirmTimeoutRef.current) {
+      clearTimeout(confirmTimeoutRef.current);
+    }
+    confirmTimeoutRef.current = setTimeout(() => {
+      confirmTimeoutRef.current = null;
+      setShowSaveConfirm(false);
+    }, 3000);
   };
 
   const handleDiscardChanges = () => {

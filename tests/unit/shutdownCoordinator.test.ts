@@ -17,8 +17,7 @@ jest.mock('../../apps/api/src/constants/timing', () => ({
 // Mock other dependencies
 jest.mock('../../apps/api/src/utils/logger');
 jest.mock('../../apps/api/src/websocket/websocketManager');
-jest.mock('../../apps/api/src/services/OrchestratorService');
-jest.mock('../../apps/api/src/services/harvestFileCollector');
+jest.mock('../../apps/api/src/services/unified/orchestratorService');
 
 describe('ShutdownCoordinator', () => {
   let shutdownCoordinator: any;

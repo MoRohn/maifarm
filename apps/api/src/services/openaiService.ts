@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { logger } from '../monitoring/logger.js';
+import { logger, LogCategory } from '../utils/logger.js';
 
 interface OpenAIConfig {
   apiKey: string;
@@ -31,11 +31,13 @@ class OpenAIService {
     const baseUrl = process.env.OPENAI_BASE_URL || this.baseUrl;
     const maxTokens = parseInt(process.env.OPENAI_MAX_TOKENS || '4096');
     const temperature = parseFloat(process.env.OPENAI_TEMPERATURE || '0.7');
+    const isOpenAIProvider = process.env.AI_PROVIDER === 'openai';
+    const isEnabled = process.env.OPENAI_ENABLED === 'true';
 
     // Check if API key is valid (not empty, not placeholder)
-    const isValidApiKey = apiKey && 
-                          apiKey.length > 10 && 
-                          !apiKey.includes('your-') && 
+    const isValidApiKey = apiKey &&
+                          apiKey.length > 10 &&
+                          !apiKey.includes('your-') &&
                           !apiKey.includes('here') &&
                           !apiKey.includes('placeholder') &&
                           !apiKey.includes('example');
@@ -49,9 +51,10 @@ class OpenAIService {
         temperature
       };
       this.configured = true;
-      logger.info('OpenAI service configured from environment variables');
-    } else if (apiKey) {
-      logger.warn('OpenAI API key appears to be a placeholder value');
+      logger.info(LogCategory.API, 'OpenAI service configured from environment variables');
+    } else if (apiKey && (isOpenAIProvider || isEnabled)) {
+      // Only warn if OpenAI is actually being used as the provider
+      logger.warn(LogCategory.API, 'OpenAI API key appears to be a placeholder value');
       this.configured = false;
     }
   }
@@ -63,9 +66,9 @@ class OpenAIService {
   // Update configuration with new API key from settings
   updateConfiguration(apiKey: string, model?: string) {
     // Check if API key is valid (not empty, not placeholder)
-    const isValidApiKey = apiKey && 
-                          apiKey.length > 10 && 
-                          !apiKey.includes('your-') && 
+    const isValidApiKey = apiKey &&
+                          apiKey.length > 10 &&
+                          !apiKey.includes('your-') &&
                           !apiKey.includes('here') &&
                           !apiKey.includes('placeholder') &&
                           !apiKey.includes('example');
@@ -79,17 +82,18 @@ class OpenAIService {
         temperature: this.config.temperature || 0.7
       };
       this.configured = true;
-      
+
       // Update environment variable for persistence
       process.env.OPENAI_API_KEY = apiKey;
       if (model) {
         process.env.OPENAI_MODEL = model;
       }
       process.env.OPENAI_ENABLED = 'true';
-      
-      logger.info('OpenAI service configuration updated from settings');
-    } else if (apiKey) {
-      logger.warn('OpenAI API key appears to be a placeholder value');
+
+      logger.info(LogCategory.API, 'OpenAI service configuration updated from settings');
+    } else if (apiKey && process.env.AI_PROVIDER === 'openai') {
+      // Only warn if attempting to use OpenAI as active provider
+      logger.warn(LogCategory.API, 'OpenAI API key appears to be a placeholder value');
       this.configured = false;
     } else {
       this.configured = false;
@@ -132,7 +136,7 @@ class OpenAIService {
         error: 'Invalid API response'
       };
     } catch (error: any) {
-      logger.error('OpenAI API key validation failed:', error);
+      logger.error(LogCategory.API, 'OpenAI API key validation failed:', error);
       
       if (error.response?.status === 401) {
         return {
@@ -174,7 +178,7 @@ class OpenAIService {
     // Use the updateConfiguration method to set the config
     this.updateConfiguration(apiKey, model);
 
-    logger.info('OpenAI service configured successfully');
+    logger.info(LogCategory.API, 'OpenAI service configured successfully');
     return { success: true };
   }
 
@@ -230,7 +234,7 @@ class OpenAIService {
         error: validation.error
       };
     } catch (error: any) {
-      logger.error('OpenAI validateConnection failed:', error);
+      logger.error(LogCategory.API, 'OpenAI validateConnection failed:', error);
       return {
         provider: 'openai',
         isValid: false,
@@ -263,7 +267,7 @@ class OpenAIService {
         }
       };
     } catch (error: any) {
-      logger.error('OpenAI testAPI failed:', error);
+      logger.error(LogCategory.API, 'OpenAI testAPI failed:', error);
       return {
         success: false,
         error: error.message || 'OpenAI API test failed'
@@ -296,7 +300,7 @@ class OpenAIService {
 
       return response.data;
     } catch (error: any) {
-      logger.error('OpenAI chat request failed:', error);
+      logger.error(LogCategory.API, 'OpenAI chat request failed:', error);
       throw new Error(error.response?.data?.error?.message || 'Chat request failed');
     }
   }
@@ -328,7 +332,7 @@ class OpenAIService {
 
       return response.data;
     } catch (error: any) {
-      logger.error('OpenAI stream chat request failed:', error);
+      logger.error(LogCategory.API, 'OpenAI stream chat request failed:', error);
       throw new Error(error.response?.data?.error?.message || 'Stream chat request failed');
     }
   }
@@ -361,7 +365,7 @@ class OpenAIService {
 
       return response.data;
     } catch (error: any) {
-      logger.error('OpenAI function call request failed:', error);
+      logger.error(LogCategory.API, 'OpenAI function call request failed:', error);
       throw new Error(error.response?.data?.error?.message || 'Function call request failed');
     }
   }
@@ -399,7 +403,7 @@ class OpenAIService {
 
       return response.data;
     } catch (error: any) {
-      logger.error('OpenAI vision request failed:', error);
+      logger.error(LogCategory.API, 'OpenAI vision request failed:', error);
       throw new Error(error.response?.data?.error?.message || 'Vision request failed');
     }
   }
@@ -444,11 +448,11 @@ class OpenAIService {
         const jsonData = JSON.parse(content);
         return { ...response.data, parsed: jsonData };
       } catch (parseError) {
-        logger.error('Failed to parse JSON response:', parseError);
+        logger.error(LogCategory.API, 'Failed to parse JSON response:', parseError);
         return response.data;
       }
     } catch (error: any) {
-      logger.error('OpenAI JSON mode request failed:', error);
+      logger.error(LogCategory.API, 'OpenAI JSON mode request failed:', error);
       throw new Error(error.response?.data?.error?.message || 'JSON mode request failed');
     }
   }

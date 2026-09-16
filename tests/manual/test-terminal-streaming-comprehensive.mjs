@@ -141,11 +141,11 @@ async function testPipePaneSetup() {
     console.log('   Endpoint not found, setting up pipe-pane manually...');
 
     for (let i = 0; i < 3; i++) {
-      const logFile = `/Users/rohnspringfield/maifarm/var/maibarn/terminals/${farmId}/agent-${i}.log`;
+      const logFile = `${process.env.MAIFARM_ROOT || process.cwd()}/var/maibarn/terminals/${farmId}/agent-${i}.log`;
       const pipeCmd = `TMUX_TMPDIR=/tmp tmux pipe-pane -t ${sessionId}:agents.${i} "cat >> ${logFile}" 2>/dev/null || true`;
 
       try {
-        await execAsync(`mkdir -p /Users/rohnspringfield/maifarm/var/maibarn/terminals/${farmId}`);
+        await execAsync(`mkdir -p ${process.env.MAIFARM_ROOT || process.cwd()}/var/maibarn/terminals/${farmId}`);
         await execAsync(pipeCmd);
         console.log(`   Setup pipe-pane for agent ${i}`);
       } catch (e) {
@@ -210,7 +210,7 @@ async function testWebSocketConnection() {
 async function testFileCapture() {
   console.log('\n📁 Step 5: Checking terminal output files...');
 
-  const terminalDir = path.join('/Users/rohnspringfield/maifarm/var/maibarn/terminals', farmId);
+  const terminalDir = path.join(path.join(process.env.MAIFARM_ROOT || process.cwd(), 'var/maibarn/terminals'), farmId);
 
   try {
     if (fs.existsSync(terminalDir)) {

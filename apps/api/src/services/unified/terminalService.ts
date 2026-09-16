@@ -71,8 +71,8 @@ export class UnifiedTerminalService extends EventEmitter {
   private sessions: Map<string, TerminalSession> = new Map();
   private watchers: Map<string, FSWatcher> = new Map();
   private outputBuffers: Map<string, string[]> = new Map();
-  private paneMonitorIntervals: Map<string, NodeJS.Timer> = new Map();
-  private healthCheckInterval: NodeJS.Timer | null = null;
+  private paneMonitorIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private healthCheckInterval: NodeJS.Timeout | null = null;
   private readonly TMUX_TMPDIR = pathConfig.getPath('TMUX_TMP_DIR');
   private readonly CACHE_TTL = 300; // 5 minutes
   private readonly BUFFER_LIMIT = 1000; // lines per session
@@ -214,7 +214,7 @@ export class UnifiedTerminalService extends EventEmitter {
     } catch (error) {
       throw new TmuxError(
         ErrorCode.TMUX_LAUNCH_FAILED,
-        `Failed to create tmux session: ${error.message}`,
+        `Failed to create tmux session: ${(error as Error).message}`,
         { farmId, sessionName }
       );
     }
@@ -281,7 +281,7 @@ export class UnifiedTerminalService extends EventEmitter {
       logger.error(`Failed to start streaming for ${sessionName}:`, error);
       throw new TmuxError(
         ErrorCode.TERMINAL_STREAM_FAILED,
-        `Stream setup failed: ${error.message}`,
+        `Stream setup failed: ${(error as Error).message}`,
         { sessionName, farmId }
       );
     }
@@ -407,6 +407,20 @@ export class UnifiedTerminalService extends EventEmitter {
       // Stop watchers
       this.stopWatchers(sessionName);
 
+      // Check if session exists before attempting to kill it
+      const exists = await this.sessionExists(sessionName);
+      if (!exists) {
+        logger.debug(`[terminalService] Session ${sessionName} does not exist, skipping kill`);
+
+        // Clean up internal tracking even if session doesn't exist
+        const session = this.sessions.get(sessionName);
+        if (session) {
+          session.status = 'stopped';
+        }
+        await this.clearSessionCache(sessionName);
+        return;
+      }
+
       // Kill tmux session
       const killCommand = `TMUX_TMPDIR="${this.TMUX_TMPDIR}" tmux kill-session -t ${sessionName}`;
       await execAsync(killCommand);
@@ -420,10 +434,10 @@ export class UnifiedTerminalService extends EventEmitter {
       // Clear cache
       await this.clearSessionCache(sessionName);
 
-      logger.info(`Stopped session ${sessionName}`);
+      logger.info(`[terminalService] Stopped session ${sessionName}`);
 
     } catch (error) {
-      logger.error(`Failed to stop session ${sessionName}:`, error);
+      logger.warn(`[terminalService] Failed to stop session ${sessionName}:`, error);
     }
   }
 
@@ -1052,17 +1066,8 @@ export class UnifiedTerminalService extends EventEmitter {
     process.on('SIGTERM', () => this.shutdown());
     UnifiedTerminalService.handlersRegistered = true;
 
-    // Handle WebSocket events (disabled for now - websocketManager is not an EventEmitter)
-    // TODO: Implement proper WebSocket event handling
-    // websocketManager.on('terminal:request', async (data) => {
-    //   const { sessionName, agentId } = data;
-    //   const content = await this.capturePane(sessionName, '0', agentId);
-    //   websocketManager.emit('terminal:response', {
-    //     sessionName,
-    //     agentId,
-    //     content
-    //   });
-    // });
+    // WebSocket event handling is implemented in socketServer.ts
+    // Terminal request/response events are handled through the socket handlers
   }
 
   /**

@@ -90,12 +90,9 @@ export function shouldEnableGlass(): boolean {
       return false
     }
     
-    // Check battery level if available
-    if (glassConfig.performance.reducedOnLowBattery && 'getBattery' in navigator) {
-      (navigator as any).getBattery().then((battery: any) => {
-        if (battery.level < 0.2) return false
-      })
-    }
+    // NOTE: Battery API check removed - it's deprecated on iOS/macOS Safari
+    // and the async nature prevents it from working correctly in this sync function
+    // Low battery mode detection is handled by useMobileOptimization hook instead
   }
   
   // Check accessibility preferences

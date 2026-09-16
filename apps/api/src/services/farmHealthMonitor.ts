@@ -5,10 +5,12 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { logger, LogCategory } from '../utils/logger';
 import { pathConfig } from '../config/paths';
-import { Farm } from '@shared/types';
+import { Farm } from '../types/farm';
 import { db } from '../database/connection';
+import { shutdownCoordinator } from './shutdownCoordinator';
 
 const execAsync = promisify(exec);
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 export interface ComponentHealth {
   name: string;
@@ -33,6 +35,7 @@ export class FarmHealthMonitor extends EventEmitter {
   private readonly CHECK_INTERVAL = 10000; // 10 seconds
   private readonly MAX_RECOVERY_ATTEMPTS = 3;
   private readonly INITIALIZATION_GRACE_PERIOD = 45000; // CRITICAL FIX: 45 seconds grace period for orchestrator initialization
+  private readonly HEARTBEAT_TIMEOUT = 120000; // CRITICAL FIX: 2 minutes (not 15 seconds) - agents need time to respond
 
   async startMonitoring(farmId: string): Promise<void> {
     logger.info(LogCategory.ORCHESTRATOR, `Starting health monitoring for farm ${farmId}`);
@@ -95,6 +98,15 @@ export class FarmHealthMonitor extends EventEmitter {
         // Emit health update event
         this.emit('health-update', { farmId, health: newHealth });
 
+        // Check if tmux session is dead (critical failure)
+        const tmuxComponent = components.find(c => c.name === 'tmux-session');
+        if (tmuxComponent?.status === 'failed') {
+          logger.warn(LogCategory.ORCHESTRATOR,
+            `Tmux session dead for farm ${farmId}, marking as completed and triggering harvest`);
+          await this.handleDeadSession(farmId);
+          return; // Stop monitoring this farm
+        }
+
         // Trigger recovery if needed
         if (overall === 'failed' && health.recoveryAttempts < this.MAX_RECOVERY_ATTEMPTS) {
           await this.attemptRecovery(farmId);
@@ -123,11 +135,10 @@ export class FarmHealthMonitor extends EventEmitter {
     // Check WebSocket connection
     components.push(await this.checkWebSocketHealth(farmId));
 
-    // Check agent panes
+    // Check agent panes (optimized: batch check all panes at once)
     const agentCount = await this.getAgentCount(farmId);
-    for (let i = 0; i < agentCount; i++) {
-      components.push(await this.checkAgentPane(farmId, i));
-    }
+    const agentComponents = await this.checkAllAgentPanes(farmId, agentCount);
+    components.push(...agentComponents);
 
     return components;
   }
@@ -145,7 +156,7 @@ export class FarmHealthMonitor extends EventEmitter {
         };
       }
 
-      const { stdout } = await execAsync(`TMUX_TMPDIR=/tmp tmux has-session -t ${sessionName} 2>/dev/null`);
+      const { stdout } = await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux has-session -t ${sessionName} 2>/dev/null`);
 
       return {
         name: 'tmux-session',
@@ -170,8 +181,9 @@ export class FarmHealthMonitor extends EventEmitter {
       const stat = await fs.stat(heartbeatPath);
       const ageMs = Date.now() - stat.mtime.getTime();
 
-      // Heartbeat should be updated every 5 seconds, consider unhealthy after 15 seconds
-      if (ageMs > 15000) {
+      // CRITICAL FIX: Use lenient timeout - agents need time to initialize and respond
+      // Heartbeat updated every 30s, consider unhealthy after 2 minutes
+      if (ageMs > this.HEARTBEAT_TIMEOUT) {
         return {
           name: 'orchestrator',
           status: 'degraded',
@@ -215,7 +227,9 @@ export class FarmHealthMonitor extends EventEmitter {
       let activeFiles = 0;
       for (const file of logFiles) {
         const stat = await fs.stat(path.join(terminalDir, file));
-        if (Date.now() - stat.mtime.getTime() < 60000) { // Active in last minute
+        // CRITICAL FIX: More lenient activity timeout - 5 minutes instead of 1 minute
+        // Agents may be thinking or processing, not constantly outputting
+        if (Date.now() - stat.mtime.getTime() < 300000) { // Active in last 5 minutes
           activeFiles++;
         }
       }
@@ -283,6 +297,55 @@ export class FarmHealthMonitor extends EventEmitter {
     }
   }
 
+  /**
+   * PERFORMANCE OPTIMIZATION: Check all agent panes in a single tmux call
+   * instead of N separate calls (one per agent)
+   */
+  private async checkAllAgentPanes(farmId: string, agentCount: number): Promise<ComponentHealth[]> {
+    try {
+      const sessionName = await this.getSessionName(farmId);
+      if (!sessionName) {
+        // Return failed status for all agents if session not found
+        return Array.from({ length: agentCount }, (_, i) => ({
+          name: `agent-${i}`,
+          status: 'failed' as const,
+          lastCheck: new Date(),
+          error: 'Session name not found'
+        }));
+      }
+
+      // Single tmux call to get all panes at once
+      const { stdout } = await execAsync(
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-panes -t ${sessionName}:agents -F "#{pane_index}"`
+      );
+
+      const existingPanes = new Set(stdout.trim().split('\n').map(p => parseInt(p)));
+
+      // Check each agent against the pane list
+      return Array.from({ length: agentCount }, (_, i) => {
+        const paneExists = existingPanes.has(i);
+        return {
+          name: `agent-${i}`,
+          status: paneExists ? 'healthy' as const : 'failed' as const,
+          lastCheck: new Date(),
+          details: { paneIndex: i, paneExists }
+        };
+      });
+    } catch (error) {
+      // Return failed status for all agents on error
+      return Array.from({ length: agentCount }, (_, i) => ({
+        name: `agent-${i}`,
+        status: 'failed' as const,
+        lastCheck: new Date(),
+        error: 'Cannot check pane status'
+      }));
+    }
+  }
+
+  /**
+   * @deprecated Use checkAllAgentPanes for better performance
+   * Kept for reference only
+   */
   private async checkAgentPane(farmId: string, agentIndex: number): Promise<ComponentHealth> {
     try {
       const sessionName = await this.getSessionName(farmId);
@@ -296,7 +359,7 @@ export class FarmHealthMonitor extends EventEmitter {
       }
 
       const { stdout } = await execAsync(
-        `TMUX_TMPDIR=/tmp tmux list-panes -t ${sessionName}:agents -F "#{pane_index}"`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux list-panes -t ${sessionName}:agents -F "#{pane_index}"`
       );
 
       const panes = stdout.trim().split('\n').map(p => parseInt(p));
@@ -390,15 +453,15 @@ export class FarmHealthMonitor extends EventEmitter {
     logger.info(LogCategory.ORCHESTRATOR, `Recreating tmux session ${sessionName}`);
 
     // Recreate the tmux session
-    await execAsync(`TMUX_TMPDIR=/tmp tmux new-session -d -s ${sessionName} -n agents`);
+    await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux new-session -d -s ${sessionName} -n agents`);
 
     // Recreate the panes
     const agentCount = await this.getAgentCount(farmId);
     for (let i = 1; i < agentCount; i++) {
       if (i === 1) {
-        await execAsync(`TMUX_TMPDIR=/tmp tmux split-window -t ${sessionName}:agents -h`);
+        await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux split-window -t ${sessionName}:agents -h`);
       } else {
-        await execAsync(`TMUX_TMPDIR=/tmp tmux split-window -t ${sessionName}:agents.${i-1} -v`);
+        await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux split-window -t ${sessionName}:agents.${i-1} -v`);
       }
     }
   }
@@ -429,7 +492,7 @@ export class FarmHealthMonitor extends EventEmitter {
     for (let i = 0; i < agentCount; i++) {
       const logFile = path.join(terminalDir, `agent-${i}.log`);
       await execAsync(
-        `TMUX_TMPDIR=/tmp tmux pipe-pane -t ${sessionName}:agents.${i} -o "cat >> ${logFile}"`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux pipe-pane -t ${sessionName}:agents.${i} -o "cat >> ${logFile}"`
       );
     }
   }
@@ -467,14 +530,14 @@ export class FarmHealthMonitor extends EventEmitter {
       const splitType = agentIndex === 1 ? '-h' : '-v';
 
       await execAsync(
-        `TMUX_TMPDIR=/tmp tmux split-window -t ${sessionName}:agents.${splitFrom} ${splitType}`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux split-window -t ${sessionName}:agents.${splitFrom} ${splitType}`
       );
 
       // Re-setup pipe-pane
       const terminalDir = pathConfig.getTerminalDir(farmId);
       const logFile = path.join(terminalDir, `agent-${agentIndex}.log`);
       await execAsync(
-        `TMUX_TMPDIR=/tmp tmux pipe-pane -t ${sessionName}:agents.${agentIndex} -o "cat >> ${logFile}"`
+        `TMUX_TMPDIR="${tmuxTmpDir}" tmux pipe-pane -t ${sessionName}:agents.${agentIndex} -o "cat >> ${logFile}"`
       );
     }
   }
@@ -504,7 +567,7 @@ export class FarmHealthMonitor extends EventEmitter {
 
       // Fallback: try to find any tmux session that matches the farm ID pattern
       // This handles quick-, farm-, and wild- prefixes
-      const { stdout } = await execAsync('TMUX_TMPDIR=/tmp tmux list-sessions -F "#{session_name}" 2>/dev/null || true');
+      const { stdout } = await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions -F "#{session_name}" 2>/dev/null || true`);
       const sessions = stdout.trim().split('\n').filter(Boolean);
       const farmIdShort = farmId.substring(0, 8);
 
@@ -532,6 +595,69 @@ export class FarmHealthMonitor extends EventEmitter {
 
   public getAllHealth(): Map<string, FarmHealth> {
     return new Map(this.healthChecks);
+  }
+
+  /**
+   * Handle dead tmux session - update farm status and trigger harvest collection
+   */
+  private async handleDeadSession(farmId: string): Promise<void> {
+    try {
+      logger.info(LogCategory.ORCHESTRATOR, `Handling dead session for farm ${farmId}`);
+
+      // 1. Stop monitoring this farm
+      await this.stopMonitoring(farmId);
+
+      // 2. Stop MultiAgentTerminalCoordinator streaming
+      try {
+        const { multiAgentTerminalCoordinator } = await import('./MultiAgentTerminalCoordinator');
+        await multiAgentTerminalCoordinator.stopFarm(farmId);
+        logger.info(LogCategory.ORCHESTRATOR, `Stopped terminal coordinator for farm ${farmId}`);
+      } catch (error) {
+        logger.error(LogCategory.ORCHESTRATOR, `Failed to stop terminal coordinator:`, error);
+      }
+
+      // 3. Update farm status to completed in database
+      await db.query(
+        `UPDATE farms
+         SET status = 'completed',
+             updated_at = NOW()
+         WHERE id = $1 AND status IN ('active', 'running', 'launching')`,
+        [farmId]
+      );
+      logger.info(LogCategory.ORCHESTRATOR, `Updated farm ${farmId} status to completed`);
+
+      // 4. Trigger harvest collection via ShutdownCoordinator
+      try {
+        const harvests = await db.query(
+          'SELECT id FROM harvests WHERE farm_id = $1 AND status != $2 ORDER BY created_at DESC LIMIT 1',
+          [farmId, 'ready']
+        );
+
+        const harvestId = harvests.rows[0]?.id;
+        const shutdownResult = await shutdownCoordinator.executeGracefulShutdown({
+          mode: 'farm',
+          farmId,
+          userId: 'farm_health_monitor',
+          reason: 'completion',
+          harvestId
+        });
+
+        if (!shutdownResult.success) {
+          logger.warn(LogCategory.ORCHESTRATOR,
+            `ShutdownCoordinator failed to collect harvest for ${farmId}: ${shutdownResult.errors?.join(', ') || 'unknown error'}`
+          );
+        }
+      } catch (error) {
+        logger.error(LogCategory.ORCHESTRATOR, `Failed to trigger harvest collection:`, error);
+      }
+
+      // 5. Emit completion event
+      this.emit('farm-completed', { farmId, reason: 'dead-session' });
+
+      logger.info(LogCategory.ORCHESTRATOR, `Successfully handled dead session for farm ${farmId}`);
+    } catch (error) {
+      logger.error(LogCategory.ORCHESTRATOR, `Failed to handle dead session for farm ${farmId}:`, error);
+    }
   }
 }
 

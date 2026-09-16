@@ -21,7 +21,7 @@ socket.on('connect', () => {
   console.log('Connected to WebSocket server');
 
   // Read some actual terminal output
-  const terminalDir = '/Users/rohnspringfield/maifarm/var/maibarn/terminals/35125033-10d8-42c6-a715-b7a3fad01375';
+  const terminalDir = path.join(process.env.MAIFARM_ROOT || process.cwd(), 'var/maibarn/terminals/35125033-10d8-42c6-a715-b7a3fad01375');
   const logFile = path.join(terminalDir, 'agent-0.log');
 
   if (fs.existsSync(logFile)) {

@@ -5,11 +5,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const _currentFilePath = fileURLToPath(import.meta.url);
+const _currentDirPath = path.dirname(_currentFilePath);
 
 // Load environment variables
-dotenv.config({ path: path.join(__dirname, '../../.env.development') });
+dotenv.config({ path: path.join(_currentDirPath, '../../.env.development') });
 
 interface HealthCheckResult {
   table: string;
@@ -28,7 +28,7 @@ class DatabaseHealthChecker {
   
   // Define expected schema
   private expectedSchema: Record<string, string[]> = {
-    users: ['id', 'email', 'username', 'password_hash', 'roles', 'permissions', 'mfa_secret', 'mfa_enabled', 'last_login', 'created_at', 'updated_at'],
+    users: ['id', 'email', 'username', 'password_hash', 'roles', 'permissions', 'mfa_secret', 'mfa_enabled', 'last_login_at', 'setup_completed_at', 'created_at', 'updated_at'],
     farms: ['id', 'name', 'description', 'status', 'provider', 'orchestrator_type', 'config', 'metrics', 'tags', 'tmux_session', 'session_name', 'workspace_path', 'created_by', 'seed_id', 'source_seed_id'],
     agents: ['id', 'farm_id', 'name', 'type', 'status', 'capabilities', 'resources', 'metrics', 'config', 'last_heartbeat', 'health_status', 'thinking_level', 'thinking_auto_escalate', 'thinking_complexity_score'],
     tasks: ['id', 'farm_id', 'agent_id', 'type', 'priority', 'status', 'payload', 'result', 'error', 'metadata', 'dependencies', 'retries', 'max_retries', 'timeout', 'response_time', 'assigned_at', 'started_at', 'completed_at'],
@@ -106,9 +106,10 @@ class DatabaseHealthChecker {
         return result;
       }
 
-      // Get row count
+      // Get row count (tableName validated against expectedSchema whitelist)
       try {
-        const countResult = await this.pool.query(`SELECT COUNT(*) as count FROM ${tableName}`);
+        // Use identifier quoting for safety even though tableName is from whitelist
+        const countResult = await this.pool.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
         result.rowCount = parseInt(countResult.rows[0].count);
       } catch (error) {
         result.issues?.push('Cannot query table');

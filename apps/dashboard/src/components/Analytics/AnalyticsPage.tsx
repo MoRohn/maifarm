@@ -9,6 +9,7 @@ import { useUserStore } from '@/store/userStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useRobustMetrics } from '@/hooks/useRobustMetrics';
 import { analyticsService } from '@/services/analyticsService';
+import { engineCostService } from '@/services/engineCostService';
 import { getAllAgentsFromFarms, getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
 import { StatsCard } from '../Dashboard/StatsCard';
 import { RealTimeChart } from './Charts/RealTimeChart';
@@ -17,6 +18,8 @@ import { CostBreakdown } from './Charts/CostBreakdown';
 import { AgentEfficiencyChart } from './Charts/AgentEfficiencyChart';
 import toast from 'react-hot-toast';
 import { formatDistanceToNow } from 'date-fns';
+import { EngineMetricsProvider } from './context';
+import { EngineComparativeMetrics } from './EngineComparativeMetrics';
 
 
 export const AnalyticsPage: React.FC = () => {
@@ -51,7 +54,9 @@ export const AnalyticsPage: React.FC = () => {
     taskCompletions,
     setMetrics,
     updateTimeSeriesData,
-    setLoading: setStoreLoading
+    setLoading: setStoreLoading,
+    engineCostSummary,
+    setEngineCostSummary
   } = useAnalyticsStore();
 
   // Use robust metrics system
@@ -69,11 +74,20 @@ export const AnalyticsPage: React.FC = () => {
     const totalTasks = taskCompletions.length;
     const successRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
-    // Calculate estimated costs (mock data for now)
+    const rangeHoursMap: Record<string, number> = {
+      '1h': 1,
+      '6h': 6,
+      '24h': 24,
+      '7d': 7 * 24,
+      '30d': 30 * 24
+    };
+    const rangeHours = rangeHoursMap[timeRange] ?? 24;
+    const totalCost = engineCostSummary?.totalCost ?? 0;
+    const hourlyCost = rangeHours > 0 ? totalCost / rangeHours : totalCost;
     const estimatedCosts = {
-      hourly: (activeAgents * 0.05).toFixed(2),
-      daily: (activeAgents * 0.05 * 24).toFixed(2),
-      monthly: (activeAgents * 0.05 * 24 * 30).toFixed(2)
+      hourly: hourlyCost.toFixed(2),
+      daily: (hourlyCost * 24).toFixed(2),
+      monthly: (hourlyCost * 24 * 30).toFixed(2)
     };
 
     return {
@@ -85,7 +99,7 @@ export const AnalyticsPage: React.FC = () => {
       farmCount: robustMetrics.totalFarms || farms.length,
       activeFarmCount: robustMetrics.activeFarms || activeFarms.length
     };
-  }, [farms, activeFarms, taskCompletions, robustMetrics]);
+  }, [farms, activeFarms, taskCompletions, robustMetrics, engineCostSummary, timeRange]);
 
   // Load analytics data with cleanup checks
   useEffect(() => {
@@ -126,10 +140,36 @@ export const AnalyticsPage: React.FC = () => {
         if (mountedRef.current) {
           updateTimeSeriesData(timeSeries);
         }
+
+        const startIso = new Date(Date.now() - getTimeRangeMs(timeRange)).toISOString();
+        const endIso = new Date().toISOString();
+        const costSummaryResponse = await engineCostService.fetchSummary({
+          startDate: startIso,
+          endDate: endIso,
+          groupBy: timeRange === '1h' ? 'hour' : 'day'
+        });
+
+        if (mountedRef.current) {
+          setEngineCostSummary({
+            totalCost: costSummaryResponse.summary.totalCost,
+            totalRequests: costSummaryResponse.summary.totalRequests,
+            totalInputTokens: costSummaryResponse.summary.totalInputTokens,
+            totalOutputTokens: costSummaryResponse.summary.totalOutputTokens,
+            byProvider: costSummaryResponse.byProvider.map(provider => ({
+              provider: provider.provider,
+              totalCost: provider.totalCost,
+              totalRequests: provider.totalRequests,
+              totalInputTokens: provider.totalInputTokens,
+              totalOutputTokens: provider.totalOutputTokens,
+              models: provider.models
+            }))
+          });
+        }
       } catch (error) {
         console.error('Failed to load analytics:', error);
         if (mountedRef.current) {
           toast.error('Failed to load analytics data');
+          setEngineCostSummary(null);
         }
       } finally {
         if (mountedRef.current) {
@@ -544,17 +584,17 @@ export const AnalyticsPage: React.FC = () => {
                   <div className="relative h-20">
                     <div className="absolute inset-0 flex flex-col justify-center">
                       <div className="text-2xl font-bold" style={{ color: primaryColor }}>
-                        {systemInfo.cpu.usage || 0}%
+                        {systemInfo?.cpu?.usage ?? 0}%
                       </div>
                       <div className="text-xs opacity-75" style={{ color: primaryColor }}>
-                        {systemInfo.cpu.cores || 0} cores
+                        {systemInfo?.cpu?.cores ?? 0} cores
                       </div>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 h-1 rounded-full overflow-hidden" style={getThemedBackground(theme === 'dark', 0.2)}>
-                      <div 
+                      <div
                         className="h-full transition-all duration-500"
-                        style={{ 
-                          width: `${systemInfo.cpu.usage || 0}%`,
+                        style={{
+                          width: `${systemInfo?.cpu?.usage ?? 0}%`,
                           background: `linear-gradient(90deg, ${primaryColor}, ${accentColor})`
                         }}
                       />
@@ -575,23 +615,23 @@ export const AnalyticsPage: React.FC = () => {
                     <div className="absolute inset-0 flex flex-col justify-center">
                       <div className="text-2xl font-bold" style={{ color: accentColor }}>
                         {(() => {
-                          const used = systemInfo.memory.used || 0;
-                          const total = systemInfo.memory.total || 1; // Prevent division by zero
+                          const used = systemInfo?.memory?.used ?? 0;
+                          const total = systemInfo?.memory?.total ?? 1; // Prevent division by zero
                           const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
                           return Math.min(100, Math.max(0, percentage));
                         })()}%
                       </div>
                       <div className="text-xs opacity-75" style={{ color: accentColor }}>
-                        {(systemInfo.memory.used || 0).toFixed(1)}/{(systemInfo.memory.total || 0).toFixed(1)} GB
+                        {(systemInfo?.memory?.used ?? 0).toFixed(1)}/{(systemInfo?.memory?.total ?? 0).toFixed(1)} GB
                       </div>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 h-1 rounded-full overflow-hidden" style={getThemedBackground(theme === 'dark', 0.2)}>
-                      <div 
+                      <div
                         className="h-full transition-all duration-500"
-                        style={{ 
+                        style={{
                           width: `${(() => {
-                            const used = systemInfo.memory.used || 0;
-                            const total = systemInfo.memory.total || 1; // Prevent division by zero
+                            const used = systemInfo?.memory?.used ?? 0;
+                            const total = systemInfo?.memory?.total ?? 1; // Prevent division by zero
                             const percentage = total > 0 ? Math.round((used / total) * 100) : 0;
                             return Math.min(100, Math.max(0, percentage));
                           })()}%`,
@@ -614,17 +654,17 @@ export const AnalyticsPage: React.FC = () => {
                   <div className="relative h-20">
                     <div className="absolute inset-0 flex flex-col justify-center">
                       <div className="text-2xl font-bold" style={{ color: primaryColor }}>
-                        {systemInfo.gpu.usage || 0}%
+                        {systemInfo?.gpu?.usage ?? 0}%
                       </div>
                       <div className="text-xs opacity-75" style={{ color: primaryColor }}>
-                        {systemInfo.gpu.count || 0} GPU{systemInfo.gpu.count !== 1 ? 's' : ''}
+                        {systemInfo?.gpu?.count ?? 0} GPU{(systemInfo?.gpu?.count ?? 0) !== 1 ? 's' : ''}
                       </div>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 h-1 rounded-full overflow-hidden" style={getThemedBackground(theme === 'dark', 0.2)}>
-                      <div 
+                      <div
                         className="h-full transition-all duration-500"
-                        style={{ 
-                          width: `${systemInfo.gpu.usage || 0}%`,
+                        style={{
+                          width: `${systemInfo?.gpu?.usage ?? 0}%`,
                           background: `linear-gradient(90deg, ${primaryColor}, ${accentColor})`
                         }}
                       />
@@ -704,7 +744,7 @@ export const AnalyticsPage: React.FC = () => {
                   Cost Breakdown
                 </h4>
               </div>
-              <CostBreakdown estimatedCosts={realtimeMetrics.estimatedCosts} />
+              <CostBreakdown summary={engineCostSummary} />
             </motion.div>
 
             {/* Agent Efficiency */}
@@ -723,6 +763,19 @@ export const AnalyticsPage: React.FC = () => {
             </motion.div>
 
           </div>
+        </motion.section>
+
+        <motion.section
+          {...fadeIn}
+          transition={{ delay: 0.4 }}
+          className="mb-8"
+        >
+          <EngineMetricsProvider>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+              Engine Performance Comparison
+            </h3>
+            <EngineComparativeMetrics />
+          </EngineMetricsProvider>
         </motion.section>
       </main>
 

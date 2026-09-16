@@ -10,11 +10,10 @@ import { aiProviderManager, AIProvider } from '../config/aiProviders';
 import { pathConfig } from '../config/paths';
 import { fileManager } from './fileManagerService';
 import { workspaceManager } from './workspaceManager';
-import { taskCountService } from './taskCountService';
 import { tmuxHealthManager } from './tmuxHealthManager';
 import { harvestSessionCache } from './harvestSessionCache';
 import { harvestSessionBroadcaster } from './harvestSessionBroadcaster';
-import { terminalStreamService } from './terminalStreamService';
+import { unifiedTerminalStreamService } from './UnifiedTerminalStreamService';
 import { logger } from '../utils/logger';
 import { tmuxManager } from '../utils/tmuxManager';
 import { getFarmAgentName, formatFarmAgentName } from '../utils/farmAgentNames';
@@ -755,25 +754,25 @@ class XenoSyncService extends EventEmitter {
 
       // Setup terminal streaming for all agent panes at once
       try {
-        // Create agent array with pane IDs for terminal streaming
-        const agents = Array.from({ length: numberOfAgents }, (_, i) => ({
-          agentId: `agent-${i}`,
-          paneId: `${i}` // Pane index as string
-        }));
+        // Generate agent names
+        const agentNames = Array.from({ length: numberOfAgents }, (_, i) => {
+          const farmAgent = getFarmAgentName('general', i);
+          return formatFarmAgentName(farmAgent);
+        });
 
-        await terminalStreamService.startStreaming(
-          farmId,       // The farm ID
-          tmuxSession,  // The tmux session name (e.g., "farm-abc123")
-          agents,
-          { maxRetries: 5, retryDelay: 750, windowTarget: 'agents' }
+        // Register farm with unified terminal service
+        await unifiedTerminalStreamService.registerFarm(
+          farmId,
+          tmuxSession,
+          numberOfAgents,
+          agentNames
         );
 
         logger.info(`[XenoSyncService] Terminal streaming setup for ${numberOfAgents} agents in session ${tmuxSession}`);
 
         // Log individual agent names for clarity
         for (let i = 0; i < numberOfAgents; i++) {
-          const agentName = getFarmAgentName(i + 1); // Agent numbering starts from 1
-          logger.debug(`[XenoSyncService] Agent ${i}: ${agentName}`);
+          logger.debug(`[XenoSyncService] Agent ${i}: ${agentNames[i]}`);
         }
       } catch (error) {
         logger.error(`[XenoSyncService] Failed to setup terminal streaming:`, error);
@@ -957,7 +956,7 @@ class XenoSyncService extends EventEmitter {
 
     // Stop terminal streaming
     try {
-      await terminalStreamService.stopAllStreaming(process.farmId);
+      await unifiedTerminalStreamService.stopFarm(process.farmId);
     } catch (error) {
       logger.warn('[XenoSyncService] Failed to stop terminal streaming:', error);
     }

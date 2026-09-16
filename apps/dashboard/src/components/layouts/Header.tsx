@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { User, Settings, Menu, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
@@ -14,16 +14,17 @@ interface HeaderProps {
   className?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({ 
-  onMenuClick, 
+export const Header: React.FC<HeaderProps> = ({
+  onMenuClick,
   isMenuOpen = false,
-  className 
+  className
 }) => {
   const { isMobile } = useResponsive();
   const { user } = useAuth();
   const theme = useThemeStore((state) => state.theme);
+  const colorScheme = useThemeStore((state) => state.colorScheme);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  
+
   useEffect(() => {
     const checkDarkMode = () => {
       if (theme === 'dark') {
@@ -35,16 +36,27 @@ export const Header: React.FC<HeaderProps> = ({
         setIsDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches);
       }
     };
-    
+
     checkDarkMode();
-    
+
     // Listen for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => checkDarkMode();
     mediaQuery.addEventListener('change', handleChange);
-    
+
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
+
+  // Generate logo path based on color scheme and mode
+  const logoPath = useMemo(() => {
+    const mode = isDarkMode ? 'dark' : 'light';
+    const schemeId = colorScheme?.id || 'forest-walk';
+    // Default (forest-walk) uses files without scheme suffix for backwards compatibility
+    if (schemeId === 'forest-walk') {
+      return `/maifarm-icon-forest-walk-${mode}.svg`;
+    }
+    return `/maifarm-icon-${schemeId}-${mode}.svg`;
+  }, [isDarkMode, colorScheme?.id]);
 
   return (
     <GlassPanel
@@ -70,10 +82,10 @@ export const Header: React.FC<HeaderProps> = ({
           )}
           
           <div className="flex items-center gap-3">
-            <img 
-              src={isDarkMode ? "/maifarm-icon-dark-bkgd.svg" : "/maifarm-icon-light-bkgd.svg"} 
-              alt="MaiFarm" 
-              className="w-28 h-28"
+            <img
+              src={logoPath}
+              alt="MaiFarm"
+              className="w-8 h-8"
             />
             {!isMobile && (
               <div>
@@ -104,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right section */}
         <div className="flex items-center gap-2 sm:gap-3">
           <motion.button
-            className="p-2 rounded-lg hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-colors"
+            className="p-2 rounded-lg hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-colors touch-target"
             whileTap={{ scale: 0.95 }}
           >
             <Settings className="w-5 h-5 text-gray-700 dark:text-gray-300" />
@@ -120,7 +132,7 @@ export const Header: React.FC<HeaderProps> = ({
               </p>
             </div>
             <motion.button
-              className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors touch-target"
               whileTap={{ scale: 0.95 }}
             >
               <User className="w-5 h-5 text-gray-700 dark:text-gray-300" />

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { TerminalPane } from './TerminalPane';
 import { TerminalSession, TerminalAgent } from '@/types/terminal';
@@ -21,25 +21,50 @@ export const TerminalGrid: React.FC<TerminalGridProps> = ({
   className = ''
 }) => {
   // Calculate grid layout based on number of agents
+  // Optimized for Apple devices: iPad Mini (744px), iPad (768px), iPad Pro 11" (834px)
   const getGridLayout = (agentCount: number) => {
     if (agentCount <= 1) return 'grid-cols-1';
-    if (agentCount <= 2) return 'grid-cols-1 md:grid-cols-2';
-    if (agentCount <= 4) return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
-    if (agentCount <= 8) return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
-    return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+    // 2 agents: 2 cols at iPad Mini (744px) and above
+    if (agentCount <= 2) return 'grid-cols-1 sm:grid-cols-2';
+    // 3-4 agents: 2 cols at tablet, 2 at large screens
+    if (agentCount <= 4) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2';
+    // 5-6 agents: 2 cols at tablet, 3 at iPad Pro 11" (834px)
+    if (agentCount <= 6) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3';
+    // 7-9 agents: 2-3-3 progression
+    if (agentCount <= 9) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3';
+    // 10+ agents: 2-3-4 progression for large displays
+    return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
   };
 
   // Calculate optimal height based on grid size
+  // Optimized for iPhone SE (375px, 667px height) through iMac displays
+  // Use smaller rem subtractions to prevent overflow on small screens
   const getItemHeight = (agentCount: number) => {
-    // Use responsive heights that adapt to available space
-    if (agentCount <= 2) return 'h-[calc(50vh-8rem)] min-h-[300px] max-h-[500px]';
-    if (agentCount <= 4) return 'h-[calc(40vh-6rem)] min-h-[250px] max-h-[400px]';
-    if (agentCount <= 6) return 'h-[calc(35vh-5rem)] min-h-[200px] max-h-[350px]';
-    return 'h-[calc(30vh-4rem)] min-h-[180px] max-h-[300px]';
+    // 1-2 agents: larger terminals for detailed viewing
+    if (agentCount <= 2) return 'h-[calc(50dvh-4rem)] sm:h-[calc(50vh-6rem)] min-h-[200px] sm:min-h-[280px] max-h-[500px]';
+    // 3-4 agents: medium terminals
+    if (agentCount <= 4) return 'h-[calc(45dvh-3rem)] sm:h-[calc(40vh-5rem)] min-h-[180px] sm:min-h-[240px] max-h-[400px]';
+    // 5-6 agents: compact terminals
+    if (agentCount <= 6) return 'h-[calc(40dvh-3rem)] sm:h-[calc(35vh-4rem)] min-h-[160px] sm:min-h-[200px] max-h-[350px]';
+    // 7+ agents: very compact for high-density views
+    return 'h-[calc(35dvh-2rem)] sm:h-[calc(30vh-3rem)] min-h-[150px] sm:min-h-[180px] max-h-[300px]';
   };
 
   const gridLayout = getGridLayout(agents.length);
   const itemHeight = getItemHeight(agents.length);
+
+  // PERFORMANCE FIX: Calculate all agent status counts in a single pass instead of 3 separate .filter() calls
+  const statusCounts = useMemo(() => {
+    return agents.reduce(
+      (counts, agent) => {
+        if (agent.status === 'ready') counts.ready++;
+        else if (agent.status === 'working') counts.working++;
+        else if (agent.status === 'error') counts.error++;
+        return counts;
+      },
+      { ready: 0, working: 0, error: 0 }
+    );
+  }, [agents]);
 
   if (agents.length === 0) {
     return (
@@ -91,16 +116,16 @@ export const TerminalGrid: React.FC<TerminalGridProps> = ({
         </div>
         <div className="flex items-center space-x-2">
           <div className="flex items-center space-x-1">
-            <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-            <span>Ready: {agents.filter(a => a.status === 'ready').length}</span>
+            <div className="w-2 h-2 bg-green-400 rounded-full" aria-hidden="true"></div>
+            <span>Ready: {statusCounts.ready}</span>
           </div>
           <div className="flex items-center space-x-1">
-            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-            <span>Working: {agents.filter(a => a.status === 'working').length}</span>
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" aria-hidden="true"></div>
+            <span>Working: {statusCounts.working}</span>
           </div>
           <div className="flex items-center space-x-1">
-            <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-            <span>Error: {agents.filter(a => a.status === 'error').length}</span>
+            <div className="w-2 h-2 bg-red-400 rounded-full" aria-hidden="true"></div>
+            <span>Error: {statusCounts.error}</span>
           </div>
         </div>
       </div>

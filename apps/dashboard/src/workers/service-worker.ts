@@ -36,8 +36,10 @@ const STATIC_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/favicon.ico',
-  '/assets/logo.svg',
+  '/favicon-light.svg',
+  '/favicon-dark.svg',
+  '/maifarm-logo-light-bkgd.svg',
+  '/maifarm-logo-dark-bkgd.svg',
 ];
 
 // API endpoints that can work offline
@@ -120,8 +122,8 @@ self.addEventListener('push', (event: PushEvent) => {
   const data = event.data.json();
   const options: NotificationOptions = {
     body: data.body,
-    icon: '/assets/logo-192.png',
-    badge: '/assets/badge-72.png',
+    icon: '/maifarm-icon-light-bkgd.svg',
+    badge: '/favicon-light.svg',
     data: {
       dateOfArrival: Date.now(),
       primaryKey: data.id,

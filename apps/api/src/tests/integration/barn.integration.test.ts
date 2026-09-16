@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
-import request from 'supertest';
 import { Server } from 'http';
+
+const request = require('supertest');
 import app from '../test-app';
 import { db, redis } from '../../database/connection';
 import { barnService } from '../services/unified/barnService';

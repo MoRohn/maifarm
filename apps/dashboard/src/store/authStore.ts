@@ -3,13 +3,30 @@ import { persist } from 'zustand/middleware';
 import { AuthUser, AuthCredentials, SessionData } from '@/types/security';
 import { securityService } from '@/services/securityService';
 
+// FIX: Store timeout reference to prevent timeout stacking
+let refreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+// Helper to clear existing timeout before setting new one
+function clearRefreshTimeout() {
+  if (refreshTimeoutId) {
+    clearTimeout(refreshTimeoutId);
+    refreshTimeoutId = null;
+  }
+}
+
+// Helper to set refresh timeout (clears existing first)
+function setRefreshTimeout(callback: () => void, delay: number) {
+  clearRefreshTimeout();
+  refreshTimeoutId = setTimeout(callback, delay);
+}
+
 interface AuthStore {
   user: AuthUser | null;
   session: SessionData | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-  
+
   // Actions
   login: (credentials: AuthCredentials) => Promise<{ requiresMFA?: boolean }>;
   register: (credentials: AuthCredentials) => Promise<void>;
@@ -58,9 +75,9 @@ export const useAuthStore = create<AuthStore>()(
               isLoading: false,
             });
             
-            // Set up token refresh
+            // Set up token refresh (FIX: Use helper to prevent timeout stacking)
             const refreshInterval = ((response.expiresIn || 3600) - 300) * 1000; // 5 minutes before expiry
-            setTimeout(() => get().refreshToken(), refreshInterval);
+            setRefreshTimeout(() => get().refreshToken(), refreshInterval);
           }
           
           return {};
@@ -77,7 +94,7 @@ export const useAuthStore = create<AuthStore>()(
         set({ isLoading: true, error: null });
         
         try {
-          await securityService.register(credentials);
+          await securityService.registerBasic(credentials);
           set({ isLoading: false });
         } catch (error: any) {
           set({
@@ -90,7 +107,10 @@ export const useAuthStore = create<AuthStore>()(
       
       logout: async () => {
         const { session } = get();
-        
+
+        // FIX: Clear refresh timeout on logout to prevent memory leaks
+        clearRefreshTimeout();
+
         if (session?.token) {
           try {
             await securityService.logoutWithToken(session.token);
@@ -98,7 +118,7 @@ export const useAuthStore = create<AuthStore>()(
             console.error('Logout error:', error);
           }
         }
-        
+
         set({
           user: null,
           session: null,
@@ -129,8 +149,8 @@ export const useAuthStore = create<AuthStore>()(
                 },
               });
               
-              // Set up next refresh (refresh 5 minutes before expiry)
-              setTimeout(() => get().refreshToken(), 55 * 60 * 1000); // 55 minutes
+              // Set up next refresh (FIX: Use helper to prevent timeout stacking)
+              setRefreshTimeout(() => get().refreshToken(), 55 * 60 * 1000); // 55 minutes
             }
           }
         } catch (error) {
@@ -141,18 +161,41 @@ export const useAuthStore = create<AuthStore>()(
       
       checkSession: () => {
         const { session } = get();
-        
-        if (session && session.expiresAt && session.expiresAt.getTime() > Date.now()) {
-          set({ isAuthenticated: true });
-          
-          // Set up token refresh if needed
-          const timeUntilExpiry = (session.expiresAt?.getTime() || Date.now()) - Date.now();
-          if (timeUntilExpiry < 300000) { // Less than 5 minutes
-            get().refreshToken();
+
+        if (session && session.expiresAt) {
+          // Handle Date deserialization from localStorage (strings become dates)
+          const expiresAt = typeof session.expiresAt === 'string'
+            ? new Date(session.expiresAt)
+            : session.expiresAt;
+
+          const isValid = expiresAt && expiresAt.getTime() > Date.now();
+
+          if (isValid) {
+            set({
+              isAuthenticated: true,
+              session: {
+                ...session,
+                expiresAt, // Ensure it's a Date object
+              }
+            });
+
+            // Set up token refresh if needed (FIX: Use helper to prevent timeout stacking)
+            const timeUntilExpiry = expiresAt.getTime() - Date.now();
+            if (timeUntilExpiry < 300000) { // Less than 5 minutes
+              get().refreshToken();
+            } else {
+              setRefreshTimeout(() => get().refreshToken(), timeUntilExpiry - 300000);
+            }
           } else {
-            setTimeout(() => get().refreshToken(), timeUntilExpiry - 300000);
+            // Session expired, clear it
+            set({
+              user: null,
+              session: null,
+              isAuthenticated: false,
+            });
           }
         } else {
+          // No session found
           set({
             user: null,
             session: null,
@@ -171,6 +214,55 @@ export const useAuthStore = create<AuthStore>()(
         user: state.user,
         session: state.session,
       }),
+      // Custom storage to handle Date serialization with iOS Safari private browsing protection
+      storage: {
+        getItem: (name) => {
+          try {
+            const str = localStorage.getItem(name);
+            if (!str) return null;
+
+            try {
+              const { state } = JSON.parse(str);
+              // Rehydrate dates in session
+              if (state.session) {
+                if (state.session.createdAt) {
+                  state.session.createdAt = new Date(state.session.createdAt);
+                }
+                if (state.session.expiresAt) {
+                  state.session.expiresAt = new Date(state.session.expiresAt);
+                }
+                if (state.session.lastActivity) {
+                  state.session.lastActivity = new Date(state.session.lastActivity);
+                }
+              }
+              return JSON.stringify({ state });
+            } catch (error) {
+              console.error('[AuthStore] Error rehydrating state:', error);
+              return null;
+            }
+          } catch {
+            // iOS Safari private browsing - localStorage unavailable
+            console.warn('[AuthStore] localStorage unavailable (iOS Safari private mode?)');
+            return null;
+          }
+        },
+        setItem: (name, value) => {
+          try {
+            localStorage.setItem(name, value);
+          } catch {
+            // iOS Safari private browsing - localStorage unavailable
+            console.warn('[AuthStore] localStorage unavailable (iOS Safari private mode?) - state not persisted');
+          }
+        },
+        removeItem: (name) => {
+          try {
+            localStorage.removeItem(name);
+          } catch {
+            // iOS Safari private browsing - localStorage unavailable
+            console.warn('[AuthStore] localStorage unavailable for removal');
+          }
+        },
+      },
     }
   )
 );

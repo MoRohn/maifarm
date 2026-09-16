@@ -2,12 +2,17 @@ import { clsx, type ClassValue } from 'clsx';
 
 /**
  * Terminal sizing utilities for responsive design
+ * CRITICAL FIX: Uses CSS variable --full-vh for accurate viewport height on iOS Safari
+ * The --full-vh variable is set by JavaScript to account for browser chrome
  */
 export const terminalSizing = {
   // Height calculations based on viewport and content
   getHeight: (agentCount: number, isExpanded: boolean, isMobile: boolean): string => {
     if (isExpanded) {
-      return isMobile ? 'calc(100vh - 6rem)' : 'calc(100vh - 4rem)';
+      // Use CSS variable for accurate viewport height on iOS Safari
+      return isMobile
+        ? 'calc(var(--full-vh, 100vh) - 6rem)'
+        : 'calc(var(--full-vh, 100vh) - 4rem)';
     }
     
     // Dynamic height based on agent count
@@ -131,19 +136,22 @@ export const terminalClasses = {
 
 /**
  * Terminal style utilities
+ * CRITICAL FIX: Uses CSS variable --full-vh for accurate viewport height on iOS Safari
  */
 export const terminalStyles = {
   // Get responsive container styles
   containerStyle: (isFullscreen: boolean, height?: string) => ({
-    height: isFullscreen ? '100vh' : (height || '100%'),
+    // Use CSS variable for accurate viewport height on iOS Safari
+    height: isFullscreen ? 'var(--full-vh, 100vh)' : (height || '100%'),
     maxHeight: isFullscreen ? 'none' : '100%',
-    minHeight: isFullscreen ? '100vh' : '400px',
+    minHeight: isFullscreen ? 'var(--full-vh, 100vh)' : '400px',
   }),
-  
+
   // Get responsive output styles
   outputStyle: (isExpanded: boolean, agentCount: number) => ({
-    minHeight: isExpanded ? 'calc(100vh - 12rem)' : '200px',
-    maxHeight: isExpanded ? 'calc(100vh - 8rem)' : terminalSizing.getHeight(agentCount, false, false),
+    // Use CSS variable for accurate viewport height on iOS Safari
+    minHeight: isExpanded ? 'calc(var(--full-vh, 100vh) - 12rem)' : '200px',
+    maxHeight: isExpanded ? 'calc(var(--full-vh, 100vh) - 8rem)' : terminalSizing.getHeight(agentCount, false, false),
     wordBreak: 'break-word' as const,
     overflowWrap: 'anywhere' as const,
     scrollBehavior: 'smooth' as const,

@@ -9,7 +9,6 @@ from typing import Callable
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
-
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .agents.manager import AgentManager
@@ -146,7 +145,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 while True:
                     if await request.is_disconnected():
                         break
-                    message = await subscription.queue.get()
+                    try:
+                        message = await asyncio.wait_for(subscription.queue.get(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
                     yield f"data: {message}\n\n"
             finally:
                 await container.hub.unregister_sse(subscription)

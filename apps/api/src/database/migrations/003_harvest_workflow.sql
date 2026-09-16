@@ -90,12 +90,6 @@ CREATE TABLE IF NOT EXISTS seeds (
     ))
 );
 
--- Add foreign key to farms table
-
-
-ALTER TABLE farms ADD CONSTRAINT farms_source_seed_id_fkey 
-    FOREIGN KEY (source_seed_id) REFERENCES seeds(id) ON DELETE SET NULL;
-
 -- ============================================
 -- HARVEST YIELD
 -- ============================================
@@ -412,451 +406,100 @@ CREATE TABLE IF NOT EXISTS workspace_pool (
 -- ============================================
 
 -- Seeds indexes
-CREATE INDEX idx_seeds_user_id ON seeds(user_id);
-CREATE INDEX idx_seeds_harvest_id ON seeds(harvest_id);
-CREATE INDEX idx_seeds_is_public ON seeds(is_public);
-CREATE INDEX idx_seeds_category ON seeds(category);
-CREATE INDEX idx_seeds_source_type ON seeds(source_type);
-CREATE INDEX idx_seeds_usage ON seeds(usage_count DESC);
-CREATE INDEX idx_seeds_created_at ON seeds(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_seeds_user_id ON seeds(user_id);
+CREATE INDEX IF NOT EXISTS idx_seeds_harvest_id ON seeds(harvest_id);
+CREATE INDEX IF NOT EXISTS idx_seeds_is_public ON seeds(is_public);
+CREATE INDEX IF NOT EXISTS idx_seeds_category ON seeds(category);
+CREATE INDEX IF NOT EXISTS idx_seeds_source_type ON seeds(source_type);
+CREATE INDEX IF NOT EXISTS idx_seeds_usage ON seeds(usage_count DESC);
+CREATE INDEX IF NOT EXISTS idx_seeds_created_at ON seeds(created_at DESC);
 
 -- Harvests indexes
-CREATE INDEX idx_harvests_farm_id ON harvests(farm_id);
-CREATE INDEX idx_harvests_created_by ON harvests(created_by);
-CREATE INDEX idx_harvests_status ON harvests(status);
-CREATE INDEX idx_harvests_type ON harvests(type);
-CREATE INDEX idx_harvests_category ON harvests(category);
-CREATE INDEX idx_harvests_farmer_template_id ON harvests(farmer_template_id);
-CREATE INDEX idx_harvests_created_at ON harvests(created_at DESC);
-CREATE INDEX idx_harvests_quality ON harvests(CAST((quality->>'score') AS numeric)) 
+CREATE INDEX IF NOT EXISTS idx_harvests_farm_id ON harvests(farm_id);
+CREATE INDEX IF NOT EXISTS idx_harvests_created_by ON harvests(created_by);
+CREATE INDEX IF NOT EXISTS idx_harvests_status ON harvests(status);
+CREATE INDEX IF NOT EXISTS idx_harvests_type ON harvests(type);
+CREATE INDEX IF NOT EXISTS idx_harvests_category ON harvests(category);
+CREATE INDEX IF NOT EXISTS idx_harvests_farmer_template_id ON harvests(farmer_template_id);
+CREATE INDEX IF NOT EXISTS idx_harvests_created_at ON harvests(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_harvests_quality ON harvests(CAST((quality->>'score') AS numeric))
     WHERE quality->>'score' IS NOT NULL;
 
 -- Harvest yield indexes
-CREATE INDEX idx_harvest_yield_harvest_id ON harvest_yield(harvest_id);
-CREATE INDEX idx_harvest_yield_farm_id ON harvest_yield(farm_id);
-CREATE INDEX idx_harvest_yield_agent_id ON harvest_yield(agent_id);
-CREATE INDEX idx_harvest_yield_item_type ON harvest_yield(item_type);
-CREATE INDEX idx_harvest_yield_created_at ON harvest_yield(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_harvest_yield_harvest_id ON harvest_yield(harvest_id);
+CREATE INDEX IF NOT EXISTS idx_harvest_yield_farm_id ON harvest_yield(farm_id);
+CREATE INDEX IF NOT EXISTS idx_harvest_yield_agent_id ON harvest_yield(agent_id);
+CREATE INDEX IF NOT EXISTS idx_harvest_yield_item_type ON harvest_yield(item_type);
+CREATE INDEX IF NOT EXISTS idx_harvest_yield_created_at ON harvest_yield(created_at DESC);
 
 -- Harvest manifests indexes
-CREATE INDEX idx_harvest_manifest_harvest_id ON harvest_manifests(harvest_id);
-CREATE INDEX idx_harvest_manifest_status ON harvest_manifests(status);
+CREATE INDEX IF NOT EXISTS idx_harvest_manifest_harvest_id ON harvest_manifests(harvest_id);
+CREATE INDEX IF NOT EXISTS idx_harvest_manifest_status ON harvest_manifests(status);
 
 -- Barn items indexes
-CREATE INDEX idx_barn_items_user_id ON barn_items(user_id);
-CREATE INDEX idx_barn_items_harvest_id ON barn_items(harvest_id);
-CREATE INDEX idx_barn_items_category ON barn_items(category);
-CREATE INDEX idx_barn_items_archived_at ON barn_items(archived_at) 
+CREATE INDEX IF NOT EXISTS idx_barn_items_user_id ON barn_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_barn_items_harvest_id ON barn_items(harvest_id);
+CREATE INDEX IF NOT EXISTS idx_barn_items_category ON barn_items(category);
+CREATE INDEX IF NOT EXISTS idx_barn_items_archived_at ON barn_items(archived_at)
     WHERE archived_at IS NOT NULL;
-CREATE INDEX idx_barn_items_last_synced_at ON barn_items(last_synced_at);
-CREATE INDEX idx_barn_items_file_size ON barn_items(file_size);
-CREATE INDEX idx_barn_items_farmer_template_id ON barn_items(farmer_template_id);
+CREATE INDEX IF NOT EXISTS idx_barn_items_last_synced_at ON barn_items(last_synced_at);
+CREATE INDEX IF NOT EXISTS idx_barn_items_file_size ON barn_items(file_size);
+CREATE INDEX IF NOT EXISTS idx_barn_items_farmer_template_id ON barn_items(farmer_template_id);
 
 -- Barn sync log indexes
-CREATE INDEX idx_barn_sync_log_sync_id ON barn_sync_log(sync_id);
-CREATE INDEX idx_barn_sync_log_status ON barn_sync_log(status);
-CREATE INDEX idx_barn_sync_log_operation ON barn_sync_log(operation);
-CREATE INDEX idx_barn_sync_log_created_at ON barn_sync_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_barn_sync_log_sync_id ON barn_sync_log(sync_id);
+CREATE INDEX IF NOT EXISTS idx_barn_sync_log_status ON barn_sync_log(status);
+CREATE INDEX IF NOT EXISTS idx_barn_sync_log_operation ON barn_sync_log(operation);
+CREATE INDEX IF NOT EXISTS idx_barn_sync_log_created_at ON barn_sync_log(created_at DESC);
 
 -- Quick tasks indexes
-CREATE INDEX idx_quick_tasks_user_id ON quick_tasks(user_id);
-CREATE INDEX idx_quick_tasks_status ON quick_tasks(status);
-CREATE INDEX idx_quick_tasks_farmer_template_id ON quick_tasks(farmer_template_id);
-CREATE INDEX idx_quick_tasks_created_at ON quick_tasks(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quick_tasks_user_id ON quick_tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_quick_tasks_status ON quick_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_quick_tasks_farmer_template_id ON quick_tasks(farmer_template_id);
+CREATE INDEX IF NOT EXISTS idx_quick_tasks_created_at ON quick_tasks(created_at DESC);
 
 -- GoWild indexes
-CREATE INDEX idx_gowild_sessions_farm_id ON gowild_sessions(farm_id);
-CREATE INDEX idx_gowild_sessions_status ON gowild_sessions(status);
-CREATE INDEX idx_gowild_sessions_started_at ON gowild_sessions(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gowild_sessions_farm_id ON gowild_sessions(farm_id);
+CREATE INDEX IF NOT EXISTS idx_gowild_sessions_status ON gowild_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_gowild_sessions_started_at ON gowild_sessions(started_at DESC);
 
-CREATE INDEX idx_gowild_discoveries_session_id ON gowild_discoveries(session_id);
-CREATE INDEX idx_gowild_discoveries_impact ON gowild_discoveries(impact_score DESC);
+CREATE INDEX IF NOT EXISTS idx_gowild_discoveries_session_id ON gowild_discoveries(session_id);
+CREATE INDEX IF NOT EXISTS idx_gowild_discoveries_impact ON gowild_discoveries(impact_score DESC);
 
-CREATE INDEX idx_gowild_checkpoints_session_id ON gowild_checkpoints(session_id);
-CREATE INDEX idx_gowild_checkpoints_timestamp ON gowild_checkpoints(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gowild_checkpoints_session_id ON gowild_checkpoints(session_id);
+CREATE INDEX IF NOT EXISTS idx_gowild_checkpoints_timestamp ON gowild_checkpoints(created_at DESC);
 
 -- Task checkpoints index
-CREATE INDEX idx_checkpoint_task ON task_checkpoints(task_id);
-CREATE INDEX idx_checkpoint_created ON task_checkpoints(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_task ON task_checkpoints(task_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_created ON task_checkpoints(created_at DESC);
 
 -- Workspace pool indexes
-CREATE INDEX idx_workspace_pool_status ON workspace_pool(status);
-CREATE INDEX idx_workspace_pool_farm ON workspace_pool(farm_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_pool_status ON workspace_pool(status);
+CREATE INDEX IF NOT EXISTS idx_workspace_pool_farm ON workspace_pool(farm_id);
 
 -- Template tracking indexes (across multiple tables)
-CREATE INDEX idx_farms_farmer_template_id ON farms(farmer_template_id);
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-
-
-
--- Foreign keys added after table creation
-ALTER TABLE farms ADD CONSTRAINT farms_seed_id_fkey 
-    FOREIGN KEY (seed_id) REFERENCES seeds(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_farms_farmer_template_id ON farms(farmer_template_id);
+
+-- ============================================
+-- FOREIGN KEY CONSTRAINTS (Added after all tables created)
+-- ============================================
+
+-- Add foreign key constraints to farms table
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'farms_source_seed_id_fkey'
+    ) THEN
+        ALTER TABLE farms ADD CONSTRAINT farms_source_seed_id_fkey
+            FOREIGN KEY (source_seed_id) REFERENCES seeds(id) ON DELETE SET NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'farms_seed_id_fkey'
+    ) THEN
+        ALTER TABLE farms ADD CONSTRAINT farms_seed_id_fkey
+            FOREIGN KEY (seed_id) REFERENCES seeds(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 COMMIT;

@@ -13,10 +13,23 @@ export interface ParsedActivity {
     errorLevel?: 'warning' | 'error' | 'critical';
     progress?: number;
     duration?: number;
+    fileOperation?: FileOperation; // NEW: Track file operations
   };
   timestamp: Date;
   agentId: number;
+  agentName: string;
   sessionName: string;
+}
+
+/**
+ * File operation details for yield detection
+ */
+export interface FileOperation {
+  type: 'create' | 'edit' | 'delete' | 'read';
+  path: string;
+  language?: string;
+  size?: number;
+  timestamp: Date;
 }
 
 /**
@@ -93,6 +106,7 @@ const PROGRESS_PATTERNS = {
 export class ActivityParser {
   private agentActivities: Map<string, AgentActivity> = new Map();
   private rawOutputBuffer: Map<string, string> = new Map();
+  private fileOperations: Map<string, FileOperation[]> = new Map(); // Track file operations by session
 
   /**
    * Parse raw terminal output into structured activities
@@ -114,14 +128,44 @@ export class ActivityParser {
       if (!cleanLine) continue;
 
       // Parse different types of activities
-      const activity = this.parseLine(cleanLine, sessionName, agentId);
+      const activity = this.parseLine(cleanLine, sessionName, agentId, agentName);
       if (activity) {
         activities.push(activity);
         this.updateAgentFromActivity(sessionName, agentId, activity);
+
+        // Track file operations for yield detection
+        if (activity.metadata.fileOperation) {
+          this.trackFileOperation(sessionName, activity.metadata.fileOperation);
+        }
       }
     }
 
     return activities;
+  }
+
+  /**
+   * Track file operations for yield detection
+   */
+  trackFileOperation(sessionName: string, operation: FileOperation): void {
+    const key = `${sessionName}:${operation.path}`;
+    if (!this.fileOperations.has(key)) {
+      this.fileOperations.set(key, []);
+    }
+    this.fileOperations.get(key)!.push(operation);
+    logger.debug(`[ActivityParser] Tracked ${operation.type} operation on ${operation.path}`);
+  }
+
+  /**
+   * Get all file operations for a session
+   */
+  getFileOperations(sessionName: string): FileOperation[] {
+    const operations: FileOperation[] = [];
+    for (const [key, ops] of this.fileOperations.entries()) {
+      if (key.startsWith(sessionName + ':')) {
+        operations.push(...ops);
+      }
+    }
+    return operations.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
   }
 
   /**
@@ -139,23 +183,38 @@ export class ActivityParser {
   /**
    * Parse individual line into activity
    */
-  private parseLine(line: string, sessionName: string, agentId: number): ParsedActivity | null {
+  private parseLine(line: string, sessionName: string, agentId: number, agentName: string): ParsedActivity | null {
     const timestamp = new Date();
 
     // Check for tool usage patterns
     for (const [toolName, pattern] of Object.entries(TOOL_PATTERNS)) {
       const match = line.match(pattern);
       if (match) {
+        const files = this.extractFiles(line);
+
+        // Create file operation if this is a file-related tool
+        let fileOperation: FileOperation | undefined;
+        if (['read', 'write', 'edit'].includes(toolName) && files.length > 0) {
+          fileOperation = {
+            type: toolName === 'write' ? 'create' : toolName === 'edit' ? 'edit' : 'read',
+            path: files[0],
+            language: this.detectLanguage(files[0]),
+            timestamp
+          };
+        }
+
         return {
           type: 'tool_use',
           content: line,
           metadata: {
             tools: [toolName],
-            files: this.extractFiles(line),
-            command: toolName === 'bash' ? match[1] : undefined
+            files,
+            command: toolName === 'bash' ? match[1] : undefined,
+            fileOperation
           },
           timestamp,
           agentId,
+          agentName,
           sessionName
         };
       }
@@ -173,6 +232,7 @@ export class ActivityParser {
           },
           timestamp,
           agentId,
+          agentName,
           sessionName
         };
       }
@@ -189,6 +249,7 @@ export class ActivityParser {
         },
         timestamp,
         agentId,
+        agentName,
         sessionName
       };
     }
@@ -204,6 +265,7 @@ export class ActivityParser {
         },
         timestamp,
         agentId,
+        agentName,
         sessionName
       };
     }
@@ -216,6 +278,7 @@ export class ActivityParser {
         metadata: {},
         timestamp,
         agentId,
+        agentName,
         sessionName
       };
     }
@@ -228,6 +291,7 @@ export class ActivityParser {
         metadata: {},
         timestamp,
         agentId,
+        agentName,
         sessionName
       };
     }
@@ -242,6 +306,50 @@ export class ActivityParser {
     const filePattern = /([^\s]+\.(ts|js|tsx|jsx|py|md|json|yaml|yml|txt|log|css|scss|html))/gi;
     const matches = line.match(filePattern);
     return matches ? [...new Set(matches)] : [];
+  }
+
+  /**
+   * Detect programming language from file path
+   */
+  private detectLanguage(filePath: string): string | undefined {
+    const ext = filePath.toLowerCase().split('.').pop();
+    const langMap: Record<string, string> = {
+      'ts': 'TypeScript',
+      'tsx': 'TypeScript React',
+      'js': 'JavaScript',
+      'jsx': 'JavaScript React',
+      'py': 'Python',
+      'java': 'Java',
+      'go': 'Go',
+      'rs': 'Rust',
+      'cpp': 'C++',
+      'c': 'C',
+      'rb': 'Ruby',
+      'php': 'PHP',
+      'cs': 'C#',
+      'swift': 'Swift',
+      'kt': 'Kotlin',
+      'scala': 'Scala',
+      'r': 'R',
+      'sh': 'Shell',
+      'bash': 'Bash',
+      'ps1': 'PowerShell',
+      'sql': 'SQL',
+      'html': 'HTML',
+      'css': 'CSS',
+      'scss': 'SCSS',
+      'sass': 'SASS',
+      'less': 'LESS',
+      'xml': 'XML',
+      'yaml': 'YAML',
+      'yml': 'YAML',
+      'json': 'JSON',
+      'md': 'Markdown',
+      'tex': 'LaTeX',
+      'vue': 'Vue',
+      'svelte': 'Svelte'
+    };
+    return ext ? langMap[ext] : undefined;
   }
 
   /**
@@ -424,18 +532,31 @@ export class ActivityParser {
    * Clean up activities for completed session
    */
   cleanupSession(sessionName: string): void {
+    // Clean up agent activities
     const keysToDelete: string[] = [];
     Array.from(this.agentActivities.keys()).forEach(key => {
       if (key.startsWith(`${sessionName}:`)) {
         keysToDelete.push(key);
       }
     });
-    
+
     keysToDelete.forEach(key => {
       this.agentActivities.delete(key);
     });
-    
-    logger.info(`[ActivityParser] Cleaned up activities for session ${sessionName}`);
+
+    // Clean up file operations
+    const fileOpsToDelete: string[] = [];
+    Array.from(this.fileOperations.keys()).forEach(key => {
+      if (key.startsWith(`${sessionName}:`)) {
+        fileOpsToDelete.push(key);
+      }
+    });
+
+    fileOpsToDelete.forEach(key => {
+      this.fileOperations.delete(key);
+    });
+
+    logger.info(`[ActivityParser] Cleaned up activities and file operations for session ${sessionName}`);
   }
 
   /**

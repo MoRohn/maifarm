@@ -1,6 +1,9 @@
-export { AIEngineSetupHubSimple as AIEngineSetupHub } from './AIEngineSetupHubSimple';
+export { AIEngineSetupHub } from './AIEngineSetupHub';
 export { ClaudeSetupWizard } from './ClaudeSetupWizard';
 export { OpenAISetupWizard } from './OpenAISetupWizard';
+export { GrokSetupWizard } from './GrokSetupWizard';
+export { HardwareOptimizedSetup } from './HardwareOptimizedSetup';
+export { AIEngineUpgradeWizard } from './AIEngineUpgradeWizard';
 export { FarmProgressBar } from './components/FarmProgressBar';
 export { APIKeyValidator } from './components/APIKeyValidator';
 export { EnhancedProgressBar } from './components/EnhancedProgressBar';

@@ -194,6 +194,27 @@ class PathConfiguration {
   }
 
   /**
+   * Get terminal logs directory path
+   */
+  getTerminalLogsPath(): string {
+    return this.config.TERMINALS_DIR;
+  }
+
+  /**
+   * Get terminal directory for a specific farm
+   */
+  getTerminalDir(farmId: string): string {
+    return path.join(this.config.TERMINALS_DIR, farmId);
+  }
+
+  /**
+   * Get terminal log file path for a specific agent
+   */
+  getTerminalLogPath(farmId: string, agentIndex: number): string {
+    return path.join(this.config.TERMINALS_DIR, farmId, `agent-${agentIndex}.log`);
+  }
+
+  /**
    * Validate that a path is within the maibarn directory or barn storage
    */
   isPathSafe(checkPath: string): boolean {
@@ -347,13 +368,14 @@ export const pathConfig = PathConfiguration.getInstance();
 // Export convenient helper functions
 export const getPaths = () => pathConfig.getPaths();
 export const getPath = (key: keyof PathConfig) => pathConfig.getPath(key);
-export const getFarmWorkspacePath = (farmId: string, archived = false) => 
+export const getFarmWorkspacePath = (farmId: string, archived = false) =>
   pathConfig.getFarmWorkspacePath(farmId, archived);
-export const getHarvestPath = (harvestId: string, completed = false) => 
+export const getHarvestPath = (harvestId: string, completed = false) =>
   pathConfig.getHarvestPath(harvestId, completed);
 export const getBarnItemPath = (itemId: string) => pathConfig.getBarnItemPath(itemId);
+export const getTerminalLogsPath = () => pathConfig.getTerminalLogsPath();
+export const getTerminalDir = (farmId: string) => pathConfig.getTerminalDir(farmId);
 export const isPathSafe = (path: string) => pathConfig.isPathSafe(path);
 export const validatePath = (path: string) => pathConfig.validatePath(path);
 
 // Export types
-export type { PathConfig };

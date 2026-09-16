@@ -178,7 +178,7 @@ async function testWebSocketConnection() {
 async function testFileCapture() {
   console.log('\n📁 Step 5: Checking terminal output files...');
 
-  const terminalDir = path.join('/Users/rohnspringfield/maifarm/var/maibarn/terminals', farmId);
+  const terminalDir = path.join(path.join(process.env.MAIFARM_ROOT || process.cwd(), 'var/maibarn/terminals'), farmId);
 
   try {
     if (fs.existsSync(terminalDir)) {

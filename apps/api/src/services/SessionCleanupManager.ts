@@ -11,9 +11,11 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { logger, LogCategory } from '../utils/logger';
-import { terminalStreamService } from './terminalStreamService';
+import { unifiedTerminalStreamService } from './UnifiedTerminalStreamService';
+import { pathConfig } from '../config/paths';
 
 const execAsync = promisify(exec);
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 interface OrphanedSession {
   sessionName: string;
@@ -109,10 +111,10 @@ export class SessionCleanupManager {
     const orphaned: OrphanedSession[] = [];
 
     try {
-      // List all tmux sessions
-      const { stdout } = await execAsync('TMUX_TMPDIR=/tmp tmux list-sessions -F "#{session_name}:#{session_created}:#{session_activity}" 2>/dev/null || echo ""');
+      // List all tmux sessions - suppress all errors
+      const { stdout } = await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions -F "#{session_name}:#{session_created}:#{session_activity}" 2>/dev/null || echo ""`).catch(() => ({ stdout: '' }));
 
-      if (!stdout.trim()) {
+      if (!stdout || !stdout.trim()) {
         return orphaned;
       }
 
@@ -143,7 +145,7 @@ export class SessionCleanupManager {
           // Get pane count
           let paneCount = 0;
           try {
-            const { stdout: paneOutput } = await execAsync(`TMUX_TMPDIR=/tmp tmux list-panes -t ${sessionName} 2>/dev/null | wc -l`);
+            const { stdout: paneOutput } = await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-panes -t ${sessionName} 2>/dev/null | wc -l`);
             paneCount = parseInt(paneOutput.trim()) || 0;
           } catch {
             // Session might have disappeared
@@ -173,19 +175,15 @@ export class SessionCleanupManager {
     logger.info(LogCategory.TERMINAL, `Cleaning up orphaned session: ${session.sessionName} (inactive since ${session.lastActivity})`);
 
     try {
-      // Stop any terminal streams for this farm
-      const streamingStatus = terminalStreamService.getStreamingStatus(session.farmId);
-
-      for (const agentId of Object.keys(streamingStatus)) {
-        try {
-          await terminalStreamService.stopStream(session.farmId, agentId);
-        } catch (error) {
-          logger.debug(LogCategory.TERMINAL, `Failed to stop stream for ${session.farmId}:${agentId}:`, error);
-        }
+      // Stop all terminal streams for this farm
+      try {
+        await unifiedTerminalStreamService.stopFarm(session.farmId);
+      } catch (error) {
+        logger.debug(LogCategory.TERMINAL, `Failed to stop terminal streams for ${session.farmId}:`, error);
       }
 
       // Kill the tmux session
-      await execAsync(`TMUX_TMPDIR=/tmp tmux kill-session -t ${session.sessionName} 2>/dev/null || true`);
+      await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux kill-session -t ${session.sessionName} 2>/dev/null || true`);
 
       logger.info(LogCategory.TERMINAL, `Successfully cleaned up session: ${session.sessionName}`);
     } catch (error) {
@@ -206,19 +204,15 @@ export class SessionCleanupManager {
     this.unregisterFarm(cleanFarmId);
 
     // Stop all streams
-    const streamingStatus = terminalStreamService.getStreamingStatus(cleanFarmId);
-
-    for (const agentId of Object.keys(streamingStatus)) {
-      try {
-        await terminalStreamService.stopStream(cleanFarmId, agentId);
-      } catch (error) {
-        logger.debug(LogCategory.TERMINAL, `Failed to stop stream during force cleanup:`, error);
-      }
+    try {
+      await unifiedTerminalStreamService.stopFarm(cleanFarmId);
+    } catch (error) {
+      logger.debug(LogCategory.TERMINAL, `Failed to stop terminal streams during force cleanup:`, error);
     }
 
     // Kill tmux session
     try {
-      await execAsync(`TMUX_TMPDIR=/tmp tmux kill-session -t ${sessionName} 2>/dev/null || true`);
+      await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux kill-session -t ${sessionName} 2>/dev/null || true`);
     } catch (error) {
       logger.debug(LogCategory.TERMINAL, `Failed to kill tmux session during force cleanup:`, error);
     }

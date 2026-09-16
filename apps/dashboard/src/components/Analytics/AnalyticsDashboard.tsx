@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import {Activity, DollarSign, Download, RefreshCw, TrendingUp, Users} from 'lucide-react';
+import {Activity, DollarSign, Download, RefreshCw, TrendingUp, Users, Thermometer} from 'lucide-react';
 import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useFarmStore } from '@/store/farmStore';
+import { useThermalStore, getThermalStatusLabel, THERMAL_PRESSURE_COLORS, ThermalPressureLevel } from '@/store/thermalStore';
 import { analyticsService } from '@/services/analyticsService';
+import { engineCostService } from '@/services/engineCostService';
 import { getAllAgentsFromFarms } from '@/utils/farmHelpers';
 import { LineChart } from './Charts/LineChart';
 import { PieChart } from './Charts/PieChart';
+import { ThermalChart, ThermalStatusBadge } from './Charts/ThermalChart';
+import { ThermalAlertPanel } from './ThermalAlertPanel';
 import { PerformanceMetrics } from './PerformanceMetrics';
 import { ResourceUtilization } from './ResourceUtilization';
+import { EngineComparativeMetrics } from './EngineComparativeMetrics';
+import { EngineMetricsProvider } from './context';
 import { formatMetricValue } from '@/utils/dataAggregation';
 import {TimeRange} from '@/types/analytics';
 import toast from 'react-hot-toast';
@@ -32,14 +38,20 @@ export const AnalyticsDashboard: React.FC = () => {
     // setRefreshInterval,  // Currently unused
     setLoading,
     setError,
+    engineCostSummary,
+    setEngineCostSummary,
   } = useAnalyticsStore();
 
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [selectedMetric, setSelectedMetric] = useState<'performance' | 'resources' | 'costs' | 'errors'>('performance');
+  const [selectedMetric, setSelectedMetric] = useState<'performance' | 'resources' | 'costs' | 'errors' | 'thermal'>('performance');
+
+  // Thermal monitoring state
+  const { currentMetrics: thermalMetrics, activeAlerts: thermalAlerts, fetchCurrentMetrics: fetchThermal } = useThermalStore();
 
   // Load initial data
   useEffect(() => {
     loadAnalyticsData();
+    fetchThermal(); // Also fetch thermal data
   }, [selectedTimeRange]);
 
   // Auto refresh
@@ -79,12 +91,32 @@ export const AnalyticsDashboard: React.FC = () => {
       );
       updateAgentPerformance(performance);
 
+      const startIso = (selectedTimeRange.start ?? new Date(Date.now() - 24 * 60 * 60 * 1000)).toISOString();
+      const endIso = (selectedTimeRange.end ?? new Date()).toISOString();
+      const groupBy = selectedTimeRange.preset === '1h' ? 'hour' : 'day';
+      const costSummaryResponse = await engineCostService.fetchSummary({ startDate: startIso, endDate: endIso, groupBy });
+      setEngineCostSummary({
+        totalCost: costSummaryResponse.summary.totalCost,
+        totalRequests: costSummaryResponse.summary.totalRequests,
+        totalInputTokens: costSummaryResponse.summary.totalInputTokens,
+        totalOutputTokens: costSummaryResponse.summary.totalOutputTokens,
+        byProvider: costSummaryResponse.byProvider.map(provider => ({
+          provider: provider.provider,
+          totalCost: provider.totalCost,
+          totalRequests: provider.totalRequests,
+          totalInputTokens: provider.totalInputTokens,
+          totalOutputTokens: provider.totalOutputTokens,
+          models: provider.models
+        }))
+      });
+
       setLoading(false);
     } catch (error) {
       console.error('Failed to load analytics data:', error);
       setError('Failed to load analytics data');
       setLoading(false);
       toast.error('Failed to load analytics data');
+      setEngineCostSummary(null);
     }
   };
 
@@ -199,7 +231,7 @@ export const AnalyticsDashboard: React.FC = () => {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {getMetricCard(
           'Total Tasks',
           metrics?.totalTasks || 0,
@@ -219,10 +251,10 @@ export const AnalyticsDashboard: React.FC = () => {
         )}
         {getMetricCard(
           'Total Cost',
-          `$${metrics?.totalCost.total.toFixed(2) || '0.00'}`,
+          `$${engineCostSummary?.totalCost.toFixed(2) ?? '0.00'}`,
           <DollarSign className="w-6 h-6 text-white" />,
           'bg-purple-500',
-          -5.2
+          undefined
         )}
         {getMetricCard(
           'Active Agents',
@@ -231,21 +263,65 @@ export const AnalyticsDashboard: React.FC = () => {
           'bg-orange-500',
           0
         )}
+        {/* Thermal Status Card */}
+        <div
+          className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setSelectedMetric('thermal')}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Thermal Status</p>
+              <p className="text-2xl font-semibold mt-1 capitalize">
+                {thermalMetrics ? getThermalStatusLabel(thermalMetrics.pressureLevel as ThermalPressureLevel) : '--'}
+              </p>
+              {thermalMetrics?.cpuTemperature && (
+                <p className="text-sm mt-2 text-gray-600 dark:text-gray-400">
+                  CPU: {thermalMetrics.cpuTemperature.toFixed(0)}°C
+                </p>
+              )}
+            </div>
+            <div
+              className="p-3 rounded-lg"
+              style={{
+                backgroundColor: thermalMetrics
+                  ? THERMAL_PRESSURE_COLORS[thermalMetrics.pressureLevel as ThermalPressureLevel]
+                  : '#6b7280'
+              }}
+            >
+              <Thermometer className="w-6 h-6 text-white" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Metric Tabs */}
       <div className="flex gap-4 border-b border-gray-200 dark:border-gray-700">
-        {(['performance', 'resources', 'costs', 'errors'] as const).map((metric) => (
+        {(['performance', 'resources', 'costs', 'errors', 'thermal'] as const).map((metric) => (
           <button
             key={metric}
             onClick={() => setSelectedMetric(metric)}
-            className={`pb-2 px-4 capitalize transition-colors ${
+            className={`pb-2 px-4 capitalize transition-colors flex items-center gap-2 ${
               selectedMetric === metric
                 ? 'border-b-2 border-emerald-500 text-emerald-500'
                 : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
+            {metric === 'thermal' && (
+              <Thermometer
+                className="w-4 h-4"
+                style={{
+                  color: thermalMetrics
+                    ? THERMAL_PRESSURE_COLORS[thermalMetrics.pressureLevel as ThermalPressureLevel]
+                    : undefined
+                }}
+              />
+            )}
             {metric}
+            {metric === 'thermal' && thermalAlerts.length > 0 && (
+              <span className="px-1.5 py-0.5 text-xs bg-red-500 text-white rounded-full">
+                {thermalAlerts.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -259,27 +335,37 @@ export const AnalyticsDashboard: React.FC = () => {
             {selectedMetric === 'resources' && 'Resource Usage'}
             {selectedMetric === 'costs' && 'Cost Analysis'}
             {selectedMetric === 'errors' && 'Error Rate'}
+            {selectedMetric === 'thermal' && 'Thermal Monitoring'}
           </h3>
-          <LineChart
-            data={timeSeriesData.filter((series) => {
-              switch (selectedMetric) {
-                case 'performance':
-                  return ['Task Completion Rate', 'CPU Usage'].includes(series.label);
-                case 'resources':
-                  return ['CPU Usage', 'Memory Usage'].includes(series.label);
-                case 'costs':
-                  return series.label === 'Cost per Hour';
-                case 'errors':
-                  return series.label === 'Error Rate';
-                default:
-                  return true;
-              }
-            })}
-            height={300}
-            showLegend={true}
-            animate={true}
-            timeRange={selectedTimeRange.preset === '1h' ? 'hour' : 'day'}
-          />
+          {selectedMetric === 'thermal' ? (
+            <ThermalChart
+              height={300}
+              showLegend={true}
+              showThresholds={true}
+              timeRange={selectedTimeRange.preset === '1h' ? '1h' : selectedTimeRange.preset === '6h' ? '6h' : '1h'}
+            />
+          ) : (
+            <LineChart
+              data={timeSeriesData.filter((series) => {
+                switch (selectedMetric) {
+                  case 'performance':
+                    return ['Task Completion Rate', 'CPU Usage'].includes(series.label);
+                  case 'resources':
+                    return ['CPU Usage', 'Memory Usage'].includes(series.label);
+                  case 'costs':
+                    return series.label === 'Cost per Hour';
+                  case 'errors':
+                    return series.label === 'Error Rate';
+                  default:
+                    return true;
+                }
+              })}
+              height={300}
+              showLegend={true}
+              animate={true}
+              timeRange={selectedTimeRange.preset === '1h' ? 'hour' : 'day'}
+            />
+          )}
         </div>
 
         {/* Side Panel */}
@@ -345,6 +431,14 @@ export const AnalyticsDashboard: React.FC = () => {
               </div>
             </div>
           )}
+
+          {selectedMetric === 'thermal' && (
+            <ThermalAlertPanel
+              compact={false}
+              showSettings={true}
+              maxAlerts={5}
+            />
+          )}
         </div>
       </div>
 
@@ -399,6 +493,63 @@ export const AnalyticsDashboard: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Dedicated Thermal Monitoring Section - Always Visible */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="p-2 rounded-lg"
+              style={{
+                backgroundColor: thermalMetrics
+                  ? `${THERMAL_PRESSURE_COLORS[thermalMetrics.pressureLevel as ThermalPressureLevel]}20`
+                  : '#6b728020'
+              }}
+            >
+              <Thermometer
+                className="w-5 h-5"
+                style={{
+                  color: thermalMetrics
+                    ? THERMAL_PRESSURE_COLORS[thermalMetrics.pressureLevel as ThermalPressureLevel]
+                    : '#6b7280'
+                }}
+              />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">System Thermal Monitor</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Real-time CPU/GPU temperature and thermal throttling detection
+              </p>
+            </div>
+          </div>
+          <ThermalStatusBadge />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Thermal Chart */}
+          <div className="lg:col-span-2">
+            <ThermalChart
+              height={250}
+              showLegend={true}
+              showThresholds={true}
+              timeRange="30m"
+            />
+          </div>
+
+          {/* Thermal Alerts Panel */}
+          <div>
+            <ThermalAlertPanel
+              compact={false}
+              showSettings={false}
+              maxAlerts={3}
+            />
+          </div>
+        </div>
+      </div>
+
+      <EngineMetricsProvider>
+        <EngineComparativeMetrics />
+      </EngineMetricsProvider>
     </div>
   );
 };

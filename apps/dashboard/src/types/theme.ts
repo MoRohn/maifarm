@@ -37,6 +37,14 @@ export interface ThemeConfig {
 
 export const COLOR_SCHEMES: ColorScheme[] = [
   {
+    id: 'forest-walk',
+    name: 'Forest Walk',
+    primary: '#10B981',
+    accent: '#84CC16',
+    primaryRGB: '16, 185, 129',
+    accentRGB: '132, 204, 22'
+  },
+  {
     id: 'purple-dreams',
     name: 'Purple Dreams',
     primary: '#8B5CF6',
@@ -51,14 +59,6 @@ export const COLOR_SCHEMES: ColorScheme[] = [
     accent: '#14B8A6',
     primaryRGB: '14, 165, 233',
     accentRGB: '20, 184, 166'
-  },
-  {
-    id: 'forest-walk',
-    name: 'Forest Walk',
-    primary: '#10B981',
-    accent: '#84CC16',
-    primaryRGB: '16, 185, 129',
-    accentRGB: '132, 204, 22'
   },
   {
     id: 'sunset-glow',

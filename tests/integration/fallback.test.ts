@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+// Jest test - converted from Vitest
 import { websocketService } from '../../src/services/websocket';
 import { errorHandler } from '../../src/services/errorHandler';
 import { logger } from '../../src/services/monitoring/logger';
@@ -12,7 +12,7 @@ describe('Fallback Mechanism Integration Tests', () => {
     originalFetch = global.fetch;
     
     // Mock fetch for API calls
-    global.fetch = vi.fn();
+    global.fetch = jest.fn();
   });
 
   afterAll(() => {
@@ -21,7 +21,7 @@ describe('Fallback Mechanism Integration Tests', () => {
   });
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   describe('WebSocket Fallback to Mock Data', () => {
@@ -30,7 +30,7 @@ describe('Fallback Mechanism Integration Tests', () => {
       (global.fetch as any).mockRejectedValue(new Error('Network error'));
 
       // Force WebSocket to fail and enter mock mode
-      const connectSpy = vi.spyOn(websocketService, 'connect');
+      const connectSpy = jest.spyOn(websocketService, 'connect');
       websocketService.connect('http://localhost:4567');
 
       // Simulate connection failures to trigger mock mode
@@ -197,7 +197,7 @@ describe('Fallback Mechanism Integration Tests', () => {
       const logs: any[] = [];
       
       // Intercept logger calls
-      const logSpy = vi.spyOn(logger, 'info').mockImplementation((category, message, data) => {
+      const logSpy = jest.spyOn(logger, 'info').mockImplementation((category, message, data) => {
         logs.push({ category, message, data });
       });
 
@@ -217,7 +217,7 @@ describe('Fallback Mechanism Integration Tests', () => {
 
   describe('Error Recovery and Monitoring', () => {
     it('should track and report extended downtime', async () => {
-      vi.useFakeTimers();
+      jest.useFakeTimers();
       
       let downtimeAlert = false;
       const unsubscribe = errorHandler.subscribe((error) => {
@@ -230,14 +230,14 @@ describe('Fallback Mechanism Integration Tests', () => {
       errorHandler.trackConnectionFailure('WebSocket');
       
       // Advance time to trigger downtime alert
-      vi.advanceTimersByTime(5 * 60 * 1000); // 5 minutes
+      jest.advanceTimersByTime(5 * 60 * 1000); // 5 minutes
       
       errorHandler.alertOnDowntime('WebSocket', 5);
       
       expect(downtimeAlert).toBe(true);
       
       unsubscribe();
-      vi.useRealTimers();
+      jest.useRealTimers();
     });
 
     it('should maintain error history for debugging', () => {

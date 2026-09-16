@@ -2,6 +2,9 @@
  * Unit tests for AsyncLock manager
  */
 
+// Mock the logger module
+jest.mock('../../apps/api/src/utils/logger');
+
 import { AsyncLock } from '../../apps/api/src/utils/AsyncLock';
 
 describe('AsyncLock', () => {

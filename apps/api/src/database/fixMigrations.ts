@@ -2,8 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const _currentFilePath = fileURLToPath(import.meta.url);
+const _currentDirPath = path.dirname(_currentFilePath);
 
 /**
  * Migration Fixer - Standardizes and fixes common migration issues
@@ -60,8 +60,8 @@ class MigrationFixer {
   async fixMigrations(): Promise<void> {
     console.log('🔧 Starting migration fixes...\n');
 
-    const migrationsDir = path.join(__dirname, 'migrations');
-    const backupDir = path.join(__dirname, 'migrations_backup');
+    const migrationsDir = path.join(_currentDirPath, 'migrations');
+    const backupDir = path.join(_currentDirPath, 'migrations_backup');
 
     // Create backup directory
     await fs.mkdir(backupDir, { recursive: true });
@@ -139,7 +139,7 @@ class MigrationFixer {
   async validateMigrations(): Promise<boolean> {
     console.log('\n🔍 Validating migrations...\n');
     
-    const migrationsDir = path.join(__dirname, 'migrations');
+    const migrationsDir = path.join(_currentDirPath, 'migrations');
     let hasIssues = false;
 
     for (const filename of this.migrationOrder) {
@@ -184,8 +184,8 @@ class MigrationFixer {
   async restoreBackups(): Promise<void> {
     console.log('\n🔄 Restoring migrations from backup...\n');
     
-    const migrationsDir = path.join(__dirname, 'migrations');
-    const backupDir = path.join(__dirname, 'migrations_backup');
+    const migrationsDir = path.join(_currentDirPath, 'migrations');
+    const backupDir = path.join(_currentDirPath, 'migrations_backup');
 
     for (const filename of this.migrationOrder) {
       const backupPath = path.join(backupDir, filename);

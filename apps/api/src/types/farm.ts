@@ -1,90 +1,160 @@
-export type FarmStatus = 'launching' | 'active' | 'completed' | 'stopped';
-export type AgentStatus = 
-  | 'idle'           // Agent is idle, not processing anything
-  | 'active'         // Agent is active and can accept tasks
-  | 'paused'         // Agent is paused
-  | 'failed'         // Agent failed (legacy, maps to 'error')
-  | 'completed'      // Agent completed its tasks
-  | 'processing'     // Agent is processing a task
-  | 'error'          // Agent encountered an error
-  | 'terminated'     // Agent has been terminated
-  | 'starting'       // Agent is starting up
-  | 'ready'          // Agent is ready to accept tasks
-  | 'working'        // Agent is actively working on a task
-  | 'initializing'   // Agent is initializing
-  | 'disconnected'   // Agent disconnected
-  | 'shutting_down'; // Agent is shutting down
+/**
+ * Shared farm-related enums and types used across orchestrator and farm services
+ * and re-exported for both backend and frontend usage.
+ */
 
-export interface Agent {
-  id: string;
-  name: string;
-  type: string;
-  status: AgentStatus;
-  capabilities: string[];
-  farmId: string;
-  config: any;
-  metrics?: {
-    tasksCompleted: number;
-    tasksFailed: number;
-    averageResponseTime: number;
-    lastActiveAt?: Date;
-  };
-  createdAt: Date;
-  updatedAt: Date;
-}
+import type {
+  Agent as SharedAgent,
+  AgentStatus,
+  TaskStatus as SharedTaskStatus
+} from '../../../shared/types/unified';
+
+export const FarmMode = {
+  HARVEST: 'harvest',
+  QUICK_TASK: 'quick_task',
+  GO_WILD: 'go_wild',
+  COLLABORATIVE: 'collaborative',
+  SEQUENTIAL: 'sequential',
+  AUTONOMOUS: 'autonomous'
+} as const;
+
+export type FarmMode = typeof FarmMode[keyof typeof FarmMode];
+
+export const FarmStatus = {
+  IDLE: 'idle',
+  LAUNCHING: 'launching',
+  ACTIVE: 'active',
+  RUNNING: 'running',
+  PAUSED: 'paused',
+  HARVESTING: 'harvesting',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  CRASHED: 'crashed',
+  TERMINATED: 'terminated',
+  STOPPED: 'stopped',
+  STALE: 'stale',
+  RECOVERING: 'recovering',
+  ORPHANED: 'orphaned'
+} as const;
+
+export type FarmStatus = typeof FarmStatus[keyof typeof FarmStatus];
+
+// CRITICAL FIX: Added 'grok' to FarmProvider type
+export type FarmProvider = 'claude' | 'openai' | 'grok' | 'gpt-oss' | 'llama' | 'ollama';
+
+export type Agent = SharedAgent;
+export type TaskStatus = SharedTaskStatus;
+export type { AgentStatus };
 
 export interface FarmMetrics {
-  tasksCompleted: number;
-  tasksRunning: number;
-  tasksFailed: number;
-  averageTaskTime: number;
-  successRate: number;
-  resourceUtilization: number;
+  totalTasks: number;
+  completedTasks: number;
+  failedTasks: number;
+  duration: number;
+  efficiency: number;
+  tokenUsage?: {
+    input: number;
+    output: number;
+    total: number;
+  };
+  [key: string]: any;
+}
+
+export interface FarmConfig {
+  id?: string;
+  name: string;
+  description: string;
+  mode: FarmMode;
+  provider: FarmProvider;
+  numberOfAgents: number;
+  prompt: string;
+  yamlContent?: string;
+  timeout?: number;
+  autoScale?: boolean;
+  retryPolicy?: {
+    enabled?: boolean;
+    maxRetries?: number;
+    backoffMultiplier?: number;
+  };
+  goWildMode?: {
+    enabled?: boolean;
+    creativityLevel?: number;
+    boundaries?: string[];
+  };
+  userId?: string;
+  farmerTemplateId?: string;
+  farmerTemplateName?: string;
+  contextFiles?: string[];
+  barnReferences?: string[];
+  staggerDelay?: number;
+  debug?: boolean;
+  orchestratorType?: 'xenosync' | 'maifarm';
+  attachedFiles?: string[];
+  metadata?: Record<string, any>;
+  // Seeds context injection (Feature A: Seeds can Seed a Farm)
+  appliedSeedIds?: string[];
+  seedsTextSnapshot?: string;
+  [key: string]: any;
 }
 
 export interface Farm {
   id: string;
   name: string;
-  description: string;
-  type: 'sequential' | 'collaborative' | 'autonomous';
+  description?: string;
+  mode: FarmMode;
   status: FarmStatus;
-  config: {
-    maxAgents: number;
-    autoScale: boolean;
-    timeout?: number;
-    yaml?: string;
-    parsedYaml?: any;
-  };
-  agents: Agent[];
-  metrics: FarmMetrics;
+  provider?: FarmProvider;
+  agents: Agent[] | string[];
+  sessionName?: string;
+  tmuxSession?: string;
+  tmuxWindow?: string;
+  workspacePath?: string;
+  harvestId?: string;
+  createdBy?: string;
   createdAt: Date;
   updatedAt: Date;
-  userId: string;
-  createdBy: string;
-  // Tmux session persistence
-  tmuxSessionId?: string;
-  tmuxWindowTarget?: string;
-  tmuxCreatedAt?: Date;
-  sessionPreserved?: boolean;
+  startedAt?: Date;
+  completedAt?: Date;
+  config?: Record<string, any>;
+  metrics?: FarmMetrics;
+  metadata?: Record<string, any>;
+
+  // Incubation fields
+  autoIncubate?: boolean;
+  parentFarmId?: string;
+  incubationVersion?: number;
+  incubationLineage?: string[];
+
+  // Seeds context injection (Feature A: Seeds can Seed a Farm)
+  appliedSeedIds?: string[];
+  appliedSeedTextSnapshot?: string;
 }
 
 export interface FarmCreateInput {
   name: string;
   description?: string;
-  type: 'sequential' | 'collaborative' | 'autonomous';
-  config: {
-    maxAgents: number;
-    autoScale: boolean;
-    timeout?: number;
-    yaml?: string;
-  };
-  userId: string;
-  createdBy: string;
+  mode?: FarmMode | string;
+  prompt?: string;
+  provider?: FarmProvider;
+  numberOfAgents?: number;
+  config?: Record<string, any>;
+  contextFiles?: any[];
+  attachedFiles?: string[];
+  barnReferences?: string[];
+  userId?: string;
+  farmerTemplateId?: string;
+  farmerTemplateName?: string;
+  metadata?: Record<string, any>;
+
+  // Incubation fields
+  autoIncubate?: boolean;
+  parentFarmId?: string;
+  incubationVersion?: number;
+
+  // Seeds context injection (Feature A: Seeds can Seed a Farm)
+  appliedSeedIds?: string[];
+
+  [key: string]: any;
 }
 
-export interface FarmUpdateInput {
-  name?: string;
-  description?: string;
-  status?: FarmStatus;
-  config?: Partial<FarmCreateInput['config']>;
-}
+export type FarmUpdateInput = Partial<FarmCreateInput> & { id?: string };

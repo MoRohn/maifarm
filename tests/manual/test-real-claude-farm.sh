@@ -1,5 +1,8 @@
 #!/bin/bash
 
+MAIFARM_ROOT="${MAIFARM_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+export MAIFARM_ROOT
+
 echo "🚀 Real Claude CLI Farm Test with Terminal Streaming"
 echo "===================================================="
 
@@ -54,7 +57,7 @@ fi
 
 # Check terminal files
 echo -e "\n📋 Step 4: Checking terminal output files..."
-TERMINAL_DIR="/Users/rohnspringfield/maifarm/var/maibarn/terminals/$FARM_ID"
+TERMINAL_DIR="${MAIFARM_ROOT}/var/maibarn/terminals/$FARM_ID"
 
 if [ -d "$TERMINAL_DIR" ]; then
     echo "✅ Terminal directory exists: $TERMINAL_DIR"

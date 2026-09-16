@@ -125,8 +125,13 @@ router.post('/',
     
     const farm = await farmManager.createFarm(enhancedFarmData);
 
-    // Emit WebSocket event
-    req.app.get('wsServer')?.broadcast('farm:created', farm);
+    // Emit WebSocket event with guaranteed delivery
+    const { unifiedWebSocketManager } = await import('../websocket/UnifiedWebSocketManager.js');
+    await unifiedWebSocketManager.broadcastWithAck(
+      'farm:created',
+      { farm },
+      { farmId: farm.id, retryAttempts: 3, timeout: 5000 }
+    );
 
     res.status(201).json({
       success: true,
@@ -463,9 +468,14 @@ router.post('/:id/launch', async (req: AuthRequest, res: Response) => {
     if (result.success) {
       // Update farm status
       await farmManager.updateFarm(id, userId, { status: 'running' });
-      
-      // Emit WebSocket event
-      req.app.get('wsServer')?.broadcast('farm:launched', { id, agents: numberOfAgents });
+
+      // Emit WebSocket event with guaranteed delivery
+      const { unifiedWebSocketManager } = await import('../websocket/UnifiedWebSocketManager.js');
+      await unifiedWebSocketManager.broadcastWithAck(
+        'farm:launched',
+        { id, agents: numberOfAgents },
+        { farmId: id, retryAttempts: 3, timeout: 5000 }
+      );
 
       res.json({
         success: true,

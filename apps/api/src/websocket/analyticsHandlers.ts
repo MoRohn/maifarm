@@ -4,6 +4,9 @@ import { farmService } from '../services/farmService.js';
 import { agentService } from '../services/agentService.js';
 import { logger } from '../utils/logger.js';
 
+// FIX: Track interval ID for cleanup during server shutdown
+let analyticsIntervalId: ReturnType<typeof setInterval> | null = null;
+
 interface AnalyticsMetrics {
   farmCreationMetrics: {
     totalCreated: number;
@@ -138,8 +141,19 @@ export const setupAnalyticsHandlers = (io: Server) => {
     }
   };
   
-  // Set up periodic broadcasts
-  setInterval(broadcastMetrics, 5000);
+  // FIX: Set up periodic broadcasts with stored interval ID for cleanup
+  analyticsIntervalId = setInterval(broadcastMetrics, 5000);
+};
+
+/**
+ * FIX: Cleanup function to stop analytics interval during server shutdown
+ */
+export const stopAnalyticsInterval = (): void => {
+  if (analyticsIntervalId) {
+    clearInterval(analyticsIntervalId);
+    analyticsIntervalId = null;
+    logger.info('Analytics interval stopped');
+  }
 };
 
 // Collect current metrics from all sources

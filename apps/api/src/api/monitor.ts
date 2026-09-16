@@ -209,7 +209,7 @@ router.get('/circuit-breakers',
   standardRateLimit.middleware(),
   async (req, res) => {
     try {
-      const services = ['openai', 'anthropic', 'ollama', 'qwen'];
+      const services = ['openai', 'anthropic', 'ollama', 'llama'];
       const status: Record<string, any> = {};
 
       for (const service of services) {

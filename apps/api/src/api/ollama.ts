@@ -1,32 +1,194 @@
 import { Router, Request, Response } from 'express';
-import { aiProviderService } from '../services/unified/aiProviderService';
+import axios from 'axios';
+import { aiProviderService, AIProvider } from '../services/unified/aiProviderService';
+import type { OllamaValidationResult, OllamaDownloadInstructions } from '../types/ollama';
 
-// Create facades for ollama services
+// Ollama API endpoint
+const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
+
+// Create complete facades for ollama services
 const ollamaModelDetector = {
-  detectInstalledModels: () => aiProviderService.getProviderModels('ollama'),
-  checkModelStatus: (model: string) => aiProviderService.checkProviderModel('ollama', model)
+  async detectInstalledModels() {
+    try {
+      const response = await axios.get(`${OLLAMA_HOST}/api/tags`, { timeout: 5000 });
+      return response.data.models || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async checkModelStatus(model: string) {
+    try {
+      const response = await axios.get(`${OLLAMA_HOST}/api/tags`, { timeout: 5000 });
+      const models = response.data.models || [];
+      return models.some((m: any) => m.name === model || m.name.startsWith(model));
+    } catch {
+      return false;
+    }
+  },
+
+  async listAvailableModels() {
+    try {
+      const response = await axios.get(`${OLLAMA_HOST}/api/tags`, { timeout: 5000 });
+      return (response.data.models || []).map((m: any) => ({
+        name: m.name,
+        size: m.size,
+        modified_at: m.modified_at,
+        digest: m.digest
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  async detectLlamaModel() {
+    try {
+      const models = await this.listAvailableModels();
+      const llamaModels = models.filter((m: any) =>
+        m.name.includes('llama') || m.name.includes('codellama')
+      );
+      return {
+        detected: llamaModels.length > 0,
+        models: llamaModels,
+        recommended: llamaModels[0]?.name || null
+      };
+    } catch {
+      return { detected: false, models: [], recommended: null };
+    }
+  },
+
+  async validateModel(modelName: string): Promise<OllamaValidationResult> {
+    try {
+      const models = await this.listAvailableModels();
+      const found = models.find((m: any) => m.name === modelName || m.name.startsWith(modelName));
+      return {
+        valid: !!found,
+        model: found ? {
+          name: found.name,
+          model: found.name,
+          size: found.size || 0,
+          digest: found.digest || '',
+          modified_at: found.modified_at || ''
+        } : undefined,
+        error: found ? undefined : 'Model not found',
+        suggestion: found ? undefined : 'Run: ollama pull ' + modelName
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Validation failed'
+      };
+    }
+  },
+
+  getDownloadInstructions(modelSize: string): OllamaDownloadInstructions {
+    const modelMap: Record<string, string> = {
+      '7b': 'llama2',
+      '13b': 'llama2:13b',
+      '70b': 'llama2:70b',
+      'code': 'codellama',
+      'mistral': 'mistral'
+    };
+    const model = modelMap[modelSize] || 'llama2';
+    const sizeInfo = {
+      '70b': { disk: '39GB', memory: '48GB' },
+      '13b': { disk: '7GB', memory: '16GB' },
+      '7b': { disk: '3.8GB', memory: '8GB' },
+      'code': { disk: '3.8GB', memory: '8GB' },
+      'mistral': { disk: '4GB', memory: '8GB' }
+    };
+    const sizes = sizeInfo[modelSize as keyof typeof sizeInfo] || sizeInfo['7b'];
+    return {
+      command: `ollama pull ${model}`,
+      huggingFaceUrl: `https://ollama.ai/library/${model}`,
+      estimatedSize: sizes.disk,
+      requirements: {
+        diskSpace: sizes.disk,
+        memory: sizes.memory
+      }
+    };
+  },
+
+  async isOllamaRunning(): Promise<boolean> {
+    try {
+      const response = await axios.get(`${OLLAMA_HOST}/api/tags`, { timeout: 3000 });
+      return response.status === 200;
+    } catch {
+      return false;
+    }
+  },
+
+  async startOllama(): Promise<boolean> {
+    // Ollama typically runs as a service, we can only check if it's running
+    return this.isOllamaRunning();
+  },
+
+  getOllamaPath(): string {
+    return OLLAMA_HOST;
+  }
 };
 
 const ollamaService = {
-  getConfig: () => aiProviderService.getProviderConfig('ollama'),
-  validateConnection: () => aiProviderService.validateProvider('ollama'),
-  testAPI: () => aiProviderService.testProvider('ollama')
+  getConfig() {
+    return aiProviderService.getProviderConfig(AIProvider.OLLAMA);
+  },
+
+  getConfiguredModel(): string | null {
+    const config = aiProviderService.getProviderConfig(AIProvider.OLLAMA);
+    return config?.model || process.env.OLLAMA_MODEL || null;
+  },
+
+  async validateConnection(): Promise<boolean> {
+    return ollamaModelDetector.isOllamaRunning();
+  },
+
+  async testAPI(): Promise<boolean> {
+    return ollamaModelDetector.isOllamaRunning();
+  },
+
+  async initialize(): Promise<void> {
+    // No-op: Ollama doesn't need initialization
+  },
+
+  // Event emitter stub (not supported in this facade)
+  on(_event: string, _callback: (data: any) => void): void {
+    // Pull progress events are handled via SSE in the route
+  },
+
+  async pullModel(modelName: string): Promise<void> {
+    // Ollama pull is a long-running operation
+    // This would typically be handled via the ollama CLI
+    throw new Error('Model pulling should be done via CLI: ollama pull ' + modelName);
+  },
+
+  async createCompletion(prompt: string, options: { temperature?: number; maxTokens?: number }): Promise<string> {
+    const model = this.getConfiguredModel() || 'llama2';
+    const response = await axios.post(`${OLLAMA_HOST}/api/generate`, {
+      model,
+      prompt,
+      stream: false,
+      options: {
+        temperature: options.temperature || 0.7,
+        num_predict: options.maxTokens || 100
+      }
+    }, { timeout: 30000 });
+    return response.data.response;
+  }
 };
-import type { OllamaValidationResult, OllamaDownloadInstructions } from '../types/ollama';
 
 const router = Router();
 
 /**
- * Check if local Qwen model is available
+ * Check if local Llama model is available
  */
 router.get('/detect', async (req: Request, res: Response) => {
   try {
-    const detection = await ollamaModelDetector.detectQwenModel();
+    const detection = await ollamaModelDetector.detectLlamaModel();
     res.json(detection);
   } catch (error) {
-    console.error('Error detecting Qwen model:', error);
+    console.error('Error detecting Llama model:', error);
     res.status(500).json({
-      error: 'Failed to detect local Qwen model',
+      error: 'Failed to detect local Llama model',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
@@ -71,7 +233,7 @@ router.get('/models', async (req: Request, res: Response) => {
 });
 
 /**
- * Get download instructions for Qwen model
+ * Get download instructions for Llama model
  */
 router.get('/download-instructions', async (req: Request, res: Response) => {
   try {

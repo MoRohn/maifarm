@@ -29,6 +29,19 @@ interface BroadcastOptions {
   volatile?: boolean; // Don't wait for acknowledgment
   compress?: boolean;
   timeout?: number;
+  requiresAck?: boolean; // Require delivery acknowledgment
+  retryAttempts?: number; // Number of retry attempts for failed deliveries
+  sequenceNumber?: number; // For event ordering
+}
+
+interface DeliveryTracker {
+  eventId: string;
+  event: string;
+  data: any;
+  timestamp: number;
+  attemptCount: number;
+  delivered: Set<string>; // Socket IDs that acknowledged
+  failed: Set<string>; // Socket IDs that failed
 }
 
 interface MessageDeduplicationEntry {
@@ -51,13 +64,22 @@ export class UnifiedWebSocketManager extends EventEmitter {
   private readonly MESSAGE_CACHE_TTL = 5000; // 5 seconds
   private readonly DEDUP_WINDOW = 100; // 100ms window for duplicate detection
 
+  // Delivery tracking
+  private deliveryTrackers: Map<string, DeliveryTracker> = new Map();
+  private sequenceCounter = 0;
+  private readonly ACK_TIMEOUT = 5000; // 5 seconds for acknowledgment
+  private readonly MAX_RETRY_ATTEMPTS = 3;
+
   // Statistics
   private stats = {
-    messagessSent: 0,
+    messagesSent: 0,
     messagesDuplicated: 0,
     roomsCreated: 0,
     connectionsTotal: 0,
-    connectionsActive: 0
+    connectionsActive: 0,
+    messagesDelivered: 0,
+    messagesFailed: 0,
+    messagesRetried: 0
   };
 
   private constructor() {
@@ -146,6 +168,16 @@ export class UnifiedWebSocketManager extends EventEmitter {
         this.leaveRoom(socket, roomName);
       });
 
+      // State recovery on reconnection
+      socket.on('request:state-sync', async (data: { farmIds?: string[] }, callback) => {
+        await this.handleStateSync(socket, data, callback);
+      });
+
+      // ACK for critical events
+      socket.on('ack:event', (data: { eventId: string; success: boolean }) => {
+        this.handleEventAck(socket, data);
+      });
+
       socket.on('error', (error) => {
         logger.error(LogCategory.WEBSOCKET, `Socket error for ${socket.id}:`, error);
       });
@@ -200,6 +232,111 @@ export class UnifiedWebSocketManager extends EventEmitter {
 
     logger.debug(LogCategory.WEBSOCKET, `Client disconnected: ${socket.id}`);
     this.emit('client:disconnected', { socketId: socket.id, userId: socket.userId });
+  }
+
+  /**
+   * Handle state synchronization request from reconnected client
+   */
+  private async handleStateSync(
+    socket: AuthenticatedSocket,
+    data: { farmIds?: string[] },
+    callback?: Function
+  ): Promise<void> {
+    try {
+      logger.info(LogCategory.WEBSOCKET, `State sync requested by ${socket.id}`, data);
+
+      const farmStates: any[] = [];
+
+      // Get farm IDs from joined rooms if not provided
+      const farmIds = data.farmIds || Array.from(socket.joinedRooms || [])
+        .filter(room => room.startsWith('farm:'))
+        .map(room => room.replace('farm:', ''));
+
+      // Fetch current state for each farm
+      for (const farmId of farmIds) {
+        try {
+          // Import db here to avoid circular dependency
+          const { db } = await import('../database/connection');
+
+          const farmResult = await db.query(
+            'SELECT id, name, status, agents FROM farms WHERE id = $1',
+            [farmId]
+          );
+
+          if (farmResult.rows.length > 0) {
+            const farm = farmResult.rows[0];
+
+            // Get agents for this farm
+            const agentsResult = await db.query(
+              'SELECT id, name, status FROM agents WHERE farm_id = $1',
+              [farmId]
+            );
+
+            farmStates.push({
+              farmId: farm.id,
+              farmName: farm.name,
+              status: farm.status,
+              agents: agentsResult.rows.map((agent: any) => ({
+                id: agent.id,
+                name: agent.name,
+                status: agent.status
+              })),
+              timestamp: new Date().toISOString()
+            });
+          }
+        } catch (error) {
+          logger.error(LogCategory.WEBSOCKET, `Error fetching state for farm ${farmId}:`, error);
+        }
+      }
+
+      // Send state to client
+      const response = {
+        success: true,
+        farms: farmStates,
+        timestamp: new Date().toISOString(),
+        sequenceNumber: this.sequenceCounter
+      };
+
+      if (callback) {
+        callback(response);
+      } else {
+        socket.emit('state:synced', response);
+      }
+
+      logger.info(LogCategory.WEBSOCKET,
+        `State sync completed for ${socket.id}: ${farmStates.length} farms`);
+
+    } catch (error) {
+      logger.error(LogCategory.WEBSOCKET, `State sync failed for ${socket.id}:`, error);
+
+      if (callback) {
+        callback({
+          success: false,
+          error: error instanceof Error ? error.message : 'State sync failed'
+        });
+      }
+    }
+  }
+
+  /**
+   * Handle event acknowledgment from client
+   */
+  private handleEventAck(socket: AuthenticatedSocket, data: { eventId: string; success: boolean }): void {
+    const tracker = this.deliveryTrackers.get(data.eventId);
+
+    if (tracker) {
+      if (data.success) {
+        tracker.delivered.add(socket.id);
+        this.stats.messagesDelivered++;
+        logger.debug(LogCategory.WEBSOCKET,
+          `Event ${data.eventId} acknowledged by ${socket.id}`);
+      } else {
+        tracker.failed.add(socket.id);
+        this.stats.messagesFailed++;
+        logger.warn(LogCategory.WEBSOCKET,
+          `Event ${data.eventId} failed for ${socket.id}`);
+      }
+    }
   }
 
   /**
@@ -294,7 +431,7 @@ export class UnifiedWebSocketManager extends EventEmitter {
     // Emit message
     emitter.emit(event, data);
 
-    this.stats.messagessSent++;
+    this.stats.messagesSent++;
     logger.debug(LogCategory.WEBSOCKET, `Broadcast to room ${roomName}: ${event}`);
 
     return true;
@@ -322,7 +459,7 @@ export class UnifiedWebSocketManager extends EventEmitter {
       }
     }
 
-    this.stats.messagessSent += socketIds.length;
+    this.stats.messagesSent += socketIds.length;
   }
 
   /**
@@ -336,7 +473,7 @@ export class UnifiedWebSocketManager extends EventEmitter {
     }
 
     socket.emit(event, data);
-    this.stats.messagessSent++;
+    this.stats.messagesSent++;
     return true;
   }
 
@@ -352,14 +489,12 @@ export class UnifiedWebSocketManager extends EventEmitter {
       return;
     }
 
-    let emitter = this.io;
-
     if (options.volatile) {
-      emitter = emitter.volatile;
+      this.io.volatile.emit(event, data);
+    } else {
+      this.io.emit(event, data);
     }
-
-    emitter.emit(event, data);
-    this.stats.messagessSent++;
+    this.stats.messagesSent++;
   }
 
   /**
@@ -377,6 +512,171 @@ export class UnifiedWebSocketManager extends EventEmitter {
    */
   broadcastToFarm(farmId: string, event: string, data: any): void {
     this.broadcastToRoom(`farm:${farmId}`, event, data);
+  }
+
+  /**
+   * Broadcast with guaranteed delivery (requires acknowledgment)
+   * Used for critical events like farm:created, agent:registered, etc.
+   */
+  async broadcastWithAck(
+    event: string,
+    data: any,
+    options: {
+      room?: string;
+      farmId?: string;
+      userId?: string;
+      timeout?: number;
+      retryAttempts?: number;
+    } = {}
+  ): Promise<{
+    success: boolean;
+    delivered: number;
+    failed: number;
+    details: { socketId: string; acknowledged: boolean; error?: string }[];
+  }> {
+    if (!this.io) {
+      return { success: false, delivered: 0, failed: 0, details: [] };
+    }
+
+    const eventId = `${event}-${Date.now()}-${Math.random()}`;
+    const sequenceNum = ++this.sequenceCounter;
+    const timeout = options.timeout || this.ACK_TIMEOUT;
+    const maxRetries = options.retryAttempts || this.MAX_RETRY_ATTEMPTS;
+
+    // Add sequence number and eventId to data
+    const enhancedData = {
+      ...data,
+      _eventId: eventId,
+      _sequenceNumber: sequenceNum,
+      _timestamp: new Date().toISOString()
+    };
+
+    // Determine target sockets
+    let targetSockets: AuthenticatedSocket[] = [];
+
+    if (options.farmId) {
+      const roomName = `farm:${options.farmId}`;
+      const socketIds = this.roomMembers.get(roomName);
+      if (socketIds) {
+        targetSockets = Array.from(socketIds)
+          .map(id => this.clients.get(id))
+          .filter((s): s is AuthenticatedSocket => s !== undefined);
+      }
+    } else if (options.room) {
+      const socketIds = this.roomMembers.get(options.room);
+      if (socketIds) {
+        targetSockets = Array.from(socketIds)
+          .map(id => this.clients.get(id))
+          .filter((s): s is AuthenticatedSocket => s !== undefined);
+      }
+    } else if (options.userId) {
+      const socketIds = this.userSockets.get(options.userId);
+      if (socketIds) {
+        targetSockets = Array.from(socketIds)
+          .map(id => this.clients.get(id))
+          .filter((s): s is AuthenticatedSocket => s !== undefined);
+      }
+    } else {
+      // Broadcast to all
+      targetSockets = Array.from(this.clients.values());
+    }
+
+    if (targetSockets.length === 0) {
+      logger.warn(LogCategory.WEBSOCKET, `No target sockets for event ${event}`);
+      return { success: true, delivered: 0, failed: 0, details: [] };
+    }
+
+    // Track delivery
+    const tracker: DeliveryTracker = {
+      eventId,
+      event,
+      data: enhancedData,
+      timestamp: Date.now(),
+      attemptCount: 0,
+      delivered: new Set(),
+      failed: new Set()
+    };
+
+    this.deliveryTrackers.set(eventId, tracker);
+
+    // Send with acknowledgment
+    const deliveryPromises = targetSockets.map(async (socket) => {
+      let attempt = 0;
+      let acknowledged = false;
+      let lastError: string | undefined;
+
+      while (attempt < maxRetries && !acknowledged) {
+        try {
+          tracker.attemptCount++;
+
+          if (attempt > 0) {
+            this.stats.messagesRetried++;
+            logger.debug(LogCategory.WEBSOCKET,
+              `Retry ${attempt}/${maxRetries} for event ${event} to socket ${socket.id}`);
+          }
+
+          // Emit with timeout and callback
+          acknowledged = await new Promise<boolean>((resolve) => {
+            const timeoutHandle = setTimeout(() => resolve(false), timeout);
+
+            socket.emit(event, enhancedData, (ack: any) => {
+              clearTimeout(timeoutHandle);
+              resolve(ack === true || ack?.success === true);
+            });
+          });
+
+          if (acknowledged) {
+            tracker.delivered.add(socket.id);
+            this.stats.messagesDelivered++;
+            break;
+          } else {
+            lastError = 'Acknowledgment timeout';
+          }
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          logger.error(LogCategory.WEBSOCKET,
+            `Error sending event ${event} to socket ${socket.id}:`, error);
+        }
+
+        attempt++;
+
+        // Wait before retry
+        if (attempt < maxRetries && !acknowledged) {
+          await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+        }
+      }
+
+      if (!acknowledged) {
+        tracker.failed.add(socket.id);
+        this.stats.messagesFailed++;
+      }
+
+      return {
+        socketId: socket.id,
+        acknowledged,
+        error: lastError
+      };
+    });
+
+    const results = await Promise.all(deliveryPromises);
+
+    // Cleanup tracker after a delay
+    setTimeout(() => {
+      this.deliveryTrackers.delete(eventId);
+    }, 60000); // Keep for 1 minute
+
+    const delivered = results.filter(r => r.acknowledged).length;
+    const failed = results.filter(r => !r.acknowledged).length;
+
+    logger.info(LogCategory.WEBSOCKET,
+      `Event ${event} delivery: ${delivered}/${targetSockets.length} delivered, ${failed} failed`);
+
+    return {
+      success: failed === 0,
+      delivered,
+      failed,
+      details: results
+    };
   }
 
   /**
@@ -444,6 +744,15 @@ export class UnifiedWebSocketManager extends EventEmitter {
     // Clear message cache
     this.messageCache.clear();
 
+    // MEMORY LEAK FIX: Clear stale delivery trackers
+    const now = Date.now();
+    const staleThreshold = 120000; // 2 minutes
+    for (const [eventId, tracker] of this.deliveryTrackers.entries()) {
+      if (now - tracker.timestamp > staleThreshold) {
+        this.deliveryTrackers.delete(eventId);
+      }
+    }
+
     // Disconnect idle clients
     for (const [socketId, socket] of this.clients.entries()) {
       if (!socket.rooms || socket.rooms.size <= 1) {
@@ -497,6 +806,7 @@ export class UnifiedWebSocketManager extends EventEmitter {
     this.userSockets.clear();
     this.roomMembers.clear();
     this.messageCache.clear();
+    this.deliveryTrackers.clear(); // MEMORY LEAK FIX: Clear delivery trackers on shutdown
   }
 }
 

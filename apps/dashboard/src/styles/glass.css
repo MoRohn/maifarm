@@ -330,6 +330,36 @@
   }
 }
 
+/* iOS Safari Performance Optimization
+   Reduce blur intensity on touch devices to improve scrolling performance
+   While keeping visual fidelity intact */
+@media (pointer: coarse) {
+  :root {
+    --glass-blur: 8px;
+    --glass-blur-heavy: 12px;
+    --glass-blur-light: 6px;
+    --glass-saturation: 1.1;
+  }
+
+  .glass,
+  .glass-heavy,
+  .glass-subtle,
+  .glass-card,
+  .glass-panel,
+  .glass-modal {
+    /* Use GPU acceleration for smoother iOS scrolling */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  /* Disable hover transform on touch devices */
+  .glass:hover {
+    transform: translateZ(0);
+  }
+}
+
 /* Accessibility - ensure text contrast on glass surfaces */
 .glass-text-contrast {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);

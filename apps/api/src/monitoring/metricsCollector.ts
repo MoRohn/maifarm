@@ -1,4 +1,5 @@
 import { Registry, Counter, Gauge, Histogram, Summary, collectDefaultMetrics } from 'prom-client';
+import { logger, LogCategory } from '../services/ProductionLogger';
 
 // Create a custom registry
 export const metricsRegistry = new Registry();
@@ -41,6 +42,30 @@ export const websocketEventsTotal = new Counter({
   name: 'maifarm_websocket_events_total',
   help: 'Total number of WebSocket events',
   labelNames: ['event_type', 'direction'],
+  registers: [metricsRegistry]
+});
+
+export const authRegistrationsTotal = new Counter({
+  name: 'maifarm_auth_registrations_total',
+  help: 'Total number of authentication registrations partitioned by source and result',
+  labelNames: ['source', 'auth_mode', 'result'],
+  registers: [metricsRegistry]
+});
+
+// Latency summaries for key endpoints (p50/p95 monitoring)
+const endpointLatencySummary = new Summary({
+  name: 'maifarm_endpoint_latency_seconds',
+  help: 'Endpoint latency summary with key percentiles',
+  labelNames: ['endpoint', 'status_code'],
+  percentiles: [0.5, 0.95],
+  registers: [metricsRegistry]
+});
+
+const websocketHandshakeSummary = new Summary({
+  name: 'maifarm_websocket_handshake_seconds',
+  help: 'WebSocket handshake duration summary with key percentiles',
+  labelNames: ['namespace'],
+  percentiles: [0.5, 0.95],
   registers: [metricsRegistry]
 });
 
@@ -142,11 +167,41 @@ export function recordApiRequest(method: string, endpoint: string, statusCode: n
   apiResponseTimeHistogram.observe({ method, endpoint }, responseTime);
 }
 
+export function recordEndpointLatency(endpoint: string, statusCode: number, durationSeconds: number) {
+  endpointLatencySummary.observe({
+    endpoint,
+    status_code: statusCode.toString()
+  }, durationSeconds);
+
+  if (durationSeconds > 1.5) {
+    logger.warn(LogCategory.PERFORMANCE, 'Slow endpoint response detected', {
+      endpoint,
+      statusCode,
+      durationMs: Math.round(durationSeconds * 1000)
+    });
+  }
+}
+
+export function recordWebsocketHandshake(namespace: string, durationSeconds: number) {
+  websocketHandshakeSummary.observe({ namespace }, durationSeconds);
+
+  if (durationSeconds > 2) {
+    logger.warn(LogCategory.WEBSOCKET, 'Slow WebSocket handshake detected', {
+      namespace,
+      durationMs: Math.round(durationSeconds * 1000)
+    });
+  }
+}
+
 export function recordWebSocketEvent(eventType: string, direction: 'in' | 'out', messageSize?: number) {
   websocketEventsTotal.inc({ event_type: eventType, direction });
   if (messageSize !== undefined) {
     websocketMessageSizeHistogram.observe({ event_type: eventType, direction }, messageSize);
   }
+}
+
+export function recordAuthRegistration(source: string, authMode: string, result: string) {
+  authRegistrationsTotal.inc({ source, auth_mode: authMode, result });
 }
 
 export function updateActiveFarms(farms: Map<string, any>) {
@@ -198,6 +253,18 @@ export function updateSystemResources(cpuPercent: number, memoryPercent: number,
   systemResourcesGauge.set({ resource_type: 'cpu', unit: 'percent' }, cpuPercent);
   systemResourcesGauge.set({ resource_type: 'memory', unit: 'percent' }, memoryPercent);
   systemResourcesGauge.set({ resource_type: 'disk', unit: 'percent' }, diskPercent);
+}
+
+export async function getLatencySnapshot() {
+  const [endpointMetric, websocketMetric] = await Promise.all([
+    endpointLatencySummary.get(),
+    websocketHandshakeSummary.get()
+  ]);
+
+  return {
+    endpoints: endpointMetric.values,
+    websockets: websocketMetric.values
+  };
 }
 
 export function updateFarmEfficiency(farmId: string, efficiency: number) {

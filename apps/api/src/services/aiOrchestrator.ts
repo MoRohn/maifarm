@@ -7,7 +7,7 @@ import { costTrackingService } from './costTrackingService';
 
 /**
  * AI Orchestrator Service
- * Unified service for managing AI providers (Claude and Qwen)
+ * Unified service for managing AI providers (Claude and Llama)
  * Coordinates between farms, agents, and AI APIs
  */
 

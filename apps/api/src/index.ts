@@ -9,10 +9,45 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { v4 as uuidv4 } from 'uuid';
 // Import centralized configuration
-import { config, logConfiguration, validateConfiguration } from './config/index';
-import { logger } from './config/logging';
+import { config, logConfiguration, validateConfiguration } from './config/index.js';
+// Import production-grade logger
+import { logger, LogCategory, LogLevel } from './services/ProductionLogger.js';
 
-logger.info('SERVER', `🚀 Starting server in ${config.env} mode...`);
+// Configure logger based on environment
+if (process.env.NODE_ENV === 'production') {
+  logger.info(LogCategory.SYSTEM, 'Starting MaiFarm in production mode');
+} else {
+  logger.info(LogCategory.SYSTEM, 'Starting MaiFarm in development mode');
+}
+
+// Global error handlers for production stability
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  logger.fatal(LogCategory.SYSTEM, 'Unhandled Promise Rejection', {
+    reason: reason?.message || String(reason),
+    stack: reason?.stack,
+    promise: promise.toString()
+  });
+
+  // In production, attempt graceful shutdown
+  if (process.env.NODE_ENV === 'production') {
+    logger.error(LogCategory.SYSTEM, 'Initiating graceful shutdown due to unhandled rejection');
+    setTimeout(() => {
+      process.exit(1);
+    }, 5000);
+  }
+});
+
+process.on('uncaughtException', (error: Error) => {
+  logger.fatal(LogCategory.SYSTEM, 'Uncaught Exception', {
+    message: error.message,
+    stack: error.stack,
+    name: error.name
+  });
+
+  // Uncaught exceptions are more severe - exit immediately
+  logger.error(LogCategory.SYSTEM, 'Process terminating due to uncaught exception');
+  process.exit(1);
+});
 
 const validationResult = validateConfiguration();
 
@@ -24,7 +59,10 @@ if (!validationResult.success) {
     ? `${summary} Halting startup in test environment.`
     : `${summary} Exiting startup.`;
 
-  logger.error('CONFIG', exitMessage);
+  logger.fatal(LogCategory.CONFIG, exitMessage, {
+    errors: validationResult.errors,
+    issueCount
+  });
 
   if (process.env.NODE_ENV === 'test') {
     throw new Error([summary, ...validationResult.errors.map(err => `- ${err}`)].join('\n'));
@@ -36,8 +74,9 @@ if (!validationResult.success) {
 logConfiguration();
 
 // Import API routes
+// Apple Sign-In authentication (simplified, iOS-first)
 import authRouter from './api/auth';
-import usersRouter from './api/users';
+import userManagementRouter from './api/user-management'; // Enhanced multi-user admin system
 import agentsRouter from './api/agents';
 import farmsRouter from './api/farms';
 import tasksRouter from './api/tasks';
@@ -48,6 +87,7 @@ import harvestsRouter from './api/harvests';
 import goWildRouter from './routes/goWild';
 import seedsRouter from './api/seeds';
 import harvestRouter from './api/harvest';
+import incubationRouter from './api/incubation';
 import barnRouter from './api/barn';
 import barnCollectionRouter from './api/barnCollection';
 import maibarnRouter from './api/maibarn';
@@ -63,10 +103,15 @@ import costTrackingRouter from './api/costTracking';
 import ollamaRouter from './api/ollama';
 import openaiRouter from './api/openai';
 import farmersRouter from './api/farmers';
+import farmerGroupsRouter from './api/farmer-groups';
 import coordinationRouter from './api/coordination';
 import terminalRouter from './routes/terminal';
 import terminalTestRouter from './api/terminalTest';
 import terminalRefreshRouter from './api/terminal-refresh';
+import terminalHealthRouter from './api/terminal-health';
+import advancedTerminalRouter from './api/advanced-terminal';
+import terminalFixRouter from './api/terminal-fix';
+import universalTerminalFixRouter from './api/universal-terminal-fix';
 import websocketHealthRouter from './api/websocket-health';
 import xenosyncRouter from './api/xenosync';
 import apiKeysRouter from './api/apikeys';
@@ -74,6 +119,24 @@ import clientRouter from './api/client';
 import adminRouter from './api/admin';
 import settingsRouter from './api/settings';
 import chatRouter from './api/chat';
+import farmLifecycleMonitorRouter from './api/farm-lifecycle-monitor';
+import recoveryRouter from './api/recovery';
+import systemHealthRouter from './api/system-health';
+import aiEngineManagementRouter from './api/ai-engines';
+import enginesRouter from './api/engines';
+import enginesConfigRouter from './api/engines-config';
+import aiEnginesDeviceRouter from './api/ai-engines-device'; // Device-optimized AI engine endpoints for iOS
+import yieldRouter from './api/yield';
+import autoModelSetupRouter from './api/auto-model-setup';
+import auditRouter from './api/audit';
+import modelingRouter from './api/modeling'; // Model-First Reasoning + DEMOCRITUS Causal Models
+import thermalRouter from './api/thermal'; // Thermal monitoring and auto-adjustment
+import deviceHardwareRouter from './api/device-hardware'; // Device hardware detection and AI engine limits
+import assistantRouter from './api/assistant'; // Assistant agent nudge and session management
+import crossDeviceRouter from './api/cross-device'; // Cross-device sync and farm handoff for iOS/iMac ecosystem
+import contextMonitoringRouter from './api/context-monitoring'; // Context window monitoring and automated management
+import confidenzRouter from './api/confidenz'; // Confidence scoring for farm monitoring
+import pluginsRouter from './api/plugins'; // Blerbz plugins coordination (confidenz, continuez, planz)
 // import enhancementsRouter from './routes/enhancements'; // Disabled - enhancement service removed
 
 // Import middleware
@@ -82,6 +145,7 @@ import { monitoringMiddleware } from './middleware/monitoring';
 import { corsMiddleware, corsErrorHandler } from './middleware/cors';
 import { sanitizeAll } from './middleware/sanitizer';
 import { aiProxyMiddleware, proxyLoggingMiddleware } from './middleware/aiProxy';
+import { trackAICost } from './middleware/aiCostTracking';
 
 // Import database and WebSocket
 import { initializeDatabase, checkDatabaseHealth, closeDatabaseConnections } from './database/connection';
@@ -89,14 +153,24 @@ import WebSocketServer from './websocket/socketServer';
 import { websocketHub } from './services/unified/websocketHub';
 import { orchestrator } from './orchestrator';
 import { metricsCollector } from './monitoring/metricsCollector';
+import { startLatencyReporter } from './monitoring/latencyReporter';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const app = express();
+// Create app function for testing
+export function createApp() {
+  const app = express();
+  return app;
+}
+
+const app = createApp();
 const httpServer = createServer(app);
 
 // Initialize WebSocket server
 let wsServer: WebSocketServer;
+
+// Start background latency reporter for key endpoints
+startLatencyReporter();
 
 // Middleware
 app.use(helmet({
@@ -125,26 +199,41 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Replace morgan with our enhanced logger
+// REMOVED: Auth bypass mode - all users must authenticate properly
+
+// HTTP request logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
-  
+  const correlationId = (req.headers['x-correlation-id'] as string) || `req-${uuidv4().substring(0, 8)}`;
+
+  // Set correlation ID for this request
+  logger.setCorrelationId(correlationId);
+  res.setHeader('x-correlation-id', correlationId);
+
   // Capture the original end function
   const originalEnd = res.end;
-  
+
   res.end = function(...args: any[]) {
     // Calculate duration
     const duration = Date.now() - start;
-    
-    // Log the request using our enhanced logger
+
+    // Log the request using production logger
     logger.httpRequest(req.method, req.path, res.statusCode, duration);
-    
+
+    // Clear correlation ID after response
+    logger.clearCorrelationId();
+
     // Call the original end function
     originalEnd.apply(res, args);
   };
-  
+
   next();
 });
+
+// Apply rate limiting to all routes (DISABLED FOR DEVELOPMENT)
+// if (process.env.NODE_ENV === 'production') {
+//   app.use(apiRateLimits.global);
+// }
 
 // AI Provider proxy middleware
 app.use(aiProxyMiddleware);
@@ -157,6 +246,9 @@ app.use(sanitizeAll);
 app.use(monitoringMiddleware.request);
 app.use(monitoringMiddleware.performance(1000)); // 1 second threshold
 app.use(monitoringMiddleware.resource);
+
+// AI Cost tracking middleware
+app.use(trackAICost);
 
 
 // Integration with Builder coordination directory
@@ -185,8 +277,8 @@ async function watchCoordinationDirectory() {
         await updateActiveAgents();
       }
     });
-    
-    logger.info('COORD', `Watching coordination directory: ${COORDINATION_DIR}`);
+
+    logger.info(LogCategory.COORD, 'Watching coordination directory', { path: COORDINATION_DIR });
   } catch (error) {
     console.error('Error setting up coordination directory watch:', error);
   }
@@ -231,6 +323,12 @@ async function updateActiveAgents() {
 // Import health check router
 import healthzRouter from './api/healthz';
 
+// Swagger/OpenAPI Documentation
+import { setupSwagger } from './config/swagger.js';
+
+// Setup Swagger UI at /api-docs
+setupSwagger(app);
+
 // Health check endpoints - consolidated to single endpoint
 app.use('/health', healthzRouter);
 app.use('/healthz', healthzRouter);
@@ -243,7 +341,14 @@ app.use('/healthz', healthzRouter);
 // Health endpoint - using healthz router for all health checks
 app.use('/api/health', healthzRouter);
 app.use('/api/auth', authRouter);
-app.use('/api/users', usersRouter);
+app.use('/api/audit', auditRouter);
+/**
+ * User management API
+ * - Handles admin-facing user administration
+ * - Self-service registration routes live under /api/auth (see auth router)
+ * - Legacy /api/users endpoints are deprecated in favour of this router
+ */
+app.use('/api/users', userManagementRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/farms', farmsRouter);
 app.use('/api/tasks', tasksRouter);
@@ -329,6 +434,9 @@ app.use('/api/harvests', harvestsRouter);
 app.use('/api/go-wild', goWildRouter);
 app.use('/api/seeds', seedsRouter);
 app.use('/api/harvest', harvestRouter);
+app.use('/api/yield', yieldRouter);
+app.use('/api/modeling', modelingRouter); // Model-First Reasoning + DEMOCRITUS Causal Models
+app.use('/api/incubations', incubationRouter);
 app.use('/api/barn', barnRouter);
 app.use('/api/barn-collection', barnCollectionRouter);
 app.use('/api/maibarn', maibarnRouter);
@@ -343,6 +451,7 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 app.use('/api/farmers', farmersRouter);
+app.use('/api/farmer-groups', farmerGroupsRouter);
 app.use('/api/coordination', coordinationRouter);
 app.use('/api/workflow', workflowRouter);
 app.use('/api/yaml', yamlRouter);
@@ -351,20 +460,39 @@ app.use('/api/orchestrator', orchestratorRouter);
 app.use('/api/python-orchestrator', orchestratorProxyRouter);
 app.use('/api/providers', providersRouter);
 app.use('/api/cost-tracking', costTrackingRouter);
+app.use('/api/ai-engines', aiEngineManagementRouter);
+app.use('/api', aiEnginesDeviceRouter); // Device-optimized AI engine endpoints for iOS
+app.use('/api', enginesConfigRouter); // NEW: Unified engines configuration (/api/engines/:provider/configure and /api/engines/current)
+app.use('/api/engines', enginesRouter); // Existing engines endpoint (fallback)
 app.use('/api/ollama', ollamaRouter);
 app.use('/api/openai', openaiRouter);
 app.use('/api/terminal', terminalRouter);
 app.use('/api/terminal-test', terminalTestRouter);
 app.use('/api/terminal-refresh', terminalRefreshRouter);
-app.use('/api/websocket', websocketHealthRouter);
+app.use('/api/terminal-health', terminalHealthRouter);
+app.use('/api/terminal-fix', terminalFixRouter);
+app.use('/api/universal-terminal-fix', universalTerminalFixRouter);
+app.use('/api/advanced-terminal', advancedTerminalRouter);
+app.use('/api/websocket-health', websocketHealthRouter);
 app.use('/api/xenosync', xenosyncRouter);
 app.use('/api', apiKeysRouter);
 app.use('/api/client', clientRouter);
 app.use('/api/admin', adminRouter);
 // app.use('/api/enhancements', enhancementsRouter); // Disabled - enhancement service removed
 app.use('/api/settings', settingsRouter);
+app.use('/api/user-preferences', (await import('./api/user-preferences.js')).default);
 app.use('/api/chat', chatRouter);
-
+app.use('/api/farm-lifecycle', farmLifecycleMonitorRouter);
+app.use('/api/recovery', recoveryRouter);
+app.use('/api/system-health', systemHealthRouter);
+app.use('/api/auto-model-setup', autoModelSetupRouter);
+app.use('/api/thermal', thermalRouter); // Thermal monitoring and auto-adjustment
+app.use('/api/device-hardware', deviceHardwareRouter); // Device hardware detection and AI engine limits
+app.use('/api/assistant', assistantRouter); // Assistant agent nudge and session management for iOS
+app.use('/api/cross-device', crossDeviceRouter); // Cross-device sync and farm handoff for iOS/iMac ecosystem
+app.use('/api/context', contextMonitoringRouter); // Context window monitoring and automated management
+app.use('/api/confidenz', confidenzRouter); // Confidence scoring API (inference-confidenz)
+app.use('/api/plugins', pluginsRouter); // Blerbz plugins coordination (confidenz, continuez, planz)
 
 
 // Test routes for development
@@ -415,7 +543,7 @@ if (process.env.NODE_ENV === 'production') {
     res.json({
       name: 'MaiFarm API Server',
       version: '2.0.0',
-      status: 'running',
+      status: 'ok', // Changed from 'running' to 'ok' for standard health check
       message: 'API server is running. Visit http://localhost:3000 for the web interface.',
       endpoints: {
         health: '/health',
@@ -559,6 +687,33 @@ async function startServer() {
     } catch (error) {
       logger.warn('SERVICES', 'Tmux health monitor failed to start (non-critical):', error);
     }
+
+    // Initialize Farm Recovery Service for automatic orphaned farm recovery
+    try {
+      const { farmRecoveryService } = await import('./services/farmRecoveryService');
+      // Service auto-starts background monitoring on getInstance()
+      logger.info('SERVICES', '✅ Farm recovery service started - monitoring for stuck/orphaned farms every 2 minutes');
+    } catch (error) {
+      logger.warn('SERVICES', 'Farm recovery service failed to start (non-critical):', error);
+    }
+
+    // Initialize Automated Farm Recovery System (integrates with state machine)
+    try {
+      const { automatedFarmRecovery } = await import('./services/AutomatedFarmRecovery');
+      automatedFarmRecovery.startMonitoring();
+      logger.info('SERVICES', '✅ Automated farm recovery started - state-machine-integrated recovery every 2 minutes');
+    } catch (error) {
+      logger.warn('SERVICES', 'Automated farm recovery failed to start (non-critical):', error);
+    }
+
+    // Initialize Orphaned Session Recovery Service for tmux/DB desync fixes
+    try {
+      const { orphanedSessionRecoveryService } = await import('./services/OrphanedSessionRecoveryService');
+      // Service auto-starts scanning on getInstance(), scans every 2 minutes
+      logger.info('SERVICES', '✅ Orphaned session recovery service started - detecting orphaned tmux sessions every 2 minutes');
+    } catch (error) {
+      logger.warn('SERVICES', 'Orphaned session recovery service failed to start (non-critical):', error);
+    }
     
     // Initialize WebSocket server
     wsServer = new WebSocketServer(httpServer);
@@ -602,29 +757,48 @@ async function startServer() {
 
     // Initialize terminal stream coordinator for robust streaming
     try {
-      // Terminal stream service is a singleton that's already initialized
-      const { terminalStreamService } = await import('./services/terminalStreamService.js');
-      if (terminalStreamService) {
-        logger.info('SERVICES', '✅ Terminal stream coordinator initialized');
+      // Unified terminal stream service is a singleton that's already initialized
+      const { unifiedTerminalStreamService } = await import('./services/UnifiedTerminalStreamService.js');
+      if (unifiedTerminalStreamService) {
+        logger.info('SERVICES', '✅ Unified terminal stream coordinator initialized');
         // The service will use websocket for broadcasting via the websocketHub
       } else {
-        logger.warn('SERVICES', 'Terminal stream coordinator not available or not properly initialized');
+        logger.warn('SERVICES', 'Unified terminal stream coordinator not available or not properly initialized');
       }
     } catch (error) {
       logger.error('SERVICES', 'Failed to initialize terminal stream coordinator:', error);
     }
+
+    // Initialize DirectTerminalBroadcaster for immediate output streaming
+    try {
+      const { directTerminalBroadcaster } = await import('./services/DirectTerminalBroadcaster');
+      logger.info('SERVICES', '🚀 DirectTerminalBroadcaster initialized - IMMEDIATE streaming ready');
+    } catch (error) {
+      logger.error('SERVICES', 'Failed to initialize DirectTerminalBroadcaster:', error);
+    }
+
+    // Initialize DirectTerminalStreamer for simple, working terminal streaming
+    try {
+      const { directTerminalStreamer } = await import('./services/DirectTerminalStreamer');
+      logger.info('SERVICES', '🚀 DirectTerminalStreamer initialized - DIRECT terminal streaming');
+
+      // Manually trigger auto-discovery after a delay
+      setTimeout(async () => {
+        try {
+          await directTerminalStreamer.autoDiscoverSessions();
+          logger.info('SERVICES', '✅ DirectTerminalStreamer auto-discovery completed');
+        } catch (err) {
+          logger.error('SERVICES', 'Failed to auto-discover sessions:', err);
+        }
+      }, 5000); // Wait 5 seconds for server to fully initialize
+    } catch (error) {
+      logger.error('SERVICES', 'Failed to initialize DirectTerminalStreamer:', error);
+    }
     
-    // Temporarily disabling services to debug startup issue
-    // TODO: Re-enable after fixing startup hang
-
-    // // Initialize terminal streaming fix service for better output capture
-    // const { terminalStreamingFix } = await import('./services/terminalStreamingFix');
-    // logger.info('SERVICES', '✅ Terminal streaming fix service initialized');
-
-    // // Initialize harvest recovery service for automatic recovery
-    // const { harvestRecoveryService } = await import('./services/harvestRecoveryService');
-    // const { zombieFarmCleanupService } = await import('./services/zombieFarmCleanup');
-    // logger.info('SERVICES', '✅ Harvest recovery service initialized');
+    // Initialize harvest recovery and zombie cleanup services for automatic recovery
+    const { harvestRecoveryService } = await import('./services/harvestRecoveryService');
+    const { zombieFarmCleanupService } = await import('./services/zombieFarmCleanup');
+    logger.info('SERVICES', '✅ Harvest recovery and zombie cleanup services initialized');
 
     // Initialize memory manager for production stability
     const { memoryManager } = await import('./services/memoryManager');
@@ -636,19 +810,28 @@ async function startServer() {
     sessionCleanupService.startMonitoring(30 * 60 * 1000); // Cleanup every 30 minutes
     logger.info('SERVICES', '✅ Session cleanup service initialized');
 
-    // // Initialize background cleanup service for performance optimization
-    // const { backgroundCleanupService } = await import('./services/backgroundCleanupService');
-    // backgroundCleanupService.start();
-    // logger.info('SERVICES', '✅ Background cleanup service started (5min intervals)');
+    // Initialize background cleanup service for performance optimization
+    const { backgroundCleanupService } = await import('./services/backgroundCleanupService');
+    backgroundCleanupService.start();
+    logger.info('SERVICES', '✅ Background cleanup service started (5min intervals)');
 
-    // // Initialize XenoSync performance optimizer
-    // const { xenoSyncPerformanceOptimizer } = await import('./services/xenosyncPerformanceOptimizer');
-    // xenoSyncPerformanceOptimizer.startMonitoring();
-    // logger.info('SERVICES', '✅ XenoSync performance optimizer started');
+    // Initialize XenoSync performance optimizer
+    const { xenoSyncPerformanceOptimizer } = await import('./services/xenosyncPerformanceOptimizer');
+    xenoSyncPerformanceOptimizer.startMonitoring();
+    logger.info('SERVICES', '✅ XenoSync performance optimizer started');
 
-    // // Initialize tmux connection pool for efficient command execution
-    // const { tmuxConnectionPool } = await import('./services/tmuxConnectionPool');
-    // logger.info('SERVICES', '✅ Tmux connection pool initialized');
+    // Initialize Automated Context Management Service
+    try {
+      const { automatedContextManagementService } = await import('./services/AutomatedContextManagementService');
+      await automatedContextManagementService.start();
+      logger.info('SERVICES', '✅ Automated context management service started - monitoring context windows');
+    } catch (error) {
+      logger.warn('SERVICES', 'Automated context management service failed to start (non-critical):', error);
+    }
+
+    // Initialize tmux connection pool for efficient command execution
+    const { tmuxConnectionPool } = await import('./services/tmuxConnectionPool');
+    logger.info('SERVICES', '✅ Tmux connection pool initialized');
     
     // Enhancement services disabled - was causing excessive provider degradation warnings
     // const { enhancementIntegration } = await import('./services/enhancementIntegration');
@@ -689,6 +872,20 @@ async function startServer() {
     const { AnalyticsWebSocketHandler } = await import('./websocket/analyticsHandler');
     const analyticsHandler = new AnalyticsWebSocketHandler(wsServer.io);
     logger.info('WEBSOCKET', '✅ Analytics handler initialized');
+
+    // Initialize Thermal Monitoring Service and WebSocket handlers
+    try {
+      const { thermalMonitoringService } = await import('./services/ThermalMonitoringService');
+      await thermalMonitoringService.initialize();
+      logger.info('SERVICES', '✅ Thermal monitoring service initialized');
+
+      // Initialize thermal WebSocket handlers
+      const { initializeThermalHandlers } = await import('./websocket/thermalHandlers');
+      initializeThermalHandlers(wsServer.io);
+      logger.info('WEBSOCKET', '✅ Thermal WebSocket handlers initialized');
+    } catch (error) {
+      logger.warn('SERVICES', 'Thermal monitoring service failed to start (non-critical):', error);
+    }
     
     // Note: metricsCollector doesn't emit events
     // Metrics are pulled via getCurrentMetrics() when needed
@@ -701,6 +898,71 @@ async function startServer() {
       }
     });
     
+    // Display enhanced startup logo and instructions
+    const displayStartupBanner = () => {
+      const green = '\x1b[32m';
+      const yellow = '\x1b[33m';
+      const cyan = '\x1b[36m';
+      const bold = '\x1b[1m';
+      const reset = '\x1b[0m';
+      const frontendPort = process.env.VITE_PORT || '3000';
+
+      console.log('\n');
+      console.log(green + bold + '╔═══════════════════════════════════════════════════════════════════════════╗' + reset);
+      console.log(green + bold + '║                                                                           ' + reset + yellow + '░' + reset);
+      console.log(green + bold + '║  ' + reset + cyan + '███╗   ███╗ █████╗ ██╗███████╗ █████╗ ██████╗ ███╗   ███╗' + reset + '                ' + yellow + '░░' + reset);
+      console.log(green + bold + '║  ' + reset + cyan + '████╗ ████║██╔══██╗██║██╔════╝██╔══██╗██╔══██╗████╗ ████║' + reset + '                ' + yellow + '░░░' + reset);
+      console.log(green + bold + '║  ' + reset + cyan + '██╔████╔██║███████║██║█████╗  ███████║██████╔╝██╔████╔██║' + reset + '                ' + yellow + '░░░░' + reset);
+      console.log(green + bold + '║  ' + reset + cyan + '██║╚██╔╝██║██╔══██║██║██╔══╝  ██╔══██║██╔══██╗██║╚██╔╝██║' + reset + '                ' + green + '▓▓▓▓▓🚜' + reset);
+      console.log(green + bold + '║  ' + reset + cyan + '██║ ╚═╝ ██║██║  ██║██║██║     ██║  ██║██║  ██║██║ ╚═╝ ██║' + reset + '                ' + green + '▓▓▓▓' + reset);
+      console.log(green + bold + '║  ' + reset + cyan + '╚═╝     ╚═╝╚═╝  ╚═╝╚═╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝' + reset + '                ' + green + '▓▓▓' + reset);
+      console.log(green + bold + '║                                                                           ' + reset + green + '▓▓' + reset);
+      console.log(green + bold + '║  ' + reset + yellow + '🌾  Multi-Agent Intelligence Farm - AI Orchestration Platform' + reset + '            ' + green + '▓' + reset);
+      console.log(green + bold + '║                                                                           ║' + reset);
+      console.log(green + bold + '╚═══════════════════════════════════════════════════════════════════════════╝' + reset);
+      console.log('');
+      console.log(bold + '  🚀  Quick Start Commands:' + reset);
+      console.log('');
+      console.log(cyan + '     Dashboard:' + reset + '         http://localhost:' + frontendPort);
+      console.log(cyan + '     API Health:' + reset + '        curl http://localhost:' + PORT + '/api/health');
+      console.log(cyan + '     List Farms:' + reset + '        curl http://localhost:' + PORT + '/api/farms');
+      console.log('');
+      console.log(bold + '  📖  API Endpoints:' + reset);
+      console.log('');
+      console.log(green + '     POST' + reset + '   /api/farms' + yellow + '                    ' + reset + '→ Create new farm');
+      console.log(green + '     POST' + reset + '   /api/farms/:id/launch' + yellow + '         ' + reset + '→ Launch farm agents');
+      console.log(green + '     POST' + reset + '   /api/farms/:id/recover' + yellow + '        ' + reset + '→ Recover stuck farm');
+      console.log(green + '     GET' + reset + '    /api/farms/:id/health' + yellow + '         ' + reset + '→ Check farm health');
+      console.log(green + '     GET' + reset + '    /api/harvests' + yellow + '                 ' + reset + '→ View farm outputs');
+      console.log('');
+      console.log(bold + '  🌱  Farm URLs:' + reset);
+      console.log('');
+      console.log('     All farm operations now return a ' + green + 'farmUrl' + reset + ' for easy access!');
+      console.log('     Example: ' + cyan + 'http://localhost:' + frontendPort + '/farm/{farmId}' + reset);
+      console.log('');
+      console.log(bold + '  🖥️   MaiFarm CLI:' + reset);
+      console.log('');
+      console.log(cyan + '     farm' + reset + '              → Open web dashboard');
+      console.log(cyan + '     farm cli' + reset + '          → Command-line interface');
+      console.log('');
+      console.log(bold + '  📋  Common CLI Commands:' + reset);
+      console.log('');
+      console.log(green + '     farm create' + reset + ' <name>     → Create new farm');
+      console.log(green + '     farm list' + reset + '              → List all farms');
+      console.log(green + '     farm watch' + reset + ' <id>        → Watch farm progress');
+      console.log(green + '     farm harvest' + reset + ' <id>      → Harvest results');
+      console.log(green + '     farm quick' + reset + ' "task"      → 5-minute sprint');
+      console.log(green + '     farm wild' + reset + ' "goal"       → Autonomous mode');
+      console.log('');
+      console.log('     For complete CLI help: ' + cyan + 'farm help' + reset);
+      console.log('');
+      console.log(bold + '  📚  Documentation:' + reset + '    See CLAUDE.md for complete guide');
+      console.log('');
+      console.log(green + '═══════════════════════════════════════════════════════════════════════════' + reset);
+      console.log('');
+    };
+
+    // Banner will be displayed after all initialization completes
     logger.info('SERVER', `About to call httpServer.listen on port ${PORT}...`);
     httpServer.listen(PORT, '0.0.0.0', async () => {
       logger.info('SERVER', `🌱 MaiFarm server running at http://localhost:${PORT}`);
@@ -754,9 +1016,13 @@ async function startServer() {
       }, 1000); // Wait 1 second for services to initialize
       
       // Start background tasks
-      // Disabled due to missing coordinationService.getActiveAgents() method
-      // watchCoordinationDirectory();
-      // updateActiveAgents();
+      try {
+        watchCoordinationDirectory();
+        await updateActiveAgents();
+        logger.info(LogCategory.COORD, '✅ Coordination directory monitoring enabled');
+      } catch (error) {
+        logger.warn(LogCategory.COORD, 'Failed to initialize coordination monitoring:', error);
+      }
       
       // Initialize harvest session broadcaster for real-time updates
       const { harvestSessionBroadcaster } = await import('./services/harvestSessionBroadcaster');
@@ -787,7 +1053,14 @@ async function startServer() {
       }, 30);
       
       logger.info('SERVICES', '✅ Memory manager initialized and monitoring');
-      
+
+      // Display startup banner AFTER all initialization is complete
+      // Delay to ensure all async log messages have been written
+      // DirectTerminalStreamer auto-discovery completes at 5s, so wait 6s
+      setTimeout(() => {
+        displayStartupBanner();
+      }, 6000); // 6 second delay after all services initialized
+
     });
   } catch (error) {
     console.error('Failed to start server:', error);
@@ -923,6 +1196,33 @@ const serviceShutdown = async (signal: string) => {
     logger.error('TERMINAL', 'Error stopping terminal stream service:', error);
   }
   
+  // Stop thermal monitoring service
+  try {
+    const { thermalMonitoringService } = await import('./services/ThermalMonitoringService');
+    await thermalMonitoringService.shutdown();
+    logger.info('THERMAL', 'Thermal monitoring service stopped');
+  } catch (error) {
+    logger.error('THERMAL', 'Error stopping thermal monitoring service:', error);
+  }
+
+  // FIX: Stop analytics interval to prevent zombie intervals
+  try {
+    const { stopAnalyticsInterval } = await import('./websocket/analyticsHandlers');
+    stopAnalyticsInterval();
+    logger.info('ANALYTICS', 'Analytics interval stopped');
+  } catch (error) {
+    logger.error('ANALYTICS', 'Error stopping analytics interval:', error);
+  }
+
+  // Stop automated context management service
+  try {
+    const { automatedContextManagementService } = await import('./services/AutomatedContextManagementService');
+    automatedContextManagementService.stop();
+    logger.info('CONTEXT', 'Automated context management service stopped');
+  } catch (error) {
+    logger.error('CONTEXT', 'Error stopping automated context management service:', error);
+  }
+
   // Close database connections
   try {
     await closeDatabaseConnections();

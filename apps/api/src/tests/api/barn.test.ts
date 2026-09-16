@@ -1,15 +1,34 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
-import request from 'supertest';
-import { Server } from 'http';
-import app from '../test-app';
-import { barnService } from '../services/unified/barnService';
-import { harvestService } from '../services/unified/harvestService';
-import { BarnItem, BarnFolder, BarnStats } from '../../../src/types/barn';
-import { HarvestStatus } from '../../../src/types/harvest';
+
+const request = require('supertest');
 
 // Mock the services
-jest.mock('../../services/barnService');
-jest.mock('../../services/harvestService');
+const mockedBarnService = {
+  getStats: jest.fn(),
+  findAll: jest.fn(),
+  findById: jest.fn(),
+  storeHarvest: jest.fn(),
+  updateItem: jest.fn(),
+  useItem: jest.fn(),
+  deleteItem: jest.fn(),
+  bulkDelete: jest.fn(),
+  getFolders: jest.fn(),
+  createFolder: jest.fn(),
+  createSeedFromItem: jest.fn()
+};
+
+const mockedHarvestService = {
+  getHarvestById: jest.fn()
+};
+
+jest.mock('../../services/unified/barnService', () => ({
+  barnService: mockedBarnService
+}));
+
+jest.mock('../../services/unified/harvestService', () => ({
+  harvestService: mockedHarvestService
+}));
+
 jest.mock('../../utils/logger', () => ({
   logger: {
     error: jest.fn(),
@@ -19,29 +38,17 @@ jest.mock('../../utils/logger', () => ({
   }
 }));
 
-const mockedBarnService = jest.mocked(barnService);
-const mockedHarvestService = jest.mocked(harvestService);
+let app: any;
 
 describe('Barn API Endpoints', () => {
-  let server: Server;
-  let serverPort: number;
-  let baseURL: string;
-
   beforeAll(async () => {
-    // Start server on random port
-    await new Promise<void>((resolve) => {
-      server = app.listen(0, () => {
-        const address = server.address();
-        serverPort = typeof address === 'object' ? address.port : 3000;
-        baseURL = `http://localhost:${serverPort}`;
-        resolve();
-      });
-    });
+    const appModule = await import('../test-app');
+    app = appModule.default;
   });
 
   afterAll(async () => {
     await new Promise<void>((resolve) => {
-      server.close(() => resolve());
+      setImmediate(resolve);
     });
   });
 
@@ -51,7 +58,7 @@ describe('Barn API Endpoints', () => {
 
   describe('GET /api/barn/stats', () => {
     it('should return barn statistics successfully', async () => {
-      const mockStats: BarnStats = {
+      const mockStats = {
         totalItems: 42,
         itemsByType: {
           harvest: 20,
@@ -62,11 +69,11 @@ describe('Barn API Endpoints', () => {
         totalSize: 1024 * 1024 * 50, // 50MB
         lastUpdated: new Date().toISOString(),
         topCategories: ['AI Prompts', 'Templates', 'Documentation']
-      };
+      } as any;
 
       mockedBarnService.getStats.mockResolvedValue(mockStats);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/stats')
         .expect(200);
 
@@ -77,7 +84,7 @@ describe('Barn API Endpoints', () => {
     it('should handle errors when getting stats', async () => {
       mockedBarnService.getStats.mockRejectedValue(new Error('Database error'));
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/stats')
         .expect(500);
 
@@ -88,7 +95,7 @@ describe('Barn API Endpoints', () => {
   });
 
   describe('GET /api/barn/items', () => {
-    const mockItems: BarnItem[] = [
+    const mockItems = [
       {
         id: 'item-1',
         name: 'Test Harvest',
@@ -125,12 +132,12 @@ describe('Barn API Endpoints', () => {
         lastUsed: new Date().toISOString(),
         useCount: 5
       }
-    ];
+    ] as any[];
 
     it('should return all barn items without filters', async () => {
       mockedBarnService.findAll.mockResolvedValue(mockItems);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items')
         .expect(200);
 
@@ -147,7 +154,7 @@ describe('Barn API Endpoints', () => {
     it('should filter barn items by type', async () => {
       mockedBarnService.findAll.mockResolvedValue([mockItems[0]]);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items?type=harvest')
         .expect(200);
 
@@ -164,7 +171,7 @@ describe('Barn API Endpoints', () => {
     it('should filter barn items by tags', async () => {
       mockedBarnService.findAll.mockResolvedValue([mockItems[0]]);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items?tags=test,sample')
         .expect(200);
 
@@ -181,7 +188,7 @@ describe('Barn API Endpoints', () => {
     it('should search barn items', async () => {
       mockedBarnService.findAll.mockResolvedValue([mockItems[1]]);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items?search=documentation')
         .expect(200);
 
@@ -198,7 +205,7 @@ describe('Barn API Endpoints', () => {
     it('should handle errors when getting items', async () => {
       mockedBarnService.findAll.mockRejectedValue(new Error('Database error'));
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items')
         .expect(500);
 
@@ -209,7 +216,7 @@ describe('Barn API Endpoints', () => {
   });
 
   describe('GET /api/barn/items/:id', () => {
-    const mockItem: BarnItem = {
+    const mockItem = {
       id: 'item-1',
       name: 'Test Harvest',
       description: 'A test harvest item',
@@ -224,12 +231,12 @@ describe('Barn API Endpoints', () => {
       updatedAt: new Date().toISOString(),
       lastUsed: null,
       useCount: 0
-    };
+    } as any;
 
     it('should return a specific barn item', async () => {
       mockedBarnService.findById.mockResolvedValue(mockItem);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items/item-1')
         .expect(200);
 
@@ -240,7 +247,7 @@ describe('Barn API Endpoints', () => {
     it('should return 404 when item not found', async () => {
       mockedBarnService.findById.mockResolvedValue(null);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items/non-existent')
         .expect(404);
 
@@ -252,7 +259,7 @@ describe('Barn API Endpoints', () => {
     it('should handle errors when getting item', async () => {
       mockedBarnService.findById.mockRejectedValue(new Error('Database error'));
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/items/item-1')
         .expect(500);
 
@@ -266,14 +273,14 @@ describe('Barn API Endpoints', () => {
     const mockHarvest = {
       id: 'harvest-1',
       farmId: 'farm-1',
-      status: 'ready' as HarvestStatus,
+        status: 'ready',
       tasks: [],
       outputs: {},
       createdAt: new Date().toISOString(),
       completedAt: new Date().toISOString()
     };
 
-    const mockBarnItem: BarnItem = {
+    const mockBarnItem = {
       id: 'item-1',
       name: 'New Harvest',
       description: 'A newly stored harvest',
@@ -288,12 +295,12 @@ describe('Barn API Endpoints', () => {
       updatedAt: new Date().toISOString(),
       lastUsed: null,
       useCount: 0
-    };
+    } as any;
 
     it('should store harvest in barn successfully', async () => {
       mockedBarnService.storeHarvest.mockResolvedValue(mockBarnItem);
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/store')
         .send({
           harvestId: 'harvest-1',
@@ -318,7 +325,7 @@ describe('Barn API Endpoints', () => {
     });
 
     it('should return 400 when harvestId is missing', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/store')
         .send({
           name: 'New Harvest',
@@ -335,7 +342,7 @@ describe('Barn API Endpoints', () => {
     it('should return 404 when harvest not found', async () => {
       mockedBarnService.storeHarvest.mockRejectedValue(new Error('Harvest not found'));
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/store')
         .send({
           harvestId: 'non-existent',
@@ -351,7 +358,7 @@ describe('Barn API Endpoints', () => {
     it('should return 400 when harvest is not ready', async () => {
       mockedBarnService.storeHarvest.mockRejectedValue(new Error('Harvest is not ready for storage'));
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/store')
         .send({
           harvestId: 'harvest-1',
@@ -366,7 +373,7 @@ describe('Barn API Endpoints', () => {
   });
 
   describe('PUT /api/barn/items/:id', () => {
-    const mockItem: BarnItem = {
+    const mockItem = {
       id: 'item-1',
       name: 'Updated Harvest',
       description: 'An updated harvest item',
@@ -381,12 +388,12 @@ describe('Barn API Endpoints', () => {
       updatedAt: new Date().toISOString(),
       lastUsed: null,
       useCount: 0
-    };
+    } as any;
 
     it('should update barn item successfully', async () => {
       mockedBarnService.updateItem.mockResolvedValue(mockItem);
 
-      const response = await request(server)
+      const response = await request(app)
         .put('/api/barn/items/item-1')
         .send({
           name: 'Updated Harvest',
@@ -408,7 +415,7 @@ describe('Barn API Endpoints', () => {
     it('should update only provided fields', async () => {
       mockedBarnService.updateItem.mockResolvedValue(mockItem);
 
-      const response = await request(server)
+      const response = await request(app)
         .put('/api/barn/items/item-1')
         .send({
           name: 'Updated Harvest'
@@ -424,7 +431,7 @@ describe('Barn API Endpoints', () => {
     it('should return 404 when item not found', async () => {
       mockedBarnService.updateItem.mockRejectedValue(new Error('Barn item not found'));
 
-      const response = await request(server)
+      const response = await request(app)
         .put('/api/barn/items/non-existent')
         .send({
           name: 'Updated Harvest'
@@ -438,7 +445,7 @@ describe('Barn API Endpoints', () => {
   });
 
   describe('POST /api/barn/items/:id/use', () => {
-    const mockItem: BarnItem = {
+    const mockItem = {
       id: 'item-1',
       name: 'Test Harvest',
       description: 'A test harvest item',
@@ -453,12 +460,12 @@ describe('Barn API Endpoints', () => {
       updatedAt: new Date().toISOString(),
       lastUsed: new Date().toISOString(),
       useCount: 1
-    };
+    } as any;
 
     it('should mark barn item as used', async () => {
       mockedBarnService.useItem.mockResolvedValue(mockItem);
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/items/item-1/use')
         .expect(200);
 
@@ -471,7 +478,7 @@ describe('Barn API Endpoints', () => {
     it('should return 404 when item not found', async () => {
       mockedBarnService.useItem.mockRejectedValue(new Error('Barn item not found'));
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/items/non-existent/use')
         .expect(404);
 
@@ -485,7 +492,7 @@ describe('Barn API Endpoints', () => {
     it('should delete barn item successfully', async () => {
       mockedBarnService.deleteItem.mockResolvedValue(undefined);
 
-      await request(server)
+      await request(app)
         .delete('/api/barn/items/item-1')
         .expect(204);
 
@@ -495,7 +502,7 @@ describe('Barn API Endpoints', () => {
     it('should return 404 when item not found', async () => {
       mockedBarnService.deleteItem.mockRejectedValue(new Error('Barn item not found'));
 
-      const response = await request(server)
+      const response = await request(app)
         .delete('/api/barn/items/non-existent')
         .expect(404);
 
@@ -506,7 +513,7 @@ describe('Barn API Endpoints', () => {
   });
 
   describe('GET /api/barn/folders', () => {
-    const mockFolders: BarnFolder[] = [
+    const mockFolders = [
       {
         id: 'folder-1',
         name: 'Templates',
@@ -525,12 +532,12 @@ describe('Barn API Endpoints', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
-    ];
+    ] as any[];
 
     it('should return all folders', async () => {
       mockedBarnService.getFolders.mockResolvedValue(mockFolders);
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/folders')
         .expect(200);
 
@@ -541,7 +548,7 @@ describe('Barn API Endpoints', () => {
     it('should handle errors when getting folders', async () => {
       mockedBarnService.getFolders.mockRejectedValue(new Error('Database error'));
 
-      const response = await request(server)
+      const response = await request(app)
         .get('/api/barn/folders')
         .expect(500);
 
@@ -552,7 +559,7 @@ describe('Barn API Endpoints', () => {
   });
 
   describe('POST /api/barn/folders', () => {
-    const mockFolder: BarnFolder = {
+    const mockFolder = {
       id: 'folder-3',
       name: 'New Folder',
       description: 'A new folder',
@@ -560,12 +567,12 @@ describe('Barn API Endpoints', () => {
       itemCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    };
+    } as any;
 
     it('should create new folder successfully', async () => {
       mockedBarnService.createFolder.mockResolvedValue(mockFolder);
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/folders')
         .send({
           name: 'New Folder',
@@ -583,7 +590,7 @@ describe('Barn API Endpoints', () => {
     });
 
     it('should return 400 when folder name is missing', async () => {
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/folders')
         .send({
           description: 'A new folder'
@@ -609,7 +616,7 @@ agents:
     it('should create seed from barn item', async () => {
       mockedBarnService.createSeedFromItem.mockResolvedValue(mockYaml);
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/items/item-1/to-seed')
         .expect(200);
 
@@ -620,7 +627,7 @@ agents:
     it('should return 404 when item not found', async () => {
       mockedBarnService.createSeedFromItem.mockRejectedValue(new Error('Barn item not found'));
 
-      const response = await request(server)
+      const response = await request(app)
         .post('/api/barn/items/non-existent/to-seed')
         .expect(404);
 

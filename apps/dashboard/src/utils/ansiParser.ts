@@ -1,7 +1,51 @@
 /**
  * ANSI Escape Code Parser
  * Converts ANSI escape sequences to clean text or HTML with proper styling
+ *
+ * PERFORMANCE: Includes LRU cache for parsed HTML to avoid redundant processing
  */
+
+// PERFORMANCE FIX: LRU Cache for parsed ANSI content
+class LRUCache<K, V> {
+  private maxSize: number;
+  private cache: Map<K, V>;
+
+  constructor(maxSize: number = 1000) {
+    this.maxSize = maxSize;
+    this.cache = new Map();
+  }
+
+  get(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined;
+    // Move to end (most recently used)
+    const value = this.cache.get(key)!;
+    this.cache.delete(key);
+    this.cache.set(key, value);
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      // Remove oldest entry (first in map)
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+    this.cache.set(key, value);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+// Global cache instances for performance
+const parseHtmlCache = new LRUCache<string, string>(2000);
+const cleanOutputCache = new LRUCache<string, string>(2000);
+const stripAnsiCache = new LRUCache<string, string>(2000);
 
 export interface AnsiStyle {
   bold?: boolean;
@@ -67,10 +111,15 @@ const ANSI_BG_COLORS: Record<number, string> = {
 export class AnsiParser {
   /**
    * Remove all ANSI escape codes from text
+   * PERFORMANCE: Uses LRU cache to avoid reprocessing same content
    */
   static stripAnsi(text: string): string {
+    // Check cache first
+    const cached = stripAnsiCache.get(text);
+    if (cached !== undefined) return cached;
+
     // Remove all ANSI escape sequences
-    return text
+    const result = text
       // Remove CSI sequences (including 256-color codes)
       .replace(/\x1b\[[0-9;]*m/g, '')
       // Remove OSC sequences
@@ -89,12 +138,21 @@ export class AnsiParser {
       .replace(/[┌─┐│└┘├┤┬┴┼╭╮╰╯]/g, '')
       // Remove other control characters except newline and tab
       .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
+
+    // Cache result for future lookups
+    stripAnsiCache.set(text, result);
+    return result;
   }
 
   /**
    * Parse ANSI codes and convert to HTML with inline styles
+   * PERFORMANCE: Uses LRU cache to avoid reprocessing same content
    */
   static parseToHtml(text: string): string {
+    // Check cache first
+    const cached = parseHtmlCache.get(text);
+    if (cached !== undefined) return cached;
+
     // First, strip problematic control characters but keep ANSI codes
     const cleanText = text
       .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1A\x1C-\x1F\x7F]/g, '');
@@ -142,7 +200,10 @@ export class AnsiParser {
       html += '</span>';
     }
 
-    return html || this.escapeHtml(this.stripAnsi(text));
+    const result = html || this.escapeHtml(this.stripAnsi(text));
+    // Cache result for future lookups
+    parseHtmlCache.set(text, result);
+    return result;
   }
 
   /**
@@ -295,9 +356,14 @@ export class AnsiParser {
   /**
    * Clean terminal output for display
    * Removes cursor movements, clear commands, and other terminal control sequences
+   * PERFORMANCE: Uses LRU cache to avoid reprocessing same content
    */
   static cleanTerminalOutput(text: string): string {
-    return text
+    // Check cache first
+    const cached = cleanOutputCache.get(text);
+    if (cached !== undefined) return cached;
+
+    const result = text
       // First remove complete ANSI escape sequences
       .replace(/\x1b\[[0-9;]*m/g, '') // Color codes
       .replace(/\x1b\[[0-9]*[A-Z]/gi, '') // Cursor movement
@@ -331,6 +397,10 @@ export class AnsiParser {
       .replace(/[ \t]+$/gm, '') // Remove trailing whitespace from lines
       .replace(/^[ \t]+$/gm, '') // Remove whitespace-only lines
       .trim(); // Remove leading/trailing whitespace
+
+    // Cache result for future lookups
+    cleanOutputCache.set(text, result);
+    return result;
   }
   
   /**

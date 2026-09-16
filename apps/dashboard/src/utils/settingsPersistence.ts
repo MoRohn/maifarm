@@ -1,4 +1,5 @@
-import { AgentConfiguration } from '@/components/Settings/AgentSettings';
+import { AgentConfiguration } from '@/types/agentSettings';
+import { safeStorage } from './safeStorage';
 
 const STORAGE_KEYS = {
   AGENT_CONFIG: 'maifarm_agent_config',
@@ -44,23 +45,14 @@ export interface UserPreferences {
 class SettingsPersistence {
   /**
    * Agent Configuration
+   * Uses safeStorage for iOS private browsing compatibility
    */
   saveAgentSettings(config: AgentConfiguration): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.AGENT_CONFIG, JSON.stringify(config));
-    } catch (error) {
-      console.error('Failed to save agent settings:', error);
-    }
+    safeStorage.setJSON(STORAGE_KEYS.AGENT_CONFIG, config);
   }
 
   loadAgentSettings(): AgentConfiguration | null {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.AGENT_CONFIG);
-      return stored ? JSON.parse(stored) : null;
-    } catch (error) {
-      console.error('Failed to load agent settings:', error);
-      return null;
-    }
+    return safeStorage.getJSON<AgentConfiguration | null>(STORAGE_KEYS.AGENT_CONFIG, null);
   }
 
   getDefaultAgentSettings(): AgentConfiguration {
@@ -84,23 +76,14 @@ class SettingsPersistence {
 
   /**
    * Notification Preferences
+   * Uses safeStorage for iOS private browsing compatibility
    */
   saveNotificationPreferences(prefs: NotificationPreferences): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.NOTIFICATION_PREFS, JSON.stringify(prefs));
-    } catch (error) {
-      console.error('Failed to save notification preferences:', error);
-    }
+    safeStorage.setJSON(STORAGE_KEYS.NOTIFICATION_PREFS, prefs);
   }
 
   loadNotificationPreferences(): NotificationPreferences | null {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.NOTIFICATION_PREFS);
-      return stored ? JSON.parse(stored) : null;
-    } catch (error) {
-      console.error('Failed to load notification preferences:', error);
-      return null;
-    }
+    return safeStorage.getJSON<NotificationPreferences | null>(STORAGE_KEYS.NOTIFICATION_PREFS, null);
   }
 
   getDefaultNotificationPreferences(): NotificationPreferences {
@@ -128,23 +111,14 @@ class SettingsPersistence {
 
   /**
    * User Preferences
+   * Uses safeStorage for iOS private browsing compatibility
    */
   saveUserPreferences(prefs: UserPreferences): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.USER_PREFERENCES, JSON.stringify(prefs));
-    } catch (error) {
-      console.error('Failed to save user preferences:', error);
-    }
+    safeStorage.setJSON(STORAGE_KEYS.USER_PREFERENCES, prefs);
   }
 
   loadUserPreferences(): UserPreferences | null {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.USER_PREFERENCES);
-      return stored ? JSON.parse(stored) : null;
-    } catch (error) {
-      console.error('Failed to load user preferences:', error);
-      return null;
-    }
+    return safeStorage.getJSON<UserPreferences | null>(STORAGE_KEYS.USER_PREFERENCES, null);
   }
 
   getDefaultUserPreferences(): UserPreferences {
@@ -164,52 +138,41 @@ class SettingsPersistence {
 
   /**
    * Theme Settings - extends existing theme functionality
+   * Uses safeStorage for iOS private browsing compatibility
    */
   saveThemeSettings(settings: Record<string, any>): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.THEME_SETTINGS, JSON.stringify(settings));
-    } catch (error) {
-      console.error('Failed to save theme settings:', error);
-    }
+    safeStorage.setJSON(STORAGE_KEYS.THEME_SETTINGS, settings);
   }
 
   loadThemeSettings(): Record<string, any> | null {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.THEME_SETTINGS);
-      return stored ? JSON.parse(stored) : null;
-    } catch (error) {
-      console.error('Failed to load theme settings:', error);
-      return null;
-    }
+    return safeStorage.getJSON<Record<string, any> | null>(STORAGE_KEYS.THEME_SETTINGS, null);
   }
 
   /**
    * Clear all settings
+   * Uses safeStorage for iOS private browsing compatibility
    */
   clearAllSettings(): void {
     Object.values(STORAGE_KEYS).forEach(key => {
-      try {
-        localStorage.removeItem(key);
-      } catch (error) {
-        console.error(`Failed to clear ${key}:`, error);
-      }
+      safeStorage.removeItem(key);
     });
   }
 
   /**
    * Export all settings
+   * Uses safeStorage for iOS private browsing compatibility
    */
   exportSettings(): Record<string, any> {
     const settings: Record<string, any> = {};
-    
+
     Object.entries(STORAGE_KEYS).forEach(([name, key]) => {
-      try {
-        const value = localStorage.getItem(key);
-        if (value) {
+      const value = safeStorage.getItem(key);
+      if (value) {
+        try {
           settings[name] = JSON.parse(value);
+        } catch {
+          // Skip unparseable values
         }
-      } catch (error) {
-        console.error(`Failed to export ${name}:`, error);
       }
     });
 
@@ -218,30 +181,24 @@ class SettingsPersistence {
 
   /**
    * Import settings
+   * Uses safeStorage for iOS private browsing compatibility
    */
   importSettings(settings: Record<string, any>): void {
     Object.entries(settings).forEach(([name, value]) => {
       const key = STORAGE_KEYS[name as keyof typeof STORAGE_KEYS];
       if (key) {
-        try {
-          localStorage.setItem(key, JSON.stringify(value));
-        } catch (error) {
-          console.error(`Failed to import ${name}:`, error);
-        }
+        safeStorage.setJSON(key, value);
       }
     });
   }
 
   /**
    * Check if settings exist
+   * Uses safeStorage for iOS private browsing compatibility
    */
   hasSettings(): boolean {
     return Object.values(STORAGE_KEYS).some(key => {
-      try {
-        return localStorage.getItem(key) !== null;
-      } catch {
-        return false;
-      }
+      return safeStorage.getItem(key) !== null;
     });
   }
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useThemeStore } from '@/store/themeStore';
-import maifarmIconDark from '../../assets/logos/maifarm-icon-dark-bkgd.svg';
-import maifarmIconLight from '../../assets/logos/maifarm-icon-light-bkgd.svg';
+import maifarmIconDark from '../../assets/logos/maifarm-icon-forest-walk-dark.svg';
+import maifarmIconLight from '../../assets/logos/maifarm-icon-forest-walk-light.svg';
 
 interface DynamicLogoProps {
   className?: string;
@@ -27,7 +27,7 @@ export const DynamicLogoIcon: React.FC<DynamicLogoProps> = ({ className = "w-7 h
         setLogoSrc(isDark ? maifarmIconDark : maifarmIconLight);
       } else {
         // For logo variant, import the full logos when needed
-        import(isDark ? '../../assets/logos/maifarm-icon-dark-bkgd.svg' : '../../assets/logos/maifarm-icon-light-bkgd.svg')
+        import(isDark ? '../../assets/logos/maifarm-icon-forest-walk-dark.svg' : '../../assets/logos/maifarm-icon-forest-walk-light.svg')
           .then(module => setLogoSrc(module.default))
           .catch(() => setHasError(true));
       }

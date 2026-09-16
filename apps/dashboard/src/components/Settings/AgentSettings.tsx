@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Bot, 
-  Settings, 
-  Sliders, 
-  Clock, 
+import {
+  Bot,
+  Settings,
+  Sliders,
+  Clock,
   Users,
   Zap,
   Shield,
@@ -18,23 +18,7 @@ import {
 import { clsx } from 'clsx';
 import { useSettingsStore, calculateMaxAgents } from '@/store/settingsStore';
 import { settingsPersistence } from '@/utils/settingsPersistence';
-
-export interface AgentConfiguration {
-  maxAgents: number;
-  staggerTime: number;
-  defaultTimeout: number;
-  autoRestart: boolean;
-  parallelExecution: boolean;
-  memoryLimit: number;
-  cpuLimit: number;
-  enableLogging: boolean;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-  coordinationMode: 'centralized' | 'distributed' | 'hybrid';
-  taskAllocation: 'round-robin' | 'load-balanced';
-  failoverStrategy: 'restart' | 'reassign' | 'skip';
-  agentMode: 'default' | 'supercharge' | 'ultrafarmer';
-  defaultInterval: number;
-}
+import { AgentConfiguration } from '@/types/agentSettings';
 
 type SettingType = 
   | {
@@ -611,3 +595,5 @@ export const AgentSettings: React.FC<AgentSettingsProps> = ({
     </div>
   );
 };
+
+export default AgentSettings;

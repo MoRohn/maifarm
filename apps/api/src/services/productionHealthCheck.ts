@@ -12,8 +12,10 @@ import { circuitBreakerManager } from './circuitBreaker';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { pathConfig } from '../config/paths';
 
 const execAsync = promisify(exec);
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 export enum HealthStatus {
   HEALTHY = 'healthy',
@@ -329,7 +331,7 @@ export class ProductionHealthCheck extends EventEmitter {
   private async checkTmux(): Promise<HealthCheckResult> {
     const startTime = Date.now();
     try {
-      const { stdout } = await execAsync('TMUX_TMPDIR=/tmp tmux list-sessions 2>/dev/null || echo ""');
+      const { stdout } = await execAsync(`TMUX_TMPDIR="${tmuxTmpDir}" tmux list-sessions 2>/dev/null || echo ""`);
       const sessions = stdout.trim().split('\n').filter(Boolean);
 
       return {

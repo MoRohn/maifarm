@@ -3,20 +3,34 @@ import { createClient } from 'redis';
 import { logger } from '../config/logging';
 import { poolManager } from './poolManager';
 
-// PostgreSQL connection pool
+// PostgreSQL connection pool with dynamic sizing for PM2 clusters
+const calculatePoolSize = (): number => {
+  // Get PM2 instance count (if running in cluster mode)
+  const instances = parseInt(process.env.PM2_INSTANCES || process.env.NODE_APP_INSTANCE || '1');
+  const requestedSize = parseInt(process.env.DB_POOL_SIZE || '50');
+
+  // Reserve 20 connections for admin/migrations, distribute remainder across instances
+  const maxPostgresConnections = parseInt(process.env.DB_MAX_CONNECTIONS || '100');
+  const availableConnections = maxPostgresConnections - 20;
+  const perInstanceMax = Math.floor(availableConnections / instances);
+
+  // Use the smaller of requested size or per-instance maximum
+  return Math.min(requestedSize, perInstanceMax);
+};
+
 const pgConfig: PoolConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME || 'maifarm',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  max: parseInt(process.env.DB_POOL_SIZE || '50'), // Increased from 20 to prevent exhaustion
+  max: calculatePoolSize(), // Dynamic sizing for cluster mode
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000, // Increased from 2s to 5s for better stability
-  // Add statement timeout to prevent hanging queries
-  statement_timeout: 30000, // 30 seconds max per query
+  // Increased statement timeout to prevent harvest query timeouts
+  statement_timeout: 60000, // 60 seconds max per query (was 30s)
   // Add query timeout for better resource management
-  query_timeout: 30000,
+  query_timeout: 60000, // Match statement timeout
   // Allow queueing when pool is full
   allowExitOnIdle: false,
 };
@@ -38,12 +52,10 @@ class DatabaseWrapper {
       this.connectionRetries = 0;
       return result;
     } catch (error: any) {
-      const errorMessage = error.message || error;
+      const errorMessage = this.normalizeError(error);
 
       // Check if this is a connection error
-      if (errorMessage.includes('ECONNREFUSED') ||
-          errorMessage.includes('Connection terminated') ||
-          errorMessage.includes('Connection lost')) {
+      if (this.isConnectionError(error, errorMessage)) {
         logger.error('DATABASE', `Connection lost, attempting to reconnect...`);
         this.isConnected = false;
 
@@ -57,20 +69,83 @@ class DatabaseWrapper {
       }
 
       // Check if this is an expected "already exists" or similar warning
-      if (typeof errorMessage === 'string' && (
-        errorMessage.includes('already exists') ||
-        errorMessage.includes('does not exist') ||
-        errorMessage.includes('duplicate key value')
-      )) {
+      if (this.matchesPatterns(errorMessage, [
+        'already exists',
+        'does not exist',
+        'duplicate key value'
+      ])) {
         // Log as info instead of error for these expected cases
         logger.info('DATABASE', `Skipping: ${errorMessage}`);
       } else {
-        // Log actual errors
+        // Log actual errors including normalized context
         logger.error('DATABASE', `Query failed: ${errorMessage}`);
       }
 
       throw error;
     }
+  }
+
+  private normalizeError(error: unknown): string {
+    if (!error) return 'Unknown error';
+    if (typeof error === 'string') return error;
+    if (typeof (error as any)?.message === 'string') return (error as any).message;
+
+    if (Array.isArray(error)) {
+      return error.map(item => this.normalizeError(item)).join('; ');
+    }
+
+    if (typeof error === 'object') {
+      const aggregateErrors = (error as any)?.errors;
+      if (Array.isArray(aggregateErrors)) {
+        return aggregateErrors.map((err: unknown) => this.normalizeError(err)).join('; ');
+      }
+      try {
+        return JSON.stringify(error);
+      } catch {
+        return String(error);
+      }
+    }
+
+    return String(error);
+  }
+
+  private matchesPatterns(value: string, patterns: string[]): boolean {
+    return patterns.some(pattern => value.includes(pattern));
+  }
+
+  private isConnectionError(error: unknown, normalized: string): boolean {
+    const connectionPatterns = [
+      'ECONNREFUSED',
+      'Connection terminated',
+      'Connection lost',
+      'ECONNRESET',
+      'EPERM'
+    ];
+
+    if (this.matchesPatterns(normalized, connectionPatterns)) {
+      return true;
+    }
+
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const aggregateErrors = (error as any)?.errors;
+    if (Array.isArray(aggregateErrors)) {
+      return aggregateErrors.some((innerError: unknown) =>
+        this.isConnectionError(innerError, this.normalizeError(innerError))
+      );
+    }
+
+    const nestedMessage = typeof (error as any)?.message === 'string'
+      ? (error as any).message
+      : undefined;
+
+    if (nestedMessage) {
+      return this.matchesPatterns(nestedMessage, connectionPatterns);
+    }
+
+    return false;
   }
 
   // Use poolManager's transaction method
@@ -153,7 +228,7 @@ const redisConfig: any = {
   socket: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379'),
-    reconnectStrategy: (retries) => {
+    reconnectStrategy: (retries: number): number | false => {
       if (retries > 10) {
         console.log('Redis: Maximum reconnection attempts reached, running without cache');
         // Return false to stop reconnecting and allow fallback to memory cache
@@ -240,7 +315,8 @@ export async function checkDatabaseHealth(): Promise<{ postgres: boolean; redis:
       }
     }
   } catch (error) {
-    console.error('Redis health check failed:', error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Redis health check failed:', errorMessage);
   }
 
   return { 
@@ -294,27 +370,39 @@ export async function initializeDatabase() {
     ];
 
     for (const { client, name } of redisClients) {
-      if (client.isOpen) {
-        console.log(`Redis ${name} already connected, skipping reconnection`);
-      } else {
-        // Connect to Redis with timeout
-        const connectPromise = client.connect();
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Redis ${name} connection timeout`)), 5000)
-        );
+      try {
+        // Attempt connection without checking state first to avoid race condition
+        // If already connected, Redis will throw "Socket already opened" error which we catch below
+        if (!client.isOpen) {
+          const connectPromise = client.connect();
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Redis ${name} connection timeout`)), 5000)
+          );
 
-        await Promise.race([connectPromise, timeoutPromise]);
-        console.log(`Redis ${name} connected successfully`);
+          await Promise.race([connectPromise, timeoutPromise]);
+          console.log(`Redis ${name} connected successfully`);
+        } else {
+          console.log(`Redis ${name} already connected, skipping reconnection`);
+        }
+      } catch (connError: any) {
+        // Handle "already connected" error gracefully
+        if (connError.message && connError.message.includes('Socket already opened')) {
+          console.log(`Redis ${name} already connected (detected via error)`);
+        } else {
+          // Propagate other errors to outer catch block
+          throw connError;
+        }
       }
     }
     redisConnected = true;
   } catch (error) {
     // Check if error is about existing connection
-    if (error.message && error.message.includes('Socket already opened')) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes('Socket already opened')) {
       console.log('Redis socket already opened, treating as connected');
       redisConnected = true;
     } else {
-      console.warn('Redis connection failed - running without caching:', error.message);
+      console.warn('Redis connection failed - running without caching:', errorMessage);
       console.warn('To enable caching, please start Redis or run: docker-compose up redis');
       // Redis will continue trying to reconnect in the background based on reconnectStrategy
     }

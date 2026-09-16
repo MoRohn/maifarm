@@ -140,9 +140,10 @@ class ServiceRegistry {
         case 'shutdown':
           return require('../shutdownCoordinator').shutdownCoordinator;
         case 'harvest':
-          return require('../harvestService').harvestService;
+          return require('./harvestService').harvestService;
         case 'barn':
-          return require('../barnService').barnService;
+          // FIX: Use unified barnService with full harvest integration
+          return require('./barnService').barnService;
         case 'workspace':
           return require('../workspaceManager').workspaceManager;
         case 'yaml':

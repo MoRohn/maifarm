@@ -19,6 +19,8 @@ class WebSocketReliabilityEnhancer {
   private pendingAcks: Map<string, { resolve: Function; timeout: NodeJS.Timeout }> = new Map();
   private latencyHistory: number[] = [];
   private enhancedSockets: WeakSet<Socket> = new WeakSet();
+  // FIX: Track queue resend timeouts for proper cleanup
+  private queueResendTimeouts: Set<NodeJS.Timeout> = new Set();
 
   constructor(config: EnhancerConfig = {}) {
     this.config = {
@@ -170,11 +172,27 @@ class WebSocketReliabilityEnhancer {
    * Add message queueing support
    */
   private addMessageQueueing(socket: Socket) {
-    const originalEmit = socket.emit.bind(socket);
-    
+    // IMPORTANT: Use the already-enhanced emit (from addAcknowledgmentSupport)
+    // instead of binding directly to socket.emit to preserve the chain
+    const currentEmit = socket.emit.bind(socket);
+
+    // FIX: Events that should NOT be queued - internal socket.io events
+    // Queueing these would cause replay issues on reconnect
+    const nonQueueableEvents = new Set([
+      'ping', 'pong', 'connect', 'disconnect', 'error',
+      'connect_error', 'connection:quality', 'connection:warning',
+      'message:ack', 'messages:ack'
+    ]);
+
     // Override emit to queue messages when disconnected
     socket.emit = (event: string, ...args: any[]) => {
       if (!socket.connected) {
+        // CRITICAL FIX: Don't queue internal events or events that shouldn't be replayed
+        if (nonQueueableEvents.has(event)) {
+          // Pass through without queueing - these events don't make sense to replay
+          return currentEmit(event, ...args);
+        }
+
         // Queue the message
         if (this.messageQueue.length < this.config.maxQueueSize) {
           this.messageQueue.push({
@@ -188,8 +206,9 @@ class WebSocketReliabilityEnhancer {
           console.warn('[ReliabilityEnhancer] Message queue full, dropping message');
         }
       }
-      
-      return originalEmit(event, ...args);
+
+      // Call the current emit (which may include ack support) instead of original
+      return currentEmit(event, ...args);
     };
 
     // Flush queue on reconnection
@@ -198,13 +217,22 @@ class WebSocketReliabilityEnhancer {
         console.log(`[ReliabilityEnhancer] Flushing ${this.messageQueue.length} queued messages`);
         const queue = [...this.messageQueue];
         this.messageQueue = [];
-        
+
         queue.forEach((msg, index) => {
-          setTimeout(() => {
+          // FIX: Track timeout handles for cleanup
+          const timeoutHandle = setTimeout(() => {
+            this.queueResendTimeouts.delete(timeoutHandle);
             socket.emit(msg.event, msg.data);
           }, index * 50); // 50ms delay between messages
+          this.queueResendTimeouts.add(timeoutHandle);
         });
       }
+    });
+
+    // FIX: Clear queue resend timeouts on disconnect
+    socket.on('disconnect', () => {
+      this.queueResendTimeouts.forEach(timeout => clearTimeout(timeout));
+      this.queueResendTimeouts.clear();
     });
   }
 
@@ -271,17 +299,21 @@ class WebSocketReliabilityEnhancer {
   public cleanup() {
     // Clear message queue
     this.messageQueue = [];
-    
+
     // Clear pending acknowledgments
     this.pendingAcks.forEach(pending => {
       clearTimeout(pending.timeout);
       pending.resolve(false);
     });
     this.pendingAcks.clear();
-    
+
+    // FIX: Clear queue resend timeouts
+    this.queueResendTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.queueResendTimeouts.clear();
+
     // Clear latency history
     this.latencyHistory = [];
-    
+
     console.log('[ReliabilityEnhancer] Cleaned up all reliability data');
   }
 

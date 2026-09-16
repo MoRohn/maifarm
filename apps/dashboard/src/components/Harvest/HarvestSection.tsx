@@ -17,8 +17,10 @@ import { useHarvestStore } from '@/store/harvestStore';
 
 export const HarvestSection: React.FC = () => {
   const navigate = useNavigate();
-  const { recentHarvests, stats } = useHarvestStore();
-  
+  const storeData = useHarvestStore();
+  const recentHarvests = storeData?.recentHarvests || [];
+  const stats = storeData?.stats || null;
+
   const typeIcons = {
     app: Package,
     tool: Wrench,
@@ -31,7 +33,8 @@ export const HarvestSection: React.FC = () => {
     navigate('/barn');
   };
 
-  if (recentHarvests.length === 0) {
+  // Early return if no harvests to show
+  if (!recentHarvests || recentHarvests.length === 0) {
     return null; // Don't show section if no harvests
   }
 

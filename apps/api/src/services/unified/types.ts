@@ -46,7 +46,7 @@ export type OrchestratorType =
   | 'standard'
   | 'xenosync'
   | 'multiclaude'
-  | 'qwen';
+  | 'llama';
 
 export interface FarmConfig {
   numberOfAgents: number;

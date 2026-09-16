@@ -581,7 +581,8 @@ export class HarvestIntegrityService extends EventEmitter {
       logger.info(`[HarvestIntegrityService] Attempting to recover ${filePath}`);
 
       // Try to recover from tmux session logs
-      const sessionName = `farm-${farmId}`;
+      // Session name format: farm-${farmId.substring(0, 8)} (first 8 chars of UUID)
+      const sessionName = `farm-${farmId.substring(0, 8)}`;
       const agentMatch = filePath.match(/agents\/([^\/]+)\//);
       
       if (agentMatch) {

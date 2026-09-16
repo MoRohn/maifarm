@@ -25,12 +25,22 @@ describe('WebSocket Reliability with Conflict Detection', () => {
       host: 'localhost',
       port: 6379,
       db: 3, // Use separate DB for WebSocket tests
-      retryDelayOnFailure: 100,
-      maxRetriesPerRequest: 3
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => {
+        if (times > 3) return null;
+        return Math.min(times * 100, 1000);
+      },
+      lazyConnect: true // Don't connect immediately
     });
 
-    await redis.ping();
-    console.log('[TEST] Connected to Redis for WebSocket reliability tests');
+    try {
+      await redis.connect();
+      await redis.ping();
+      console.log('[TEST] Connected to Redis for WebSocket reliability tests');
+    } catch (error) {
+      console.warn('[TEST] Redis not available, skipping WebSocket reliability tests');
+      return;
+    }
 
     // Setup HTTP server and Socket.IO
     httpServer = new Server();
@@ -88,20 +98,26 @@ describe('WebSocket Reliability with Conflict Detection', () => {
     clients = [];
 
     // Stop services
-    reliabilityManager.stop();
-    ioServer.close();
-    httpServer.close();
-    await redis.flushdb();
-    await redis.quit();
+    if (reliabilityManager) reliabilityManager.stop();
+    if (ioServer) ioServer.close();
+    if (httpServer) httpServer.close();
+    if (redis && redis.status === 'ready') {
+      await redis.flushdb();
+      await redis.quit();
+    }
   });
 
   beforeEach(async () => {
     // Clear Redis state
-    await redis.flushdb();
-    
-    // Reset reliability manager state
-    reliabilityManager.setConflictDetection(true);
-    await reliabilityManager.flushBroadcastQueue();
+    if (redis && redis.status === 'ready') {
+      await redis.flushdb();
+
+      // Reset reliability manager state
+      if (reliabilityManager) {
+        reliabilityManager.setConflictDetection(true);
+        await reliabilityManager.flushBroadcastQueue();
+      }
+    }
   });
 
   afterEach(() => {

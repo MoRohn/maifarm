@@ -154,9 +154,29 @@ export const CreateFarmFromFarmer: React.FC = () => {
       } else {
         throw new Error(response.data.error || 'Failed to launch farm');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Farm launch failed:', error);
-      toast.error('Failed to launch farm. Please try again.');
+
+      // Extract error message from various error formats
+      let errorMessage = 'Failed to launch farm. Please try again.';
+
+      if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+
+      // Show detailed error if in development
+      if (error?.response?.data?.details && import.meta.env.DEV) {
+        console.error('Error details:', error.response.data.details);
+      }
+
+      toast.error(errorMessage, {
+        duration: 5000,
+        style: {
+          maxWidth: '500px'
+        }
+      });
     } finally {
       setLoading(false);
     }

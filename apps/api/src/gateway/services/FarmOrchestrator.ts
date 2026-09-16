@@ -5,7 +5,7 @@ import { metricsService } from '../../services/metricsService.js';
 import { taskQueueService } from '../../services/unified/quickTaskService.js';
 import { EventEmitter } from 'events';
 import { aiProviderManager, AIProvider } from '../../config/aiProviders.js';
-import { FarmMode } from '../../services/unified/farmService.js';
+import { FarmMode } from '../../types/farm.js';
 import type { FarmConfig } from '../../services/unified/farmService.js';
 
 interface PaginationOptions {
@@ -160,11 +160,16 @@ export class FarmOrchestrator extends EventEmitter {
   }
 
   private normalizeProvider(raw?: string): AIProvider {
-    const requested = (raw || '').toLowerCase();
-    const allowed = new Set<AIProvider>(['claude', 'openai']);
+    const requested = (raw || '').toLowerCase().replace('_', '-') as AIProvider;
+    const allowed = new Set<AIProvider>([
+      AIProvider.CLAUDE,
+      AIProvider.OPENAI,
+      AIProvider.GPT_OSS,
+      AIProvider.LLAMA
+    ]);
 
-    if (allowed.has(requested as AIProvider) && aiProviderManager.isProviderEnabled(requested as AIProvider)) {
-      return requested as AIProvider;
+    if (allowed.has(requested) && aiProviderManager.isProviderEnabled(requested)) {
+      return requested;
     }
 
     const defaultProvider = aiProviderManager.getDefaultProvider();

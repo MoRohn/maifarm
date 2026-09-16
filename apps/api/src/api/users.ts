@@ -1,13 +1,29 @@
 import { Router } from 'express';
-import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
 import { authenticateToken, requireRole } from '../middleware/auth';
 import { apiRateLimits } from '../middleware/rateLimit';
 import { db } from '../database/connection';
 import { validateRequest } from '../middleware/validation';
 import { z } from 'zod';
+import { logger, LogCategory } from '../services/ProductionLogger';
+import { userCreationService } from '../services/userCreationService';
+import bcrypt from 'bcryptjs';
 
 const router = Router();
+
+const DEPRECATION_MESSAGE = 'Deprecated users API: migrate to /api/users (user-management) or /api/auth/register before Phase 4.';
+
+router.use((req, res, next) => {
+  logger.warn(
+    LogCategory.API,
+    `DEPRECATED /api/users endpoint invoked: ${req.method} ${req.originalUrl}`
+  );
+
+  res.set('Deprecation', 'true');
+  res.set('Warning', `299 MaiFarm "${DEPRECATION_MESSAGE}"`);
+  res.set('Link', '</api/users>; rel="successor-version", </api/auth/register>; rel="create-form"');
+
+  next();
+});
 
 // Validation schemas
 const createUserSchema = z.object({
@@ -21,10 +37,13 @@ const createUserSchema = z.object({
 const updateUserSchema = z.object({
   email: z.string().email().optional(),
   username: z.string().min(3).max(50).optional(),
+  display_name: z.string().optional(),
+  avatar_url: z.string().optional(),
   password: z.string().min(8).optional(),
   roles: z.array(z.string()).optional(),
   permissions: z.array(z.string()).optional(),
-  mfa_enabled: z.boolean().optional()
+  mfa_enabled: z.boolean().optional(),
+  preferences: z.any().optional()
 });
 
 const querySchema = z.object({
@@ -73,9 +92,9 @@ router.get('/',
 
       // Get paginated users
       const usersQuery = `
-        SELECT id, email, username, roles, permissions, api_keys, 
-               mfa_enabled, last_login, created_at, updated_at
-        FROM users 
+        SELECT id, email, username, display_name, avatar_url, roles, permissions, api_keys,
+               mfa_enabled, last_login_at AS last_login, created_at, updated_at
+        FROM users
         ${whereClause}
         ORDER BY ${sort} ${order}
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -111,8 +130,8 @@ router.get('/me',
       const userId = (req as any).user.id;
       
       const result = await db.query(
-        `SELECT id, email, username, roles, permissions, api_keys, 
-                mfa_enabled, last_login, created_at, updated_at
+        `SELECT id, email, username, display_name, avatar_url, roles, permissions, api_keys,
+                mfa_enabled, last_login_at AS last_login, created_at, updated_at
          FROM users WHERE id = $1`,
         [userId]
       );
@@ -155,8 +174,8 @@ router.get('/:id',
       }
       
       const result = await db.query(
-        `SELECT id, email, username, roles, permissions, api_keys, 
-                mfa_enabled, last_login, created_at, updated_at
+        `SELECT id, email, username, display_name, avatar_url, roles, permissions, api_keys,
+                mfa_enabled, last_login_at AS last_login, created_at, updated_at
          FROM users WHERE id = $1`,
         [id]
       );
@@ -182,8 +201,58 @@ router.get('/:id',
   }
 );
 
+// POST /api/users/create - Create new user with welcome flow (admin only)
+router.post('/create',
+  authenticateToken,
+  requireRole('admin'),
+  apiRateLimits.standard,
+  async (req, res) => {
+    try {
+      const { email, name, password, role = 'user', sendWelcome = false } = req.body;
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ success: false, error: 'Valid email is required' });
+      }
+
+      if (!name || name.trim().length === 0) {
+        return res.status(400).json({ success: false, error: 'Name is required' });
+      }
+
+      if (!password || password.length < 8) {
+        return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+      }
+
+      const creation = await userCreationService.createUser({
+        email: email.trim().toLowerCase(),
+        password,
+        authMode: 'password',
+        name,
+        displayName: name,
+        roles: role === 'admin' ? ['admin', 'user'] : ['user'],
+        sendWelcomeEmail: sendWelcome,
+        requireEmailVerification: false,
+        createdByUserId: (req as any).user?.id,
+        metadata: { source: 'legacy-users-create', sendWelcome }
+      });
+
+      res.status(201).json({
+        success: true,
+        userId: creation.user.id,
+        user: sanitizeUser(creation.user),
+        sendWelcome
+      });
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      const message = typeof error?.message === 'string' ? error.message : 'Failed to create user';
+      const lower = message.toLowerCase();
+      const status = lower.includes('exist') || lower.includes('username') ? 409 : 500;
+      res.status(status).json({ success: false, error: message });
+    }
+  }
+);
+
 // POST /api/users - Create new user (admin only)
-router.post('/', 
+router.post('/',
   authenticateToken,
   requireRole('admin'),
   validateRequest({ body: createUserSchema }),
@@ -191,49 +260,30 @@ router.post('/',
   async (req, res) => {
     try {
       const { email, username, password, roles = ['user'], permissions = [] } = req.body;
-      
-      // Check if user already exists
-      const existingUser = await db.query(
-        'SELECT id FROM users WHERE email = $1 OR username = $2',
-        [email, username]
-      );
-      
-      if (existingUser.rows.length > 0) {
-        return res.status(409).json({
-          success: false,
-          error: 'User with this email or username already exists'
-        });
-      }
-      
-      // Hash password
-      const saltRounds = 10;
-      const passwordHash = await bcrypt.hash(password, saltRounds);
-      
-      // Create user
-      const result = await db.query(
-        `INSERT INTO users (id, email, username, password_hash, roles, permissions)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, email, username, roles, permissions, created_at`,
-        [uuidv4(), email, username, passwordHash, roles, permissions]
-      );
-      
-      // Log audit event
-      await db.query(
-        `INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [(req as any).user.id, 'CREATE_USER', 'user', result.rows[0].id, { email, username }]
-      );
-      
+
+      const creation = await userCreationService.createUser({
+        email: email.trim().toLowerCase(),
+        username,
+        password,
+        authMode: 'password',
+        roles,
+        permissions,
+        sendWelcomeEmail: false,
+        requireEmailVerification: false,
+        createdByUserId: (req as any).user?.id,
+        metadata: { source: 'legacy-users-post' }
+      });
+
       res.status(201).json({
         success: true,
-        user: sanitizeUser(result.rows[0])
+        user: sanitizeUser(creation.user)
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating user:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to create user'
-      });
+      const message = typeof error?.message === 'string' ? error.message : 'Failed to create user';
+      const lower = message.toLowerCase();
+      const status = lower.includes('exist') || lower.includes('username') ? 409 : 500;
+      res.status(status).json({ success: false, error: message });
     }
   }
 );
@@ -272,33 +322,48 @@ router.put('/:id',
         updateFields.push(`email = $${paramIndex++}`);
         values.push(updates.email);
       }
-      
+
       if (updates.username) {
         updateFields.push(`username = $${paramIndex++}`);
         values.push(updates.username);
       }
-      
+
+      if (updates.display_name !== undefined) {
+        updateFields.push(`display_name = $${paramIndex++}`);
+        values.push(updates.display_name);
+      }
+
+      if (updates.avatar_url !== undefined) {
+        updateFields.push(`avatar_url = $${paramIndex++}`);
+        values.push(updates.avatar_url);
+      }
+
       if (updates.password) {
         const passwordHash = await bcrypt.hash(updates.password, 10);
         updateFields.push(`password_hash = $${paramIndex++}`);
         values.push(passwordHash);
       }
-      
+
       if (updates.roles) {
         updateFields.push(`roles = $${paramIndex++}`);
         values.push(updates.roles);
       }
-      
+
       if (updates.permissions) {
         updateFields.push(`permissions = $${paramIndex++}`);
         values.push(updates.permissions);
       }
-      
+
       if (typeof updates.mfa_enabled === 'boolean') {
         updateFields.push(`mfa_enabled = $${paramIndex++}`);
         values.push(updates.mfa_enabled);
       }
-      
+
+      if (updates.preferences) {
+        updateFields.push(`preferences = $${paramIndex++}`);
+        values.push(JSON.stringify(updates.preferences));
+      }
+
       if (updateFields.length === 0) {
         return res.status(400).json({
           success: false,
@@ -309,10 +374,10 @@ router.put('/:id',
       values.push(id);
       
       const result = await db.query(
-        `UPDATE users 
-         SET ${updateFields.join(', ')}
+        `UPDATE users
+         SET ${updateFields.join(', ')}, updated_at = NOW()
          WHERE id = $${paramIndex}
-         RETURNING id, email, username, roles, permissions, mfa_enabled, updated_at`,
+         RETURNING id, email, username, display_name, avatar_url, roles, permissions, mfa_enabled, preferences, updated_at`,
         values
       );
       

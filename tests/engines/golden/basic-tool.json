@@ -1,0 +1,8 @@
+{
+  "prompt": "What is 2+2?",
+  "expected": {
+    "claude-sonnet": "4",
+    "grok": "4",
+    "gpt-oss": "4"
+  }
+}

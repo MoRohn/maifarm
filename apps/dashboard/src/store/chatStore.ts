@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Message } from '@/components/Chat/ChatMessage';
 import { ChatMode } from '@/components/Chat/GlassmorphicChatModal';
+import { aiChatService } from '@/services/aiChatService';
 
 interface ChatSession {
   id: string;
@@ -41,6 +42,21 @@ interface ChatState {
   getRecentSessions: (limit?: number) => ChatSession[];
 }
 
+const sanitizeMessages = (messages: Message[]): Message[] =>
+  messages.map(({ attachments, ...rest }) => rest);
+
+const sanitizeContext = (context: any) => {
+  if (!context) return {};
+  const { attachments, ...rest } = context;
+  return rest;
+};
+
+const sanitizeSession = (session: ChatSession): ChatSession => ({
+  ...session,
+  messages: sanitizeMessages(session.messages),
+  context: sanitizeContext(session.context),
+});
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
@@ -53,21 +69,43 @@ export const useChatStore = create<ChatState>()(
       
       // Mode and message management
       setMode: (mode) => {
-        const state = get();
-        
-        // Save current session if switching modes
-        if (state.currentMode && state.currentMode !== mode && state.messages.length > 0) {
-          state.saveCurrentSession();
-        }
-        
-        // Create new session for this mode
-        const sessionId = state.createSession(mode);
-        
-        set({
-          currentMode: mode,
-          currentSessionId: sessionId,
-          messages: [],
-          context: {}
+        // FIX: Avoid race condition by capturing state once and doing atomic update
+        set((state) => {
+          // Save current session inline if switching modes with messages
+          let updatedSessions = { ...state.sessions };
+
+          if (state.currentMode && state.currentMode !== mode && state.messages.length > 0 && state.currentSessionId) {
+            // Inline save of current session
+            const savedSession: ChatSession = {
+              id: state.currentSessionId,
+              mode: state.currentMode,
+              messages: sanitizeMessages(state.messages),
+              context: sanitizeContext(state.context),
+              createdAt: state.sessions[state.currentSessionId]?.createdAt || new Date(),
+              updatedAt: new Date()
+            };
+            updatedSessions[state.currentSessionId] = savedSession;
+          }
+
+          // Create new session inline
+          const newSessionId = `${mode}-${Date.now()}`;
+          const newSession: ChatSession = {
+            id: newSessionId,
+            mode,
+            messages: [],
+            context: {},
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          updatedSessions[newSessionId] = newSession;
+
+          return {
+            sessions: updatedSessions,
+            currentMode: mode,
+            currentSessionId: newSessionId,
+            messages: [],
+            context: {}
+          };
         });
       },
       
@@ -143,8 +181,8 @@ export const useChatStore = create<ChatState>()(
           const session: ChatSession = {
             id: state.currentSessionId,
             mode: state.currentMode,
-            messages: state.messages,
-            context: state.context,
+            messages: sanitizeMessages(state.messages),
+            context: sanitizeContext(state.context),
             createdAt: state.sessions[state.currentSessionId]?.createdAt || new Date(),
             updatedAt: new Date()
           };
@@ -176,7 +214,9 @@ export const useChatStore = create<ChatState>()(
     {
       name: 'maifarm-chat',
       partialize: (state) => ({
-        sessions: state.sessions
+        sessions: Object.fromEntries(
+          Object.entries(state.sessions).map(([id, session]) => [id, sanitizeSession(session)])
+        )
       })
     }
   )
@@ -185,22 +225,27 @@ export const useChatStore = create<ChatState>()(
 // Helper hook for accessing chat context
 export const useChatContext = () => {
   const context = useChatStore((state) => state.context);
-  const updateContext = useChatStore((state) => state.updateContext);
+const storeUpdateContext = useChatStore((state) => state.updateContext);
+
+  const applyUpdates = (updates: Record<string, any>) => {
+    storeUpdateContext(updates);
+    aiChatService.updateContext(updates);
+  };
   
   return {
     context,
-    updateContext,
+    updateContext: applyUpdates,
     
     // Convenience methods for common context updates
-    setTaskDescription: (description: string) => updateContext({ taskDescription: description }),
-    setNumberOfAgents: (count: number) => updateContext({ numberOfAgents: count }),
-    setCreativityLevel: (level: number) => updateContext({ creativityLevel: level }),
-    setTimeoutMinutes: (minutes: number) => updateContext({ timeoutMinutes: minutes }),
-    setAttachments: (files: File[]) => updateContext({ attachments: files }),
-    addFocusArea: (area: string) => updateContext({ 
+    setTaskDescription: (description: string) => applyUpdates({ taskDescription: description }),
+    setNumberOfAgents: (count: number) => applyUpdates({ numberOfAgents: count }),
+    setCreativityLevel: (level: number) => applyUpdates({ creativityLevel: level }),
+    setTimeoutMinutes: (minutes: number) => applyUpdates({ timeoutMinutes: minutes }),
+    setAttachments: (files: File[]) => applyUpdates({ attachments: files }),
+    addFocusArea: (area: string) => applyUpdates({ 
       focusAreas: [...(context.focusAreas || []), area] 
     }),
-    setYamlConfig: (yaml: string) => updateContext({ yamlConfig: yaml }),
-    setFinalPrompt: (prompt: string) => updateContext({ finalPrompt: prompt })
+    setYamlConfig: (yaml: string) => applyUpdates({ yamlConfig: yaml }),
+    setFinalPrompt: (prompt: string) => applyUpdates({ finalPrompt: prompt })
   };
 };

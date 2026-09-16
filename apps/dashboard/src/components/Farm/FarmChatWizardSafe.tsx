@@ -9,6 +9,8 @@ import { clsx } from 'clsx';
 import { FarmInputField } from './FarmInputField';
 import { useAIProvider } from '@/hooks/useAIProvider';
 import { handleApiError, showRateLimitModal } from '@/utils/errorHandlers';
+import { useChatContext } from '@/store/chatStore';
+import { FileUpload } from '@/components/common/FileUpload';
 
 interface FarmChatWizardProps {
   isOpen: boolean;
@@ -50,6 +52,32 @@ const FarmChatWizardInner: React.FC<FarmChatWizardProps> = ({
 
   const { addFarm, fetchFarms } = useFarmStore();
   const { provider: activeProvider } = useAIProvider();
+  const { context: chatContext, setAttachments: setChatAttachments } = useChatContext();
+
+  const filesEqual = (a: File, b: File) =>
+    a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+
+  useEffect(() => {
+    if (!isOpen) {
+      setAttachedFiles([]);
+      setChatAttachments([]);
+      return;
+    }
+
+    const contextFiles = chatContext.attachments || [];
+    const listsMatch =
+      attachedFiles.length === contextFiles.length &&
+      attachedFiles.every((file, index) => filesEqual(file, contextFiles[index]));
+
+    if (!listsMatch) {
+      setAttachedFiles(contextFiles);
+    }
+  }, [isOpen, chatContext.attachments, attachedFiles]);
+
+  const handleAttachmentChange = (files: File[]) => {
+    setAttachedFiles(files);
+    setChatAttachments(files);
+  };
 
   // Reset when modal opens
   useEffect(() => {
@@ -297,6 +325,8 @@ const FarmChatWizardInner: React.FC<FarmChatWizardProps> = ({
 
       toast.success(`Farm "${farmName}" launch scheduled!`);
 
+      setChatAttachments([]);
+
       // Close modal first to prevent conflicts
       onClose();
 
@@ -481,7 +511,7 @@ const FarmChatWizardInner: React.FC<FarmChatWizardProps> = ({
                           >
                             <div className="pt-2 pb-1">
                               <FileUpload
-                                onFilesChange={setAttachedFiles}
+                                onFilesChange={handleAttachmentChange}
                                 maxFiles={10}
                                 maxSizeInMB={10}
                                 acceptedTypes={['image/*', '.pdf', '.txt', '.md', '.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.cpp', '.c', '.h', '.yaml', '.yml', '.json']}

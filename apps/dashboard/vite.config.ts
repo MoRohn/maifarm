@@ -38,6 +38,8 @@ export default defineConfig({
       '@config': path.resolve(__dirname, './src/config'),
       '@shared': path.resolve(__dirname, '../shared'),
     },
+    // Ensure single React instance to prevent hook context errors (especially in Safari)
+    dedupe: ['react', 'react-dom', 'react-router-dom', 'framer-motion'],
   },
   publicDir: path.resolve(__dirname, 'public'),
   build: {
@@ -46,28 +48,41 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          // Vendor chunking strategy
           if (id.includes('node_modules')) {
-            // React ecosystem
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+            const reactCorePackages = [
+              '/node_modules/react/',
+              '/node_modules/react-dom/',
+              '/node_modules/react-router/',
+              '/node_modules/react-router-dom/',
+              '/node_modules/@remix-run/router/',
+              '/node_modules/history/'
+            ];
+
+            // React core ecosystem only (avoid matching packages that merely contain "react" in their name)
+            if (reactCorePackages.some(pkg => id.includes(pkg))) {
               return 'react-vendor';
             }
-            // UI libraries
-            if (id.includes('framer-motion') || id.includes('lucide-react') || id.includes('@radix-ui')) {
+
+            // UI libraries (load before generic react check to prevent chunk cycles)
+            if (id.includes('/node_modules/framer-motion/') || id.includes('/node_modules/lucide-react/') || id.includes('/node_modules/@radix-ui/')) {
               return 'ui-vendor';
             }
+
             // Chart/visualization libraries
-            if (id.includes('recharts') || id.includes('d3') || id.includes('visx')) {
+            if (id.includes('/node_modules/recharts/') || id.includes('/node_modules/d3') || id.includes('/node_modules/@visx/')) {
               return 'chart-vendor';
             }
+
             // Socket.io
-            if (id.includes('socket.io')) {
+            if (id.includes('/node_modules/socket.io')) {
               return 'socket-vendor';
             }
+
             // Utility libraries
-            if (id.includes('lodash') || id.includes('date-fns') || id.includes('clsx')) {
+            if (id.includes('/node_modules/lodash/') || id.includes('/node_modules/date-fns/') || id.includes('/node_modules/clsx/')) {
               return 'utils-vendor';
             }
+
             // All other vendor code
             return 'vendor';
           }
@@ -96,13 +111,20 @@ export default defineConfig({
     // Enable minification
     minify: 'esbuild',
     target: 'es2020',
+    emptyOutDir: true,
+    // PERFORMANCE FIX: Remove console.log and console.debug in production builds
+    // Keeps console.warn and console.error for important runtime information
+    esbuildOptions: {
+      // Mark console.log and console.debug as pure (side-effect-free) so esbuild removes them
+      pure: process.env.NODE_ENV === 'production' ? ['console.log', 'console.debug', 'console.info'] : [],
+    }
   },
   optimizeDeps: {
-    include: ['lucide-react'],
+    include: ['lucide-react', 'framer-motion', 'react', 'react-dom'],
     esbuildOptions: {
       target: 'esnext',
       jsx: 'automatic'
     },
-    force: true
+    // force: true removed - causes unnecessary rebuilds on every dev server start
   },
 });

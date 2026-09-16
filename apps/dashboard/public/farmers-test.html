@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farmers API Diagnostic</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        h1 { color: #00ffff; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #00ff00;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        button:hover { background: #00cc00; }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        .warning { color: #ffaa00; }
+        pre {
+            background: #2a2a2a;
+            padding: 15px;
+            overflow: auto;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+        }
+        .status { margin: 10px 0; padding: 10px; background: #2a2a2a; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #00ff00; }
+    </style>
+</head>
+<body>
+    <h1>🌾 Farmers API Diagnostic Tool</h1>
+
+    <div class="section">
+        <h2>Quick Actions</h2>
+        <button onclick="clearAllCaches()">🗑️ Clear All Caches</button>
+        <button onclick="testAPI()">🧪 Test API</button>
+        <button onclick="testProxy()">🔄 Test Proxy</button>
+        <button onclick="testWithCacheBusting()">⚡ Test with Cache Busting</button>
+        <button onclick="window.location.reload(true)">🔃 Hard Reload Page</button>
+    </div>
+
+    <div class="section">
+        <h2>Status</h2>
+        <div id="status"></div>
+    </div>
+
+    <div class="section">
+        <h2>Test Results</h2>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const log = (msg, className = '') => {
+            const output = document.getElementById('output');
+            const line = document.createElement('div');
+            line.className = className;
+            line.textContent = msg;
+            output.appendChild(line);
+        };
+
+        const updateStatus = (msg, className = '') => {
+            const status = document.getElementById('status');
+            const line = document.createElement('div');
+            line.className = `status ${className}`;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            status.insertBefore(line, status.firstChild);
+        };
+
+        async function clearAllCaches() {
+            try {
+                updateStatus('Clearing all caches...', 'warning');
+
+                // Clear browser cache
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(cacheNames.map(name => caches.delete(name)));
+                    updateStatus(`✅ Cleared ${cacheNames.length} cache(s)`, 'success');
+                } else {
+                    updateStatus('⚠️ Cache API not available', 'warning');
+                }
+
+                // Clear localStorage
+                localStorage.clear();
+                updateStatus('✅ Cleared localStorage', 'success');
+
+                // Clear sessionStorage
+                sessionStorage.clear();
+                updateStatus('✅ Cleared sessionStorage', 'success');
+
+                updateStatus('✅ All caches cleared! Reload the page.', 'success');
+            } catch (error) {
+                updateStatus(`❌ Error clearing caches: ${error.message}`, 'error');
+            }
+        }
+
+        async function testAPI() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<p class="warning">Testing direct API endpoint...</p>';
+
+            try {
+                const response = await fetch('http://localhost:4567/api/farmers', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+
+                log(`Status: ${response.status} ${response.statusText}`);
+                log(`Headers: ${JSON.stringify([...response.headers.entries()], null, 2)}`);
+
+                const text = await response.text();
+                log(`\nRaw Response (first 500 chars):\n${text.substring(0, 500)}`);
+
+                const data = JSON.parse(text);
+                log(`\n✅ Success: ${data.success}`, data.success ? 'success' : 'error');
+                log(`📊 Farmers Count: ${data.data?.length || 0}`);
+
+                if (data.data && data.data.length > 0) {
+                    log(`\n🌾 First Farmer: ${data.data[0].title} (${data.data[0].id})`);
+                    log(`\n📋 All Farmer IDs:`);
+                    data.data.forEach((f, i) => log(`  ${i + 1}. ${f.id} - ${f.title}`));
+                }
+
+                if (data.error) {
+                    log(`\n❌ Error: ${JSON.stringify(data.error, null, 2)}`, 'error');
+                }
+
+                updateStatus('✅ Direct API test completed', 'success');
+            } catch (error) {
+                log(`❌ ERROR: ${error.message}`, 'error');
+                log(`Stack: ${error.stack}`, 'error');
+                updateStatus('❌ Direct API test failed', 'error');
+            }
+        }
+
+        async function testProxy() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<p class="warning">Testing Vite proxy endpoint...</p>';
+
+            try {
+                const response = await fetch('/api/farmers', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+
+                log(`Status: ${response.status} ${response.statusText}`);
+                log(`Headers: ${JSON.stringify([...response.headers.entries()], null, 2)}`);
+
+                const text = await response.text();
+                log(`\nRaw Response (first 500 chars):\n${text.substring(0, 500)}`);
+
+                const data = JSON.parse(text);
+                log(`\n✅ Success: ${data.success}`, data.success ? 'success' : 'error');
+                log(`📊 Farmers Count: ${data.data?.length || 0}`);
+
+                if (data.data && data.data.length > 0) {
+                    log(`\n🌾 First Farmer: ${data.data[0].title} (${data.data[0].id})`);
+                    log(`\n📋 All Farmer IDs:`);
+                    data.data.forEach((f, i) => log(`  ${i + 1}. ${f.id} - ${f.title}`));
+                }
+
+                if (data.error) {
+                    log(`\n❌ Error: ${JSON.stringify(data.error, null, 2)}`, 'error');
+                }
+
+                updateStatus('✅ Proxy test completed', 'success');
+            } catch (error) {
+                log(`❌ ERROR: ${error.message}`, 'error');
+                log(`Stack: ${error.stack}`, 'error');
+                updateStatus('❌ Proxy test failed', 'error');
+            }
+        }
+
+        async function testWithCacheBusting() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<p class="warning">Testing with cache busting...</p>';
+
+            try {
+                const cacheBuster = Date.now();
+                const response = await fetch(`/api/farmers?_t=${cacheBuster}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
+                    },
+                    cache: 'no-store'
+                });
+
+                log(`Cache Buster: ${cacheBuster}`);
+                log(`Status: ${response.status} ${response.statusText}`);
+
+                const text = await response.text();
+                const data = JSON.parse(text);
+
+                log(`\n✅ Success: ${data.success}`, data.success ? 'success' : 'error');
+                log(`📊 Farmers Count: ${data.data?.length || 0}`);
+
+                if (data.data && data.data.length > 0) {
+                    log(`\n🌾 All ${data.data.length} Farmers Loaded Successfully!`, 'success');
+                    data.data.forEach((f, i) => log(`  ${i + 1}. ${f.id} - ${f.title}`));
+                }
+
+                updateStatus('✅ Cache busting test completed', 'success');
+            } catch (error) {
+                log(`❌ ERROR: ${error.message}`, 'error');
+                updateStatus('❌ Cache busting test failed', 'error');
+            }
+        }
+
+        // Auto-run test on load
+        window.addEventListener('load', () => {
+            updateStatus('🚀 Diagnostic page loaded', 'success');
+            testWithCacheBusting();
+        });
+    </script>
+</body>
+</html>

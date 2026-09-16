@@ -7,13 +7,14 @@ import fs from 'fs/promises';
 import path from 'path';
 import { db } from '../database/connection';
 import crypto from 'crypto';
-import { logger } from '../utils/logger';
+import { logger, LogCategory } from '../utils/logger';
 
 const ENCRYPTION_KEY = process.env.API_KEY_ENCRYPTION_KEY || 'default-encryption-key-change-in-production';
 
 class ApiKeySyncService {
   private envFilePath: string;
   private isInitialized: boolean = false;
+  private syncIntervalId: NodeJS.Timeout | null = null;
 
   constructor() {
     // Use a separate .env file for runtime API keys
@@ -39,7 +40,7 @@ class ApiKeySyncService {
       encrypted += cipher.final('hex');
       return iv.toString('hex') + ':' + encrypted;
     } catch (error) {
-      console.error('Encryption failed:', error);
+      logger.error(LogCategory.SECURITY, 'Encryption failed:', error);
       return '';
     }
   }
@@ -51,7 +52,7 @@ class ApiKeySyncService {
     try {
       const parts = text.split(':');
       if (parts.length !== 2) {
-        console.error('Invalid encrypted format');
+        logger.error(LogCategory.SECURITY, 'Invalid encrypted format');
         return '';
       }
       const iv = Buffer.from(parts[0], 'hex');
@@ -62,7 +63,7 @@ class ApiKeySyncService {
       decrypted += decipher.final('utf8');
       return decrypted;
     } catch (error) {
-      console.error('Decryption failed:', error);
+      logger.error(LogCategory.SECURITY, 'Decryption failed:', error);
       return '';
     }
   }
@@ -330,15 +331,27 @@ class ApiKeySyncService {
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
-    
+
     await this.syncApiKeys();
-    
+
     // Re-sync periodically to catch updates
-    setInterval(() => {
+    this.syncIntervalId = setInterval(() => {
       this.syncApiKeys().catch(error => {
         logger.error('[ApiKeySync] Periodic sync failed:', error);
       });
     }, 60000); // Every minute
+  }
+
+  /**
+   * Cleanup resources and stop periodic sync
+   */
+  shutdown(): void {
+    if (this.syncIntervalId) {
+      clearInterval(this.syncIntervalId);
+      this.syncIntervalId = null;
+      logger.info('[ApiKeySync] Stopped periodic sync');
+    }
+    this.isInitialized = false;
   }
 }
 

@@ -33,8 +33,8 @@
 - **Queue backlog**: monitor `maifarm_run_queue_depth`; scale workers via settings.
 
 ## Utilities
-- `scripts/demo_flow.py` – exercise tmux + agent streaming.
-- `scripts/load_test.py` – generate concurrent run requests.
+- `scripts/demo/demo_flow.py` – exercise tmux + agent streaming.
+- `scripts/testing/load_test.py` – generate concurrent run requests.
 
 ---
 

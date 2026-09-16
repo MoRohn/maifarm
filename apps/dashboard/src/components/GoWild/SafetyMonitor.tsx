@@ -287,8 +287,8 @@ export const SafetyMonitor: React.FC<SafetyMonitorProps> = ({
       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-lg">
-              <Shield className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <div className="p-2 bg-burnt-100 dark:bg-burnt-900/20 rounded-lg">
+              <Shield className="w-5 h-5 text-burnt-600 dark:text-burnt-400" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Safety Monitor
@@ -316,7 +316,7 @@ export const SafetyMonitor: React.FC<SafetyMonitorProps> = ({
               className={clsx(
                 "px-6 py-3 text-sm font-medium capitalize transition-colors",
                 activeTab === tab
-                  ? "text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400"
+                  ? "text-burnt-600 dark:text-burnt-400 border-b-2 border-burnt-600 dark:border-burnt-400"
                   : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
               )}
             >

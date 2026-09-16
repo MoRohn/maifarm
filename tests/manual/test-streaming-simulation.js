@@ -6,7 +6,7 @@ import path from 'path';
 
 const farmId = 'b5e40088-6875-44bc-b2ec-089ce0233e1f';
 const sessionId = `farm-${farmId.substring(0, 8)}`;
-const terminalsDir = `/Users/rohnspringfield/maifarm/var/maibarn/terminals`;
+const terminalsDir = `${process.env.MAIFARM_ROOT || process.cwd()}/var/maibarn/terminals`;
 
 console.log('🧪 MaiFarm Terminal Streaming - Comprehensive Test');
 console.log('='.repeat(60));

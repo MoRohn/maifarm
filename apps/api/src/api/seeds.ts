@@ -1,7 +1,17 @@
 import { Router } from 'express';
 import { seedService } from '../services/seedService';
-import { logger } from '../utils/logger';
-import { SeedCreateInput, SeedUpdateInput, SeedFilter } from '../../src/types/seed';
+import { enhancedSeedService } from '../services/enhancedSeedService';
+import { viralSeedsService } from '../services/viralSeedsService';
+import { seedContextAssembler } from '../services/seedContextAssembler';
+import { logger, LogCategory } from '../utils/logger';
+import {
+  SeedCreateInput,
+  SeedUpdateInput,
+  SeedFilter,
+  FarmModeType,
+  AIEngineType,
+  ViralSeedGenerationConfig
+} from '../../src/types/seed';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -55,8 +65,11 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
       });
     }
 
-    // Get user ID from auth context
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     const seed = await seedService.create(input, userId);
     res.status(201).json(seed);
@@ -71,8 +84,11 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
   try {
     const input: SeedUpdateInput = req.body;
     
-    // Get user ID from auth context
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     const seed = await seedService.update(req.params.id, input, userId);
     res.json(seed);
@@ -91,8 +107,11 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
 // Delete seed
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
   try {
-    // Get user ID from auth context
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     await seedService.delete(req.params.id, userId);
     res.status(204).send();
@@ -143,8 +162,11 @@ router.post('/from-harvest/:harvestId', authenticateToken, async (req: AuthReque
       });
     }
 
-    // Get user ID from auth context
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     const seed = await seedService.createFromHarvest(harvestId, input, userId);
     res.status(201).json({ success: true, data: seed });
@@ -178,8 +200,11 @@ router.post('/from-barn-harvest/:harvestId', authenticateToken, async (req: Auth
       });
     }
 
-    // Get user ID from auth context
-    const userId = req.user?.userId || 'maifarm-user';
+    // Get user ID from auth context or use development bypass
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
     
     const seed = await seedService.createFromBarnHarvest(harvestId, input, userId);
     res.status(201).json({ success: true, data: seed });
@@ -197,17 +222,18 @@ router.post('/from-barn-harvest/:harvestId', authenticateToken, async (req: Auth
 router.put('/:id/enhance-prompt', async (req, res) => {
   try {
     const { id } = req.params;
+    const authReq = req as AuthRequest;
     const { additionalPrompt } = req.body;
 
     if (!additionalPrompt || !additionalPrompt.trim()) {
-      return res.status(400).json({ 
-        error: 'Additional prompt is required' 
+      return res.status(400).json({
+        error: 'Additional prompt is required'
       });
     }
 
-    // TODO: Get user ID from auth context
-    const userId = 'user-123'; // Placeholder
-    
+    // Get user ID from auth context (use guest ID if not authenticated)
+    const userId = authReq.user?.userId || authReq.user?.id || 'guest';
+
     const seed = await seedService.enhancePrompt(id, additionalPrompt, userId);
     res.json({ success: true, data: seed });
   } catch (error) {
@@ -225,9 +251,12 @@ router.put('/:id/enhance-prompt', async (req, res) => {
 // Get harvest-derived seeds
 router.get('/harvest-derived', async (req, res) => {
   try {
-    // TODO: Get user ID from auth context for filtering user-specific seeds
-    const userId = req.query.userOnly === 'true' ? 'user-123' : undefined;
-    
+    const authReq = req as AuthRequest;
+    // Get user ID from auth context for filtering user-specific seeds
+    const userId = req.query.userOnly === 'true'
+      ? (authReq.user?.userId || authReq.user?.id || 'guest')
+      : undefined;
+
     const seeds = await seedService.findHarvestDerivedSeeds(userId);
     res.json({ success: true, data: seeds });
   } catch (error) {
@@ -245,6 +274,205 @@ router.get('/meta/categories', async (req, res) => {
     logger.error('Failed to get categories:', error);
     res.status(500).json({ error: 'Failed to retrieve categories' });
   }
+});
+
+// ============================================
+// SEEDS ENHANCEMENT ENDPOINTS (Feature A)
+// ============================================
+
+// Apply seeds to a farm
+router.post('/apply-to-farm', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { farmId, seedIds, pinVersions } = req.body;
+
+    if (!farmId) {
+      return res.status(400).json({ error: 'farmId is required' });
+    }
+    if (!seedIds || !Array.isArray(seedIds) || seedIds.length === 0) {
+      return res.status(400).json({ error: 'seedIds array is required' });
+    }
+
+    const result = await enhancedSeedService.applyToFarm({
+      farmId,
+      seedIds,
+      pinVersions: pinVersions ?? true
+    });
+
+    if (!result.success) {
+      return res.status(400).json({
+        error: result.error,
+        warnings: result.warnings
+      });
+    }
+
+    res.json({
+      success: true,
+      appliedCount: result.appliedCount,
+      warnings: result.warnings
+    });
+  } catch (error) {
+    logger.error(LogCategory.SEED, 'Failed to apply seeds to farm:', error);
+    res.status(500).json({ error: 'Failed to apply seeds to farm' });
+  }
+});
+
+// Validate seed compatibility with mode and engine
+router.post('/validate-compatibility', async (req, res) => {
+  try {
+    const { seedIds, mode, engine } = req.body;
+
+    if (!seedIds || !Array.isArray(seedIds)) {
+      return res.status(400).json({ error: 'seedIds array is required' });
+    }
+    if (!mode) {
+      return res.status(400).json({ error: 'mode is required' });
+    }
+    if (!engine) {
+      return res.status(400).json({ error: 'engine is required' });
+    }
+
+    const result = await enhancedSeedService.validateCompatibility(
+      seedIds,
+      mode as FarmModeType,
+      engine as AIEngineType
+    );
+
+    res.json(result);
+  } catch (error) {
+    logger.error(LogCategory.SEED, 'Failed to validate compatibility:', error);
+    res.status(500).json({ error: 'Failed to validate compatibility' });
+  }
+});
+
+// Get applied seeds for a farm
+router.get('/farm/:farmId/applied', async (req, res) => {
+  try {
+    const { farmId } = req.params;
+    const seeds = await seedContextAssembler.getAppliedSeeds(farmId);
+    res.json({ success: true, seeds });
+  } catch (error) {
+    logger.error(LogCategory.SEED, 'Failed to get applied seeds:', error);
+    res.status(500).json({ error: 'Failed to get applied seeds' });
+  }
+});
+
+// ============================================
+// VIRAL SEEDS ENDPOINTS (Feature B)
+// ============================================
+
+// Generate viral seeds
+router.post('/viral/generate', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Check if pipeline is already running
+    if (viralSeedsService.isPipelineRunning()) {
+      return res.status(409).json({
+        error: 'Viral seeds pipeline is already running',
+        message: 'Please wait for the current generation to complete'
+      });
+    }
+
+    const config: ViralSeedGenerationConfig = {
+      searchQueries: req.body.searchQueries,
+      searchProvider: req.body.searchProvider || 'websearch',
+      maxResultsPerQuery: req.body.maxResultsPerQuery || 5,
+      includeCategories: req.body.includeCategories,
+      excludeCategories: req.body.excludeCategories,
+      creativityLevel: req.body.creativityLevel || 0.7,
+      snapshotId: req.body.snapshotId  // For regeneration from snapshot
+    };
+
+    logger.info(LogCategory.SEED, `Starting viral seeds generation for user ${userId}`);
+
+    const result = await viralSeedsService.runPipeline(config, userId);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error,
+        snapshotId: result.snapshotId,
+        snapshotMeta: result.snapshotMeta
+      });
+    }
+
+    res.json({
+      success: true,
+      seeds: result.seeds,
+      snapshotId: result.snapshotId,
+      snapshotMeta: result.snapshotMeta
+    });
+  } catch (error) {
+    logger.error(LogCategory.SEED, 'Viral seeds generation failed:', error);
+    res.status(500).json({ error: 'Failed to generate viral seeds' });
+  }
+});
+
+// Regenerate viral seeds from snapshot
+router.post('/viral/regenerate/:snapshotId', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { snapshotId } = req.params;
+
+    if (viralSeedsService.isPipelineRunning()) {
+      return res.status(409).json({
+        error: 'Viral seeds pipeline is already running'
+      });
+    }
+
+    logger.info(LogCategory.SEED, `Regenerating seeds from snapshot ${snapshotId}`);
+
+    const result = await viralSeedsService.regenerateFromSnapshot(snapshotId, userId);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      seeds: result.seeds,
+      snapshotId: result.snapshotId,
+      snapshotMeta: result.snapshotMeta
+    });
+  } catch (error) {
+    logger.error(LogCategory.SEED, 'Viral seeds regeneration failed:', error);
+    res.status(500).json({ error: 'Failed to regenerate viral seeds' });
+  }
+});
+
+// Get viral seeds snapshots
+router.get('/viral/snapshots', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const limit = parseInt(req.query.limit as string, 10) || 10;
+    const snapshots = await viralSeedsService.getRecentSnapshots(userId, limit);
+
+    res.json({ success: true, snapshots });
+  } catch (error) {
+    logger.error(LogCategory.SEED, 'Failed to get snapshots:', error);
+    res.status(500).json({ error: 'Failed to get snapshots' });
+  }
+});
+
+// Check viral seeds pipeline status
+router.get('/viral/status', (req, res) => {
+  res.json({
+    isRunning: viralSeedsService.isPipelineRunning()
+  });
 });
 
 export default router;

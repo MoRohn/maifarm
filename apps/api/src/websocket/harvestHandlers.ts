@@ -3,8 +3,11 @@ import { logger } from '../utils/logger';
 import { harvestService } from '../services/unified/harvestService';
 import { coordinationService } from '../services/coordinationService';
 import { spawn } from 'child_process';
-import { terminalStreamService } from '../services/terminalStreamService';
+import { unifiedTerminalStreamService } from '../services/UnifiedTerminalStreamService';
 import { getFarmSessionName, getTmuxPaneRef, listTmuxPanes } from '../utils/tmuxHelpers';
+import { pathConfig } from '../config/paths';
+
+const tmuxTmpDir = pathConfig.getPath('TMUX_TMP_DIR');
 
 interface HarvestUpdate {
   farmId: string;
@@ -47,11 +50,66 @@ class HarvestWebSocketHandler {
   private readonly MAX_RECOVERY_ATTEMPTS = 3;
   private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
   private readonly SESSION_RECOVERY_DELAY = 2000; // 2 seconds
+  private readonly MAX_EVENT_QUEUE_SIZE = 100; // MEMORY FIX: Limit event queue per client
+  private readonly EVENT_QUEUE_CLEANUP_INTERVAL = 60000; // Clean stale queues every 60 seconds
+  private eventQueueCleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(io: SocketServer) {
     this.io = io;
     this.setupHandlers();
     this.startCoordinationWatcher();
+    this.startEventQueueCleanup();
+  }
+
+  /**
+   * MEMORY FIX: Periodically clean up stale event queues
+   * Prevents memory leaks from clients that never reconnect
+   */
+  private startEventQueueCleanup() {
+    this.eventQueueCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const staleThreshold = 5 * 60 * 1000; // 5 minutes
+
+      // Clean up event queues for disconnected clients
+      for (const [socketId, events] of this.eventQueue.entries()) {
+        // If the socket is not connected, clean up its queue
+        const socket = this.io.sockets.sockets.get(socketId);
+        if (!socket || !socket.connected) {
+          this.eventQueue.delete(socketId);
+          logger.debug(`[HarvestWebSocket] Cleaned up stale event queue for ${socketId}`);
+        }
+      }
+
+      // Clean up session recovery queue for abandoned sessions
+      for (const [socketId, recovery] of this.sessionRecoveryQueue.entries()) {
+        const socket = this.io.sockets.sockets.get(socketId);
+        if (!socket || recovery.attempts >= this.MAX_RECOVERY_ATTEMPTS) {
+          this.sessionRecoveryQueue.delete(socketId);
+          logger.debug(`[HarvestWebSocket] Cleaned up stale recovery queue for ${socketId}`);
+        }
+      }
+
+      logger.debug(`[HarvestWebSocket] Event queue cleanup complete. Active queues: ${this.eventQueue.size}`);
+    }, this.EVENT_QUEUE_CLEANUP_INTERVAL);
+  }
+
+  /**
+   * MEMORY FIX: Add event to queue with size limit enforcement
+   */
+  private addToEventQueue(socketId: string, event: { type: string; data: any }) {
+    let queue = this.eventQueue.get(socketId);
+    if (!queue) {
+      queue = [];
+      this.eventQueue.set(socketId, queue);
+    }
+
+    // Enforce size limit - remove oldest events if at capacity
+    if (queue.length >= this.MAX_EVENT_QUEUE_SIZE) {
+      queue.shift(); // Remove oldest event
+      logger.warn(`[HarvestWebSocket] Event queue full for ${socketId}, dropping oldest event`);
+    }
+
+    queue.push(event);
   }
 
   private setupHandlers() {
@@ -60,35 +118,54 @@ class HarvestWebSocketHandler {
 
       // Join harvest room for a specific farm
       socket.on('harvest:join', async (data: { farmId: string }) => {
-        const { farmId } = data;
-        socket.join(`harvest:${farmId}`);
-        
-        // Track active harvest connections
-        if (!this.activeHarvests.has(farmId)) {
-          this.activeHarvests.set(farmId, new Set());
-        }
-        this.activeHarvests.get(farmId)!.add(socket.id);
-        
-        logger.info(`Client ${socket.id} joined harvest room for farm ${farmId}`);
-        
-        // Check if we have queued events for this client
-        if (this.eventQueue.has(socket.id)) {
-          const queuedEvents = this.eventQueue.get(socket.id)!;
-          logger.info(`Flushing ${queuedEvents.length} queued events for client ${socket.id}`);
-          for (const event of queuedEvents) {
-            socket.emit(event.type, event.data);
+        try {
+          const { farmId } = data;
+
+          // Validate farmId
+          if (!farmId || typeof farmId !== 'string') {
+            socket.emit('harvest:error', {
+              error: 'Invalid farm ID',
+              code: 'INVALID_FARM_ID'
+            });
+            return;
           }
-          this.eventQueue.delete(socket.id);
+
+          socket.join(`harvest:${farmId}`);
+
+          // Track active harvest connections
+          if (!this.activeHarvests.has(farmId)) {
+            this.activeHarvests.set(farmId, new Set());
+          }
+          this.activeHarvests.get(farmId)!.add(socket.id);
+
+          logger.info(`Client ${socket.id} joined harvest room for farm ${farmId}`);
+
+          // Check if we have queued events for this client
+          if (this.eventQueue.has(socket.id)) {
+            const queuedEvents = this.eventQueue.get(socket.id)!;
+            logger.info(`Flushing ${queuedEvents.length} queued events for client ${socket.id}`);
+            for (const event of queuedEvents) {
+              socket.emit(event.type, event.data);
+            }
+            this.eventQueue.delete(socket.id);
+          }
+
+          // Send initial harvest data with recovery check
+          await this.sendInitialHarvestDataWithRecovery(socket, farmId);
+
+          // Ensure terminal stream updates are flowing for this farm
+          this.subscribeToTerminalStream(farmId);
+
+          // Start heartbeat for this connection
+          this.startHeartbeat(socket, farmId);
+        } catch (error) {
+          logger.error(`Error in harvest:join handler for socket ${socket.id}:`, error);
+          socket.emit('harvest:error', {
+            error: 'Failed to join harvest room',
+            code: 'JOIN_FAILED',
+            details: error instanceof Error ? error.message : 'Unknown error'
+          });
         }
-        
-        // Send initial harvest data with recovery check
-        await this.sendInitialHarvestDataWithRecovery(socket, farmId);
-        
-        // Ensure terminal stream updates are flowing for this farm
-        this.subscribeToTerminalStream(farmId);
-        
-        // Start heartbeat for this connection
-        this.startHeartbeat(socket, farmId);
       });
 
       // Leave harvest room
@@ -122,18 +199,36 @@ class HarvestWebSocketHandler {
       });
 
       // Request terminal output for specific agent
-      socket.on('harvest:terminal:request', async (data: { 
-        sessionName: string; 
-        agentId: string; 
-        lines?: number 
+      socket.on('harvest:terminal:request', async (data: {
+        sessionName: string;
+        agentId: string;
+        lines?: number
       }) => {
-        const output = await this.getTerminalOutput(
-          data.sessionName, 
-          data.agentId, 
-          data.lines || 100
-        );
-        
-        socket.emit('harvest:terminal:output', output);
+        try {
+          // Validate input
+          if (!data.sessionName || !data.agentId) {
+            socket.emit('harvest:error', {
+              error: 'Missing required parameters',
+              code: 'INVALID_REQUEST'
+            });
+            return;
+          }
+
+          const output = await this.getTerminalOutput(
+            data.sessionName,
+            data.agentId,
+            data.lines || 100
+          );
+
+          socket.emit('harvest:terminal:output', output);
+        } catch (error) {
+          logger.error(`Error in harvest:terminal:request for socket ${socket.id}:`, error);
+          socket.emit('harvest:error', {
+            error: 'Failed to fetch terminal output',
+            code: 'TERMINAL_FETCH_FAILED',
+            details: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
       });
 
       // Send command to agent terminal
@@ -142,16 +237,34 @@ class HarvestWebSocketHandler {
         agentId: string;
         command: string;
       }) => {
-        await this.sendTerminalCommand(data.sessionName, data.agentId, data.command);
-        
-        // Broadcast command execution to all clients in the room
-        const farmId = await this.getFarmIdFromSession(data.sessionName);
-        if (farmId) {
-          this.io.to(`harvest:${farmId}`).emit('harvest:terminal:command:sent', {
-            sessionName: data.sessionName,
-            agentId: data.agentId,
-            command: data.command,
-            timestamp: new Date()
+        try {
+          // Validate input
+          if (!data.sessionName || !data.agentId || !data.command) {
+            socket.emit('harvest:error', {
+              error: 'Missing required parameters',
+              code: 'INVALID_REQUEST'
+            });
+            return;
+          }
+
+          await this.sendTerminalCommand(data.sessionName, data.agentId, data.command);
+
+          // Broadcast command execution to all clients in the room
+          const farmId = await this.getFarmIdFromSession(data.sessionName);
+          if (farmId) {
+            this.io.to(`harvest:${farmId}`).emit('harvest:terminal:command:sent', {
+              sessionName: data.sessionName,
+              agentId: data.agentId,
+              command: data.command,
+              timestamp: new Date()
+            });
+          }
+        } catch (error) {
+          logger.error(`Error in harvest:terminal:command for socket ${socket.id}:`, error);
+          socket.emit('harvest:error', {
+            error: 'Failed to send terminal command',
+            code: 'TERMINAL_COMMAND_FAILED',
+            details: error instanceof Error ? error.message : 'Unknown error'
           });
         }
       });
@@ -159,7 +272,8 @@ class HarvestWebSocketHandler {
       // Start harvest manually
       socket.on('harvest:start', async (data: { farmId: string; farmName: string }) => {
         try {
-          const harvest = await harvestService.startHarvest(data.farmId, data.farmName);
+          // Use 'system' as userId for WebSocket-initiated harvests
+          const harvest = await harvestService.startHarvest(data.farmId, data.farmName, 'system');
           
           // Broadcast harvest started event
           this.broadcastHarvestUpdate({
@@ -183,8 +297,17 @@ class HarvestWebSocketHandler {
       // Complete harvest manually
       socket.on('harvest:complete', async (data: { harvestId: string }) => {
         try {
-          const harvest = await harvestService.completeHarvest(data.harvestId);
-          
+          // Use 'system' as userId for WebSocket-initiated completions
+          const harvest = await harvestService.completeHarvest(data.harvestId, 'system');
+
+          if (!harvest) {
+            socket.emit('harvest:error', {
+              error: 'Harvest not found',
+              details: `No harvest found with ID ${data.harvestId}`
+            });
+            return;
+          }
+
           // Get farm ID from harvest
           const farmId = harvest.farmId;
           
@@ -277,25 +400,21 @@ class HarvestWebSocketHandler {
 
   private async sendInitialHarvestData(socket: Socket, farmId: string) {
     try {
-      // Get active agents from coordination
-      const agents = coordinationService.getActiveAgents();
-      
-      // Get work claims
-      const claims = coordinationService.getWorkClaims();
-      
+      // Get active agents from coordination (passing farmId to filter)
+      const agents = await coordinationService.getActiveAgents(farmId);
+
       // Get completed work
       const completed = await coordinationService.collectCompletedWork();
-      
-      // Get harvest reports
-      const reports = await coordinationService.getHarvestReports(farmId);
-      
+
+      // Get coordination status for the farm
+      const coordinationStatus = await coordinationService.getCoordinationStatus(farmId);
+
       socket.emit('harvest:initial:data', {
         farmId,
         agents,
-        claims,
         completed,
-        reports,
-        timestamp: new Date()
+        coordinationStatus,
+        timestamp: Date.now()
       });
     } catch (error) {
       logger.error('Failed to send initial harvest data:', error);
@@ -432,12 +551,12 @@ class HarvestWebSocketHandler {
         this.stopTerminalPolling(farmId);
       };
 
-      terminalStreamService.on('output', handler);
+      unifiedTerminalStreamService.on('output', handler);
       this.terminalStreamHandlers.set(farmId, handler);
     }
 
-    const streamingStatus = terminalStreamService.getStreamingStatus(farmId);
-    const hasActiveStream = Object.keys(streamingStatus).some(agentId => streamingStatus[agentId]);
+    const farmStatus = unifiedTerminalStreamService.getFarmStatus(farmId);
+    const hasActiveStream = farmStatus?.agents?.some(agent => agent.isActive) ?? false;
 
     if (!hasActiveStream) {
       this.startTerminalPolling(farmId);
@@ -447,10 +566,10 @@ class HarvestWebSocketHandler {
   private unsubscribeFromTerminalStream(farmId: string) {
     const handler = this.terminalStreamHandlers.get(farmId);
     if (handler) {
-      if (typeof terminalStreamService.off === 'function') {
-        terminalStreamService.off('output', handler);
+      if (typeof unifiedTerminalStreamService.off === 'function') {
+        unifiedTerminalStreamService.off('output', handler);
       } else {
-        terminalStreamService.removeListener('output', handler);
+        unifiedTerminalStreamService.removeListener('output', handler);
       }
       this.terminalStreamHandlers.delete(farmId);
     }
@@ -462,8 +581,8 @@ class HarvestWebSocketHandler {
       return;
     }
 
-    const streamingStatus = terminalStreamService.getStreamingStatus(farmId);
-    const hasActiveStream = Object.keys(streamingStatus).some(agentId => streamingStatus[agentId]);
+    const farmStatus = unifiedTerminalStreamService.getFarmStatus(farmId);
+    const hasActiveStream = farmStatus?.agents?.some(agent => agent.isActive) ?? false;
 
     if (hasActiveStream) {
       return;
@@ -489,7 +608,7 @@ class HarvestWebSocketHandler {
 
   private async pollTerminalOutputs(farmId: string) {
     try {
-      const activeSessionNames = terminalStreamService.getSessionNamesForFarm(farmId);
+      const activeSessionNames = unifiedTerminalStreamService.getSessionNamesForFarm(farmId);
       const sessionCandidates = activeSessionNames.length > 0
         ? activeSessionNames
         : [getFarmSessionName(farmId)];
@@ -533,7 +652,7 @@ class HarvestWebSocketHandler {
         });
 
         const harvestRoom = `harvest:${farmId}`;
-        const terminalRoom = `terminal:${sessionName || getFarmSessionName(farmId)}`;
+        const terminalRoom = `terminal:${getFarmSessionName(farmId)}`;
         for (const output of outputs) {
           this.io.to(harvestRoom).emit('harvest:terminal:output', output);
           this.io.to(terminalRoom).emit('terminal:output', output);
@@ -555,7 +674,7 @@ class HarvestWebSocketHandler {
         sessionName,
         agentId,
         lines: [],
-        timestamp: new Date()
+        timestamp: Date.now()
       };
     }
 
@@ -599,7 +718,7 @@ class HarvestWebSocketHandler {
         command,
         'C-m'
       ], {
-        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
       });
       
       sendProcess.on('exit', (code) => {
@@ -622,7 +741,7 @@ class HarvestWebSocketHandler {
         '-p',
         '-S', `-${lines}`
       ], {
-        env: { ...process.env, TMUX_TMPDIR: '/tmp' }
+        env: { ...process.env, TMUX_TMPDIR: tmuxTmpDir }
       });
 
       let output = '';
@@ -705,13 +824,30 @@ class HarvestWebSocketHandler {
     for (const farmId of Array.from(this.terminalStreamHandlers.keys())) {
       this.unsubscribeFromTerminalStream(farmId);
     }
-    
+
     // Stop coordination watcher
     if (this.coordinationWatcher) {
       clearInterval(this.coordinationWatcher);
       this.coordinationWatcher = null;
     }
-    
+
+    // MEMORY FIX: Stop event queue cleanup interval
+    if (this.eventQueueCleanupInterval) {
+      clearInterval(this.eventQueueCleanupInterval);
+      this.eventQueueCleanupInterval = null;
+    }
+
+    // MEMORY FIX: Clear all heartbeat intervals
+    this.heartbeatIntervals.forEach((interval) => {
+      clearInterval(interval);
+    });
+    this.heartbeatIntervals.clear();
+
+    // MEMORY FIX: Clear event queues and recovery queues
+    this.eventQueue.clear();
+    this.sessionRecoveryQueue.clear();
+    this.activeHarvests.clear();
+
     logger.info('Harvest WebSocket handler cleaned up');
   }
 }

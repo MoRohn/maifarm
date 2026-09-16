@@ -19,7 +19,17 @@ export enum LogCategory {
   API = 'API',
   DATABASE = 'DATABASE',
   MONITORING = 'MONITORING',
-  XENOSYNC = 'XENOSYNC'
+  XENOSYNC = 'XENOSYNC',
+  EMAIL = 'EMAIL',
+  SECURITY = 'SECURITY',
+  SYSTEM = 'SYSTEM',
+  APP = 'APP',
+  GENERAL = 'GENERAL',
+  COORDINATION = 'COORDINATION',
+  FILESYSTEM = 'FILESYSTEM',
+  CLEANUP = 'CLEANUP',
+  AI = 'AI',
+  THERMAL = 'THERMAL'
 }
 
 // Create a compatibility wrapper for Winston-style logging
@@ -141,13 +151,13 @@ const logger = {
   log: (level: string, message: string, meta?: any) => {
     const levelMap: Record<string, keyof typeof logger> = {
       'error': 'error',
-      'warn': 'warn', 
+      'warn': 'warn',
       'info': 'info',
       'http': 'http',
       'debug': 'debug'
     };
     const method = levelMap[level] || 'info';
-    logger[method](message);
+    logger[method](LogCategory.GENERAL, message);
   }
 };
 

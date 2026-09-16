@@ -126,18 +126,21 @@ export function normalizeFarmAgents<T extends 'objects' | 'ids'>(
  * Create a type-safe farm with normalized agents
  */
 export function createSafeFarm(farm: Partial<Farm>): Farm {
+  const now = new Date();
   const safeFarm: Farm = {
     id: farm.id || '',
     name: farm.name || 'Unnamed Farm',
     status: farm.status || 'idle',
     agents: farm.agents || [],
     config: farm.config || {},
+    createdAt: farm.createdAt || now,
+    updatedAt: farm.updatedAt || now,
     ...farm
   };
-  
+
   // Ensure agentCount is consistent
   safeFarm.agentCount = getAgentCount(safeFarm);
-  
+
   return safeFarm;
 }
 
@@ -150,13 +153,13 @@ export function hasActiveAgents(farm: Farm): boolean {
   }
   
   if (isAgentArray(farm.agents)) {
-    return farm.agents.some(agent => 
-      agent.status === 'active' || 
-      agent.status === 'running' || 
-      agent.status === 'working'
+    return farm.agents.some(agent =>
+      agent.status === 'active' ||
+      agent.status === 'working' ||
+      agent.status === 'busy'
     );
   }
-  
+
   // Can't check status with just IDs
   // Assume they're active if the farm is running
   return farm.status === 'running' || farm.status === 'active';

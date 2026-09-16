@@ -5,7 +5,8 @@ import { websocketManager } from '../websocket/websocketManager';
 import { costTrackingService } from './costTrackingService';
 
 export interface ProviderMetrics {
-  provider: 'claude' | 'qwen' | 'openai' | 'gpt_oss';
+  // CRITICAL FIX: Added 'grok' to provider types
+  provider: 'claude' | 'llama' | 'openai' | 'gpt_oss' | 'grok';
   availability: number; // 0-100%
   responseTime: number; // ms
   errorRate: number; // 0-100%
@@ -60,7 +61,8 @@ class ProviderMetricsService extends EventEmitter {
    * Initialize metrics for all providers
    */
   private async initializeMetrics(): Promise<void> {
-    const providers: ProviderMetrics['provider'][] = ['claude', 'qwen', 'openai', 'gpt_oss'];
+    // CRITICAL FIX: Added 'grok' to providers array
+    const providers: ProviderMetrics['provider'][] = ['claude', 'llama', 'openai', 'gpt_oss', 'grok'];
     
     for (const provider of providers) {
       const metrics: ProviderMetrics = {
@@ -231,9 +233,9 @@ class ProviderMetricsService extends EventEmitter {
             responseTime: Date.now() - startTime
           };
 
-        case 'qwen':
+        case 'llama':
           // Check Dashscope/Ollama
-          if (process.env.QWEN_USE_LOCAL === 'true') {
+          if (process.env.LLAMA_USE_LOCAL === 'true') {
             const ollamaResponse = await fetch(`${process.env.OLLAMA_HOST || 'http://localhost:11434'}/api/tags`, {
               signal: AbortSignal.timeout(5000)
             });
@@ -253,6 +255,28 @@ class ProviderMetricsService extends EventEmitter {
           // Check local/OSS model
           return {
             available: true,
+            responseTime: Date.now() - startTime
+          };
+
+        // CRITICAL FIX: Added Grok (xAI) health check
+        case 'grok':
+          // Check xAI API
+          const grokApiKey = process.env.GROK_API_KEY || process.env.XAI_API_KEY;
+          if (!grokApiKey) {
+            return {
+              available: false,
+              responseTime: Date.now() - startTime
+            };
+          }
+          const grokResponse = await fetch('https://api.x.ai/v1/models', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${grokApiKey}`
+            },
+            signal: AbortSignal.timeout(5000)
+          });
+          return {
+            available: grokResponse.ok,
             responseTime: Date.now() - startTime
           };
 
@@ -327,11 +351,13 @@ class ProviderMetricsService extends EventEmitter {
    */
   private async getProviderRateLimit(provider: string): Promise<ProviderMetrics['rateLimit']> {
     // This would be enhanced with actual API rate limit tracking
+    // CRITICAL FIX: Added 'grok' to rate limit defaults
     const defaults = {
       claude: { limit: 100000, remaining: 100000, resetAt: new Date(Date.now() + 3600000) },
       openai: { limit: 10000, remaining: 10000, resetAt: new Date(Date.now() + 60000) },
-      qwen: { limit: 50000, remaining: 50000, resetAt: new Date(Date.now() + 3600000) },
-      gpt_oss: { limit: 999999, remaining: 999999, resetAt: new Date(Date.now() + 86400000) }
+      llama: { limit: 50000, remaining: 50000, resetAt: new Date(Date.now() + 3600000) },
+      gpt_oss: { limit: 999999, remaining: 999999, resetAt: new Date(Date.now() + 86400000) },
+      grok: { limit: 60000, remaining: 60000, resetAt: new Date(Date.now() + 60000) }
     };
 
     return defaults[provider] || { limit: 1000, remaining: 1000, resetAt: new Date(Date.now() + 3600000) };
@@ -481,7 +507,8 @@ class ProviderMetricsService extends EventEmitter {
    * Build fallback chain for a provider
    */
   async buildFallbackChain(primaryProvider: string, requirements: TaskRequirements): Promise<string[]> {
-    const allProviders = ['claude', 'qwen', 'openai', 'gpt_oss'];
+    // CRITICAL FIX: Added 'grok' to all providers
+    const allProviders = ['claude', 'llama', 'openai', 'gpt_oss', 'grok'];
     const fallbacks = allProviders.filter(p => p !== primaryProvider);
     
     // Sort fallbacks by score
@@ -554,11 +581,13 @@ class ProviderMetricsService extends EventEmitter {
    * Get base cost per token for provider
    */
   private getBaseCostPerToken(provider: string): number {
+    // CRITICAL FIX: Added 'grok' to cost configuration
     const costs = {
       claude: 0.00008,  // $0.08 per 1K tokens
       openai: 0.00006,  // $0.06 per 1K tokens
-      qwen: 0.00004,    // $0.04 per 1K tokens
-      gpt_oss: 0.00001  // $0.01 per 1K tokens (self-hosted)
+      llama: 0.00004,   // $0.04 per 1K tokens
+      gpt_oss: 0.00001, // $0.01 per 1K tokens (self-hosted)
+      grok: 0.00005     // $0.05 per 1K tokens (xAI)
     };
 
     return costs[provider] || 0.00005;
@@ -568,11 +597,13 @@ class ProviderMetricsService extends EventEmitter {
    * Get default rate limit for provider
    */
   private getDefaultRateLimit(provider: string): number {
+    // CRITICAL FIX: Added 'grok' to rate limits
     const limits = {
       claude: 100000,
       openai: 10000,
-      qwen: 50000,
-      gpt_oss: 999999
+      llama: 50000,
+      gpt_oss: 999999,
+      grok: 60000
     };
 
     return limits[provider] || 10000;

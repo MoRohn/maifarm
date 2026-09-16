@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
+import { 
   Terminal as TerminalIcon,
+  Maximize2,
+  Minimize2,
   Copy,
   Download,
   Search,
+  Filter,
+  Command,
   ChevronRight,
   Activity,
   Cpu,
@@ -15,25 +19,37 @@ import {
   Square,
   PanelLeft,
   Settings,
+  Sparkles,
+  Moon,
+  Sun,
+  Eye,
+  EyeOff,
+  RotateCw,
+  PlayCircle,
+  PauseCircle,
+  AlertCircle,
   CheckCircle,
+  XCircle,
+  Info,
+  FileText,
+  Code2,
+  Braces,
+  FileCode,
+  GitBranch,
+  Layers,
   LayoutDashboard,
-  Monitor,
-  RefreshCw
+  Monitor
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { Tooltip } from '../common/Tooltip';
 import { HarvestDashboardView } from './HarvestDashboardView';
-import { ConnectionStatusBadge } from '../common/ConnectionStatusBadge';
-import { AgentActivityIndicator } from '../common/AgentActivityIndicator';
 
 interface Agent {
   id: number;
   name: string;
   status: 'initializing' | 'active' | 'processing' | 'idle' | 'error' | 'completed';
   output: string[];
-  paneId?: number;
-  agentNumber?: number;
   metrics?: {
     cpu: number;
     memory: number;
@@ -41,42 +57,6 @@ interface Agent {
     successRate: number;
     avgResponseTime: number;
   };
-}
-
-type AgentStatus = Agent['status'];
-const KNOWN_AGENT_STATUSES: AgentStatus[] = [
-  'initializing',
-  'active',
-  'processing',
-  'idle',
-  'error',
-  'completed'
-];
-
-type ExtendedAgentStatus = AgentStatus | 'orphaned' | 'recovering' | 'offline';
-
-interface TerminalOutputPayload {
-  agentIndex?: number;
-  agentId?: number | string;
-  paneId?: number;
-  lines?: string[];
-  output?: string | string[];
-  content?: string;
-}
-
-interface AgentInfoPayload {
-  farmId?: string;
-  agents?: Array<{
-    id?: number;
-    agentId?: number | string;
-    paneId?: number | string;
-    name?: string;
-    status?: ExtendedAgentStatus;
-  }>;
-}
-
-interface TerminalJoinedPayload {
-  cachedOutputs?: TerminalOutputPayload[];
 }
 
 interface CentralTerminalViewProps {
@@ -87,16 +67,12 @@ interface CentralTerminalViewProps {
   onAgentSelect?: (agentId: number) => void;
   farmName?: string;
   farmStatus?: string;
-  harvest?: unknown;
+  harvest?: any;
   onClose?: () => void;
 }
 
 type LayoutMode = 'fullscreen' | 'split-horizontal' | 'split-vertical' | 'grid' | 'focus';
 type TerminalTheme = 'pro-dark' | 'pro-light' | 'cyberpunk' | 'ocean' | 'forest' | 'sunset';
-
-// Performance optimization constants
-const MAX_TERMINAL_LINES = 1000; // Limit terminal output to prevent memory issues
-const TRIM_THRESHOLD = 1200; // Start trimming when we exceed this
 
 export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
   farmId,
@@ -110,10 +86,10 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
   onClose
 }) => {
   const [viewMode, setViewMode] = useState<'terminal' | 'harvest'>('terminal');
-  // Default to showing all agents in grid mode if there are multiple agents (up to 12 max)
-  const defaultSelectedAgents = agents.length > 0
-    ? agents.slice(0, Math.min(12, agents.length)).map(agent => agent.id)
-    : [];
+  // Default to showing all agents in grid mode if there are multiple agents
+  const defaultSelectedAgents = agents.length > 1 
+    ? agents.slice(0, Math.min(4, agents.length)).map((_, idx) => idx)
+    : [0];
   const [selectedAgents, setSelectedAgents] = useState<number[]>(defaultSelectedAgents);
   // Default to grid layout if there are multiple agents
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(agents.length > 1 ? 'grid' : 'fullscreen');
@@ -130,158 +106,28 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
   const terminalRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const { socket, isConnected } = useWebSocket();
   const [agentOutputs, setAgentOutputs] = useState<{ [key: number]: string[] }>({});
-  const maxRetries = 5;
-  const [streamingAgents, setStreamingAgents] = useState<Record<number, { name: string; status?: ExtendedAgentStatus }>>({});
-  const [agentActivity, setAgentActivity] = useState<Record<number, number>>({});
 
-  const activeAgentIds = useMemo(() => new Set(agents.map(agent => agent.id)), [agents]);
+  // CRITICAL FIX: Track user scroll state to prevent auto-scroll when user is reading
+  const userScrolledRef = useRef<{ [key: number]: boolean }>({});
+  const scrollTimeoutRef = useRef<{ [key: number]: NodeJS.Timeout | null }>({});
 
+  // MEMORY FIX: Maximum lines to keep per agent (prevents memory leak)
+  const MAX_TERMINAL_LINES = 2000;
+
+  // CLEANUP FIX: Clear scroll timeouts on unmount to prevent memory leaks
   useEffect(() => {
-    setStreamingAgents(prev => {
-      let mutated = false;
-      const next: typeof prev = {};
-
-      activeAgentIds.forEach(id => {
-        const info = prev[id];
-        if (!info) return;
-        const trimmedName = info.name?.trim() ?? '';
-        if (trimmedName !== info.name) {
-          mutated = true;
-        }
-
-        next[id] = trimmedName
-          ? { ...info, name: trimmedName }
-          : info;
+    return () => {
+      Object.values(scrollTimeoutRef.current).forEach(timeout => {
+        if (timeout) clearTimeout(timeout);
       });
-
-      if (Object.keys(prev).length !== Object.keys(next).length) {
-        mutated = true;
-      }
-
-      return mutated ? next : prev;
-    });
-  }, [activeAgentIds]);
-
-  const agentDisplayNames = useMemo(() => {
-    const uniqueNames = new Map<number, string>();
-    const counts = new Map<string, number>();
-
-    agents.forEach((agent, index) => {
-      const streamingName = streamingAgents[agent.id]?.name?.trim();
-      const agentName = agent.name?.trim();
-      const fallbackFromNumber = typeof agent.agentNumber === 'number'
-        ? `Agent ${agent.agentNumber}`
-        : `Agent ${index + 1}`;
-
-      const candidate = streamingName || agentName || fallbackFromNumber;
-      const normalized = candidate.replace(/\s+/g, ' ').trim();
-      const baseName = normalized || fallbackFromNumber;
-      const count = counts.get(baseName) ?? 0;
-      counts.set(baseName, count + 1);
-
-      const uniqueName = count === 0
-        ? baseName
-        : `${baseName} (${count + 1})`;
-
-      uniqueNames.set(agent.id, uniqueName);
-    });
-
-    return uniqueNames;
-  }, [agents, streamingAgents]);
-
-  const getAgentStatusDetails = useCallback((agent: Agent): { value: AgentStatus; label: string } => {
-    const rawStatus = streamingAgents[agent.id]?.status || agent.status;
-
-    if (rawStatus === 'orphaned' || rawStatus === 'recovering') {
-      return { value: 'processing', label: 'recovering' };
-    }
-
-    if (rawStatus === 'offline') {
-      return { value: 'idle', label: 'offline' };
-    }
-
-    if (rawStatus && KNOWN_AGENT_STATUSES.includes(rawStatus as AgentStatus)) {
-      return { value: rawStatus as AgentStatus, label: rawStatus };
-    }
-
-    return { value: 'idle', label: rawStatus || 'idle' };
-  }, [streamingAgents]);
-
-  const getStatusIndicatorClass = useCallback((status: AgentStatus) => {
-    switch (status) {
-      case 'active':
-        return 'bg-emerald-400';
-      case 'processing':
-      case 'initializing':
-        return 'bg-blue-400';
-      case 'completed':
-        return 'bg-emerald-400';
-      case 'error':
-        return 'bg-red-400';
-      default:
-        return 'bg-gray-400';
-    }
+    };
   }, []);
 
-  const getStatusBadgeClass = useCallback((status: AgentStatus) => {
-    switch (status) {
-      case 'active':
-        return 'bg-emerald-500/20 text-emerald-400';
-      case 'processing':
-      case 'initializing':
-        return 'bg-blue-500/20 text-blue-300';
-      case 'completed':
-        return 'bg-emerald-500/20 text-emerald-300';
-      case 'error':
-        return 'bg-red-500/20 text-red-400';
-      default:
-        return 'bg-gray-500/20 text-gray-400';
-    }
-  }, []);
-
-  const fillSelection = useCallback((current: number[], limit: number, options?: { ensureFull?: boolean }) => {
-    const availableIds = agents.map(agent => agent.id);
-    if (!availableIds.length) {
-      return [];
-    }
-
-    const boundedLimit = Math.max(1, Math.min(limit, availableIds.length));
-    const ensureFull = options?.ensureFull ?? true;
-    const next: number[] = [];
-
-    current.forEach(id => {
-      if (next.length >= boundedLimit) return;
-      if (availableIds.includes(id) && !next.includes(id)) {
-        next.push(id);
-      }
-    });
-
-    if (ensureFull) {
-      for (const id of availableIds) {
-        if (next.length >= boundedLimit) break;
-        if (!next.includes(id)) {
-          next.push(id);
-        }
-      }
-    }
-
-    if (!next.length) {
-      next.push(availableIds[0]);
-    }
-
-    return next.slice(0, boundedLimit);
-  }, [agents]);
-
-  // Trigger terminal verification with exponential backoff retry
+  // Trigger terminal verification on mount
   useEffect(() => {
     if (!farmId || !sessionName) return;
-
-    let retryTimer: NodeJS.Timeout;
-    let isMounted = true;
-
-    const verifyTerminalStream = async (attempt: number = 0) => {
-      if (!isMounted) return;
-
+    
+    const verifyTerminalStream = async () => {
       try {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4567';
         const response = await fetch(`${apiUrl}/api/terminal/verify`, {
@@ -293,53 +139,34 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
             agentCount: agents.length
           })
         });
-
+        
         if (response.ok) {
           const data = await response.json();
-          console.log('[CentralTerminalView] Terminal verification success:', data);
-        } else if (attempt < maxRetries) {
-          // Retry with exponential backoff: 1s, 2s, 4s, 8s, 16s
-          const delay = Math.min(1000 * Math.pow(2, attempt), 16000);
-          console.log(`[CentralTerminalView] Terminal verification failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-          retryTimer = setTimeout(() => verifyTerminalStream(attempt + 1), delay);
-        } else {
-          console.error('[CentralTerminalView] Terminal verification failed after max retries');
+          console.log('[CentralTerminalView] Terminal verification:', data);
         }
       } catch (error) {
-        console.error('[CentralTerminalView] Terminal verification error:', error);
-
-        if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt), 16000);
-          retryTimer = setTimeout(() => verifyTerminalStream(attempt + 1), delay);
-        }
+        console.error('[CentralTerminalView] Failed to verify terminal:', error);
       }
     };
-
-    // Start verification after short delay
-    const initialTimer = setTimeout(() => verifyTerminalStream(0), 500);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(initialTimer);
-      clearTimeout(retryTimer);
-    };
+    
+    // Delay verification to ensure WebSocket connection is established
+    const timer = setTimeout(verifyTerminalStream, 500);
+    return () => clearTimeout(timer);
   }, [farmId, sessionName, agents.length]);
   
-  const socketReady = socket?.connected ?? isConnected;
-
   // Subscribe to terminal WebSocket events
   useEffect(() => {
     console.log('[CentralTerminalView] WebSocket effect:', {
       socket: !!socket,
-      isConnected: socketReady,
+      isConnected,
       sessionName,
       farmId
     });
-
-    if (!socket || !socketReady || !sessionName || !farmId) {
+    
+    if (!socket || !isConnected || !sessionName || !farmId) {
       console.warn('[CentralTerminalView] Cannot join session - missing:', {
         socket: !socket,
-        connected: !socketReady,
+        connected: !isConnected,
         session: !sessionName,
         farm: !farmId
       });
@@ -347,13 +174,13 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
     }
 
     console.log('[CentralTerminalView] Joining terminal session:', sessionName, 'for farm:', farmId);
-
+    
     // Join the terminal session room
-    socket.emit('terminal:join_session', {
-      sessionId: sessionName,
-      farmId
+    socket.emit('terminal:join_session', { 
+      sessionId: sessionName, 
+      farmId 
     });
-
+    
     // Request any cached messages immediately after joining
     setTimeout(() => {
       socket.emit('terminal:request_cached', {
@@ -362,36 +189,12 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
       });
     }, 100);
 
-    // Poll for terminal output every 2 seconds as fallback
-    const pollInterval = setInterval(() => {
-      console.log('[CentralTerminalView] Polling for terminal output');
-      socket.emit('terminal:request_output', {
-        sessionId: sessionName,
-        farmId,
-        agentCount: agents.length
-      });
-    }, 2000);
-
-    // Clean up polling on unmount
-    const cleanup = () => {
-      clearInterval(pollInterval);
-    };
-
     // Handle terminal output
-    const handleTerminalOutput = (data: TerminalOutputPayload) => {
+    const handleTerminalOutput = (data: any) => {
       console.log('[CentralTerminalView] Received terminal output:', data);
       
       // Extract agent ID from various possible formats
-      const rawAgentId = data.agentIndex ?? data.agentId ?? data.paneId;
-      let agentIndex = typeof rawAgentId === 'number'
-        ? rawAgentId
-        : (typeof rawAgentId === 'string'
-            ? parseInt(rawAgentId.replace(/[^0-9]/g, ''), 10)
-            : 0);
-
-      if (Number.isNaN(agentIndex)) {
-        agentIndex = 0;
-      }
+      const agentIndex = data.agentId ?? data.agentIndex ?? 0;
       
       // Extract output lines from various formats
       let newLines: string[] = [];
@@ -403,89 +206,38 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
         } else if (typeof data.output === 'string') {
           newLines = data.output.split('\n').filter((line: string) => line.trim());
         }
-      } else if (typeof data.content === 'string') {
-        newLines = data.content
-          .split(/\r?\n/)
-          .map(line => line.trim())
-          .filter(Boolean);
       }
       
       if (newLines.length > 0) {
         setAgentOutputs(prev => {
-          const currentLines = prev[agentIndex] || [];
-          const updatedLines = [...currentLines, ...newLines];
-
-          // Trim old lines if we exceed the threshold
-          if (updatedLines.length > TRIM_THRESHOLD) {
-            return {
-              ...prev,
-              [agentIndex]: updatedLines.slice(-MAX_TERMINAL_LINES)
-            };
-          }
-
+          const existingLines = prev[agentIndex] || [];
+          const combinedLines = [...existingLines, ...newLines];
+          // MEMORY FIX: Keep only last MAX_TERMINAL_LINES to prevent unbounded growth
+          const trimmedLines = combinedLines.length > MAX_TERMINAL_LINES
+            ? combinedLines.slice(-MAX_TERMINAL_LINES)
+            : combinedLines;
           return {
             ...prev,
-            [agentIndex]: updatedLines
+            [agentIndex]: trimmedLines
           };
         });
-
-        const now = Date.now();
-        setAgentActivity(prev => ({
-          ...prev,
-          [agentIndex]: now
-        }));
-
-        // Auto-scroll if enabled
-        if (autoScroll && terminalRefs.current[agentIndex]) {
-          setTimeout(() => {
+        
+        // SCROLL FIX: Only auto-scroll if enabled AND user hasn't manually scrolled recently
+        if (autoScroll && terminalRefs.current[agentIndex] && !userScrolledRef.current[agentIndex]) {
+          requestAnimationFrame(() => {
             if (terminalRefs.current[agentIndex]) {
               terminalRefs.current[agentIndex]!.scrollTop = terminalRefs.current[agentIndex]!.scrollHeight;
             }
-          }, 50);
+          });
         }
       }
     };
 
     // Listen for terminal output events
     socket.on('terminal:output', handleTerminalOutput);
-    socket.on('harvest:terminal:output', handleTerminalOutput);
-    socket.on('terminal:force_output', handleTerminalOutput); // Handle forced emissions
     
-    const handleAgentInfo = (data: AgentInfoPayload) => {
-      if (!data || (data.farmId && data.farmId !== farmId)) {
-        return;
-      }
-
-      const updates: Record<number, { name: string; status?: ExtendedAgentStatus }> = {};
-      (data.agents || []).forEach(agentInfo => {
-        const rawId = agentInfo.id ?? agentInfo.agentId ?? agentInfo.paneId;
-        if (rawId === undefined || rawId === null) return;
-
-        const normalizedId = typeof rawId === 'number'
-          ? rawId
-          : (() => {
-              const numeric = parseInt(String(rawId).replace(/[^0-9]/g, ''), 10);
-              return Number.isNaN(numeric) ? undefined : numeric;
-            })();
-
-        if (normalizedId === undefined) return;
-
-        updates[normalizedId] = {
-          name: typeof agentInfo.name === 'string' && agentInfo.name.trim() ? agentInfo.name.trim() : `Agent ${normalizedId + 1}`,
-          status: agentInfo.status
-        };
-      });
-
-      if (Object.keys(updates).length > 0) {
-        setStreamingAgents(prev => ({ ...prev, ...updates }));
-      }
-    };
-
-    socket.on('farm:agents:info', handleAgentInfo);
-    socket.on('terminal:agents:info', handleAgentInfo);
-
     // Also listen for terminal:joined event which may include cached data
-    const handleTerminalJoined = (data: TerminalJoinedPayload) => {
+    const handleTerminalJoined = (data: any) => {
       console.log('[CentralTerminalView] Terminal joined event:', data);
       if (data.cachedOutputs) {
         // Process any cached outputs
@@ -497,51 +249,82 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
     socket.on('terminal:joined', handleTerminalJoined);
 
     return () => {
-      cleanup();
       socket.off('terminal:output', handleTerminalOutput);
-      socket.off('harvest:terminal:output', handleTerminalOutput);
-      socket.off('terminal:force_output', handleTerminalOutput);
       socket.off('terminal:joined', handleTerminalJoined);
-      socket.off('farm:agents:info', handleAgentInfo);
-      socket.off('terminal:agents:info', handleAgentInfo);
       socket.emit('terminal:leave_session', { sessionId: sessionName, farmId });
     };
-  }, [socket, socketReady, sessionName, farmId, autoScroll, agents.length]);
+  }, [socket, isConnected, sessionName, farmId, autoScroll]);
   
   // Update selected agents when agents list changes
-  const updateSelectedAgents = useCallback((ids: number[], options?: { ensureFull?: boolean }) => {
-    const normalized = fillSelection(ids, ids.length || 1, {
-      ensureFull: options?.ensureFull ?? true
-    });
-
-    setSelectedAgents(prev => {
-      if (prev.length === normalized.length && prev.every((value, index) => value === normalized[index])) {
-        return prev;
-      }
-      return normalized;
-    });
-  }, [fillSelection]);
-
   useEffect(() => {
-    if (!agents.length) {
-      updateSelectedAgents([]);
-      return;
-    }
-
     if (layoutMode === 'grid' && agents.length > 1) {
-      // Support up to 12 agents in grid view
-      const maxGridAgents = Math.min(12, agents.length);
-      updateSelectedAgents(agents.slice(0, maxGridAgents).map(agent => agent.id));
-      return;
+      // In grid mode, automatically select up to 4 agents
+      setSelectedAgents(agents.slice(0, Math.min(4, agents.length)).map((_, idx) => idx));
+    } else if (layoutMode === 'split-horizontal' || layoutMode === 'split-vertical') {
+      // In split modes, select up to 2 agents
+      setSelectedAgents(agents.slice(0, Math.min(2, agents.length)).map((_, idx) => idx));
+    } else if (agents.length > 0 && selectedAgents.length === 0) {
+      // If no agents selected, select the first one
+      setSelectedAgents([0]);
     }
+  }, [agents.length]); // Only re-run when number of agents changes
 
-    if ((layoutMode === 'split-horizontal' || layoutMode === 'split-vertical') && agents.length > 0) {
-      updateSelectedAgents(agents.slice(0, Math.min(2, agents.length)).map(agent => agent.id));
-      return;
-    }
+  // KEYBOARD SHORTCUTS: CMD+1..9 for quick agent switching
+  // Allows users to quickly switch between agents using keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle CMD/Ctrl + number keys
+      if (!(e.metaKey || e.ctrlKey)) return;
 
-    updateSelectedAgents([agents[0].id]);
-  }, [agents, layoutMode, updateSelectedAgents]);
+      // Check for number keys 1-9
+      if (e.key >= '1' && e.key <= '9') {
+        e.preventDefault();
+        const agentIndex = parseInt(e.key) - 1; // Convert to 0-indexed
+
+        // Only switch if agent exists
+        if (agentIndex < agents.length) {
+          // In fullscreen/focus mode, switch to single agent
+          if (layoutMode === 'fullscreen' || layoutMode === 'focus') {
+            setSelectedAgents([agentIndex]);
+          } else {
+            // In grid/split modes, toggle agent selection
+            setSelectedAgents(prev => {
+              if (prev.includes(agentIndex)) {
+                // If only one selected, don't deselect
+                if (prev.length <= 1) return prev;
+                return prev.filter(id => id !== agentIndex);
+              } else {
+                // Add agent to selection (max 4 in grid, 2 in split)
+                const maxAgents = layoutMode === 'grid' ? 4 : 2;
+                if (prev.length >= maxAgents) {
+                  // Replace oldest selection
+                  return [...prev.slice(1), agentIndex];
+                }
+                return [...prev, agentIndex];
+              }
+            });
+          }
+
+          // Notify parent if callback provided
+          if (onAgentSelect) {
+            onAgentSelect(agentIndex);
+          }
+        }
+      }
+
+      // CMD+0 for all agents (grid mode)
+      if (e.key === '0') {
+        e.preventDefault();
+        if (agents.length > 1) {
+          setLayoutMode('grid');
+          setSelectedAgents(agents.slice(0, Math.min(4, agents.length)).map((_, idx) => idx));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [agents.length, layoutMode, onAgentSelect]);
 
   // Terminal theme configurations with professional color schemes
   const getThemeConfig = () => {
@@ -635,64 +418,51 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
   // Handle layout mode change with automatic agent selection
   const handleLayoutModeChange = (mode: LayoutMode) => {
     setLayoutMode(mode);
-    setSelectedAgents(prev => {
-      switch (mode) {
-        case 'fullscreen':
-        case 'focus':
-          return fillSelection(prev.length ? [prev[0]] : [], 1);
-        case 'split-horizontal':
-        case 'split-vertical':
-          return fillSelection(prev, 2);
-        case 'grid': {
-          // Support more agents in grid view - show all available agents up to 12
-          const maxGridAgents = Math.min(agents.length, 12);
-          return fillSelection(prev, maxGridAgents);
+    
+    // Automatically adjust selected agents based on layout mode
+    switch (mode) {
+      case 'fullscreen':
+      case 'focus':
+        // Keep only the first selected agent
+        if (selectedAgents.length > 0) {
+          setSelectedAgents([selectedAgents[0]]);
+        } else {
+          setSelectedAgents([0]);
         }
-        default:
-          return fillSelection(prev, prev.length || 1);
-      }
-    });
+        break;
+      case 'split-horizontal':
+      case 'split-vertical':
+        // Select first 2 agents
+        setSelectedAgents(agents.slice(0, Math.min(2, agents.length)).map((_, idx) => idx));
+        break;
+      case 'grid':
+        // Select first 4 agents (or all if less than 4)
+        setSelectedAgents(agents.slice(0, Math.min(4, agents.length)).map((_, idx) => idx));
+        break;
+    }
   };
 
   // Handle agent selection based on layout mode
   const handleAgentSelect = (agentId: number) => {
-    if (!agents.some(agent => agent.id === agentId)) {
-      return;
-    }
-
-    setSelectedAgents(prev => {
-      switch (layoutMode) {
-        case 'focus':
-        case 'fullscreen':
-          return fillSelection([agentId], 1);
-        case 'split-horizontal':
-        case 'split-vertical': {
-          const alreadySelected = prev.includes(agentId);
-          const base = alreadySelected
-            ? prev.filter(id => id !== agentId)
-            : [...prev, agentId];
-          return fillSelection(base, 2, { ensureFull: false });
-        }
-        case 'grid': {
-          // Support up to 12 agents in grid view
-          const limit = Math.min(12, agents.length || 12);
-          let base: number[];
-          if (prev.includes(agentId)) {
-            base = prev.filter(id => id !== agentId);
-          } else if (prev.length >= limit) {
-            base = [...prev.slice(prev.length - (limit - 1)), agentId];
-          } else {
-            base = [...prev, agentId];
-          }
-          return fillSelection(base, limit, { ensureFull: false });
-        }
-        default: {
-          const base = prev.includes(agentId) ? prev : [...prev, agentId];
-          return fillSelection(base, base.length || 1, { ensureFull: false });
-        }
+    if (layoutMode === 'focus' || layoutMode === 'fullscreen') {
+      setSelectedAgents([agentId]);
+    } else if (layoutMode === 'split-horizontal' || layoutMode === 'split-vertical') {
+      if (selectedAgents.includes(agentId)) {
+        setSelectedAgents(selectedAgents.filter(id => id !== agentId));
+      } else if (selectedAgents.length < 2) {
+        setSelectedAgents([...selectedAgents, agentId]);
+      } else {
+        setSelectedAgents([selectedAgents[1], agentId]);
       }
-    });
-
+    } else if (layoutMode === 'grid') {
+      if (selectedAgents.includes(agentId)) {
+        setSelectedAgents(selectedAgents.filter(id => id !== agentId));
+      } else if (selectedAgents.length < 4) {
+        setSelectedAgents([...selectedAgents, agentId]);
+      } else {
+        setSelectedAgents([...selectedAgents.slice(1), agentId]);
+      }
+    }
     onAgentSelect?.(agentId);
   };
 
@@ -729,110 +499,31 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
     });
   };
 
-  const getAgentDisplayName = (agent: Agent): string => {
-    if (agentDisplayNames.has(agent.id)) {
-      return agentDisplayNames.get(agent.id)!;
-    }
-
-    const trimmedName = agent.name?.trim();
-    if (trimmedName) {
-      return trimmedName;
-    }
-
-    if (typeof agent.agentNumber === 'number') {
-      return `Agent ${agent.agentNumber}`;
-    }
-
-    const index = agents.findIndex(a => a.id === agent.id);
-    return `Agent ${index >= 0 ? index + 1 : agent.id}`;
-  };
-
-  const getOutputKey = (agent: Agent): number => {
-    if (typeof agent.paneId === 'number' && !Number.isNaN(agent.paneId)) {
-      return agent.paneId;
-    }
-    return agent.id;
-  };
-
-  const totalLines = useMemo(() => {
-    const socketLines = Object.values(agentOutputs).reduce((sum, lines) => sum + (lines?.length || 0), 0);
-    if (socketLines > 0) {
-      return socketLines;
-    }
-    return agents.reduce((acc, agent) => acc + (agent.output?.length || 0), 0);
-  }, [agentOutputs, agents]);
-
-  const latestActivityTimestamp = useMemo(() => {
-    const timestamps = Object.values(agentActivity);
-    if (timestamps.length === 0) {
-      return undefined;
-    }
-    return Math.max(...timestamps);
-  }, [agentActivity]);
-
-  const latestActivityLabel = latestActivityTimestamp
-    ? new Date(latestActivityTimestamp).toLocaleTimeString()
-    : 'Waiting for output';
-
-  const activeAgentCount = useMemo(() => {
-    const streamingCount = Object.keys(streamingAgents).length;
-    return streamingCount || agents.length;
-  }, [streamingAgents, agents.length]);
-
   // Copy terminal output
   const copyOutput = async (agentId: number) => {
-    const agent = agents.find(a => a.id === agentId);
+    const agent = agents[agentId];
     if (agent) {
-      const outputKey = getOutputKey(agent);
-      const outputLines = agentOutputs[outputKey] || agent.output;
-      const text = (outputLines || []).join('\n');
+      const text = agent.output.join('\n');
       await navigator.clipboard.writeText(text);
     }
   };
 
   // Download terminal output
   const downloadOutput = (agentId: number) => {
-    const agent = agents.find(a => a.id === agentId);
+    const agent = agents[agentId];
     if (agent) {
-      const outputKey = getOutputKey(agent);
-      const outputLines = agentOutputs[outputKey] || agent.output;
-      const text = (outputLines || []).join('\n');
+      const text = agent.output.join('\n');
       const blob = new Blob([text], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${getAgentDisplayName(agent)}-output-${Date.now()}.log`;
+      a.download = `${agent.name}-output-${Date.now()}.log`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
   };
-
-  // Refresh terminal connection (force rejoin and request state)
-  const refreshTerminal = useCallback((agentId: number) => {
-    if (socket && farmId) {
-      const agent = agents.find(a => a.id === agentId);
-      if (agent) {
-        const sessionName = `farm-${farmId.substring(0, 8)}`;
-
-        // Rejoin terminal session
-        socket.emit('terminal:join_session', {
-          sessionId: sessionName,
-          farmId: farmId
-        });
-
-        // Request fresh terminal state
-        socket.emit('terminal:request_state', {
-          sessionId: sessionName,
-          farmId,
-          agentId: agentId
-        });
-
-        console.log(`[CentralTerminalView] Manually refreshed terminal for agent ${agentId}`);
-      }
-    }
-  }, [socket, farmId, agents]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -848,24 +539,10 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
 
   // Render terminal for a single agent
   const renderTerminal = (agent: Agent, isFullWidth: boolean = true) => {
-    const outputKey = getOutputKey(agent);
     // Use WebSocket output if available, fallback to agent.output
-    const agentOutput = agentOutputs[outputKey]
-      || agentOutputs[agent.id]
-      || agentOutputs[agents.indexOf(agent)]
-      || agent.output
-      || [];
+    const agentOutput = agentOutputs[agent.id] || agentOutputs[agents.indexOf(agent)] || agent.output || [];
     const filteredOutput = filterOutput(agentOutput);
-    const displayName = getAgentDisplayName(agent);
-    const { value: statusValue, label: statusLabel } = getAgentStatusDetails(agent);
-
-    // Dynamic height based on layout mode for better space utilization
-    const heightClass = layoutMode === 'grid'
-      ? selectedAgents.length > 4
-        ? 'max-h-[400px]' // Smaller for 5+ agents in grid
-        : 'max-h-[500px]'  // Standard for 2-4 agents
-      : 'max-h-[600px]';   // Full size for single/split views
-
+    
     return (
       <motion.div
         key={agent.id}
@@ -873,8 +550,7 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.3 }}
         className={cn(
-          'flex flex-col overflow-hidden rounded-xl h-full',
-          heightClass,
+          'flex flex-col h-full overflow-hidden rounded-xl',
           theme.terminalBg,
           theme.border,
           'border',
@@ -890,24 +566,24 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
           theme.border,
           'backdrop-blur-sm'
         )}>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
               <div className="w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-colors cursor-pointer" />
               <div className="w-3 h-3 rounded-full bg-amber-500 hover:bg-amber-600 transition-colors cursor-pointer" />
               <div className="w-3 h-3 rounded-full bg-emerald-500 hover:bg-emerald-600 transition-colors cursor-pointer" />
             </div>
-
-            {/* Enhanced Agent Activity Indicator */}
-            <AgentActivityIndicator
-              agentId={agent.id}
-              agentName={displayName}
-              status={statusValue}
-              lastActivity={agentActivity[agent.id]}
-              outputLineCount={filteredOutput.length}
-              size="sm"
-              showPulse={true}
-              className="flex-1 min-w-0"
-            />
+            <div className="flex items-center gap-2">
+              <TerminalIcon className={cn('w-4 h-4', theme.accent)} />
+              <span className={cn('font-medium', theme.text)}>{agent.name}</span>
+              <div className={cn(
+                'px-2 py-0.5 rounded-full text-xs',
+                agent.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' :
+                agent.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                'bg-gray-500/20 text-gray-400'
+              )}>
+                {agent.status}
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <Tooltip content="Copy output">
@@ -934,18 +610,6 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
                 <Download className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
-            <Tooltip content="Refresh terminal connection">
-              <button
-                onClick={() => refreshTerminal(agent.id)}
-                className={cn(
-                  'p-1.5 rounded-lg transition-colors',
-                  'hover:bg-white/10',
-                  theme.text
-                )}
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
           </div>
         </div>
 
@@ -953,13 +617,7 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
         <div
           ref={el => terminalRefs.current[agent.id] = el}
           className={cn(
-            'flex-1 overflow-y-auto p-4 font-mono min-h-[150px]',
-            // Dynamic max height based on grid density
-            layoutMode === 'grid' && selectedAgents.length > 4
-              ? 'max-h-[300px]'  // Compact for dense grids (5+ agents)
-              : layoutMode === 'grid'
-                ? 'max-h-[400px]'  // Standard for 2-4 agents
-                : 'max-h-[500px]', // Full for single/split views
+            'flex-1 overflow-y-auto p-4 font-mono',
             getFontSize(),
             theme.text,
             theme.selection,
@@ -972,37 +630,51 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
               ? 'rgb(209 213 219) rgb(243 244 246)'
               : 'rgb(55 65 81) rgb(17 24 39)'
           }}
+          // SCROLL FIX: Track user scroll to prevent auto-scroll when reading
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            const isAtBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 50;
+
+            if (!isAtBottom) {
+              // User scrolled up, mark as user-scrolled
+              userScrolledRef.current[agent.id] = true;
+              // Clear existing timeout
+              if (scrollTimeoutRef.current[agent.id]) {
+                clearTimeout(scrollTimeoutRef.current[agent.id]!);
+              }
+              // Reset user scroll flag after 3 seconds of inactivity
+              scrollTimeoutRef.current[agent.id] = setTimeout(() => {
+                userScrolledRef.current[agent.id] = false;
+              }, 3000);
+            } else {
+              // User is at bottom, reset flag
+              userScrolledRef.current[agent.id] = false;
+            }
+          }}
         >
           {filteredOutput.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <Activity className={cn('w-8 h-8 mx-auto mb-3', theme.accent, isConnected ? 'animate-pulse' : 'opacity-40')} />
+                <Activity className={cn('w-8 h-8 mx-auto mb-3', theme.accent, 'animate-pulse')} />
                 <p className={cn('text-sm', theme.text, 'opacity-60')}>
-                  {!isConnected ? 'Connecting to server...' : 'Waiting for output...'}
+                  Waiting for output...
                 </p>
-                {!isConnected && (
-                  <p className={cn('text-xs mt-2', theme.text, 'opacity-40')}>
-                    WebSocket disconnected - attempting reconnection
-                  </p>
-                )}
               </div>
             </div>
           ) : (
             <div className="space-y-0.5">
-              <AnimatePresence mode="popLayout">
+              {/* PERFORMANCE FIX: Removed AnimatePresence mode="popLayout" which causes layout thrashing
+                  with large outputs. Using simple CSS transitions for better performance */}
               {filteredOutput.map((line, idx) => {
                 const level = getLogLevel(line);
                 return (
-                  <motion.div 
+                  <div
                     key={`${agent.id}-${idx}`}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 10 }}
-                    transition={{ duration: 0.15 }}
                     className={cn(
                       'flex items-start gap-3 group hover:bg-white/5 px-2 -mx-2 rounded transition-colors',
                       getLogColor(level)
                     )}
+                    style={{ contain: 'layout paint' }} // CSS containment for performance
                   >
                     {showLineNumbers && (
                       <span className="text-gray-600 dark:text-gray-500 select-none min-w-[3ch] text-right">
@@ -1016,10 +688,9 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
                         {new Date().toLocaleTimeString()}
                       </span>
                     )}
-                  </motion.div>
+                  </div>
                 );
               })}
-              </AnimatePresence>
             </div>
           )}
         </div>
@@ -1059,21 +730,8 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
 
   // Render layout based on mode
   const renderLayout = () => {
-    const seen = new Set<number>();
-    const visibleAgents: Agent[] = [];
-
-    selectedAgents.forEach(id => {
-      const agent = agents.find(item => item.id === id);
-      if (agent && !seen.has(agent.id)) {
-        seen.add(agent.id);
-        visibleAgents.push(agent);
-      }
-    });
-
-    if (!visibleAgents.length && agents.length > 0) {
-      visibleAgents.push(agents[0]);
-    }
-
+    const visibleAgents = selectedAgents.map(id => agents[id]).filter(Boolean);
+    
     switch (layoutMode) {
       case 'split-horizontal':
         return (
@@ -1097,28 +755,16 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
           </div>
         );
       
-      case 'grid': {
-        // Dynamic grid layout based on agent count
-        const agentCount = visibleAgents.length;
-        const gridCols = agentCount <= 2 ? 'grid-cols-1 md:grid-cols-2' :
-                        agentCount <= 4 ? 'grid-cols-2' :
-                        agentCount <= 6 ? 'grid-cols-2 xl:grid-cols-3' :
-                        agentCount <= 9 ? 'grid-cols-2 xl:grid-cols-3' :
-                        'grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4';
-
-        // Limit to showing max 12 agents in grid view for performance
-        const maxAgents = Math.min(12, agentCount);
-
+      case 'grid':
         return (
-          <div className={cn('grid gap-4 h-full auto-rows-fr', gridCols)}>
-            {visibleAgents.slice(0, maxAgents).map(agent => (
-              <div key={agent.id} className="min-h-0 flex">
+          <div className="grid grid-cols-2 gap-4 h-full">
+            {visibleAgents.slice(0, 4).map(agent => (
+              <div key={agent.id} className="min-h-0">
                 {renderTerminal(agent, false)}
               </div>
             ))}
           </div>
         );
-      }
       
       case 'focus':
       case 'fullscreen':
@@ -1193,64 +839,44 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
             </div>
           </div>
 
-          {/* Connection Status Badge */}
-          <ConnectionStatusBadge
-            isConnected={socketReady}
-            isConnecting={socket !== null && !socketReady}
-            lastUpdate={latestActivityTimestamp}
-            size="md"
-            showLabel={true}
-          />
-
           {/* Agent Pills - Only show in terminal view */}
-          {viewMode === 'terminal' && agents.length <= 6 && (
+          {viewMode === 'terminal' && (
             <div className="flex items-center gap-2">
-              {agents.map(agent => {
-                const { value: statusValue } = getAgentStatusDetails(agent);
-                const outputKey = getOutputKey(agent);
-                const outputLines = agentOutputs[outputKey] || agent.output || [];
-                const lastActivity = agentActivity[agent.id];
-
-                return (
-                  <button
-                    key={agent.id}
-                    onClick={() => handleAgentSelect(agent.id)}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg text-xs font-medium transition-all relative',
+              {agents.map((agent, index) => (
+              <button
+                key={agent.id}
+                onClick={() => handleAgentSelect(agent.id)}
+                className={cn(
+                  'px-3 py-1.5 rounded-lg text-xs font-medium transition-all group',
+                  selectedAgents.includes(agent.id)
+                    ? 'bg-blue-500 text-white shadow-lg'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                )}
+                title={`${agent.name} (⌘${index + 1})`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <div className={cn(
+                    'w-2 h-2 rounded-full',
+                    agent.status === 'active' ? 'bg-emerald-400' :
+                    agent.status === 'error' ? 'bg-red-400' :
+                    'bg-gray-400'
+                  )} />
+                  {agent.name}
+                  {/* Keyboard shortcut hint - visible on hover */}
+                  {index < 9 && (
+                    <span className={cn(
+                      'ml-1 px-1 py-0.5 text-[10px] font-mono rounded',
+                      'opacity-0 group-hover:opacity-100 transition-opacity',
                       selectedAgents.includes(agent.id)
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                    )}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <div className={cn(
-                        'w-2 h-2 rounded-full',
-                        getStatusIndicatorClass(statusValue)
-                      )} />
-                      {getAgentDisplayName(agent)}
-                      {outputLines.length > 0 && (
-                        <span className="text-[10px] opacity-70">
-                          ({outputLines.length})
-                        </span>
-                      )}
-                    </div>
-                    {/* Activity pulse indicator */}
-                    {lastActivity && Date.now() - lastActivity < 3000 && (
-                      <motion.div
-                        className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full"
-                        animate={{
-                          scale: [1, 1.5, 1],
-                          opacity: [1, 0.5, 1]
-                        }}
-                        transition={{
-                          duration: 1,
-                          repeat: Infinity
-                        }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
+                        ? 'bg-white/20'
+                        : 'bg-gray-300 dark:bg-gray-600'
+                    )}>
+                      ⌘{index + 1}
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))}
             </div>
           )}
         </div>
@@ -1278,10 +904,7 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
           </div>
           <select
             value={filterLevel}
-            onChange={(event) => {
-              const value = event.target.value as 'all' | 'info' | 'warning' | 'error';
-              setFilterLevel(value);
-            }}
+            onChange={(e) => setFilterLevel(e.target.value as any)}
             className={cn(
               'px-3 py-2 rounded-lg',
               'bg-gray-100 dark:bg-gray-800',
@@ -1461,10 +1084,7 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
                 <span className="text-sm text-gray-700 dark:text-gray-300">Font Size:</span>
                 <select
                   value={fontSize}
-                  onChange={(event) => {
-                    const value = event.target.value as 'small' | 'medium' | 'large';
-                    setFontSize(value);
-                  }}
+                  onChange={(e) => setFontSize(e.target.value as any)}
                   className="px-2 py-1 rounded text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600"
                 >
                   <option value="small">Small</option>
@@ -1515,10 +1135,7 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
               </span>
             </div>
             <span className="text-gray-500">
-              {totalLines} total lines
-            </span>
-            <span className="text-gray-500">
-              Agents: {activeAgentCount}
+              {agents.reduce((acc, agent) => acc + agent.output.length, 0)} total lines
             </span>
             <span className="text-gray-500">
               Layout: {layoutMode}
@@ -1529,11 +1146,33 @@ export const CentralTerminalView: React.FC<CentralTerminalViewProps> = ({
               Theme: {terminalTheme}
             </span>
             <span className="text-gray-500">
-              Last activity: {latestActivityLabel}
+              {new Date().toLocaleTimeString()}
             </span>
           </div>
         </div>
       </motion.div>
     </div>
+  );
+};
+
+// Export wrapped version with error boundary for safety
+import { EnhancedTerminalErrorBoundary } from './EnhancedTerminalErrorBoundary';
+
+export const CentralTerminalViewWithErrorBoundary: React.FC<CentralTerminalViewProps> = (props) => {
+  return (
+    <EnhancedTerminalErrorBoundary
+      terminalId={props.farmId}
+      agentName={props.farmName}
+      onError={(error, errorInfo) => {
+        console.error('[CentralTerminalView] Error caught by boundary:', {
+          error: error.message,
+          farmId: props.farmId,
+          farmName: props.farmName,
+          componentStack: errorInfo.componentStack?.slice(0, 500)
+        });
+      }}
+    >
+      <CentralTerminalView {...props} />
+    </EnhancedTerminalErrorBoundary>
   );
 };

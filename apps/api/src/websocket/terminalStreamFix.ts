@@ -5,7 +5,7 @@
 
 import { Socket, Server as SocketIOServer } from 'socket.io';
 import { terminalService } from '../services/unified/terminalService';
-import { terminalStreamService } from '../services/terminalStreamService';
+import { unifiedTerminalStreamService } from '../services/UnifiedTerminalStreamService';
 import { logger } from '../utils/logger';
 import { pathConfig } from '../config/paths';
 
@@ -99,9 +99,9 @@ export class TerminalStreamFix {
   private static async ensureStreaming(sessionId: string, farmId: string) {
     try {
       // Check if streaming is already active
-      const streamingStatus = await terminalStreamService.getStreamingStatus(farmId);
+      const farmStatus = unifiedTerminalStreamService.getFarmStatus(farmId);
 
-      if (!streamingStatus || Object.keys(streamingStatus).length === 0) {
+      if (!farmStatus || !farmStatus.agents || farmStatus.agents.length === 0) {
         logger.info(`[TerminalStreamFix] Starting streaming for session ${sessionId} (farm: ${farmId})`);
 
         // Clean session and farm IDs
@@ -129,16 +129,7 @@ export class TerminalStreamFix {
           logger.debug(`[TerminalStreamFix] Tmux session not found, will use other methods`);
         }
 
-        // If no actual pane count, check for pending session info
-        if (!agentCount) {
-          const pendingInfo = terminalStreamService.getPendingSessionInfo(cleanSessionId);
-          agentCount = pendingInfo?.agentCount;
-
-          if (agentCount) {
-            logger.info(`[TerminalStreamFix] Using pending session agent count: ${agentCount}`);
-          }
-        }
-
+        // If no actual pane count, try to get from farm service
         if (!agentCount) {
           // Fallback to farm service or mode detection
           try {
@@ -167,20 +158,17 @@ export class TerminalStreamFix {
           }
         }
 
-        // Build agents array with proper structure
-        const agents: Array<{ agentId: string; paneId: string }> = [];
+        // Build agent names array
+        const agentNames: string[] = [];
         for (let i = 0; i < agentCount; i++) {
-          agents.push({
-            agentId: `agent-${i}`,
-            paneId: `${i}`
-          });
+          agentNames.push(`Agent ${i + 1}`);
         }
 
         logger.info(`[TerminalStreamFix] Starting streaming for ${cleanSessionId} with ${agentCount} agents`);
 
         // Try to start tmux streaming (may fail if tmux session doesn't exist)
         try {
-          await terminalStreamService.startStreaming(cleanFarmId, cleanSessionId, agents);
+          await unifiedTerminalStreamService.registerFarm(cleanFarmId, cleanSessionId, agentCount, agentNames);
           logger.info(`[TerminalStreamFix] Tmux streaming started successfully`);
         } catch (error) {
           logger.warn(`[TerminalStreamFix] Tmux streaming failed (might be testing):`, error);
@@ -197,7 +185,7 @@ export class TerminalStreamFix {
           logger.error(`[TerminalStreamFix] Failed to start file watcher:`, error);
         }
       } else {
-        logger.debug(`[TerminalStreamFix] Streaming already active for session ${sessionId} with ${Object.keys(streamingStatus).length} streams`);
+        logger.debug(`[TerminalStreamFix] Streaming already active for session ${sessionId} with ${farmStatus.agents?.length || 0} agents`);
       }
     } catch (error) {
       logger.error(`[TerminalStreamFix] Failed to ensure streaming for ${sessionId}:`, error);

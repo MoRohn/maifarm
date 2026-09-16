@@ -3,6 +3,7 @@ import { taskScheduler } from './scheduler';
 import { taskExecutor } from './executor';
 import { db } from '../database/connection';
 import { EventEmitter } from 'events';
+import { logger, LogCategory } from '../utils/logger';
 
 export class Orchestrator extends EventEmitter {
   private isRunning = false;
@@ -35,11 +36,11 @@ export class Orchestrator extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log('Orchestrator is already running');
+      logger.info(LogCategory.ORCHESTRATOR, 'Orchestrator is already running');
       return;
     }
 
-    console.log('Starting orchestrator...');
+    logger.info(LogCategory.ORCHESTRATOR, 'Starting orchestrator...');
     
     try {
       // Start task queue processing
@@ -56,10 +57,10 @@ export class Orchestrator extends EventEmitter {
       
       this.isRunning = true;
       this.emit('orchestrator:started');
-      
-      console.log('Orchestrator started successfully');
+
+      logger.info(LogCategory.ORCHESTRATOR, 'Orchestrator started successfully');
     } catch (error) {
-      console.error('Failed to start orchestrator:', error);
+      logger.error(LogCategory.ORCHESTRATOR, 'Failed to start orchestrator:', error);
       throw error;
     }
   }
@@ -69,11 +70,11 @@ export class Orchestrator extends EventEmitter {
    */
   async stop(): Promise<void> {
     if (!this.isRunning) {
-      console.log('Orchestrator is not running');
+      logger.info(LogCategory.ORCHESTRATOR, 'Orchestrator is not running');
       return;
     }
 
-    console.log('Stopping orchestrator...');
+    logger.info(LogCategory.ORCHESTRATOR, 'Stopping orchestrator...');
     
     try {
       // Stop task scheduler
@@ -90,10 +91,10 @@ export class Orchestrator extends EventEmitter {
       
       this.isRunning = false;
       this.emit('orchestrator:stopped');
-      
-      console.log('Orchestrator stopped successfully');
+
+      logger.info(LogCategory.ORCHESTRATOR, 'Orchestrator stopped successfully');
     } catch (error) {
-      console.error('Failed to stop orchestrator:', error);
+      logger.error(LogCategory.ORCHESTRATOR, 'Failed to stop orchestrator:', error);
       throw error;
     }
   }
@@ -124,7 +125,7 @@ export class Orchestrator extends EventEmitter {
       try {
         await this.executeAssignedTasks();
       } catch (error) {
-        console.error('Error in executor loop:', error);
+        logger.error(LogCategory.ORCHESTRATOR, 'Error in executor loop:', error);
         this.emit('error', error);
       }
     }, 2000); // Check every 2 seconds
@@ -167,11 +168,11 @@ export class Orchestrator extends EventEmitter {
           updatedAt: row.updated_at
         };
 
-        console.log(`[Orchestrator] Processing Quick Task: ${quickTask.id}`);
-        
+        logger.info(LogCategory.ORCHESTRATOR, `Processing Quick Task: ${quickTask.id}`);
+
         // Process the quick task immediately (don't await to allow parallel processing)
         this.processQuickTask(quickTask).catch(error => {
-          console.error(`Failed to process quick task ${quickTask.id}:`, error);
+          logger.error(LogCategory.ORCHESTRATOR, `Failed to process quick task ${quickTask.id}:`, error);
         });
       }
 
@@ -228,7 +229,7 @@ export class Orchestrator extends EventEmitter {
 
       // Execute task asynchronously
       this.executeTask(task, agent).catch(error => {
-        console.error(`Error executing task ${task.id}:`, error);
+        logger.error(LogCategory.ORCHESTRATOR, `Error executing task ${task.id}:`, error);
         this.handleTaskError(task, error);
       });
     }
@@ -359,7 +360,7 @@ export class Orchestrator extends EventEmitter {
       if (error.code !== 'ECONNREFUSED') {
         throw error;
       }
-      console.warn('Task submitted without database persistence');
+      logger.warn(LogCategory.ORCHESTRATOR, 'Task submitted without database persistence');
     }
 
     // Add to queue
@@ -404,7 +405,7 @@ export class Orchestrator extends EventEmitter {
       
       return true;
     } catch (error) {
-      console.error('Error cancelling task:', error);
+      logger.error(LogCategory.ORCHESTRATOR, 'Error cancelling task:', error);
       return false;
     }
   }
@@ -452,7 +453,7 @@ export class Orchestrator extends EventEmitter {
         );
       } catch (error) {
         // Fallback if DB not available
-        console.warn('Database update failed for task:', task.id);
+        logger.warn(LogCategory.ORCHESTRATOR, `Database update failed for task: ${task.id}`);
       }
       
       // Update farm status to running
@@ -461,9 +462,9 @@ export class Orchestrator extends EventEmitter {
           `UPDATE farms SET status = 'running', updated_at = $1 WHERE id = $2`,
           [new Date(), task.farmId]
         );
-        console.log(`[Orchestrator] Farm ${task.farmId} status updated to 'running'`);
+        logger.info(LogCategory.ORCHESTRATOR, `Farm ${task.farmId} status updated to 'running'`);
       } catch (error) {
-        console.warn('Failed to update farm status to running:', error);
+        logger.warn(LogCategory.ORCHESTRATOR, 'Failed to update farm status to running:', error);
       }
       
       this.emit('quicktask:processing', { task });
@@ -475,7 +476,7 @@ export class Orchestrator extends EventEmitter {
         // Task has been launched successfully and is running in the background
         // Don't call completeTask here - it will be called when the task actually completes
         // via the monitoring system or timeout handler
-        console.log(`[Orchestrator] Quick task ${task.id} launched successfully`);
+        logger.info(LogCategory.ORCHESTRATOR, `Quick task ${task.id} launched successfully`);
         
         this.emit('quicktask:launched', { task, result });
       } else {
@@ -488,7 +489,7 @@ export class Orchestrator extends EventEmitter {
         this.emit('quicktask:failed', { task, error: result.error });
       }
     } catch (error) {
-      console.error('Error processing quick task:', error);
+      logger.error(LogCategory.ORCHESTRATOR, 'Error processing quick task:', error);
       this.emit('quicktask:error', { task, error });
     }
   }

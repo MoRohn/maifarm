@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Activity, Cpu, HardDrive, Users, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Farm } from '@/types';
 import { getAgentsFromFarm, getAgentCount } from '@/utils/farmHelpers';
@@ -11,18 +11,13 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-      case 'running':
-      case 'completed':
         return 'text-green-500';
       case 'launching':
       case 'paused':
-      case 'harvesting':
         return 'text-yellow-500';
       case 'failed':
       case 'stopped':
-      case 'crashed':
         return 'text-red-500';
-      case 'idle':
       default:
         return 'text-gray-500';
     }
@@ -31,11 +26,8 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'active':
-      case 'running':
-      case 'completed':
         return <CheckCircle className="h-5 w-5" />;
       case 'failed':
-      case 'crashed':
         return <AlertTriangle className="h-5 w-5" />;
       default:
         return <Activity className="h-5 w-5" />;
@@ -48,12 +40,13 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
     return `${hours}h ${minutes}m`;
   };
 
-  const calculateAverageUptime = () => {
+  // PERFORMANCE: Memoize average uptime calculation to prevent recalculation on every render
+  const averageUptime = useMemo(() => {
     const agents = getAgentsFromFarm(farm);
     if (agents.length === 0) return 0;
     const totalUptime = agents.reduce((sum, agent) => sum + (agent.metrics?.uptime || 0), 0);
     return totalUptime / agents.length;
-  };
+  }, [farm]);
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
@@ -109,7 +102,7 @@ const FarmStatusMonitor: React.FC<FarmStatusMonitorProps> = ({ farm }) => {
             <Activity className="h-5 w-5 text-orange-500" />
             <span className="text-sm font-medium text-gray-700">Uptime</span>
           </div>
-          <div className="text-2xl font-bold">{formatUptime(calculateAverageUptime())}</div>
+          <div className="text-2xl font-bold">{formatUptime(averageUptime)}</div>
           <div className="text-sm text-gray-600">Average agent uptime</div>
         </div>
       </div>

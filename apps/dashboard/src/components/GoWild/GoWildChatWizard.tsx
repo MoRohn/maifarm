@@ -322,62 +322,84 @@ export const GoWildChatWizard: React.FC<GoWildChatWizardProps> = ({
     setIsCreatingFarm(true);
     
     try {
-      const basePayload = {
-        prompt: context.finalPrompt || context.taskDescription || 'GoWild creative exploration',
-        agentCount: context.numberOfAgents || 5,
-        timeoutMinutes: context.timeoutMinutes || 30,
-        provider: activeProvider || 'claude',
-        useXenoSync: true,
-        creativityLevel: context.creativityLevel || 80
-      } as const;
+      // Prepare farm data for GoWild
+      const farmData = {
+        name: farmName || 'Creative Exploration',
+        description: context.finalPrompt || context.taskDescription || 'GoWild creative exploration',
+        type: 'autonomous' as const,
+        config: {
+          autoScale: true,
+          maxAgents: context.numberOfAgents || 5,
+          timeout: (context.timeoutMinutes || 30) * 60,
+          retryPolicy: {
+            enabled: true,
+            maxRetries: 3,
+            backoffMultiplier: 2
+          },
+          goWildMode: {
+            enabled: true,
+            creativityLevel: Math.ceil((context.creativityLevel || 80) / 20) as 1 | 2 | 3 | 4 | 5,
+            boundaries: []
+          }
+        }
+      };
 
-      let response;
-      if (attachedFiles.length > 0) {
-        const formData = new FormData();
-        Object.entries(basePayload).forEach(([key, value]) => formData.append(key, String(value)));
-        attachedFiles.forEach((file) => formData.append('files', file));
-        response = await api.quickActions.startGoWild(formData);
-      } else {
-        response = await api.quickActions.startGoWild(basePayload);
-      }
-
-      const responseData = response.data?.data || response.data;
-
-      if (responseData?.farmId) {
-        await fetchFarms();
-        setFarmId(responseData.farmId);
-
-        addMessage({
-          id: `success-${Date.now()}`,
-          role: 'assistant',
-          content: '🎨 **Creative Exploration Launched!**\n\n' +
-                  '✨ Your creative agents are now exploring uncharted territory!\n' +
-                  '🧠 Creativity Level: ' + (context.creativityLevel || 80) + '%\n' +
-                  '👥 Active Agents: ' + (context.numberOfAgents || 5) + '\n' +
-                  '⏱️ Exploration Time: ' + (context.timeoutMinutes || 30) + ' minutes\n\n' +
-                  '**Your Journey Ahead:**\n' +
-                  '1. Brief introduction to the harvest concept\n' +
-                  '2. Live view of agents exploring creative solutions\n' +
-                  '3. Innovative results collected in real-time\n' +
-                  '4. Final harvest of all discoveries\n\n' +
-                  'Prepare for creative breakthroughs...',
-          timestamp: new Date()
-        });
-
-        setTimeout(() => {
-          addMessage({
-            id: `transition-${Date.now()}`,
-            role: 'system',
-            content: '🚀 Entering creative exploration space...',
-            timestamp: new Date()
+      // Create the farm
+      const response = await api.post('/api/farms', farmData);
+      
+      if (response.data?.success !== false) {
+        const newFarm = response.data?.data || response.data;
+        
+        if (newFarm?.id) {
+          addFarm(newFarm);
+          await fetchFarms();
+          setFarmId(newFarm.id);
+          
+          // Launch the farm with agents
+          const launchResponse = await api.post(`/api/farms/${newFarm.id}/launch`, {
+            numberOfAgents: context.numberOfAgents || 5,
+            collaborative: true,
+            prompt: context.finalPrompt || context.taskDescription,
+            goWildMode: true,
+            provider: 'claude'
           });
-
-          setTimeout(() => {
-            setShowConceptExplainer(true);
-            navigate(`/farm/${responseData.farmId}/transition/gowild`);
-            onClose();
-          }, 1200);
-        }, 2000);
+          
+          if (launchResponse.data?.success) {
+            // Show comprehensive success message with clear transition
+            addMessage({
+              id: `success-${Date.now()}`,
+              role: 'assistant',
+              content: '🎨 **Creative Exploration Launched!**\n\n' +
+                      '✨ Your creative agents are now exploring uncharted territory!\n' +
+                      '🧠 Creativity Level: ' + (context.creativityLevel || 80) + '%\n' +
+                      '👥 Active Agents: ' + (context.numberOfAgents || 5) + '\n' +
+                      '⏱️ Exploration Time: ' + (context.timeoutMinutes || 30) + ' minutes\n\n' +
+                      '**Your Journey Ahead:**\n' +
+                      '1. Brief introduction to the harvest concept\n' +
+                      '2. Live view of agents exploring creative solutions\n' +
+                      '3. Innovative results collected in real-time\n' +
+                      '4. Final harvest of all discoveries\n\n' +
+                      'Prepare for creative breakthroughs...',
+              timestamp: new Date()
+            });
+            
+            // Smooth transition sequence
+            setTimeout(() => {
+              // Add transition message
+              addMessage({
+                id: `transition-${Date.now()}`,
+                role: 'system',
+                content: '🚀 Entering creative exploration space...',
+                timestamp: new Date()
+              });
+              
+              // Show concept explainer
+              setTimeout(() => {
+                setShowConceptExplainer(true);
+              }, 1000);
+            }, 2000);
+          }
+        }
       }
     } catch (error) {
       console.error('GoWild execution error:', error);

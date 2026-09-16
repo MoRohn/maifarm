@@ -1,6 +1,6 @@
-import request from 'supertest';
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 
+const request = require('supertest');
 const API_URL = process.env.API_URL || 'http://localhost:4567';
 
 describe('Farm Creation API Tests', () => {

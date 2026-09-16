@@ -7,7 +7,14 @@ export const ToastContainer: React.FC = () => {
   const { toasts, hide } = useToastStore();
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+    // FIX: Add safe area padding for notched devices (iPhone X+, iPad Pro)
+    <div
+      className="fixed bottom-4 right-4 z-50 flex flex-col gap-2"
+      style={{
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        paddingRight: 'env(safe-area-inset-right, 0px)'
+      }}
+    >
       <AnimatePresence mode="sync">
         {toasts.map((toast) => (
           <Toast

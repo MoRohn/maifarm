@@ -24,10 +24,20 @@ export const CreateFarmFromSeed: React.FC = () => {
   );
   const [creating, setCreating] = useState(false);
   const [workflowStatus, setWorkflowStatus] = useState<ExtendedWorkflowStatus | null>(null);
+  const [unsubscribe, setUnsubscribe] = useState<(() => void) | null>(null);
 
   useEffect(() => {
     loadSeeds();
   }, []);
+
+  // Cleanup workflow subscription on unmount
+  useEffect(() => {
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [unsubscribe]);
 
   const loadSeeds = async () => {
     try {
@@ -67,11 +77,11 @@ export const CreateFarmFromSeed: React.FC = () => {
       toast.success(`Farm "${farmName}" created successfully!`);
 
       // Subscribe to workflow progress
-      const unsubscribe = workflowService.subscribeToWorkflowProgress(
+      const unsubscribeFn = workflowService.subscribeToWorkflowProgress(
         result.workflowId,
         (status) => {
           setWorkflowStatus(status);
-          
+
           if (status.status === 'completed') {
             toast.success('Workflow completed successfully!');
             setTimeout(() => {
@@ -83,8 +93,8 @@ export const CreateFarmFromSeed: React.FC = () => {
         }
       );
 
-      // Clean up subscription on unmount
-      return () => unsubscribe();
+      // Store unsubscribe function for cleanup
+      setUnsubscribe(() => unsubscribeFn);
     } catch (error) {
       console.error('Error creating farm:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to create farm');

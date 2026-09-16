@@ -485,7 +485,7 @@ export class MicroservicesCommunicator extends EventEmitter {
         return await terminalService[methodPart](params);
 
       case 'harvest':
-        const harvestService = require('../harvestService').harvestService;
+        const harvestService = require('../unified/harvestService').harvestService;
         return await harvestService[methodPart](params);
 
       default:

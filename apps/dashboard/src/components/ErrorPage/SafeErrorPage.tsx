@@ -55,24 +55,41 @@ const SafeErrorPage: React.FC<SafeErrorPageProps> = ({ error, resetError }) => {
   };
 
   const handleRebuild = () => {
-    // Clear all caches and storage
-    localStorage.clear();
-    sessionStorage.clear();
-    
+    // FIX: Clear all caches and storage with try-catch for iOS Safari private browsing
+    try {
+      localStorage.clear();
+    } catch (e) {
+      console.warn('Could not clear localStorage:', e);
+    }
+
+    try {
+      sessionStorage.clear();
+    } catch (e) {
+      console.warn('Could not clear sessionStorage:', e);
+    }
+
     // Clear service worker caches
     if ('caches' in window) {
       caches.keys().then(names => {
-        names.forEach(name => caches.delete(name));
-      });
+        names.forEach(name => {
+          caches.delete(name).catch(err =>
+            console.warn(`Could not delete cache ${name}:`, err)
+          );
+        });
+      }).catch(err => console.warn('Could not get cache keys:', err));
     }
-    
+
     // Unregister service workers
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(registrations => {
-        registrations.forEach(registration => registration.unregister());
-      });
+        registrations.forEach(registration => {
+          registration.unregister().catch(err =>
+            console.warn('Could not unregister service worker:', err)
+          );
+        });
+      }).catch(err => console.warn('Could not get service worker registrations:', err));
     }
-    
+
     // Force reload
     window.location.href = '/';
   };

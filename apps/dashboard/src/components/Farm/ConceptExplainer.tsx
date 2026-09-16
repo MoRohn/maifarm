@@ -14,25 +14,45 @@ export const ConceptExplainer: React.FC = () => {
   const [farmStatus, setFarmStatus] = useState<string>('launching');
   const [showModal, setShowModal] = useState(true);
   const [farmName, setFarmName] = useState<string>();
+  const [extractedFarmId, setExtractedFarmId] = useState<string | undefined>();
   const hasRedirected = useRef(false);
 
-  // Use the param farmId directly - React Router should handle this
-  const farmId = paramFarmId;
+  // Use either the param farmId or the extracted one
+  const farmId = paramFarmId || extractedFarmId;
 
-  // Validate farmId and handle missing cases
+  // Extract farmId from URL if not in params
   useEffect(() => {
-    if (!farmId) {
-      console.error('[ConceptExplainer] No farmId provided in route params');
-      // Give a brief moment for React Router to update
-      const timeout = setTimeout(() => {
-        if (!farmId) {
-          console.error('[ConceptExplainer] Still no farmId after timeout, redirecting to home');
-          navigate('/home');
+    if (!paramFarmId) {
+      // Try to extract farmId from URL
+      const pathname = window.location.pathname;
+      const pathParts = pathname.split('/');
+      const farmIndex = pathParts.indexOf('farm');
+      
+      if (farmIndex !== -1 && pathParts[farmIndex + 1]) {
+        const extracted = pathParts[farmIndex + 1];
+        console.log('[ConceptExplainer] Extracted farmId from URL:', extracted);
+        setExtractedFarmId(extracted);
+      } else {
+        // Try regex match for more complex patterns
+        const match = pathname.match(/\/farm\/([^\/]+)/);
+        if (match && match[1]) {
+          const extracted = match[1];
+          console.log('[ConceptExplainer] Extracted farmId via regex:', extracted);
+          setExtractedFarmId(extracted);
+        } else {
+          // Only redirect to home after trying all extraction methods
+          const checkTimeout = setTimeout(() => {
+            if (!paramFarmId && !extractedFarmId) {
+              console.error('[ConceptExplainer] Cannot extract farmId, redirecting to home');
+              navigate('/home');
+            }
+          }, 200);
+          
+          return () => clearTimeout(checkTimeout);
         }
-      }, 100);
-      return () => clearTimeout(timeout);
+      }
     }
-  }, [farmId, navigate]);
+  }, [paramFarmId, navigate, extractedFarmId]);
 
   // Fetch initial farm status
   useEffect(() => {
