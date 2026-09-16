@@ -137,6 +137,8 @@ jobs:
     needs: build-release
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
+    env:
+      HAS_APP_STORE_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY != '' }}
 
     steps:
       - name: Checkout code
@@ -150,7 +152,7 @@ jobs:
           gem install fastlane
 
       - name: Setup certificates
-        if: ${{ secrets.APP_STORE_CONNECT_API_KEY != '' }}
+        if: env.HAS_APP_STORE_KEY == 'true'
         env:
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
@@ -160,7 +162,7 @@ jobs:
           # fastlane match appstore --readonly
 
       - name: Archive and upload to Mac App Store
-        if: ${{ secrets.APP_STORE_CONNECT_API_KEY != '' }}
+        if: env.HAS_APP_STORE_KEY == 'true'
         env:
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
         run: |
