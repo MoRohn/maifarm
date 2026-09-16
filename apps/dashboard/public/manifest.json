@@ -1,0 +1,106 @@
+{
+  "name": "MaiFarm - Multi-Agent Orchestrator",
+  "short_name": "MaiFarm",
+  "description": "Advanced multi-agent Claude Code orchestrator with real-time monitoring and AI-powered features",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0ea5e9",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "120x120",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "167x167",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-light-bkgd.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-light-bkgd.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-light-bkgd.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-dark-bkgd.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-dark-bkgd.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/maifarm-icon-dark-bkgd.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Create New Farm",
+      "short_name": "New Farm",
+      "description": "Create a new agent farm",
+      "url": "/farms/new",
+      "icons": [
+        {
+          "src": "/maifarm-icon-forest-walk-light.svg",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Open Barn",
+      "short_name": "Barn",
+      "description": "Review collected harvests",
+      "url": "/barn",
+      "icons": [
+        {
+          "src": "/maifarm-icon-ocean-breeze-light.svg",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ],
+  "categories": [
+    "productivity",
+    "developer",
+    "utilities"
+  ],
+  "prefer_related_applications": false
+}

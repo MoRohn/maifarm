@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+
+/**
+ * MaiFarm Command Router
+ *
+ * Routes commands:
+ * - 'farm' -> starts UI app
+ * - 'farm cli' -> starts CLI app
+ */
+
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// ESM equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const args = process.argv.slice(2);
+
+// Check if the first argument is 'cli'
+if (args[0] === 'cli') {
+  // Remove 'cli' from arguments and pass the rest to farm-cli
+  const cliArgs = args.slice(1);
+
+  // Path to the CLI executable
+  const cliPath = path.join(__dirname, '..', 'cli', 'dist', 'index.js');
+
+  // Spawn the CLI process with remaining arguments
+  const cliProcess = spawn('node', [cliPath, ...cliArgs], {
+    stdio: 'inherit',
+    env: process.env
+  });
+
+  cliProcess.on('exit', (code) => {
+    process.exit(code || 0);
+  });
+
+  cliProcess.on('error', (err) => {
+    console.error('Failed to launch MaiFarm CLI:', err.message);
+    console.error('Run "npm run setup:cli" to install the CLI');
+    process.exit(1);
+  });
+
+} else {
+  // No arguments or other arguments - start the UI app
+  console.log('🚜 Starting MaiFarm UI...\n');
+  console.log('===============================');
+  console.log(' MaiFarm Development Commands ');
+  console.log('===============================\n');
+  console.log('  - farm stop     # Stop dev server');
+  console.log('  - farm status   # Check status');
+  console.log('  - farm logs     # Tail logs\n');
+
+  // Run npm run dev to start the UI
+  const uiProcess = spawn('npm', ['run', 'dev'], {
+    stdio: ['inherit', 'pipe', 'pipe'],
+    cwd: path.join(__dirname, '..'),
+    shell: true
+  });
+
+  let hasLoggedReady = false;
+
+  const handleOutput = (chunk: Buffer | string) => {
+    const text = chunk.toString();
+    if (!hasLoggedReady) {
+      const match = text.match(/Local:\s*(https?:\/\/[^\s]+)/i);
+      if (match) {
+        hasLoggedReady = true;
+        console.log(`\n✅ MaiFarm dev server ready at ${match[1]}\n`);
+        console.log('👏 Happy farming!\n');
+      }
+    }
+  };
+
+  if (uiProcess.stdout) {
+    uiProcess.stdout.on('data', (data) => {
+      process.stdout.write(data);
+      handleOutput(data);
+    });
+  }
+
+  if (uiProcess.stderr) {
+    uiProcess.stderr.on('data', (data) => {
+      process.stderr.write(data);
+      handleOutput(data);
+    });
+  }
+
+  uiProcess.on('exit', (code) => {
+    process.exit(code || 0);
+  });
+
+  uiProcess.on('error', (err) => {
+    console.error('Failed to start MaiFarm UI:', err.message);
+    process.exit(1);
+  });
+}

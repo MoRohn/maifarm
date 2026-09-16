@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MaiFarm Real-Time Terminal Streaming Test</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: white;
+            color: #667eea;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        button.active {
+            background: #48bb78;
+            color: white;
+        }
+        input {
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            flex: 1;
+            min-width: 200px;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        .status.connected {
+            background: #48bb78;
+        }
+        .status.disconnected {
+            background: #f56565;
+        }
+        .terminals {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        .terminal {
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .terminal-output {
+            background: black;
+            color: #00ff00;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            border-radius: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            scroll-behavior: smooth;
+        }
+        .terminal-output::-webkit-scrollbar {
+            width: 8px;
+        }
+        .terminal-output::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+        .terminal-output::-webkit-scrollbar-thumb {
+            background: rgba(102, 126, 234, 0.6);
+            border-radius: 10px;
+        }
+        .message-line {
+            margin: 2px 0;
+            padding: 2px 5px;
+            transition: background 0.3s;
+        }
+        .message-line:hover {
+            background: rgba(102, 126, 234, 0.2);
+        }
+        .message-line.new {
+            animation: highlight 1s ease-in-out;
+        }
+        @keyframes highlight {
+            0% { background: rgba(72, 187, 120, 0.5); }
+            100% { background: transparent; }
+        }
+        .stats {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+        .auto-scroll-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 5px;
+            animation: pulse 1s infinite;
+        }
+        .auto-scroll-indicator.active {
+            background: #48bb78;
+        }
+        .auto-scroll-indicator.inactive {
+            background: #f56565;
+            animation: none;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚜 MaiFarm Real-Time Terminal Streaming Test 🌾</h1>
+
+        <div class="controls">
+            <input type="text" id="farmId" placeholder="Enter Farm ID (e.g., b89d25bb)" value="b89d25bb">
+            <button onclick="connectToFarm()">Connect to Farm</button>
+            <button onclick="sendTestMessage()">Send Test Message</button>
+            <button onclick="toggleAutoScroll()" id="autoScrollBtn" class="active">Auto-Scroll: ON</button>
+            <button onclick="clearTerminals()">Clear All</button>
+            <span class="status disconnected" id="status">Disconnected</span>
+        </div>
+
+        <div class="terminals" id="terminals">
+            <!-- Terminals will be dynamically added here -->
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="messageCount">0</div>
+                <div class="stat-label">Messages Received</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="agentCount">0</div>
+                <div class="stat-label">Active Agents</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="updateRate">0</div>
+                <div class="stat-label">Updates/sec</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="latency">0ms</div>
+                <div class="stat-label">Latency</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let currentFarmId;
+        let autoScroll = true;
+        let messageCount = 0;
+        let agentOutputs = {};
+        let lastUpdateTime = Date.now();
+        let updateCount = 0;
+        let updateRateInterval;
+
+        function connectToFarm() {
+            const farmId = document.getElementById('farmId').value;
+            if (!farmId) {
+                alert('Please enter a Farm ID');
+                return;
+            }
+
+            currentFarmId = farmId;
+
+            // Connect to WebSocket
+            if (socket) {
+                socket.disconnect();
+            }
+
+            socket = io('http://localhost:4567', {
+                transports: ['websocket'],
+                reconnection: true,
+                reconnectionAttempts: 10,
+                reconnectionDelay: 1000
+            });
+
+            socket.on('connect', () => {
+                console.log('✅ Connected to WebSocket server');
+                updateStatus('Connected', true);
+
+                // Join the farm room
+                const sessionId = `farm-${farmId.substring(0, 8)}`;
+                console.log(`Joining session: ${sessionId}`);
+
+                socket.emit('terminal:join', {
+                    farmId: farmId,
+                    sessionId: sessionId
+                });
+
+                // Also try alternative join patterns
+                socket.emit('farm:join', { farmId: farmId });
+                socket.emit('terminal:subscribe', {
+                    sessionId: sessionId,
+                    farmId: farmId
+                });
+            });
+
+            socket.on('disconnect', () => {
+                console.log('❌ Disconnected from WebSocket server');
+                updateStatus('Disconnected', false);
+            });
+
+            socket.on('terminal:joined', (data) => {
+                console.log('✅ Successfully joined terminal room:', data);
+                addLogMessage('System', `Joined terminal room for farm ${farmId}`);
+            });
+
+            socket.on('terminal:output', (data) => {
+                const timestamp = new Date().toISOString();
+                console.log('📝 Terminal output received:', {
+                    timestamp,
+                    agentId: data.agentId,
+                    sessionName: data.sessionName,
+                    lines: data.lines?.length || 0,
+                    output: data.output?.length || 0
+                });
+
+                handleTerminalOutput(data);
+                updateLatency(data.timestamp);
+            });
+
+            socket.on('farm:status', (data) => {
+                console.log('📊 Farm status update:', data);
+                addLogMessage('System', `Farm status: ${data.status}`);
+            });
+
+            socket.on('agent:output', (data) => {
+                console.log('🤖 Agent output:', data);
+                handleTerminalOutput(data);
+            });
+
+            socket.on('error', (error) => {
+                console.error('❌ WebSocket error:', error);
+                addLogMessage('System', `Error: ${error.message || error}`);
+            });
+
+            // Start update rate monitoring
+            if (updateRateInterval) {
+                clearInterval(updateRateInterval);
+            }
+            updateRateInterval = setInterval(updateUpdateRate, 1000);
+        }
+
+        function handleTerminalOutput(data) {
+            const agentId = data.agentId || 0;
+            const lines = data.lines || (data.output ? [data.output] : []);
+
+            if (!agentOutputs[agentId]) {
+                createTerminal(agentId);
+                agentOutputs[agentId] = [];
+            }
+
+            // Add new lines
+            lines.forEach(line => {
+                if (line && line.trim()) {
+                    agentOutputs[agentId].push(line);
+                    addLineToTerminal(agentId, line);
+                }
+            });
+
+            messageCount++;
+            updateCount++;
+            document.getElementById('messageCount').textContent = messageCount;
+            updateAgentCount();
+        }
+
+        function createTerminal(agentId) {
+            const terminalsDiv = document.getElementById('terminals');
+
+            if (document.getElementById(`terminal-${agentId}`)) {
+                return; // Terminal already exists
+            }
+
+            const terminalDiv = document.createElement('div');
+            terminalDiv.className = 'terminal';
+            terminalDiv.innerHTML = `
+                <div class="terminal-header">
+                    <span>Agent ${agentId}</span>
+                    <span>
+                        Auto-scroll<span class="auto-scroll-indicator ${autoScroll ? 'active' : 'inactive'}"></span>
+                    </span>
+                </div>
+                <div class="terminal-output" id="terminal-${agentId}"></div>
+            `;
+            terminalsDiv.appendChild(terminalDiv);
+        }
+
+        function addLineToTerminal(agentId, line) {
+            const terminal = document.getElementById(`terminal-${agentId}`);
+            if (!terminal) {
+                createTerminal(agentId);
+                return addLineToTerminal(agentId, line);
+            }
+
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'message-line new';
+            lineDiv.textContent = line;
+            terminal.appendChild(lineDiv);
+
+            // Keep only last 100 lines
+            while (terminal.children.length > 100) {
+                terminal.removeChild(terminal.firstChild);
+            }
+
+            // Auto-scroll if enabled
+            if (autoScroll) {
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+
+            // Remove highlight animation after it completes
+            setTimeout(() => {
+                lineDiv.classList.remove('new');
+            }, 1000);
+        }
+
+        function addLogMessage(source, message) {
+            console.log(`[${source}] ${message}`);
+        }
+
+        function sendTestMessage() {
+            if (!socket || !socket.connected) {
+                alert('Not connected to server');
+                return;
+            }
+
+            const testMessage = `Test message at ${new Date().toLocaleTimeString()}`;
+
+            // Send test message to all agents
+            for (let i = 0; i < 3; i++) {
+                socket.emit('terminal:command', {
+                    farmId: currentFarmId,
+                    sessionId: `farm-${currentFarmId.substring(0, 8)}`,
+                    agentId: i,
+                    command: `echo "${testMessage} - Agent ${i}"`
+                });
+            }
+
+            addLogMessage('Test', `Sent: ${testMessage}`);
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            const btn = document.getElementById('autoScrollBtn');
+            btn.textContent = `Auto-Scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+            btn.className = autoScroll ? 'active' : '';
+
+            // Update all terminal indicators
+            document.querySelectorAll('.auto-scroll-indicator').forEach(indicator => {
+                indicator.className = `auto-scroll-indicator ${autoScroll ? 'active' : 'inactive'}`;
+            });
+        }
+
+        function clearTerminals() {
+            document.getElementById('terminals').innerHTML = '';
+            agentOutputs = {};
+            messageCount = 0;
+            document.getElementById('messageCount').textContent = '0';
+            updateAgentCount();
+        }
+
+        function updateStatus(text, connected) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = `status ${connected ? 'connected' : 'disconnected'}`;
+        }
+
+        function updateAgentCount() {
+            const count = Object.keys(agentOutputs).length;
+            document.getElementById('agentCount').textContent = count;
+        }
+
+        function updateUpdateRate() {
+            const now = Date.now();
+            const timeDiff = (now - lastUpdateTime) / 1000;
+            const rate = Math.round(updateCount / timeDiff);
+
+            document.getElementById('updateRate').textContent = rate;
+
+            if (timeDiff >= 5) {
+                updateCount = 0;
+                lastUpdateTime = now;
+            }
+        }
+
+        function updateLatency(timestamp) {
+            if (timestamp) {
+                const latency = Date.now() - new Date(timestamp).getTime();
+                document.getElementById('latency').textContent = `${Math.abs(latency)}ms`;
+            }
+        }
+
+        // Auto-connect if farm ID is pre-filled
+        window.addEventListener('load', () => {
+            const farmId = document.getElementById('farmId').value;
+            if (farmId) {
+                setTimeout(() => {
+                    console.log('Auto-connecting to farm:', farmId);
+                    connectToFarm();
+                }, 1000);
+            }
+        });
+
+        // Send test messages every 5 seconds to generate activity
+        setInterval(() => {
+            if (socket && socket.connected && currentFarmId) {
+                // Emit a keep-alive or status request
+                socket.emit('terminal:ping', {
+                    farmId: currentFarmId,
+                    timestamp: Date.now()
+                });
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

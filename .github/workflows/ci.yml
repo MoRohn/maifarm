@@ -96,7 +96,9 @@ jobs:
 
       - name: Setup test database
         run: |
-          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f server/database/migrations/000_production_consolidated.sql
+          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f apps/api/src/database/migrations/001_core_schema.sql
+          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f apps/api/src/database/migrations/002_monitoring_analytics.sql
+          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f apps/api/src/database/migrations/003_harvest_workflow.sql
         env:
           PGPASSWORD: testpass
 
@@ -152,7 +154,7 @@ jobs:
         run: npm run build
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: dist/
@@ -257,14 +259,16 @@ jobs:
         run: npm ci
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           path: dist/
 
       - name: Setup test database
         run: |
-          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f server/database/migrations/000_production_consolidated.sql
+          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f apps/api/src/database/migrations/001_core_schema.sql
+          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f apps/api/src/database/migrations/002_monitoring_analytics.sql
+          PGPASSWORD=testpass psql -h localhost -U maifarm -d maifarm_test -f apps/api/src/database/migrations/003_harvest_workflow.sql
         env:
           PGPASSWORD: testpass
 
@@ -282,14 +286,15 @@ jobs:
           SESSION_SECRET: test-secret
           API_KEY_ENCRYPTION_KEY: test-encryption-key
 
-      - name: Run Cypress E2E tests
-        uses: cypress-io/github-action@v6
-        with:
-          start: npm run dev
-          wait-on: 'http://localhost:3000'
-          wait-on-timeout: 120
+      - name: Run E2E tests
+        run: npm run test:e2e
         env:
-          CYPRESS_BASE_URL: http://localhost:3000
+          NODE_ENV: test
+          DB_HOST: localhost
+          DB_NAME: maifarm_test
+          DB_USER: maifarm
+          DB_PASSWORD: testpass
+          REDIS_URL: redis://localhost:6379
 
   performance:
     name: Performance Test
@@ -309,7 +314,7 @@ jobs:
         run: npm ci
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           path: dist/

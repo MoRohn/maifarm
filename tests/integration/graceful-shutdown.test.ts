@@ -1,21 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { shutdownCoordinator } from '../../server/services/shutdownCoordinator';
-import { quickTaskService } from '../../server/services/unified/quickTaskService';
-import { farmManager } from '../../server/services/unified/farmService';
-import { goWildManager } from '../../server/services/unified/farmService';
-import { harvestFileCollector } from '../../server/services/unified/farmService';
-import { barnService } from '../../server/services/unified/farmService';
+import { shutdownCoordinator } from '../../apps/api/src/services/shutdownCoordinator';
+import { quickTaskService } from '../../apps/api/src/services/unified/quickTaskService';
+import { farmManager } from '../../apps/api/src/services/unified/farmService';
+import { goWildManager } from '../../apps/api/src/services/unified/farmService';
+import { harvestFileCollector } from '../../apps/api/src/services/unified/farmService';
+import { barnService } from '../../apps/api/src/services/unified/farmService';
 import { 
   QUICK_TASK_TIMEOUT, 
   GRACEFUL_SHUTDOWN_PERIOD,
   calculateGracefulShutdownTime 
-} from '../../server/constants/timing';
+} from '../../apps/api/src/constants/timing';
 
 // Mock dependencies
-jest.mock('../../server/database/connection');
-jest.mock('../../server/websocket/websocketManager');
-jest.mock('../../server/services/multiClaudeService');
-jest.mock('../../server/services/tmuxHelper');
+jest.mock('../../apps/api/src/database/connection');
+jest.mock('../../apps/api/src/websocket/websocketManager');
+jest.mock('../../apps/api/src/services/multiClaudeService');
+jest.mock('../../apps/api/src/services/tmuxHelper');
 
 describe('Graceful Shutdown Integration Tests', () => {
   const TEST_USER_ID = 'test-user';

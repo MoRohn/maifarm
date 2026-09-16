@@ -7,11 +7,11 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
-import { unifiedOrchestratorService } from '../../server/services/UnifiedOrchestratorService';
-import { xenoSyncService } from '../../server/services/XenoSyncService';
-import { terminalStreamEnhanced } from '../../server/services/TerminalStreamEnhanced';
-import { sessionManager } from '../../server/services/unified/terminalService';
-import { WebSocketManager } from '../../server/websocket/websocketManager';
+import { unifiedOrchestratorService } from '../../apps/api/src/services/UnifiedOrchestratorService';
+import { xenoSyncService } from '../../apps/api/src/services/XenoSyncService';
+import { terminalStreamEnhanced } from '../../apps/api/src/services/TerminalStreamEnhanced';
+import { sessionManager } from '../../apps/api/src/services/unified/terminalService';
+import { WebSocketManager } from '../../apps/api/src/websocket/websocketManager';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';

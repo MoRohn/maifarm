@@ -4,12 +4,12 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
-import { xenoSyncService } from '../../server/services/XenoSyncService';
-import { terminalStreamService } from '../../server/services/unified/terminalService';
-import { sessionManager } from '../../server/services/unified/terminalService';
-import { sessionCleanupService } from '../../server/services/sessionCleanupService';
-import { xenoSyncPerformanceOptimizer } from '../../server/services/xenosyncPerformanceOptimizer';
-import { websocketManager } from '../../server/websocket/websocketManager';
+import { xenoSyncService } from '../../apps/api/src/services/XenoSyncService';
+import { terminalStreamService } from '../../apps/api/src/services/unified/terminalService';
+import { sessionManager } from '../../apps/api/src/services/unified/terminalService';
+import { sessionCleanupService } from '../../apps/api/src/services/sessionCleanupService';
+import { xenoSyncPerformanceOptimizer } from '../../apps/api/src/services/xenosyncPerformanceOptimizer';
+import { websocketManager } from '../../apps/api/src/websocket/websocketManager';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';

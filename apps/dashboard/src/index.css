@@ -1,0 +1,559 @@
+@import './styles/theme.css';
+@import './styles/design-system.css';
+@import './styles/glass.css';
+@import './styles/terminal-professional.css';
+@import './styles/terminal-scrollbar.css';
+@import './styles/terminal-responsive.css';
+@import './styles/harvest-terminal.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CRITICAL FIX: iOS text-size-adjust and touch-action for proper mobile behavior */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation; /* Prevent 300ms tap delay on iOS */
+}
+
+/* Prevent unwanted touch behaviors on interactive elements */
+button, a, [role="button"], input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Scrollable containers should only scroll vertically */
+.scroll-container,
+[data-scroll-container],
+.terminal-output,
+.modal-content {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Horizontally scrollable elements */
+.horizontal-scroll {
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Safe area support for notched devices (iPhone X+, iPad Pro with rounded corners) */
+@supports (padding: env(safe-area-inset-top)) {
+  .safe-area-inset-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-area-inset-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-area-inset-right {
+    padding-right: env(safe-area-inset-right);
+  }
+  .safe-area-all {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Apple HIG compliant touch targets (minimum 44px) */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.touch-target-lg {
+  min-height: 52px;
+  min-width: 52px;
+}
+
+/* Responsive overflow handling for small devices */
+@media screen and (max-width: 374px) {
+  /* iPhone SE and smaller */
+  .responsive-overflow {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent horizontal overflow on small screens */
+  .max-w-screen {
+    max-width: 100vw;
+  }
+
+  /* Stack horizontal elements on very small screens */
+  .flex-wrap-small {
+    flex-wrap: wrap;
+  }
+}
+
+/* iPad landscape orientation fixes */
+@media screen and (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+  .ipad-landscape-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* FIX: Large display modal height constraints for various display sizes */
+
+/* 2K/QHD displays (2560px) - 27" iMac, typical external monitors */
+@media screen and (min-width: 2560px) and (max-width: 3839px) {
+  .modal-container,
+  [role="dialog"],
+  [data-radix-popper-content-wrapper] {
+    max-height: min(85vh, 1000px) !important;
+  }
+
+  .modal-content,
+  .dialog-content {
+    max-height: min(80vh, 950px);
+  }
+
+  .modal-height-capped {
+    max-height: min(85vh, 1000px);
+  }
+}
+
+/* 4K/UHD displays (3840px) - 27" 4K monitors, some Mac Studio displays */
+@media screen and (min-width: 3840px) and (max-width: 5119px) {
+  .modal-container,
+  [role="dialog"],
+  [data-radix-popper-content-wrapper] {
+    max-height: min(80vh, 1200px) !important;
+  }
+
+  .modal-content,
+  .dialog-content {
+    max-height: min(75vh, 1150px);
+  }
+
+  .modal-height-capped {
+    max-height: min(80vh, 1200px);
+  }
+
+  /* Terminal font scaling for 4K */
+  .terminal-output,
+  .font-mono {
+    font-size: clamp(0.875rem, 1vw, 1.125rem);
+  }
+}
+
+/* 5K displays (5120px) - Apple Studio Display, 27" iMac 5K */
+@media screen and (min-width: 5120px) {
+  .modal-container,
+  [role="dialog"],
+  [data-radix-popper-content-wrapper] {
+    max-height: min(75vh, 1400px) !important;
+  }
+
+  .modal-content,
+  .dialog-content {
+    max-height: min(70vh, 1350px);
+  }
+
+  .modal-height-capped {
+    max-height: min(75vh, 1400px);
+  }
+
+  /* Terminal font scaling for 5K */
+  .terminal-output,
+  .font-mono {
+    font-size: clamp(1rem, 0.9vw, 1.25rem);
+  }
+
+  /* Ensure touch targets remain accessible on high-DPI displays */
+  .touch-target {
+    min-height: 52px;
+    min-width: 52px;
+  }
+}
+
+/* FIX: Dynamic viewport height for mobile devices (100vh issue fix) */
+/* Uses CSS variable --vh set by JavaScript for accurate mobile viewport height */
+:root {
+  /* Default to 1vh for browsers before JS initializes */
+  --vh: 1vh;
+  /* Full viewport height using the CSS variable */
+  --full-vh: calc(var(--vh, 1vh) * 100);
+}
+
+/* Utility classes using accurate viewport height */
+.min-h-screen-dynamic {
+  min-height: var(--full-vh, 100vh);
+  min-height: 100dvh; /* Modern browsers */
+}
+
+.h-screen-dynamic {
+  height: var(--full-vh, 100vh);
+  height: 100dvh; /* Modern browsers */
+}
+
+/* Terminal-specific viewport height utilities */
+.terminal-fullscreen {
+  height: var(--full-vh, 100vh);
+  height: 100dvh;
+}
+
+.terminal-expanded {
+  min-height: calc(var(--full-vh, 100vh) - 12rem);
+  max-height: calc(var(--full-vh, 100vh) - 8rem);
+}
+
+.terminal-expanded-mobile {
+  min-height: calc(var(--full-vh, 100vh) - 6rem);
+  max-height: calc(var(--full-vh, 100vh) - 4rem);
+}
+
+/* Fallback for browsers that don't support dvh */
+@supports not (height: 100dvh) {
+  .min-h-screen-dynamic {
+    min-height: var(--full-vh, 100vh);
+    min-height: -webkit-fill-available;
+  }
+  .h-screen-dynamic {
+    height: var(--full-vh, 100vh);
+    height: -webkit-fill-available;
+  }
+}
+
+/* FIX: Modal safe area positioning for notched devices */
+.modal-safe-area {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* iPhone SE and very small device modal constraints */
+@media (max-width: 374px) {
+  /* Reduce modal max heights for very small screens */
+  .max-h-\[70vh\],
+  .max-h-\[75vh\],
+  .max-h-\[80vh\],
+  .max-h-\[85vh\],
+  .max-h-\[90vh\] {
+    max-height: min(65dvh, 400px) !important;
+  }
+
+  /* Modal content should scroll */
+  [role="dialog"] {
+    max-height: 85dvh !important;
+    overflow-y: auto;
+  }
+
+  /* Reduce padding in modals for more content space */
+  .p-6 {
+    padding: 1rem !important;
+  }
+
+  .p-8 {
+    padding: 1.25rem !important;
+  }
+
+  /* Smaller text in modals */
+  [role="dialog"] h2,
+  [role="dialog"] h3 {
+    font-size: 1.125rem !important;
+  }
+
+  [role="dialog"] p {
+    font-size: 0.875rem !important;
+  }
+}
+
+/* iPad portrait modal optimization (744px - 834px) */
+@media (min-width: 744px) and (max-width: 834px) {
+  .max-h-\[85vh\],
+  .max-h-\[90vh\] {
+    max-height: min(80dvh, 700px) !important;
+  }
+}
+
+/* Prevent button text from wrapping on small screens */
+.btn-nowrap {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+/* Prevent white flash on load */
+html {
+  background-color: #0a0a0a;
+  /* Disable transitions during page load to prevent flash */
+  transition: none !important;
+}
+
+/* Re-enable transitions after page load */
+html.transitions-enabled {
+  transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
+}
+
+body {
+  background-color: inherit;
+  min-height: 100vh;
+  /* Also disable body transitions during load */
+  transition: none !important;
+}
+
+body.transitions-enabled {
+  transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
+}
+
+@layer base {
+  :root {
+    /* Default to dark mode colors to prevent flash (matches theme.css) */
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --primary: 142 71% 45%;  /* Vibrant farm green */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 91% 60%;  /* Sky blue */
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 47 96% 53%;  /* Golden accent */
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 20%;
+    --input: 217.2 32.6% 20%;
+    --ring: 142 71% 45%;
+    --radius: 0.75rem;  /* More rounded corners */
+    --card: 222.2 84% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 7%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Additional color variables for compatibility */
+    --color-primary: 142 71% 45%;
+    --color-accent: 47 96% 53%;
+  }
+
+  .light {
+    /* Light mode colors - vibrant and fresh */
+    --background: 0 0% 100%;  /* Pure white background */
+    --foreground: 222.2 84% 4.9%;
+    --primary: 142 71% 45%;  /* Vibrant farm green */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 91% 60%;  /* Sky blue */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 10% 96.5%;  /* Very light gray */
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 47 96% 53%;  /* Golden yellow accent */
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 32% 91%;
+    --input: 214.3 32% 91%;
+    --ring: 142 71% 45%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+  }
+
+  .dark {
+    /* Dark mode colors - explicit re-declaration for clarity */
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --primary: 142 71% 45%;  /* Same vibrant green in dark mode */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 91% 60%;  /* Sky blue */
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 47 96% 53%;  /* Golden accent */
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 20%;
+    --input: 217.2 32.6% 20%;
+    --ring: 142 71% 45%;
+    --card: 222.2 84% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 7%;
+    --popover-foreground: 210 40% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  /* Safe Area Insets for iOS */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .h-safe-area-inset-bottom {
+    height: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  }
+
+  /* Enhanced Glass Effects */
+  .glass {
+    @apply backdrop-blur-xl bg-gray-50/80 dark:bg-gray-900/80 border border-gray-200/30 dark:border-gray-700/50;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.9) 0%, rgba(245, 245, 245, 0.8) 100%);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+  }
+  
+  .glass-subtle {
+    @apply backdrop-blur-md bg-gray-50/60 dark:bg-gray-900/60 border border-gray-200/20 dark:border-gray-800/30;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.7) 0%, rgba(245, 245, 245, 0.6) 100%);
+  }
+
+  .glass-heavy {
+    @apply backdrop-blur-2xl bg-gray-50/95 dark:bg-gray-900/90 border border-gray-200/40 dark:border-gray-700/60;
+    background: linear-gradient(135deg, rgba(248, 248, 248, 0.95) 0%, rgba(245, 245, 245, 0.9) 100%);
+    box-shadow: 0 12px 48px 0 rgba(31, 38, 135, 0.08);
+  }
+  
+  /* Card Styles with Depth */
+  .card-base {
+    @apply bg-gray-50 dark:bg-gray-900 rounded-xl shadow-sm hover:shadow-md transition-all duration-300;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .dark .card-base {
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .card-elevated {
+    @apply card-base shadow-lg hover:shadow-xl;
+    transform-style: preserve-3d;
+    transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+  }
+
+  .card-elevated:hover {
+    transform: translateY(-2px) rotateX(2deg);
+  }
+  
+  /* Enhanced Animations */
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .animate-in {
+    animation: animateIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  @keyframes animateIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeInScale {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes shimmerLoad {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+  
+  .animate-slideIn {
+    animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  
+  .animate-fadeInScale {
+    animation: fadeInScale 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .animate-spin-slow {
+    animation: spin 3s linear infinite;
+  }
+
+  /* Loading Shimmer Effect */
+  .shimmer-load {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.3),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: shimmerLoad 1.5s infinite;
+  }
+
+  .dark .shimmer-load {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.08),
+      transparent
+    );
+  }
+
+  /* Smooth Scrolling */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+
+  /* Focus Visible Enhancement */
+  .focus-visible-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900;
+  }
+
+  /* Interactive Elements */
+  .interactive {
+    @apply transition-all duration-200 ease-out cursor-pointer select-none;
+  }
+
+  .interactive:active {
+    transform: scale(0.98);
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent;
+  }
+
+  /* Disabled State */
+  .disabled {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
+  }
+}

@@ -2,7 +2,7 @@
 module.exports = {
   preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
-  roots: ['<rootDir>/../../server'],
+  roots: ['<rootDir>/../../apps/api/src'],
   testMatch: [
     '**/__tests__/**/*.+(ts|tsx|js)',
     '**/?(*.)+(spec|test).+(ts|tsx|js)'
@@ -23,8 +23,9 @@ module.exports = {
   },
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
-    '^@/(.*)$': '<rootDir>/../../src/$1',
-    '^@server/(.*)$': '<rootDir>/../../server/$1'
+    '^@/(.*)$': '<rootDir>/../../apps/dashboard/src/$1',
+    '^@server/(.*)$': '<rootDir>/../../apps/api/src/$1',
+    '^@shared/(.*)$': '<rootDir>/../../apps/shared/$1'
   },
   extensionsToTreatAsEsm: ['.ts'],
   globals: {
@@ -33,11 +34,11 @@ module.exports = {
     }
   },
   collectCoverageFrom: [
-    '<rootDir>/../../server/**/*.{ts,tsx}',
-    '!<rootDir>/../../server/**/*.d.ts',
-    '!<rootDir>/../../server/types/**/*',
-    '!<rootDir>/../../server/tests/**/*',
-    '!<rootDir>/../../server/index.ts'
+    '<rootDir>/../../apps/api/src/**/*.{ts,tsx}',
+    '!<rootDir>/../../apps/api/src/**/*.d.ts',
+    '!<rootDir>/../../apps/api/src/types/**/*',
+    '!<rootDir>/../../apps/api/src/tests/**/*',
+    '!<rootDir>/../../apps/api/src/index.ts'
   ],
   coverageThreshold: {
     global: {
@@ -51,7 +52,7 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   testTimeout: 30000,
   // Setup files
-  setupFilesAfterEnv: ['<rootDir>/../../server/tests/setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/../../apps/api/src/tests/setup.ts'],
   // Handle import.meta.url
   testEnvironmentOptions: {
     customExportConditions: ['node', 'node-addons']

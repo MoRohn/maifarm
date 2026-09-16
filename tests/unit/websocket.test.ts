@@ -1,55 +1,55 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// Jest test - converted from Vitest
 import { websocketService } from '../../src/services/websocket';
 import { errorHandler } from '../../src/services/errorHandler';
 import { logger } from '../../src/services/monitoring/logger';
 
 // Mock socket.io-client
-vi.mock('socket.io-client', () => ({
-  io: vi.fn(() => ({
+jest.mock('socket.io-client', () => ({
+  io: jest.fn(() => ({
     connected: false,
-    on: vi.fn(),
-    emit: vi.fn(),
-    disconnect: vi.fn(),
-    connect: vi.fn(),
+    on: jest.fn(),
+    emit: jest.fn(),
+    disconnect: jest.fn(),
+    connect: jest.fn(),
   })),
 }));
 
 // Mock toast
-vi.mock('react-hot-toast', () => ({
+jest.mock('react-hot-toast', () => ({
   toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-    warning: vi.fn(),
+    success: jest.fn(),
+    error: jest.fn(),
+    warning: jest.fn(),
   },
 }));
 
 // Mock error logger
-vi.mock('@/utils/errorLogger', () => ({
-  logWebSocketError: vi.fn(),
+jest.mock('@/utils/errorLogger', () => ({
+  logWebSocketError: jest.fn(),
   ErrorCategory: { WEBSOCKET: 'websocket' },
   ErrorSeverity: { HIGH: 'high' },
 }));
 
 describe('WebSocket Service', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
+    jest.clearAllMocks();
+    jest.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 
   describe('Connection Management', () => {
     it('should attempt to connect to the correct URL', () => {
-      const mockIo = vi.fn().mockReturnValue({
+      const mockIo = jest.fn().mockReturnValue({
         connected: false,
-        on: vi.fn(),
-        emit: vi.fn(),
-        disconnect: vi.fn(),
+        on: jest.fn(),
+        emit: jest.fn(),
+        disconnect: jest.fn(),
       });
       
-      vi.doMock('socket.io-client', () => ({ io: mockIo }));
+      jest.doMock('socket.io-client', () => ({ io: mockIo }));
       
       websocketService.connect('http://localhost:4567');
       
@@ -66,17 +66,17 @@ describe('WebSocket Service', () => {
     it('should handle connection errors gracefully', () => {
       const mockSocket = {
         connected: false,
-        on: vi.fn((event, handler) => {
+        on: jest.fn((event, handler) => {
           if (event === 'connect_error') {
             handler(new Error('Connection failed'));
           }
         }),
-        emit: vi.fn(),
-        disconnect: vi.fn(),
+        emit: jest.fn(),
+        disconnect: jest.fn(),
       };
 
-      vi.doMock('socket.io-client', () => ({
-        io: vi.fn(() => mockSocket),
+      jest.doMock('socket.io-client', () => ({
+        io: jest.fn(() => mockSocket),
       }));
 
       websocketService.connect();
@@ -85,12 +85,12 @@ describe('WebSocket Service', () => {
     });
 
     it('should implement exponential backoff for reconnection', () => {
-      const connectSpy = vi.spyOn(websocketService, 'connect');
+      const connectSpy = jest.spyOn(websocketService, 'connect');
       
       // Simulate connection failures
       for (let i = 0; i < 3; i++) {
         websocketService.connect();
-        vi.advanceTimersByTime(Math.pow(2, i) * 1000);
+        jest.advanceTimersByTime(Math.pow(2, i) * 1000);
       }
 
       expect(connectSpy).toHaveBeenCalledTimes(3);
@@ -99,7 +99,7 @@ describe('WebSocket Service', () => {
     it('should switch to mock data after max retries', () => {
       const mockSocket = {
         connected: false,
-        on: vi.fn((event, handler) => {
+        on: jest.fn((event, handler) => {
           if (event === 'connect_error') {
             // Simulate max retries
             for (let i = 0; i < 10; i++) {
@@ -107,12 +107,12 @@ describe('WebSocket Service', () => {
             }
           }
         }),
-        emit: vi.fn(),
-        disconnect: vi.fn(),
+        emit: jest.fn(),
+        disconnect: jest.fn(),
       };
 
-      vi.doMock('socket.io-client', () => ({
-        io: vi.fn(() => mockSocket),
+      jest.doMock('socket.io-client', () => ({
+        io: jest.fn(() => mockSocket),
       }));
 
       websocketService.connect();
@@ -123,7 +123,7 @@ describe('WebSocket Service', () => {
 
   describe('Message Handling', () => {
     it('should handle incoming messages correctly', () => {
-      const messageHandler = vi.fn();
+      const messageHandler = jest.fn();
       websocketService.on('test_message', messageHandler);
 
       const testMessage = {
@@ -135,16 +135,16 @@ describe('WebSocket Service', () => {
       // Simulate incoming message
       const mockSocket = {
         connected: true,
-        on: vi.fn((event, handler) => {
+        on: jest.fn((event, handler) => {
           if (event === 'message') {
             handler(testMessage);
           }
         }),
-        emit: vi.fn(),
+        emit: jest.fn(),
       };
 
-      vi.doMock('socket.io-client', () => ({
-        io: vi.fn(() => mockSocket),
+      jest.doMock('socket.io-client', () => ({
+        io: jest.fn(() => mockSocket),
       }));
 
       expect(messageHandler).toHaveBeenCalledWith(testMessage);
@@ -153,11 +153,11 @@ describe('WebSocket Service', () => {
     it('should queue messages when disconnected', () => {
       const mockSocket = {
         connected: false,
-        emit: vi.fn(),
+        emit: jest.fn(),
       };
 
-      vi.doMock('socket.io-client', () => ({
-        io: vi.fn(() => mockSocket),
+      jest.doMock('socket.io-client', () => ({
+        io: jest.fn(() => mockSocket),
       }));
 
       websocketService.emit('test_event', { data: 'test' });
@@ -172,11 +172,11 @@ describe('WebSocket Service', () => {
       (websocketService as any).useMockData = true;
       (websocketService as any).startMockDataGeneration();
 
-      const metricsHandler = vi.fn();
+      const metricsHandler = jest.fn();
       websocketService.on('metrics:update', metricsHandler);
 
       // Advance timer to trigger mock data generation
-      vi.advanceTimersByTime(5000);
+      jest.advanceTimersByTime(5000);
 
       expect(metricsHandler).toHaveBeenCalled();
       expect(metricsHandler).toHaveBeenCalledWith(
@@ -198,12 +198,12 @@ describe('WebSocket Service', () => {
       (websocketService as any).useMockData = true;
       (websocketService as any).startMockDataGeneration();
 
-      const farmHandler = vi.fn();
+      const farmHandler = jest.fn();
       websocketService.on('farm_update', farmHandler);
 
       // Run multiple times to increase chance of farm update
       for (let i = 0; i < 10; i++) {
-        vi.advanceTimersByTime(5000);
+        jest.advanceTimersByTime(5000);
       }
 
       // Check if at least one farm update was generated
@@ -216,19 +216,19 @@ describe('WebSocket Service', () => {
 
   describe('Error Recovery', () => {
     it('should log WebSocket errors appropriately', () => {
-      const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const logSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       
       const error = new Error('WebSocket error');
       const mockSocket = {
-        on: vi.fn((event, handler) => {
+        on: jest.fn((event, handler) => {
           if (event === 'error') {
             handler(error);
           }
         }),
       };
 
-      vi.doMock('socket.io-client', () => ({
-        io: vi.fn(() => mockSocket),
+      jest.doMock('socket.io-client', () => ({
+        io: jest.fn(() => mockSocket),
       }));
 
       websocketService.connect();
@@ -238,7 +238,7 @@ describe('WebSocket Service', () => {
     });
 
     it('should emit status updates during connection lifecycle', () => {
-      const statusHandler = vi.fn();
+      const statusHandler = jest.fn();
       
       // Test connection status changes
       expect(websocketService.getStatus()).toBe('disconnected');
@@ -249,15 +249,15 @@ describe('WebSocket Service', () => {
       // Simulate successful connection
       const mockSocket = {
         connected: true,
-        on: vi.fn((event, handler) => {
+        on: jest.fn((event, handler) => {
           if (event === 'connect') {
             handler();
           }
         }),
       };
 
-      vi.doMock('socket.io-client', () => ({
-        io: vi.fn(() => mockSocket),
+      jest.doMock('socket.io-client', () => ({
+        io: jest.fn(() => mockSocket),
       }));
 
       expect(websocketService.getStatus()).toBe('connected');

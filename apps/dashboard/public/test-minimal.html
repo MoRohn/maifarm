@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Minimal Test - No Refresh</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        h1 { color: #00ffff; }
+        .success { color: #00ff00; }
+        .error { color: #ff0000; }
+        pre { background: #2a2a2a; padding: 10px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <h1>Minimal Test Page</h1>
+    <p>This page has NO React, NO error handlers, NO redirects.</p>
+    <p>If this page refreshes, the issue is external (browser extension, etc.)</p>
+    <p>If this page is stable, the issue is in the React app.</p>
+
+    <div id="status"></div>
+    <div id="farmers"></div>
+
+    <script>
+        let refreshCount = 0;
+        const startTime = Date.now();
+
+        // Track page loads
+        if (sessionStorage.getItem('testPageLoads')) {
+            refreshCount = parseInt(sessionStorage.getItem('testPageLoads')) + 1;
+        }
+        sessionStorage.setItem('testPageLoads', refreshCount.toString());
+
+        document.getElementById('status').innerHTML = `
+            <p class="success">✓ Page loaded successfully</p>
+            <p>Page load count: ${refreshCount}</p>
+            <p>Time: ${new Date().toLocaleTimeString()}</p>
+            <p>Uptime: <span id="uptime">0s</span></p>
+        `;
+
+        // Update uptime every second
+        setInterval(() => {
+            const uptime = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('uptime').textContent = uptime + 's';
+        }, 1000);
+
+        // Test API
+        fetch('/api/farmers')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('farmers').innerHTML = `
+                    <h2 class="success">✓ API Response</h2>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            })
+            .catch(err => {
+                document.getElementById('farmers').innerHTML = `
+                    <h2 class="error">✗ API Error</h2>
+                    <pre>${err.message}</pre>
+                `;
+            });
+    </script>
+</body>
+</html>

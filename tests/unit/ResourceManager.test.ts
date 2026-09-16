@@ -2,7 +2,7 @@
  * Unit tests for ResourceManager
  */
 
-import { ResourceManager, ResourceType } from '../../server/utils/ResourceManager';
+import { ResourceManager, ResourceType } from '../../apps/api/src/utils/ResourceManager';
 
 describe('ResourceManager', () => {
   let manager: ResourceManager;
@@ -38,25 +38,44 @@ describe('ResourceManager', () => {
       expect(stats.pools.cache.count).toBeGreaterThan(0);
     });
 
-    it('should enforce resource limits', () => {
-      // Create a manager with low limits for testing
-      const testManager = new (ResourceManager as any)();
-      testManager.resources.get(ResourceType.TIMER).limits.maxItems = 2;
+    it('should enforce resource limits', async () => {
+      // Use the singleton instance and temporarily modify its limits
+      const testManager = ResourceManager.getInstance();
+      const originalLimit = (testManager as any).resources.get(ResourceType.TIMER).limits.maxItems;
+
+      // Set a low limit for testing
+      (testManager as any).resources.get(ResourceType.TIMER).limits.maxItems = 2;
+
+      // Clear any existing timers
+      testManager.releaseAll(ResourceType.TIMER);
 
       const timer1 = setTimeout(() => {}, 1000);
       const timer2 = setTimeout(() => {}, 1000);
       const timer3 = setTimeout(() => {}, 1000);
 
-      expect(testManager.allocate(ResourceType.TIMER, 'timer1', timer1)).toBe(true);
-      expect(testManager.allocate(ResourceType.TIMER, 'timer2', timer2)).toBe(true);
+      try {
+        // First two allocations should succeed - add small delays to ensure different timestamps
+        expect(testManager.allocate(ResourceType.TIMER, 'timer1', timer1)).toBe(true);
 
-      // Should evict oldest when limit reached
-      expect(testManager.allocate(ResourceType.TIMER, 'timer3', timer3)).toBe(true);
-      expect(testManager.get(ResourceType.TIMER, 'timer1')).toBeNull(); // Evicted
+        // Small delay to ensure different timestamp
+        await new Promise(resolve => setTimeout(resolve, 10));
 
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
+        expect(testManager.allocate(ResourceType.TIMER, 'timer2', timer2)).toBe(true);
+
+        // Another small delay
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        // Third allocation should evict oldest and succeed
+        expect(testManager.allocate(ResourceType.TIMER, 'timer3', timer3)).toBe(true);
+        expect(testManager.get(ResourceType.TIMER, 'timer1')).toBeNull(); // Evicted
+      } finally {
+        // Clean up and restore original limit
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+        testManager.releaseAll(ResourceType.TIMER);
+        (testManager as any).resources.get(ResourceType.TIMER).limits.maxItems = originalLimit;
+      }
     });
 
     it('should reject oversized buffers', () => {

@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
-import { metricsAggregator } from '../server/services/metricsAggregator';
-import { db } from '../server/database/connection';
+import { metricsAggregator } from '../apps/api/src/services/metricsAggregator';
+import { db } from '../apps/api/src/database/connection';
 
 describe('Dashboard Metrics Accuracy', () => {
   beforeAll(async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+// Jest test - converted from Vitest
 import { render, screen, waitFor } from '@testing-library/react';
 import { HealthStatus } from '@/components/Monitoring/HealthStatus';
 import { connectionMonitor } from '@/services/monitoring/connectionMonitor';
@@ -6,37 +6,37 @@ import { websocketService } from '@/services/websocket';
 import { api } from '@/services/apiClient';
 
 // Mock dependencies
-vi.mock('@/store/websocketStore', () => ({
+jest.mock('@/store/websocketStore', () => ({
   useWebSocketStore: () => ({
-    sendMessage: vi.fn(),
-    addMessageHandler: vi.fn(),
-    removeMessageHandler: vi.fn()
+    sendMessage: jest.fn(),
+    addMessageHandler: jest.fn(),
+    removeMessageHandler: jest.fn()
   })
 }));
 
-vi.mock('@/services/websocket', () => ({
+jest.mock('@/services/websocket', () => ({
   websocketService: {
-    getStatus: vi.fn(),
-    emit: vi.fn(),
-    on: vi.fn(),
-    off: vi.fn()
+    getStatus: jest.fn(),
+    emit: jest.fn(),
+    on: jest.fn(),
+    off: jest.fn()
   }
 }));
 
-vi.mock('@/services/apiClient', () => ({
+jest.mock('@/services/apiClient', () => ({
   api: {
-    health: vi.fn()
+    health: jest.fn()
   }
 }));
 
 describe('Connection Health Monitoring Integration', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
+    jest.clearAllMocks();
+    jest.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    jest.useRealTimers();
   });
 
   describe('HealthStatus Component', () => {
@@ -100,13 +100,13 @@ describe('Connection Health Monitoring Integration', () => {
       let healthChangeCallback: ((health: any) => void) | null = null;
 
       // Mock connection monitor
-      vi.spyOn(connectionMonitor, 'onHealthChange').mockImplementation((callback) => {
+      jest.spyOn(connectionMonitor, 'onHealthChange').mockImplementation((callback) => {
         healthChangeCallback = callback;
         return () => {};
       });
 
-      vi.spyOn(connectionMonitor, 'start').mockImplementation(() => {});
-      vi.spyOn(connectionMonitor, 'stop').mockImplementation(() => {});
+      jest.spyOn(connectionMonitor, 'start').mockImplementation(() => {});
+      jest.spyOn(connectionMonitor, 'stop').mockImplementation(() => {});
 
       // Mock initial API response
       (api.health as any).mockResolvedValue({
@@ -217,7 +217,7 @@ describe('Connection Health Monitoring Integration', () => {
     it('should use mock data when server is unavailable', async () => {
       // Mock WebSocket as using mock data
       (websocketService.getStatus as any).mockReturnValue('mock');
-      (websocketService as any).isUsingMockData = vi.fn().mockReturnValue(true);
+      (websocketService as any).isUsingMockData = jest.fn().mockReturnValue(true);
 
       // Mock connection monitor health
       const mockHealth = {
@@ -238,7 +238,7 @@ describe('Connection Health Monitoring Integration', () => {
       };
 
       let healthChangeCallback: ((health: any) => void) | null = null;
-      vi.spyOn(connectionMonitor, 'onHealthChange').mockImplementation((callback) => {
+      jest.spyOn(connectionMonitor, 'onHealthChange').mockImplementation((callback) => {
         healthChangeCallback = callback;
         // Immediately call with mock health
         callback(mockHealth);

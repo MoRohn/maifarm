@@ -1,0 +1,84 @@
+[tool.poetry]
+name = "maifarm-python"
+version = "0.1.0"
+description = "Python orchestration utilities for the MaiFarm platform"
+authors = ["MaiFarm Team <dev@maifarm.ai>"]
+readme = "README.md"
+packages = []
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pyyaml = "^6.0"
+redis = "^5.0"
+fastapi = "^0.110.0"
+uvicorn = { extras = ["standard"], version = "^0.24.0" }
+pydantic = "^2.5"
+pydantic-settings = "^2.1"
+structlog = "^23.2"
+sqlalchemy = { version = "^2.0", extras = ["asyncio"] }
+alembic = "^1.12"
+prometheus-client = "^0.17"
+httpx = "^0.25"
+tenacity = "^8.2"
+portalocker = "^2.7"
+libtmux = "^0.21"
+aiosqlite = "^0.19"
+asyncpg = "^0.29"
+python-dotenv = "^1.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.4"
+ruff = "^0.5"
+pytest = "^7.4"
+pytest-asyncio = "^0.21"
+pytest-cov = "^4.1"
+mypy = "^1.8"
+httpx = "^0.25"
+anyio = "^3.7"
+
+[tool.poetry.scripts]
+maifarm-orchestrator = "scripts.python.orchestrator:main"
+maifarm-orchestrator-reap = "scripts.python.orchestrator_reap:main"
+maifarm-xenosync = "scripts.python.xenosync_cli:main"
+maifarm-xenosync-v2 = "scripts.python.xenosync_cli_v2:main"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = [
+    "aiosqlite",
+    "portalocker",
+    "prometheus_client",
+    "structlog",
+    "apps/api",
+    "apps/dashboard",
+    "apps/shared",
+    "apps/orchestrator/tests",
+    "docs/legacy",
+    "scripts/legacy",
+    "scripts/python",
+    "tests/test_xenosync_fix.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501", "UP007", "UP037"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+files = ["apps/orchestrator"]
+exclude = "(^scripts/|^tests/|^apps/api/|^docs/|^packages/|^apps/orchestrator/tests/)"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"

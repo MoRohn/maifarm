@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock the timing constants
-jest.mock('../../server/constants/timing', () => ({
+jest.mock('../../apps/api/src/constants/timing', () => ({
   GRACEFUL_SHUTDOWN_PERIOD: 30000,
   QUICK_TASK_TIMEOUT: 300000,
   calculateGracefulShutdownTime: jest.fn(),
@@ -15,10 +15,9 @@ jest.mock('../../server/constants/timing', () => ({
 }));
 
 // Mock other dependencies
-jest.mock('../../server/utils/logger');
-jest.mock('../../server/websocket/websocketManager');
-jest.mock('../../server/services/OrchestratorService');
-jest.mock('../../server/services/harvestFileCollector');
+jest.mock('../../apps/api/src/utils/logger');
+jest.mock('../../apps/api/src/websocket/websocketManager');
+jest.mock('../../apps/api/src/services/unified/orchestratorService');
 
 describe('ShutdownCoordinator', () => {
   let shutdownCoordinator: any;
@@ -31,7 +30,7 @@ describe('ShutdownCoordinator', () => {
   
   describe('Timeout Conversion', () => {
     it('should correctly convert seconds to milliseconds for values < 1000', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
       
       const config = {
         mode: 'farm' as const,
@@ -50,7 +49,7 @@ describe('ShutdownCoordinator', () => {
     });
     
     it('should correctly handle milliseconds for common values', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
       
       const testCases = [
         { timeout: 300000, expected: '5 minutes' },  // 5 min
@@ -81,7 +80,7 @@ describe('ShutdownCoordinator', () => {
     });
     
     it('should handle ambiguous values safely', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
       
       const config = {
         mode: 'gowild' as const,
@@ -101,7 +100,7 @@ describe('ShutdownCoordinator', () => {
     });
     
     it('should handle edge cases correctly', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
       
       const edgeCases = [
         { timeout: 0, shouldConvert: true },      // 0 seconds -> 0ms
@@ -145,8 +144,8 @@ describe('ShutdownCoordinator', () => {
   
   describe('Quick Task Mode', () => {
     it('should always use fixed 5-minute timeout for quick tasks', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
-      const { QUICK_TASK_TIMEOUT } = await import('../../server/constants/timing');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
+      const { QUICK_TASK_TIMEOUT } = await import('../../apps/api/src/constants/timing');
       
       const config = {
         mode: 'quick-task' as const,
@@ -168,8 +167,8 @@ describe('ShutdownCoordinator', () => {
   
   describe('Graceful Shutdown Timing', () => {
     it('should schedule graceful shutdown 30 seconds before timeout', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
-      const { GRACEFUL_SHUTDOWN_PERIOD } = await import('../../server/constants/timing');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
+      const { GRACEFUL_SHUTDOWN_PERIOD } = await import('../../apps/api/src/constants/timing');
       
       const config = {
         mode: 'farm' as const,
@@ -191,7 +190,7 @@ describe('ShutdownCoordinator', () => {
     });
     
     it('should handle very short timeouts gracefully', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
       
       const config = {
         mode: 'farm' as const,
@@ -213,7 +212,7 @@ describe('ShutdownCoordinator', () => {
   
   describe('Shutdown Cancellation', () => {
     it('should be able to cancel scheduled shutdowns', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
       
       const config = {
         mode: 'farm' as const,
@@ -231,7 +230,7 @@ describe('ShutdownCoordinator', () => {
     });
     
     it('should prevent duplicate shutdowns for same farm', async () => {
-      const { shutdownCoordinator } = await import('../../server/services/shutdownCoordinator');
+      const { shutdownCoordinator } = await import('../../apps/api/src/services/shutdownCoordinator');
       
       const config = {
         mode: 'farm' as const,
@@ -261,7 +260,7 @@ describe('Farm Type Guards', () => {
   let farmHelpers: any;
   
   beforeEach(async () => {
-    farmHelpers = await import('../../shared/utils/farmHelpers');
+    farmHelpers = await import('../../apps/shared/utils/farmHelpers');
   });
   
   describe('isAgentArray', () => {

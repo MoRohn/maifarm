@@ -1,0 +1,141 @@
+<svg viewBox="0 0 1290 2796" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#064e3b"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e293b"/>
+      <stop offset="100%" style="stop-color:#0f172a"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#059669"/>
+      <stop offset="100%" style="stop-color:#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1290" height="2796" fill="url(#bgGrad)"/>
+
+  <!-- Status bar area -->
+  <rect x="0" y="0" width="1290" height="120" fill="rgba(0,0,0,0.3)"/>
+  <text x="80" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="42" font-weight="600">9:41</text>
+
+  <!-- Header -->
+  <text x="80" y="220" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="36">&#x2190; Back</text>
+  <text x="645" y="220" fill="white" font-family="SF Pro Display, -apple-system" font-size="52" font-weight="700" text-anchor="middle">Create New Farm</text>
+
+  <!-- Chat Interface -->
+  <g transform="translate(80, 320)">
+    <!-- AI Message -->
+    <g transform="translate(0, 0)">
+      <rect width="900" height="200" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+      <circle cx="60" cy="60" r="30" fill="url(#greenGrad)"/>
+      <text x="60" y="70" fill="white" font-family="SF Pro Display, -apple-system" font-size="32" text-anchor="middle">&#x1F916;</text>
+      <text x="110" y="60" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="28" font-weight="600">MaiFarm AI</text>
+      <text x="40" y="110" fill="white" font-family="SF Pro Display, -apple-system" font-size="34">What would you like your AI agents to work on?</text>
+      <text x="40" y="160" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="30">I'll help you set up the perfect team.</text>
+    </g>
+
+    <!-- User Message -->
+    <g transform="translate(230, 240)">
+      <rect width="900" height="150" rx="24" fill="#3b82f6"/>
+      <text x="40" y="60" fill="white" font-family="SF Pro Display, -apple-system" font-size="34">I need to refactor my authentication</text>
+      <text x="40" y="110" fill="rgba(255,255,255,0.9)" font-family="SF Pro Display, -apple-system" font-size="34">system to use OAuth 2.0</text>
+    </g>
+
+    <!-- AI Response -->
+    <g transform="translate(0, 430)">
+      <rect width="1000" height="320" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+      <circle cx="60" cy="60" r="30" fill="url(#greenGrad)"/>
+      <text x="60" y="70" fill="white" font-family="SF Pro Display, -apple-system" font-size="32" text-anchor="middle">&#x1F916;</text>
+      <text x="110" y="60" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="28" font-weight="600">MaiFarm AI</text>
+      <text x="40" y="120" fill="white" font-family="SF Pro Display, -apple-system" font-size="34">Great! I recommend a team of 3 agents:</text>
+      <text x="60" y="180" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="30">&#x2022; OAuth Architect - Design patterns</text>
+      <text x="60" y="230" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="30">&#x2022; Security Auditor - Vulnerability check</text>
+      <text x="60" y="280" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="30">&#x2022; Code Migrator - Implementation</text>
+    </g>
+  </g>
+
+  <!-- Agent Selection -->
+  <text x="80" y="1150" fill="#f1f5f9" font-family="SF Pro Display, -apple-system" font-size="42" font-weight="600">Select Your Agents</text>
+
+  <!-- Agent Cards -->
+  <g transform="translate(80, 1200)">
+    <rect width="360" height="300" rx="20" fill="url(#cardGrad)" stroke="#10B981" stroke-width="3"/>
+    <circle cx="180" cy="80" r="50" fill="#059669"/>
+    <text x="180" y="95" fill="white" font-family="SF Pro Display, -apple-system" font-size="48" text-anchor="middle">&#x1F477;</text>
+    <text x="180" y="170" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="600" text-anchor="middle">Architect</text>
+    <text x="180" y="210" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="26" text-anchor="middle">System design</text>
+    <rect x="130" y="250" width="100" height="30" rx="15" fill="#10B981"/>
+    <text x="180" y="272" fill="white" font-family="SF Pro Display, -apple-system" font-size="22" text-anchor="middle">Selected</text>
+  </g>
+
+  <g transform="translate(465, 1200)">
+    <rect width="360" height="300" rx="20" fill="url(#cardGrad)" stroke="#10B981" stroke-width="3"/>
+    <circle cx="180" cy="80" r="50" fill="#ef4444"/>
+    <text x="180" y="95" fill="white" font-family="SF Pro Display, -apple-system" font-size="48" text-anchor="middle">&#x1F6E1;</text>
+    <text x="180" y="170" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="600" text-anchor="middle">Security</text>
+    <text x="180" y="210" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="26" text-anchor="middle">Audit and protect</text>
+    <rect x="130" y="250" width="100" height="30" rx="15" fill="#10B981"/>
+    <text x="180" y="272" fill="white" font-family="SF Pro Display, -apple-system" font-size="22" text-anchor="middle">Selected</text>
+  </g>
+
+  <g transform="translate(850, 1200)">
+    <rect width="360" height="300" rx="20" fill="url(#cardGrad)" stroke="#10B981" stroke-width="3"/>
+    <circle cx="180" cy="80" r="50" fill="#3b82f6"/>
+    <text x="180" y="95" fill="white" font-family="SF Pro Display, -apple-system" font-size="48" text-anchor="middle">&#x1F4BB;</text>
+    <text x="180" y="170" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="600" text-anchor="middle">Developer</text>
+    <text x="180" y="210" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="26" text-anchor="middle">Code migration</text>
+    <rect x="130" y="250" width="100" height="30" rx="15" fill="#10B981"/>
+    <text x="180" y="272" fill="white" font-family="SF Pro Display, -apple-system" font-size="22" text-anchor="middle">Selected</text>
+  </g>
+
+  <!-- Settings -->
+  <g transform="translate(80, 1580)">
+    <rect width="1130" height="280" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <text x="40" y="60" fill="#f1f5f9" font-family="SF Pro Display, -apple-system" font-size="38" font-weight="600">Farm Settings</text>
+
+    <text x="40" y="130" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="30">Duration</text>
+    <rect x="40" y="150" width="500" height="12" rx="6" fill="#1e293b"/>
+    <rect x="40" y="150" width="200" height="12" rx="6" fill="url(#greenGrad)"/>
+    <text x="560" y="165" fill="white" font-family="SF Pro Display, -apple-system" font-size="30">2 hours</text>
+
+    <text x="40" y="230" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="30">AI Provider</text>
+    <rect x="300" y="200" width="200" height="50" rx="10" fill="#1e293b"/>
+    <text x="400" y="235" fill="white" font-family="SF Pro Display, -apple-system" font-size="30" text-anchor="middle">Claude</text>
+  </g>
+
+  <!-- Create Button -->
+  <g transform="translate(80, 1940)">
+    <rect width="1130" height="120" rx="60" fill="url(#greenGrad)"/>
+    <text x="565" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="48" font-weight="700" text-anchor="middle">Start Farm &#x1F680;</text>
+  </g>
+
+  <!-- Feature callout -->
+  <g transform="translate(645, 2350)">
+    <text y="0" fill="white" font-family="SF Pro Display, -apple-system" font-size="52" font-weight="700" text-anchor="middle">Chat-Based Farm Creation</text>
+    <text y="60" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">Describe your task, we'll build the team</text>
+  </g>
+
+  <!-- Bottom Nav -->
+  <g transform="translate(0, 2580)">
+    <rect width="1290" height="216" fill="#0f172a"/>
+    <g transform="translate(130, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F3E0;</text>
+    </g>
+    <g transform="translate(380, 50)">
+      <rect width="140" height="70" rx="35" fill="url(#greenGrad)"/>
+      <text x="70" y="50" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F331;</text>
+    </g>
+    <g transform="translate(580, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F33E;</text>
+    </g>
+    <g transform="translate(780, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F4E6;</text>
+    </g>
+    <g transform="translate(1000, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x2699;</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,1189 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1BC5B23A927C4049EB89E526 /* FarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DEB4E233BDAF921FC0011BC /* FarmIntents.swift */; };
+		21EAB8CCADEF969A9D3CE8CA /* WidgetPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820BD2D504652F7EEBA7F9A6 /* WidgetPreviews.swift */; };
+		4125D6DD82C0CD57442AD206 /* WidgetDataSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA5C572B3F1594D498EFF7F /* WidgetDataSync.swift */; };
+		45482E6C4320BE942566EBBB /* AppGroupFarmStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BF0F87FFE5B9A9D6F289776 /* AppGroupFarmStatusStore.swift */; };
+		45E388E4267CA39E98D9ACCD /* WidgetSharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1AD981D4E78D039241EE3F /* WidgetSharedModels.swift */; };
+		834EFC42BBB8C88A8755CD2E /* MaiFarmFarmMonitorWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988DBFEF0746A930FBA7C68C /* MaiFarmFarmMonitorWidget.swift */; };
+		BF00010000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000001 /* ContentView.swift */; };
+		BF00010000000002 /* MaiFarmApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000002 /* MaiFarmApp.swift */; };
+		BF00010000000003 /* Cards.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000003 /* Cards.swift */; };
+		BF00010000000004 /* MaiFarmLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000004 /* MaiFarmLogo.swift */; };
+		BF00010000000005 /* EnhancedNetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000005 /* EnhancedNetworkMonitor.swift */; };
+		BF00010000000006 /* KeyboardShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000006 /* KeyboardShortcutManager.swift */; };
+		BF00010000000007 /* SystemSettingsObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000007 /* SystemSettingsObserver.swift */; };
+		BF00010000000008 /* ThermalStateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000008 /* ThermalStateMonitor.swift */; };
+		BF00010000000009 /* Backgrounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000009 /* Backgrounds.swift */; };
+		BF0001000000000A /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000000A /* Colors.swift */; };
+		BF0001000000000B /* MaiFarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000000B /* MaiFarmIntents.swift */; };
+		BF0001000000000C /* AIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000000C /* AIEngine.swift */; };
+		BF0001000000000D /* DeviceCapabilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000000D /* DeviceCapabilityManager.swift */; };
+		BF0001000000000E /* MainNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000000E /* MainNavigation.swift */; };
+		BF0001000000000F /* AdaptiveThresholds.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000000F /* AdaptiveThresholds.swift */; };
+		BF00010000000010 /* AssistantService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000010 /* AssistantService.swift */; };
+		BF00010000000011 /* AssistantSummaryGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000011 /* AssistantSummaryGenerator.swift */; };
+		BF00010000000012 /* CloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000012 /* CloudSyncManager.swift */; };
+		BF00010000000013 /* DifferentialSummaryEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000013 /* DifferentialSummaryEngine.swift */; };
+		BF00010000000014 /* NudgeDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000014 /* NudgeDispatcher.swift */; };
+		BF00010000000015 /* SessionEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000015 /* SessionEvent.swift */; };
+		BF00010000000016 /* SessionEventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000016 /* SessionEventBus.swift */; };
+		BF00010000000017 /* SessionEventPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000017 /* SessionEventPersistence.swift */; };
+		BF00010000000018 /* StallDetectionAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000018 /* StallDetectionAnalytics.swift */; };
+		BF00010000000019 /* StallDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000019 /* StallDetector.swift */; };
+		BF0001000000001A /* StallNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000001A /* StallNotificationService.swift */; };
+		BF0001000000001B /* StallPredictionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000001B /* StallPredictionEngine.swift */; };
+		BF0001000000001C /* WidgetDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000001C /* WidgetDataProvider.swift */; };
+		BF0001000000001D /* BackgroundTaskManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000001D /* BackgroundTaskManager.swift */; };
+		BF0001000000001E /* DeviceOptimizedFarmingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000001E /* DeviceOptimizedFarmingService.swift */; };
+		BF0001000000001F /* DeviceOptimizedMonitoringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000001F /* DeviceOptimizedMonitoringService.swift */; };
+		BF00010000000020 /* FileHandlingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000020 /* FileHandlingService.swift */; };
+		BF00010000000021 /* MaiFarmAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000021 /* MaiFarmAPI.swift */; };
+		BF00010000000022 /* StateCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000022 /* StateCoordinator.swift */; };
+		BF00010000000023 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000023 /* HapticManager.swift */; };
+		BF00010000000024 /* ToastManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000024 /* ToastManager.swift */; };
+		BF00010000000025 /* AIEngineSetupViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000025 /* AIEngineSetupViewModel.swift */; };
+		BF00010000000026 /* AssistantSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000026 /* AssistantSummaryView.swift */; };
+		BF00010000000027 /* BarnView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000027 /* BarnView.swift */; };
+		BF00010000000028 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000028 /* DashboardView.swift */; };
+		BF00010000000029 /* FarmersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000029 /* FarmersView.swift */; };
+		BF0001000000002A /* FarmsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000002A /* FarmsView.swift */; };
+		BF0001000000002B /* HarvestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000002B /* HarvestView.swift */; };
+		BF0001000000002C /* AIEngineSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000002C /* AIEngineSetupView.swift */; };
+		BF0001000000002D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000002D /* SettingsView.swift */; };
+		BF0001000000002E /* GoWildSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000002E /* GoWildSheet.swift */; };
+		BF0001000000002F /* NewFarmSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR0001000000002F /* NewFarmSheet.swift */; };
+		BF00010000000030 /* QuickTaskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000030 /* QuickTaskSheet.swift */; };
+		BF00010000000031 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FR00010000000031 /* Assets.xcassets */; };
+		BF00010000000040 /* MaiFarmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000040 /* MaiFarmTests.swift */; };
+		BF00010000000041 /* AssistantImprovementsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000041 /* AssistantImprovementsTests.swift */; };
+		BF00010000000042 /* NudgeDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000042 /* NudgeDispatcherTests.swift */; };
+		BF00010000000043 /* StallDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000043 /* StallDetectorTests.swift */; };
+		BF00010000000050 /* MaiFarmUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000050 /* MaiFarmUITests.swift */; };
+		BF00010000000051 /* MaiFarmUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000051 /* MaiFarmUITestsLaunchTests.swift */; };
+		BF00010000000052 /* EngineE2EUserFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000052 /* EngineE2EUserFlowTests.swift */; };
+		BF00010000000053 /* PlatformOptimizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000053 /* PlatformOptimizationTests.swift */; };
+		BF00010000000060 /* AssistantWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FR00010000000060 /* AssistantWidget.swift */; };
+		BF00010000000061 /* MaiFarmWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = PR00010000000004 /* MaiFarmWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		BF00010000000070 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FW00010000000001 /* WidgetKit.framework */; };
+		BF00010000000071 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FW00010000000002 /* SwiftUI.framework */; };
+		C20EEA02097D27B0D63AC06B /* MaiFarmLockScreenWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744EE75E8FABD51B6498E04B /* MaiFarmLockScreenWidget.swift */; };
+		DC070035E2F788D7C5F59D21 /* MaiFarmHarvestTerminalWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E458C7B49B2ABA743E6E226 /* MaiFarmHarvestTerminalWidget.swift */; };
+		EB26807CC505856A0921687A /* MaiFarmOverviewWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3D8133D8E6ED649BC3AE647 /* MaiFarmOverviewWidget.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CP00010000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PJ00010000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = NT00010000000001;
+			remoteInfo = MaiFarm;
+		};
+		CP00010000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PJ00010000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = NT00010000000001;
+			remoteInfo = MaiFarm;
+		};
+		CP00010000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PJ00010000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = NT00010000000001;
+			remoteInfo = MaiFarm;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		CF00010000000001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				BF00010000000061 /* MaiFarmWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		1DEB4E233BDAF921FC0011BC /* FarmIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FarmIntents.swift; sourceTree = "<group>"; };
+		1E458C7B49B2ABA743E6E226 /* MaiFarmHarvestTerminalWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MaiFarmHarvestTerminalWidget.swift; sourceTree = "<group>"; };
+		2EA5C572B3F1594D498EFF7F /* WidgetDataSync.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetDataSync.swift; sourceTree = "<group>"; };
+		4BF0F87FFE5B9A9D6F289776 /* AppGroupFarmStatusStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppGroupFarmStatusStore.swift; sourceTree = "<group>"; };
+		744EE75E8FABD51B6498E04B /* MaiFarmLockScreenWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MaiFarmLockScreenWidget.swift; sourceTree = "<group>"; };
+		820BD2D504652F7EEBA7F9A6 /* WidgetPreviews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetPreviews.swift; sourceTree = "<group>"; };
+		988DBFEF0746A930FBA7C68C /* MaiFarmFarmMonitorWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MaiFarmFarmMonitorWidget.swift; sourceTree = "<group>"; };
+		A3D8133D8E6ED649BC3AE647 /* MaiFarmOverviewWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MaiFarmOverviewWidget.swift; sourceTree = "<group>"; };
+		EA1AD981D4E78D039241EE3F /* WidgetSharedModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetSharedModels.swift; sourceTree = "<group>"; };
+		FR00010000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		FR00010000000002 /* MaiFarmApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiFarmApp.swift; sourceTree = "<group>"; };
+		FR00010000000003 /* Cards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cards.swift; sourceTree = "<group>"; };
+		FR00010000000004 /* MaiFarmLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiFarmLogo.swift; sourceTree = "<group>"; };
+		FR00010000000005 /* EnhancedNetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedNetworkMonitor.swift; sourceTree = "<group>"; };
+		FR00010000000006 /* KeyboardShortcutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutManager.swift; sourceTree = "<group>"; };
+		FR00010000000007 /* SystemSettingsObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemSettingsObserver.swift; sourceTree = "<group>"; };
+		FR00010000000008 /* ThermalStateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalStateMonitor.swift; sourceTree = "<group>"; };
+		FR00010000000009 /* Backgrounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backgrounds.swift; sourceTree = "<group>"; };
+		FR0001000000000A /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
+		FR0001000000000B /* MaiFarmIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiFarmIntents.swift; sourceTree = "<group>"; };
+		FR0001000000000C /* AIEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngine.swift; sourceTree = "<group>"; };
+		FR0001000000000D /* DeviceCapabilityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCapabilityManager.swift; sourceTree = "<group>"; };
+		FR0001000000000E /* MainNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainNavigation.swift; sourceTree = "<group>"; };
+		FR0001000000000F /* AdaptiveThresholds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveThresholds.swift; sourceTree = "<group>"; };
+		FR00010000000010 /* AssistantService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantService.swift; sourceTree = "<group>"; };
+		FR00010000000011 /* AssistantSummaryGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantSummaryGenerator.swift; sourceTree = "<group>"; };
+		FR00010000000012 /* CloudSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncManager.swift; sourceTree = "<group>"; };
+		FR00010000000013 /* DifferentialSummaryEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DifferentialSummaryEngine.swift; sourceTree = "<group>"; };
+		FR00010000000014 /* NudgeDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeDispatcher.swift; sourceTree = "<group>"; };
+		FR00010000000015 /* SessionEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEvent.swift; sourceTree = "<group>"; };
+		FR00010000000016 /* SessionEventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEventBus.swift; sourceTree = "<group>"; };
+		FR00010000000017 /* SessionEventPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionEventPersistence.swift; sourceTree = "<group>"; };
+		FR00010000000018 /* StallDetectionAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StallDetectionAnalytics.swift; sourceTree = "<group>"; };
+		FR00010000000019 /* StallDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StallDetector.swift; sourceTree = "<group>"; };
+		FR0001000000001A /* StallNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StallNotificationService.swift; sourceTree = "<group>"; };
+		FR0001000000001B /* StallPredictionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StallPredictionEngine.swift; sourceTree = "<group>"; };
+		FR0001000000001C /* WidgetDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataProvider.swift; sourceTree = "<group>"; };
+		FR0001000000001D /* BackgroundTaskManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTaskManager.swift; sourceTree = "<group>"; };
+		FR0001000000001E /* DeviceOptimizedFarmingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceOptimizedFarmingService.swift; sourceTree = "<group>"; };
+		FR0001000000001F /* DeviceOptimizedMonitoringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceOptimizedMonitoringService.swift; sourceTree = "<group>"; };
+		FR00010000000020 /* FileHandlingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHandlingService.swift; sourceTree = "<group>"; };
+		FR00010000000021 /* MaiFarmAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiFarmAPI.swift; sourceTree = "<group>"; };
+		FR00010000000022 /* StateCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateCoordinator.swift; sourceTree = "<group>"; };
+		FR00010000000023 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
+		FR00010000000024 /* ToastManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastManager.swift; sourceTree = "<group>"; };
+		FR00010000000025 /* AIEngineSetupViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngineSetupViewModel.swift; sourceTree = "<group>"; };
+		FR00010000000026 /* AssistantSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantSummaryView.swift; sourceTree = "<group>"; };
+		FR00010000000027 /* BarnView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarnView.swift; sourceTree = "<group>"; };
+		FR00010000000028 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		FR00010000000029 /* FarmersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FarmersView.swift; sourceTree = "<group>"; };
+		FR0001000000002A /* FarmsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FarmsView.swift; sourceTree = "<group>"; };
+		FR0001000000002B /* HarvestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarvestView.swift; sourceTree = "<group>"; };
+		FR0001000000002C /* AIEngineSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIEngineSetupView.swift; sourceTree = "<group>"; };
+		FR0001000000002D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		FR0001000000002E /* GoWildSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoWildSheet.swift; sourceTree = "<group>"; };
+		FR0001000000002F /* NewFarmSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewFarmSheet.swift; sourceTree = "<group>"; };
+		FR00010000000030 /* QuickTaskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTaskSheet.swift; sourceTree = "<group>"; };
+		FR00010000000031 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FR00010000000032 /* MaiFarm.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MaiFarm.entitlements; sourceTree = "<group>"; };
+		FR00010000000040 /* MaiFarmTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiFarmTests.swift; sourceTree = "<group>"; };
+		FR00010000000041 /* AssistantImprovementsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantImprovementsTests.swift; sourceTree = "<group>"; };
+		FR00010000000042 /* NudgeDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeDispatcherTests.swift; sourceTree = "<group>"; };
+		FR00010000000043 /* StallDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StallDetectorTests.swift; sourceTree = "<group>"; };
+		FR00010000000050 /* MaiFarmUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiFarmUITests.swift; sourceTree = "<group>"; };
+		FR00010000000051 /* MaiFarmUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaiFarmUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		FR00010000000052 /* EngineE2EUserFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineE2EUserFlowTests.swift; sourceTree = "<group>"; };
+		FR00010000000053 /* PlatformOptimizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformOptimizationTests.swift; sourceTree = "<group>"; };
+		FR00010000000060 /* AssistantWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantWidget.swift; sourceTree = "<group>"; };
+		FW00010000000001 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		FW00010000000002 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		PR00010000000001 /* MaiFarm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MaiFarm.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		PR00010000000002 /* MaiFarmTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MaiFarmTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		PR00010000000003 /* MaiFarmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MaiFarmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		PR00010000000004 /* MaiFarmWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MaiFarmWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FP00010000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FP00010000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FP00010000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FP00010000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF00010000000070 /* WidgetKit.framework in Frameworks */,
+				BF00010000000071 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		GR00010000000001 = {
+			isa = PBXGroup;
+			children = (
+				GR00010000000002 /* MaiFarm */,
+				GR00010000000003 /* MaiFarmTests */,
+				GR00010000000004 /* MaiFarmUITests */,
+				GR00010000000005 /* MaiFarmWidget */,
+				GR00010000000006 /* Frameworks */,
+				GR00010000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		GR00010000000002 /* MaiFarm */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000001 /* ContentView.swift */,
+				FR00010000000002 /* MaiFarmApp.swift */,
+				GR00010000000010 /* Components */,
+				GR00010000000020 /* Core */,
+				GR00010000000030 /* Design */,
+				GR00010000000040 /* Intents */,
+				GR00010000000050 /* Models */,
+				GR00010000000060 /* Navigation */,
+				GR00010000000070 /* Services */,
+				GR00010000000080 /* Utils */,
+				GR00010000000090 /* ViewModels */,
+				GR000100000000A0 /* Views */,
+				FR00010000000031 /* Assets.xcassets */,
+				FR00010000000032 /* MaiFarm.entitlements */,
+			);
+			path = MaiFarm/MaiFarm;
+			sourceTree = "<group>";
+		};
+		GR00010000000003 /* MaiFarmTests */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000040 /* MaiFarmTests.swift */,
+				GR000100000000B0 /* Services */,
+			);
+			path = MaiFarm/MaiFarmTests;
+			sourceTree = "<group>";
+		};
+		GR00010000000004 /* MaiFarmUITests */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000050 /* MaiFarmUITests.swift */,
+				FR00010000000051 /* MaiFarmUITestsLaunchTests.swift */,
+				FR00010000000052 /* EngineE2EUserFlowTests.swift */,
+				FR00010000000053 /* PlatformOptimizationTests.swift */,
+			);
+			path = MaiFarm/MaiFarmUITests;
+			sourceTree = "<group>";
+		};
+		GR00010000000005 /* MaiFarmWidget */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000060 /* AssistantWidget.swift */,
+				EA1AD981D4E78D039241EE3F /* WidgetSharedModels.swift */,
+				4BF0F87FFE5B9A9D6F289776 /* AppGroupFarmStatusStore.swift */,
+				1DEB4E233BDAF921FC0011BC /* FarmIntents.swift */,
+				A3D8133D8E6ED649BC3AE647 /* MaiFarmOverviewWidget.swift */,
+				988DBFEF0746A930FBA7C68C /* MaiFarmFarmMonitorWidget.swift */,
+				1E458C7B49B2ABA743E6E226 /* MaiFarmHarvestTerminalWidget.swift */,
+				744EE75E8FABD51B6498E04B /* MaiFarmLockScreenWidget.swift */,
+				820BD2D504652F7EEBA7F9A6 /* WidgetPreviews.swift */,
+			);
+			path = MaiFarm/MaiFarmWidget;
+			sourceTree = "<group>";
+		};
+		GR00010000000006 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				FW00010000000001 /* WidgetKit.framework */,
+				FW00010000000002 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		GR00010000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				PR00010000000001 /* MaiFarm.app */,
+				PR00010000000002 /* MaiFarmTests.xctest */,
+				PR00010000000003 /* MaiFarmUITests.xctest */,
+				PR00010000000004 /* MaiFarmWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		GR00010000000010 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				GR00010000000011 /* Cards */,
+				GR00010000000012 /* Logo */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		GR00010000000011 /* Cards */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000003 /* Cards.swift */,
+			);
+			path = Cards;
+			sourceTree = "<group>";
+		};
+		GR00010000000012 /* Logo */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000004 /* MaiFarmLogo.swift */,
+			);
+			path = Logo;
+			sourceTree = "<group>";
+		};
+		GR00010000000020 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000005 /* EnhancedNetworkMonitor.swift */,
+				FR00010000000006 /* KeyboardShortcutManager.swift */,
+				FR00010000000007 /* SystemSettingsObserver.swift */,
+				FR00010000000008 /* ThermalStateMonitor.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		GR00010000000030 /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000009 /* Backgrounds.swift */,
+				FR0001000000000A /* Colors.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		GR00010000000040 /* Intents */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000000B /* MaiFarmIntents.swift */,
+			);
+			path = Intents;
+			sourceTree = "<group>";
+		};
+		GR00010000000050 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000000C /* AIEngine.swift */,
+				FR0001000000000D /* DeviceCapabilityManager.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		GR00010000000060 /* Navigation */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000000E /* MainNavigation.swift */,
+			);
+			path = Navigation;
+			sourceTree = "<group>";
+		};
+		GR00010000000070 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				GR00010000000071 /* Assistant */,
+				FR0001000000001D /* BackgroundTaskManager.swift */,
+				FR0001000000001E /* DeviceOptimizedFarmingService.swift */,
+				FR0001000000001F /* DeviceOptimizedMonitoringService.swift */,
+				FR00010000000020 /* FileHandlingService.swift */,
+				FR00010000000021 /* MaiFarmAPI.swift */,
+				FR00010000000022 /* StateCoordinator.swift */,
+				2EA5C572B3F1594D498EFF7F /* WidgetDataSync.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		GR00010000000071 /* Assistant */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000000F /* AdaptiveThresholds.swift */,
+				FR00010000000010 /* AssistantService.swift */,
+				FR00010000000011 /* AssistantSummaryGenerator.swift */,
+				FR00010000000012 /* CloudSyncManager.swift */,
+				FR00010000000013 /* DifferentialSummaryEngine.swift */,
+				FR00010000000014 /* NudgeDispatcher.swift */,
+				FR00010000000015 /* SessionEvent.swift */,
+				FR00010000000016 /* SessionEventBus.swift */,
+				FR00010000000017 /* SessionEventPersistence.swift */,
+				FR00010000000018 /* StallDetectionAnalytics.swift */,
+				FR00010000000019 /* StallDetector.swift */,
+				FR0001000000001A /* StallNotificationService.swift */,
+				FR0001000000001B /* StallPredictionEngine.swift */,
+				FR0001000000001C /* WidgetDataProvider.swift */,
+			);
+			path = Assistant;
+			sourceTree = "<group>";
+		};
+		GR00010000000080 /* Utils */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000023 /* HapticManager.swift */,
+				FR00010000000024 /* ToastManager.swift */,
+			);
+			path = Utils;
+			sourceTree = "<group>";
+		};
+		GR00010000000090 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000025 /* AIEngineSetupViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		GR000100000000A0 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				GR000100000000A1 /* Assistant */,
+				GR000100000000A2 /* Barn */,
+				GR000100000000A3 /* Dashboard */,
+				GR000100000000A4 /* Farmers */,
+				GR000100000000A5 /* Farms */,
+				GR000100000000A6 /* Harvest */,
+				GR000100000000A7 /* Settings */,
+				GR000100000000A8 /* Sheets */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		GR000100000000A1 /* Assistant */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000026 /* AssistantSummaryView.swift */,
+			);
+			path = Assistant;
+			sourceTree = "<group>";
+		};
+		GR000100000000A2 /* Barn */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000027 /* BarnView.swift */,
+			);
+			path = Barn;
+			sourceTree = "<group>";
+		};
+		GR000100000000A3 /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000028 /* DashboardView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		GR000100000000A4 /* Farmers */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000029 /* FarmersView.swift */,
+			);
+			path = Farmers;
+			sourceTree = "<group>";
+		};
+		GR000100000000A5 /* Farms */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000002A /* FarmsView.swift */,
+			);
+			path = Farms;
+			sourceTree = "<group>";
+		};
+		GR000100000000A6 /* Harvest */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000002B /* HarvestView.swift */,
+			);
+			path = Harvest;
+			sourceTree = "<group>";
+		};
+		GR000100000000A7 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000002C /* AIEngineSetupView.swift */,
+				FR0001000000002D /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		GR000100000000A8 /* Sheets */ = {
+			isa = PBXGroup;
+			children = (
+				FR0001000000002E /* GoWildSheet.swift */,
+				FR0001000000002F /* NewFarmSheet.swift */,
+				FR00010000000030 /* QuickTaskSheet.swift */,
+			);
+			path = Sheets;
+			sourceTree = "<group>";
+		};
+		GR000100000000B0 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				GR000100000000B1 /* Assistant */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		GR000100000000B1 /* Assistant */ = {
+			isa = PBXGroup;
+			children = (
+				FR00010000000041 /* AssistantImprovementsTests.swift */,
+				FR00010000000042 /* NudgeDispatcherTests.swift */,
+				FR00010000000043 /* StallDetectorTests.swift */,
+			);
+			path = Assistant;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		NT00010000000001 /* MaiFarm */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CL00010000000001 /* Build configuration list for PBXNativeTarget "MaiFarm" */;
+			buildPhases = (
+				SP00010000000001 /* Sources */,
+				FP00010000000001 /* Frameworks */,
+				RP00010000000001 /* Resources */,
+				CF00010000000001 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				TD00010000000004 /* PBXTargetDependency */,
+			);
+			name = MaiFarm;
+			productName = MaiFarm;
+			productReference = PR00010000000001 /* MaiFarm.app */;
+			productType = "com.apple.product-type.application";
+		};
+		NT00010000000002 /* MaiFarmTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CL00010000000002 /* Build configuration list for PBXNativeTarget "MaiFarmTests" */;
+			buildPhases = (
+				SP00010000000002 /* Sources */,
+				FP00010000000002 /* Frameworks */,
+				RP00010000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				TD00010000000001 /* PBXTargetDependency */,
+			);
+			name = MaiFarmTests;
+			productName = MaiFarmTests;
+			productReference = PR00010000000002 /* MaiFarmTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		NT00010000000003 /* MaiFarmUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CL00010000000003 /* Build configuration list for PBXNativeTarget "MaiFarmUITests" */;
+			buildPhases = (
+				SP00010000000003 /* Sources */,
+				FP00010000000003 /* Frameworks */,
+				RP00010000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				TD00010000000002 /* PBXTargetDependency */,
+			);
+			name = MaiFarmUITests;
+			productName = MaiFarmUITests;
+			productReference = PR00010000000003 /* MaiFarmUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		NT00010000000004 /* MaiFarmWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CL00010000000004 /* Build configuration list for PBXNativeTarget "MaiFarmWidget" */;
+			buildPhases = (
+				SP00010000000004 /* Sources */,
+				FP00010000000004 /* Frameworks */,
+				RP00010000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MaiFarmWidget;
+			productName = MaiFarmWidget;
+			productReference = PR00010000000004 /* MaiFarmWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		PJ00010000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					NT00010000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					NT00010000000002 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = NT00010000000001;
+					};
+					NT00010000000003 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = NT00010000000001;
+					};
+					NT00010000000004 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = CL00010000000005 /* Build configuration list for PBXProject "MaiFarm" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = GR00010000000001;
+			productRefGroup = GR00010000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				NT00010000000001 /* MaiFarm */,
+				NT00010000000002 /* MaiFarmTests */,
+				NT00010000000003 /* MaiFarmUITests */,
+				NT00010000000004 /* MaiFarmWidget */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		RP00010000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF00010000000031 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RP00010000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RP00010000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RP00010000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		SP00010000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF00010000000001 /* ContentView.swift in Sources */,
+				BF00010000000002 /* MaiFarmApp.swift in Sources */,
+				BF00010000000003 /* Cards.swift in Sources */,
+				BF00010000000004 /* MaiFarmLogo.swift in Sources */,
+				BF00010000000005 /* EnhancedNetworkMonitor.swift in Sources */,
+				BF00010000000006 /* KeyboardShortcutManager.swift in Sources */,
+				BF00010000000007 /* SystemSettingsObserver.swift in Sources */,
+				BF00010000000008 /* ThermalStateMonitor.swift in Sources */,
+				BF00010000000009 /* Backgrounds.swift in Sources */,
+				BF0001000000000A /* Colors.swift in Sources */,
+				BF0001000000000B /* MaiFarmIntents.swift in Sources */,
+				BF0001000000000C /* AIEngine.swift in Sources */,
+				BF0001000000000D /* DeviceCapabilityManager.swift in Sources */,
+				BF0001000000000E /* MainNavigation.swift in Sources */,
+				BF0001000000000F /* AdaptiveThresholds.swift in Sources */,
+				BF00010000000010 /* AssistantService.swift in Sources */,
+				BF00010000000011 /* AssistantSummaryGenerator.swift in Sources */,
+				BF00010000000012 /* CloudSyncManager.swift in Sources */,
+				BF00010000000013 /* DifferentialSummaryEngine.swift in Sources */,
+				BF00010000000014 /* NudgeDispatcher.swift in Sources */,
+				BF00010000000015 /* SessionEvent.swift in Sources */,
+				BF00010000000016 /* SessionEventBus.swift in Sources */,
+				BF00010000000017 /* SessionEventPersistence.swift in Sources */,
+				BF00010000000018 /* StallDetectionAnalytics.swift in Sources */,
+				BF00010000000019 /* StallDetector.swift in Sources */,
+				BF0001000000001A /* StallNotificationService.swift in Sources */,
+				BF0001000000001B /* StallPredictionEngine.swift in Sources */,
+				BF0001000000001C /* WidgetDataProvider.swift in Sources */,
+				BF0001000000001D /* BackgroundTaskManager.swift in Sources */,
+				BF0001000000001E /* DeviceOptimizedFarmingService.swift in Sources */,
+				BF0001000000001F /* DeviceOptimizedMonitoringService.swift in Sources */,
+				BF00010000000020 /* FileHandlingService.swift in Sources */,
+				BF00010000000021 /* MaiFarmAPI.swift in Sources */,
+				BF00010000000022 /* StateCoordinator.swift in Sources */,
+				BF00010000000023 /* HapticManager.swift in Sources */,
+				BF00010000000024 /* ToastManager.swift in Sources */,
+				BF00010000000025 /* AIEngineSetupViewModel.swift in Sources */,
+				BF00010000000026 /* AssistantSummaryView.swift in Sources */,
+				BF00010000000027 /* BarnView.swift in Sources */,
+				BF00010000000028 /* DashboardView.swift in Sources */,
+				BF00010000000029 /* FarmersView.swift in Sources */,
+				BF0001000000002A /* FarmsView.swift in Sources */,
+				BF0001000000002B /* HarvestView.swift in Sources */,
+				BF0001000000002C /* AIEngineSetupView.swift in Sources */,
+				BF0001000000002D /* SettingsView.swift in Sources */,
+				BF0001000000002E /* GoWildSheet.swift in Sources */,
+				BF0001000000002F /* NewFarmSheet.swift in Sources */,
+				BF00010000000030 /* QuickTaskSheet.swift in Sources */,
+				4125D6DD82C0CD57442AD206 /* WidgetDataSync.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SP00010000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF00010000000040 /* MaiFarmTests.swift in Sources */,
+				BF00010000000041 /* AssistantImprovementsTests.swift in Sources */,
+				BF00010000000042 /* NudgeDispatcherTests.swift in Sources */,
+				BF00010000000043 /* StallDetectorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SP00010000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF00010000000050 /* MaiFarmUITests.swift in Sources */,
+				BF00010000000051 /* MaiFarmUITestsLaunchTests.swift in Sources */,
+				BF00010000000052 /* EngineE2EUserFlowTests.swift in Sources */,
+				BF00010000000053 /* PlatformOptimizationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SP00010000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF00010000000060 /* AssistantWidget.swift in Sources */,
+				45E388E4267CA39E98D9ACCD /* WidgetSharedModels.swift in Sources */,
+				45482E6C4320BE942566EBBB /* AppGroupFarmStatusStore.swift in Sources */,
+				1BC5B23A927C4049EB89E526 /* FarmIntents.swift in Sources */,
+				EB26807CC505856A0921687A /* MaiFarmOverviewWidget.swift in Sources */,
+				834EFC42BBB8C88A8755CD2E /* MaiFarmFarmMonitorWidget.swift in Sources */,
+				DC070035E2F788D7C5F59D21 /* MaiFarmHarvestTerminalWidget.swift in Sources */,
+				C20EEA02097D27B0D63AC06B /* MaiFarmLockScreenWidget.swift in Sources */,
+				21EAB8CCADEF969A9D3CE8CA /* WidgetPreviews.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		TD00010000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = NT00010000000001 /* MaiFarm */;
+			targetProxy = CP00010000000001 /* PBXContainerItemProxy */;
+		};
+		TD00010000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = NT00010000000001 /* MaiFarm */;
+			targetProxy = CP00010000000002 /* PBXContainerItemProxy */;
+		};
+		TD00010000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = NT00010000000001 /* MaiFarm */;
+			targetProxy = CP00010000000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		BC00010000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		BC00010000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		BC00010000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MaiFarm/MaiFarm/MaiFarm.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PC8SXU67D3;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = MaiFarm;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BC00010000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MaiFarm/MaiFarm/MaiFarm.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PC8SXU67D3;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = MaiFarm;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BC00010000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MaiFarm.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MaiFarm";
+			};
+			name = Debug;
+		};
+		BC00010000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MaiFarm.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MaiFarm";
+			};
+			name = Release;
+		};
+		BC00010000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MaiFarm;
+			};
+			name = Debug;
+		};
+		BC00010000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = MaiFarm;
+			};
+			name = Release;
+		};
+		BC00010000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PC8SXU67D3;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MaiFarm/MaiFarmWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MaiFarmWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BC0001000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = PC8SXU67D3;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = MaiFarmWidget;
+				INFOPLIST_KEY_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.maifarm.ios.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		CL00010000000001 /* Build configuration list for PBXNativeTarget "MaiFarm" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC00010000000003 /* Debug */,
+				BC00010000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CL00010000000002 /* Build configuration list for PBXNativeTarget "MaiFarmTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC00010000000005 /* Debug */,
+				BC00010000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CL00010000000003 /* Build configuration list for PBXNativeTarget "MaiFarmUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC00010000000007 /* Debug */,
+				BC00010000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CL00010000000004 /* Build configuration list for PBXNativeTarget "MaiFarmWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC00010000000009 /* Debug */,
+				BC0001000000000A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CL00010000000005 /* Build configuration list for PBXProject "MaiFarm" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC00010000000001 /* Debug */,
+				BC00010000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = PJ00010000000001 /* Project object */;
+}

@@ -7,12 +7,12 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@je
 import { Server } from 'http';
 import { Socket as ClientSocket, io } from 'socket.io-client';
 import { createTestApp } from '../test-helpers';
-import { db } from '../../server/database/connection';
-import { redis } from '../../server/services/redis';
-import { circuitBreakerManager } from '../../server/services/circuitBreaker';
-import { errorRecoveryService } from '../../server/services/errorRecoveryService';
-import { productionHealthCheck } from '../../server/services/productionHealthCheck';
-import { performanceOptimizer } from '../../server/services/performanceOptimizer';
+import { db } from '../../apps/api/src/database/connection';
+import { redis } from '../../apps/api/src/services/redis';
+import { circuitBreakerManager } from '../../apps/api/src/services/circuitBreaker';
+import { errorRecoveryService } from '../../apps/api/src/services/errorRecoveryService';
+import { productionHealthCheck } from '../../apps/api/src/services/productionHealthCheck';
+import { performanceOptimizer } from '../../apps/api/src/services/performanceOptimizer';
 
 describe('Production Critical Paths', () => {
   let server: Server;
@@ -584,7 +584,7 @@ describe('Production Memory Leak Tests', () => {
   });
 
   it('should clean up terminal watchers properly', async () => {
-    const { terminalOutputWatcher } = await import('../../server/services/unified/terminalService');
+    const { terminalOutputWatcher } = await import('../../apps/api/src/services/unified/terminalService');
 
     const initialWatcherCount = terminalOutputWatcher.getWatchedSessions().length;
 

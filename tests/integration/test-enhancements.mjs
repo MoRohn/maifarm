@@ -4,7 +4,7 @@
  * Test script for MaiFarm Enhancement Features
  */
 
-import { db } from '../../server/database/connection.js';
+import { db } from '../../apps/api/src/database/connection.js';
 
 console.log('=================================');
 console.log('MaiFarm Enhancement Test Suite');
@@ -73,18 +73,18 @@ async function testEnhancements() {
     // Test 3: Test service imports
     console.log('\nTest 3: Testing service imports...');
     const services = [
-      { name: 'AgentHealthMonitor', path: '../../server/services/agentHealthMonitor.js' },
-      { name: 'TaskCheckpointService', path: '../../server/services/taskCheckpointService.js' },
-      { name: 'ProviderMetricsService', path: '../../server/services/providerMetricsService.js' },
-      { name: 'DynamicProviderRouter', path: '../../server/services/dynamicProviderRouter.js' },
-      { name: 'UniversalAgentProtocol', path: '../../server/protocols/universalAgentProtocol.js' },
-      { name: 'MixedProviderOrchestrator', path: '../../server/services/mixedProviderOrchestrator.js' },
-      { name: 'WorkspacePoolManager', path: '../../server/services/workspacePoolManager.js' },
-      { name: 'ResourceCacheService', path: '../../server/services/resourceCacheService.js' },
-      { name: 'HarvestIntegrityService', path: '../../server/services/harvestIntegrityService.js' },
-      { name: 'CleanupValidator', path: '../../server/services/cleanupValidator.js' },
-      { name: 'SandboxExecutor', path: '../../server/services/sandboxExecutor.js' },
-      { name: 'SecurityPolicyEngine', path: '../../server/services/securityPolicyEngine.js' }
+      { name: 'AgentHealthMonitor', path: '../../apps/api/src/services/agentHealthMonitor.js' },
+      { name: 'TaskCheckpointService', path: '../../apps/api/src/services/taskCheckpointService.js' },
+      { name: 'ProviderMetricsService', path: '../../apps/api/src/services/providerMetricsService.js' },
+      { name: 'DynamicProviderRouter', path: '../../apps/api/src/services/dynamicProviderRouter.js' },
+      { name: 'UniversalAgentProtocol', path: '../../apps/api/src/protocols/universalAgentProtocol.js' },
+      { name: 'MixedProviderOrchestrator', path: '../../apps/api/src/services/mixedProviderOrchestrator.js' },
+      { name: 'WorkspacePoolManager', path: '../../apps/api/src/services/workspacePoolManager.js' },
+      { name: 'ResourceCacheService', path: '../../apps/api/src/services/resourceCacheService.js' },
+      { name: 'HarvestIntegrityService', path: '../../apps/api/src/services/harvestIntegrityService.js' },
+      { name: 'CleanupValidator', path: '../../apps/api/src/services/cleanupValidator.js' },
+      { name: 'SandboxExecutor', path: '../../apps/api/src/services/sandboxExecutor.js' },
+      { name: 'SecurityPolicyEngine', path: '../../apps/api/src/services/securityPolicyEngine.js' }
     ];
 
     for (const service of services) {
@@ -107,7 +107,7 @@ async function testEnhancements() {
     
     // Test agent health monitoring
     try {
-      const { agentHealthMonitor } = await import('../../server/services/agentHealthMonitor.js');
+      const { agentHealthMonitor } = await import('../../apps/api/src/services/agentHealthMonitor.js');
       const stats = await agentHealthMonitor.getStatistics();
       console.log(`  ✓ Agent Health Monitor: ${stats.totalAgents} agents monitored`);
       results.passed.push('Agent Health Monitor functionality');
@@ -118,7 +118,7 @@ async function testEnhancements() {
 
     // Test workspace pool
     try {
-      const { workspacePoolManager } = await import('../../server/services/workspacePoolManager.js');
+      const { workspacePoolManager } = await import('../../apps/api/src/services/workspacePoolManager.js');
       const stats = workspacePoolManager.getStatistics();
       console.log(`  ✓ Workspace Pool: ${stats.totalWorkspaces} workspaces, ${stats.hitRate.toFixed(1)}% hit rate`);
       results.passed.push('Workspace Pool functionality');
@@ -129,7 +129,7 @@ async function testEnhancements() {
 
     // Test resource cache
     try {
-      const { resourceCacheService } = await import('../../server/services/resourceCacheService.js');
+      const { resourceCacheService } = await import('../../apps/api/src/services/resourceCacheService.js');
       const stats = resourceCacheService.getStatistics();
       console.log(`  ✓ Resource Cache: ${stats.totalItems} items, ${stats.hitRate.toFixed(1)}% hit rate`);
       results.passed.push('Resource Cache functionality');
@@ -140,7 +140,7 @@ async function testEnhancements() {
 
     // Test security policy engine
     try {
-      const { securityPolicyEngine } = await import('../../server/services/securityPolicyEngine.js');
+      const { securityPolicyEngine } = await import('../../apps/api/src/services/securityPolicyEngine.js');
       const policies = securityPolicyEngine.getAllPolicies();
       console.log(`  ✓ Security Policy Engine: ${policies.length} policies loaded`);
       results.passed.push('Security Policy Engine functionality');
@@ -152,7 +152,7 @@ async function testEnhancements() {
     // Test 5: Integration test
     console.log('\nTest 5: Testing enhancement integration...');
     try {
-      const { enhancementIntegration } = await import('../../server/services/enhancementIntegration.js');
+      const { enhancementIntegration } = await import('../../apps/api/src/services/enhancementIntegration.js');
       await enhancementIntegration.initialize();
       const healthCheck = await enhancementIntegration.healthCheck();
       

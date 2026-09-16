@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-light.svg" id="favicon-light" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" id="favicon-dark" media="(prefers-color-scheme: dark)" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5, user-scalable=yes" />
+    <meta name="description" content="MaiFarm - Multi-Agent Claude Code Orchestrator Dashboard" />
+    <meta name="theme-color" content="#0a0a0a" id="meta-theme-color" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <!-- iOS PWA Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MaiFarm" />
+    <!-- Prevent iOS text size adjust -->
+    <meta name="format-detection" content="telephone=no" />
+    <style>
+      /* iOS Safe Area Insets - Applied globally for viewport-fit: cover */
+      :root {
+        --safe-area-inset-top: env(safe-area-inset-top, 0px);
+        --safe-area-inset-right: env(safe-area-inset-right, 0px);
+        --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-area-inset-left: env(safe-area-inset-left, 0px);
+      }
+    </style>
+    <title>MaiFarm</title>
+    <style>
+      /* Prevent flash of unstyled content - set dark background immediately */
+      html, body {
+        background-color: #0a0a0a;
+        color: #ffffff;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Light mode styles - will be used if light theme is detected */
+      html.light, html.light body {
+        background-color: #ffffff;
+        color: #111827;
+      }
+
+      #root {
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+      }
+      #root.ready {
+        opacity: 1;
+      }
+    </style>
+    <script>
+      // Apply theme class immediately to prevent flash
+      (function() {
+        try {
+          const stored = localStorage.getItem('maifarm-theme');
+          let theme = 'dark'; // Default to dark
+
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            const storedTheme = parsed?.state?.theme || parsed?.theme;
+            // FIX: Properly respect 'system' preference
+            if (storedTheme === 'light') {
+              theme = 'light';
+            } else if (storedTheme === 'system') {
+              // FIX: Respect system theme preference when 'system' is selected
+              theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            // For 'dark' or any other value, use dark
+          }
+
+          document.documentElement.classList.add(theme);
+
+          // FIX: Update meta theme-color based on actual theme
+          const metaThemeColor = document.getElementById('meta-theme-color');
+          if (metaThemeColor) {
+            metaThemeColor.content = theme === 'dark' ? '#0a0a0a' : '#ffffff';
+          }
+        } catch (e) {
+          // Fallback to dark on error
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+    <script>
+      // Set app start time for uptime calculation
+      window.__APP_START_TIME__ = Date.now();
+      
+      // Dynamic favicon and theme-color based on theme
+      function updateThemeAssets() {
+        const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const lightFavicon = document.getElementById('favicon-light');
+        const darkFavicon = document.getElementById('favicon-dark');
+        const metaThemeColor = document.getElementById('meta-theme-color');
+
+        if (lightFavicon && darkFavicon) {
+          lightFavicon.media = isDarkMode ? 'not all' : '(prefers-color-scheme: light)';
+          darkFavicon.media = isDarkMode ? '(prefers-color-scheme: dark)' : 'not all';
+        }
+
+        // FIX: Update meta theme-color when system theme changes (if using system preference)
+        try {
+          const stored = localStorage.getItem('maifarm-theme');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            const storedTheme = parsed?.state?.theme || parsed?.theme;
+            if (storedTheme === 'system' && metaThemeColor) {
+              const effectiveTheme = isDarkMode ? 'dark' : 'light';
+              metaThemeColor.content = effectiveTheme === 'dark' ? '#0a0a0a' : '#ffffff';
+              // Also update document class for immediate visual feedback
+              document.documentElement.classList.remove('light', 'dark');
+              document.documentElement.classList.add(effectiveTheme);
+            }
+          }
+        } catch (e) {
+          // Ignore storage errors
+        }
+      }
+
+      // Update on initial load
+      updateThemeAssets();
+
+      // Listen for theme changes
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeAssets);
+      
+      // Unregister any service workers in development
+      if ('serviceWorker' in navigator && window.location.hostname === 'localhost') {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

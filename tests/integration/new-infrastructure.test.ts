@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
-import { farmLauncherV2 } from '../../server/services/FarmLauncherV2';
-import { stateCoordinator } from '../../server/services/unified/stateCoordinator';
-import { realtimeConnectionManager } from '../../server/services/unified/websocketHub';
-import { metricsPipeline } from '../../server/services/MetricsPipeline';
-import { harvestOrchestrator } from '../../server/services/unified/farmService';
-import { apiConnectionManager } from '../../server/services/ApiConnectionManager';
-import { AIProvider } from '../../server/config/aiProviders';
-import { db } from '../../server/database/connection';
+import { farmLauncherV2 } from '../../apps/api/src/services/FarmLauncherV2';
+import { stateCoordinator } from '../../apps/api/src/services/unified/stateCoordinator';
+import { realtimeConnectionManager } from '../../apps/api/src/services/unified/websocketHub';
+import { metricsPipeline } from '../../apps/api/src/services/MetricsPipeline';
+import { harvestOrchestrator } from '../../apps/api/src/services/unified/farmService';
+import { apiConnectionManager } from '../../apps/api/src/services/ApiConnectionManager';
+import { AIProvider } from '../../apps/api/src/config/aiProviders';
+import { db } from '../../apps/api/src/database/connection';
 import { Server as SocketIOServer } from 'socket.io';
 import { createServer } from 'http';
 import * as path from 'path';
@@ -260,7 +260,7 @@ describe('New Infrastructure Integration Tests', () => {
       stateCoordinator.dispose();
       
       // Reinitialize (simulating restart)
-      const StateCoordinator = require('../../server/services/unified/stateCoordinator').StateCoordinator;
+      const StateCoordinator = require('../../apps/api/src/services/unified/stateCoordinator').StateCoordinator;
       const newCoordinator = StateCoordinator.getInstance();
       
       // Check recovered states

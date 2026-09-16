@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
+// Jest test - converted from Vitest
 import { io, Socket } from 'socket.io-client';
 import { Server } from 'http';
 import express from 'express';
-import WebSocketServer from '../server/websocket/socketServer';
+import WebSocketServer from '../apps/api/src/websocket/socketServer';
 
 describe('WebSocket Connectivity Tests', () => {
   let httpServer: Server;

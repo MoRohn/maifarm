@@ -1,4 +1,4 @@
-import { CloudflareTunnelManager } from '../../../server/services/cloudflareTunnel';
+import { CloudflareTunnelManager } from '../../../apps/api/src/services/cloudflareTunnel';
 import { EnhancedWebSocketService } from '../../../src/services/websocket/EnhancedWebSocketService';
 import { spawn } from 'child_process';
 import * as QRCode from 'qrcode';

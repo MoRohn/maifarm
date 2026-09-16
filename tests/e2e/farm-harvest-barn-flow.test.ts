@@ -4,8 +4,9 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, jest } from '@jest/globals';
-import request from 'supertest';
 import { io as ioClient, Socket } from 'socket.io-client';
+
+const request = require('supertest');
 import { spawn } from 'child_process';
 import { 
   createTestFarm, 
@@ -30,7 +31,7 @@ describe('Farm → Harvest → Barn E2E Flow', () => {
     process.env.NODE_ENV = 'test';
     process.env.BYPASS_AUTH = 'true';
     
-    const serverModule = await import('../../server/index');
+    const serverModule = await import('../../apps/api/src/index');
     app = serverModule.app;
     server = app.listen(0); // Random port
     const port = server.address().port;

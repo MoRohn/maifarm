@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Farmers API Test</title>
+</head>
+<body>
+    <h1>Farmers API Test</h1>
+    <div id="status"></div>
+    <pre id="result"></pre>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const resultEl = document.getElementById('result');
+
+        async function testAPI() {
+            statusEl.textContent = 'Testing...';
+
+            try {
+                // Test 1: Relative URL (what React app uses)
+                statusEl.textContent = 'Test 1: Fetching /api/farmers (relative)...';
+                const response = await fetch('/api/farmers');
+                const data = await response.json();
+
+                const result = {
+                    status: response.status,
+                    ok: response.ok,
+                    success: data.success,
+                    farmersCount: data.data?.length || 0,
+                    categoriesCount: data.categories?.length || 0,
+                    error: data.error,
+                    firstFarmer: data.data?.[0]?.title,
+                    lastFarmer: data.data?.[data.data?.length - 1]?.title
+                };
+
+                resultEl.textContent = JSON.stringify(result, null, 2);
+                statusEl.textContent = data.success ? '✓ SUCCESS!' : '✗ FAILED';
+                statusEl.style.color = data.success ? 'green' : 'red';
+
+            } catch (error) {
+                resultEl.textContent = 'Error: ' + error.message + '\n\n' + error.stack;
+                statusEl.textContent = '✗ ERROR';
+                statusEl.style.color = 'red';
+            }
+        }
+
+        // Auto-run on load
+        testAPI();
+    </script>
+</body>
+</html>

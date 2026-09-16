@@ -1,4 +1,4 @@
-import { db } from './server/database/connection.js';
+import { db } from '../../apps/api/src/database/connection.js';
 
 async function createTestFarms() {
   try {

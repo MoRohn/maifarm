@@ -5,10 +5,10 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import { Redis } from 'ioredis';
-import { RedisCoordinationStore } from '../../server/services/unified/stateCoordinator';
-import { SessionController } from '../../server/services/sessionController';
-import { AtomicCoordinator } from '../../server/services/atomicCoordinator';
-import { multiClaudeServiceV2 } from '../../server/services/multiClaudeServiceV2';
+import { RedisCoordinationStore } from '../../apps/api/src/services/unified/stateCoordinator';
+import { SessionController } from '../../apps/api/src/services/sessionController';
+import { AtomicCoordinator } from '../../apps/api/src/services/atomicCoordinator';
+import { multiClaudeServiceV2 } from '../../apps/api/src/services/multiClaudeServiceV2';
 
 describe('Redis Coordination System Integration Tests', () => {
   let redis: Redis;
@@ -22,42 +22,58 @@ describe('Redis Coordination System Integration Tests', () => {
       host: process.env.REDIS_HOST || 'localhost',
       port: parseInt(process.env.REDIS_PORT || '6379'),
       db: 1, // Use separate DB for tests
-      retryDelayOnFailure: 100,
-      maxRetriesPerRequest: 3
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => {
+        if (times > 3) return null;
+        return Math.min(times * 100, 1000);
+      },
+      lazyConnect: true // Don't connect immediately
     });
 
-    // Wait for Redis connection
-    await redis.ping();
-    console.log('[TEST] Connected to Redis for testing');
+    try {
+      // Wait for Redis connection
+      await redis.connect();
+      await redis.ping();
+      console.log('[TEST] Connected to Redis for testing');
 
-    // Initialize services
-    store = new RedisCoordinationStore(redis);
-    sessionController = new SessionController(redis);
-    coordinator = new AtomicCoordinator(redis);
+      // Initialize services
+      store = new RedisCoordinationStore(redis);
+      sessionController = new SessionController(redis);
+      coordinator = new AtomicCoordinator(redis);
+    } catch (error) {
+      console.warn('[TEST] Redis not available, skipping redis-coordination tests');
+      return;
+    }
   });
 
   afterAll(async () => {
-    // Cleanup all test data
-    await redis.flushdb();
-    
-    // Destroy services
-    await store.destroy();
-    await sessionController.destroy();
-    await coordinator.destroy();
-    
-    await redis.quit();
+    if (redis && redis.status === 'ready') {
+      // Cleanup all test data
+      await redis.flushdb();
+
+      // Destroy services
+      if (store) await store.destroy();
+      if (sessionController) await sessionController.destroy();
+      if (coordinator) await coordinator.destroy();
+
+      await redis.quit();
+    }
   });
 
   beforeEach(async () => {
     // Clear test data before each test
-    await redis.flushdb();
+    if (redis && redis.status === 'ready') {
+      await redis.flushdb();
+    }
   });
 
   afterEach(async () => {
     // Ensure clean state after each test
-    const keys = await redis.keys('maifarm:*');
-    if (keys.length > 0) {
-      await redis.del(...keys);
+    if (redis && redis.status === 'ready') {
+      const keys = await redis.keys('maifarm:*');
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
     }
   });
 
@@ -473,8 +489,11 @@ describe('Redis Coordination System Integration Tests', () => {
         host: 'localhost',
         port: 6379,
         db: 2,
-        retryDelayOnFailure: 100,
-        maxRetriesPerRequest: 1
+        maxRetriesPerRequest: 1,
+        retryStrategy: (times) => {
+          if (times > 1) return null;
+          return 100;
+        }
       });
 
       const testStore = new RedisCoordinationStore(testRedis);

@@ -1,0 +1,140 @@
+<svg viewBox="0 0 1290 2796" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#064e3b"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e293b"/>
+      <stop offset="100%" style="stop-color:#0f172a"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#059669"/>
+      <stop offset="100%" style="stop-color:#10B981"/>
+    </linearGradient>
+    <linearGradient id="yellowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#fbbf24"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1290" height="2796" fill="url(#bgGrad)"/>
+
+  <!-- Status bar area -->
+  <rect x="0" y="0" width="1290" height="120" fill="rgba(0,0,0,0.3)"/>
+  <text x="80" y="80" fill="white" font-family="SF Pro Display, -apple-system" font-size="42" font-weight="600">9:41</text>
+
+  <!-- Header -->
+  <g transform="translate(645, 200)">
+    <text y="0" fill="white" font-family="SF Pro Display, -apple-system" font-size="52" font-weight="700" text-anchor="middle">&#x26A1; Quick Task</text>
+    <text y="60" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="34" text-anchor="middle">5-minute focused AI assistance</text>
+  </g>
+
+  <!-- Timer Circle -->
+  <g transform="translate(645, 520)">
+    <circle cx="0" cy="0" r="180" fill="none" stroke="#1e293b" stroke-width="20"/>
+    <circle cx="0" cy="0" r="180" fill="none" stroke="url(#yellowGrad)" stroke-width="20" stroke-dasharray="850" stroke-dashoffset="280" stroke-linecap="round" transform="rotate(-90)"/>
+    <text y="-20" fill="white" font-family="SF Pro Display, -apple-system" font-size="96" font-weight="700" text-anchor="middle">3:24</text>
+    <text y="40" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="32" text-anchor="middle">remaining</text>
+  </g>
+
+  <!-- Task Card -->
+  <g transform="translate(80, 780)">
+    <rect width="1130" height="200" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <text x="40" y="60" fill="#f59e0b" font-family="SF Pro Display, -apple-system" font-size="32">&#x1F4DD; Current Task</text>
+    <text x="40" y="120" fill="white" font-family="SF Pro Display, -apple-system" font-size="40" font-weight="600">Review this pull request for security issues</text>
+    <text x="40" y="170" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="28">Analyzing 12 files changed...</text>
+  </g>
+
+  <!-- Live Output -->
+  <g transform="translate(80, 1020)">
+    <text y="0" fill="#f1f5f9" font-family="SF Pro Display, -apple-system" font-size="42" font-weight="600">Live Output</text>
+  </g>
+
+  <!-- Terminal-like output -->
+  <g transform="translate(80, 1080)">
+    <rect width="1130" height="600" rx="16" fill="#0a0a0a" stroke="#334155" stroke-width="2"/>
+
+    <!-- Terminal header -->
+    <rect width="1130" height="50" rx="16" fill="#1e293b"/>
+    <circle cx="30" cy="25" r="8" fill="#ef4444"/>
+    <circle cx="60" cy="25" r="8" fill="#fbbf24"/>
+    <circle cx="90" cy="25" r="8" fill="#22c55e"/>
+
+    <!-- Terminal content -->
+    <text x="30" y="100" fill="#10B981" font-family="SF Mono, monospace" font-size="26">&#x2713; Scanning authentication module...</text>
+    <text x="30" y="145" fill="#10B981" font-family="SF Mono, monospace" font-size="26">&#x2713; Checking input validation...</text>
+    <text x="30" y="190" fill="#10B981" font-family="SF Mono, monospace" font-size="26">&#x2713; Analyzing SQL queries...</text>
+    <text x="30" y="235" fill="#fbbf24" font-family="SF Mono, monospace" font-size="26">&#x26A0; Found: Potential SQL injection in user.ts:145</text>
+    <text x="30" y="280" fill="#10B981" font-family="SF Mono, monospace" font-size="26">&#x2713; Checking CORS configuration...</text>
+    <text x="30" y="325" fill="#10B981" font-family="SF Mono, monospace" font-size="26">&#x2713; Reviewing API key handling...</text>
+    <text x="30" y="370" fill="#fbbf24" font-family="SF Mono, monospace" font-size="26">&#x26A0; Found: API key exposed in logs</text>
+    <text x="30" y="415" fill="#94a3b8" font-family="SF Mono, monospace" font-size="26">Generating detailed report...</text>
+    <rect x="30" y="450" width="20" height="30" fill="#10B981">
+      <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <!-- Findings Summary -->
+  <g transform="translate(80, 1740)">
+    <rect width="1130" height="180" rx="24" fill="url(#cardGrad)" stroke="#334155" stroke-width="2"/>
+    <text x="40" y="50" fill="#f1f5f9" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="600">Findings So Far</text>
+
+    <g transform="translate(60, 80)">
+      <rect width="180" height="70" rx="12" fill="#ef444420"/>
+      <text x="90" y="32" fill="#ef4444" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="700" text-anchor="middle">2</text>
+      <text x="90" y="58" fill="#ef4444" font-family="SF Pro Display, -apple-system" font-size="22" text-anchor="middle">Critical</text>
+    </g>
+
+    <g transform="translate(280, 80)">
+      <rect width="180" height="70" rx="12" fill="#fbbf2420"/>
+      <text x="90" y="32" fill="#fbbf24" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="700" text-anchor="middle">3</text>
+      <text x="90" y="58" fill="#fbbf24" font-family="SF Pro Display, -apple-system" font-size="22" text-anchor="middle">Warnings</text>
+    </g>
+
+    <g transform="translate(500, 80)">
+      <rect width="180" height="70" rx="12" fill="#10B98120"/>
+      <text x="90" y="32" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="36" font-weight="700" text-anchor="middle">8</text>
+      <text x="90" y="58" fill="#10B981" font-family="SF Pro Display, -apple-system" font-size="22" text-anchor="middle">Passed</text>
+    </g>
+  </g>
+
+  <!-- Cancel Button -->
+  <g transform="translate(80, 1980)">
+    <rect width="540" height="100" rx="50" fill="transparent" stroke="#ef4444" stroke-width="3"/>
+    <text x="270" y="65" fill="#ef4444" font-family="SF Pro Display, -apple-system" font-size="38" font-weight="600" text-anchor="middle">Cancel</text>
+  </g>
+
+  <g transform="translate(670, 1980)">
+    <rect width="540" height="100" rx="50" fill="url(#greenGrad)"/>
+    <text x="270" y="65" fill="white" font-family="SF Pro Display, -apple-system" font-size="38" font-weight="600" text-anchor="middle">Complete Early</text>
+  </g>
+
+  <!-- Feature callout -->
+  <g transform="translate(645, 2350)">
+    <text y="0" fill="white" font-family="SF Pro Display, -apple-system" font-size="52" font-weight="700" text-anchor="middle">Lightning-Fast Results</text>
+    <text y="60" fill="#94a3b8" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">Get AI assistance in just 5 minutes</text>
+  </g>
+
+  <!-- Bottom Nav -->
+  <g transform="translate(0, 2580)">
+    <rect width="1290" height="216" fill="#0f172a"/>
+    <g transform="translate(130, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F3E0;</text>
+    </g>
+    <g transform="translate(380, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F331;</text>
+    </g>
+    <g transform="translate(580, 50)">
+      <rect width="140" height="70" rx="35" fill="url(#yellowGrad)"/>
+      <text x="70" y="50" fill="white" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x26A1;</text>
+    </g>
+    <g transform="translate(780, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x1F4E6;</text>
+    </g>
+    <g transform="translate(1000, 50)">
+      <text x="70" y="50" fill="#64748b" font-family="SF Pro Display, -apple-system" font-size="36" text-anchor="middle">&#x2699;</text>
+    </g>
+  </g>
+</svg>

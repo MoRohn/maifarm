@@ -1,0 +1,448 @@
+#!/bin/bash
+
+# MaiFarm Unified Command
+# Routes between production server commands and CLI tool commands
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m' # No Color
+
+# MaiFarm directory (resolves symlinks so `farm` works from anywhere)
+MAIFARM_DIR="${MAIFARM_DIR:-$(cd "$(dirname "$(readlink "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)}"
+
+# Change to MaiFarm directory
+cd "$MAIFARM_DIR"
+
+# Function to display usage
+usage() {
+    echo -e "${BLUE}MaiFarm Command Center${NC}"
+    echo ""
+    echo "Usage: farm [command] [options]"
+    echo ""
+    echo -e "${CYAN}Quick Start:${NC}"
+    echo "  farm          Start MaiFarm UI 🚀"
+    echo ""
+    echo -e "${CYAN}Server Commands:${NC}"
+    echo "  start         Start MaiFarm (alias for 'farm')"
+    echo "  stop          Stop MaiFarm"
+    echo "  restart       Restart MaiFarm"
+    echo "  status        Check MaiFarm status"
+    echo "  logs          View MaiFarm logs"
+    echo "  build         Build production assets"
+    echo ""
+    echo -e "${CYAN}CLI Commands (Farm Management):${NC}"
+    echo "  cli           Start interactive CLI mode 🎮"
+    echo "  create        Plant a new farm 🌱"
+    echo "  list          List all your farms 🌻"
+    echo "  watch         Watch farm agents work 👀"
+    echo "  harvest       Harvest farm results 🌾"
+    echo "  health        Check system health 🏥"
+    echo "  quick         Run a quick 5-minute task ⚡"
+    echo "  wild          Go Wild mode 🦅"
+    echo "  barn          Visit the barn 🏚️"
+    echo "  stats         View statistics 📊"
+    echo "  tips          Get farming tips 💡"
+    echo "  engines       Manage AI models & costs 🧠"
+    echo ""
+    echo -e "${CYAN}Examples:${NC}"
+    echo "  farm start                        # Start production server"
+    echo "  farm cli                          # Interactive CLI mode"
+    echo "  farm create MyFarm                # Create a new farm"
+    echo "  farm list                         # List all farms"
+    echo "  farm watch <farm-id>              # Watch a farm"
+    echo "  farm quick \"Fix bug in app\"       # Run quick task"
+    echo "  farm engines status               # Check AI engine status"
+    echo "  farm engines models claude        # List Claude models"
+    echo "  farm engines change openai        # Change OpenAI model"
+    echo "  farm engines costs                # View cost metrics"
+    echo ""
+    echo "For detailed CLI help: farm help"
+    echo ""
+}
+
+# Function to show welcome banner with big title
+show_welcome_banner() {
+    echo ""
+    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║${NC}                                                                           ${YELLOW}░${NC}"
+    echo -e "${GREEN}║${NC}  ${CYAN}███╗   ███╗ █████╗ ██╗███████╗ █████╗ ██████╗ ███╗   ███╗${NC}                ${YELLOW}░░${NC}"
+    echo -e "${GREEN}║${NC}  ${CYAN}████╗ ████║██╔══██╗██║██╔════╝██╔══██╗██╔══██╗████╗ ████║${NC}                ${YELLOW}░░░${NC}"
+    echo -e "${GREEN}║${NC}  ${CYAN}██╔████╔██║███████║██║█████╗  ███████║██████╔╝██╔████╔██║${NC}                ${YELLOW}░░░░${NC}"
+    echo -e "${GREEN}║${NC}  ${CYAN}██║╚██╔╝██║██╔══██║██║██╔══╝  ██╔══██║██╔══██╗██║╚██╔╝██║${NC}                ${GREEN}▓▓▓▓▓${NC}🚜"
+    echo -e "${GREEN}║${NC}  ${CYAN}██║ ╚═╝ ██║██║  ██║██║██║     ██║  ██║██║  ██║██║ ╚═╝ ██║${NC}                ${GREEN}▓▓▓▓${NC}"
+    echo -e "${GREEN}║${NC}  ${CYAN}╚═╝     ╚═╝╚═╝  ╚═╝╚═╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝${NC}                ${GREEN}▓▓▓${NC}"
+    echo -e "${GREEN}║${NC}                                                                           ${GREEN}▓▓${NC}"
+    echo -e "${GREEN}║${NC}  ${YELLOW}🌾  Multi-Agent Intelligence Farm - AI Orchestration Platform${NC}            ${GREEN}▓${NC}"
+    echo -e "${GREEN}║${NC}                                                                           ${GREEN}║${NC}"
+    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${CYAN}Quick Commands:${NC}"
+    echo -e "  ${GREEN}farm stop${NC}     - Stop MaiFarm"
+    echo -e "  ${GREEN}farm restart${NC}  - Restart MaiFarm"
+    echo -e "  ${GREEN}farm status${NC}   - Check status"
+    echo -e "  ${GREEN}farm logs${NC}     - View logs"
+    echo ""
+    echo -e "${CYAN}Farm Management:${NC}"
+    echo -e "  ${GREEN}farm create${NC}   - Create new farm 🌱"
+    echo -e "  ${GREEN}farm list${NC}     - List all farms 📋"
+    echo -e "  ${GREEN}farm harvest${NC}  - Harvest results 🌾"
+    echo -e "  ${GREEN}farm wild${NC}     - Go Wild mode 🦅"
+    echo -e "  ${GREEN}farm cli${NC}      - Interactive mode 🎮"
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+}
+
+# Function to check if MaiFarm is initialized
+check_initialization() {
+    # Check for initialization markers
+    if [ ! -f "$MAIFARM_DIR/maibarn/.initialized" ] && [ ! -f "$HOME/.maifarm/initialized" ]; then
+        return 0  # Needs initialization
+    fi
+    return 1  # Already initialized
+}
+
+# Function to check if server is running
+is_running() {
+    if lsof -ti:4567 > /dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to start MaiFarm
+start_maifarm() {
+    echo -e "${BLUE}Starting MaiFarm...${NC}"
+
+    # Check if already running
+    if is_running; then
+        echo -e "${YELLOW}MaiFarm appears to be running${NC}"
+        echo -e "${CYAN}Dashboard: http://localhost:3000${NC}"
+        echo -e "${CYAN}API:       http://localhost:4567${NC}"
+        echo -e "Use '${GREEN}farm stop${NC}' to stop it first, or '${GREEN}farm restart${NC}' to restart"
+        echo ""
+        echo -e "${YELLOW}If MaiFarm is not responding, try:${NC}"
+        echo -e "  ${GREEN}farm stop${NC} followed by ${GREEN}farm start${NC}"
+        return 0
+    fi
+
+    # Kill any orphaned processes more thoroughly
+    echo -e "${YELLOW}Cleaning up any orphaned processes...${NC}"
+    for pid in $(lsof -ti:4567 2>/dev/null); do
+        kill -9 $pid 2>/dev/null || true
+    done
+    for pid in $(lsof -ti:3000 2>/dev/null); do
+        kill -9 $pid 2>/dev/null || true
+    done
+    # Also kill any tsx/vite processes that might be stuck
+    ps aux | grep -E 'tsx.*apps/api/src/index.ts|vite.*apps/dashboard' | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true
+    sleep 2
+
+    # Build if needed
+    if [ ! -d "apps/dashboard/dist" ]; then
+        echo -e "${YELLOW}Building production assets...${NC}"
+        npm run build
+    fi
+
+    echo -e "${GREEN}Launching MaiFarm services...${NC}"
+
+    # Start backend API server
+    echo "Starting backend API server..."
+    BYPASS_AUTH=true \
+    NODE_ENV=development \
+    PORT=4567 \
+    NODE_OPTIONS=--max-old-space-size=8192 \
+    npx tsx apps/api/src/index.ts > /tmp/maifarm-api.log 2>&1 &
+
+    # Wait for backend to be ready
+    echo "Waiting for backend..."
+    for i in {1..30}; do
+        if curl -s http://localhost:4567/health > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ Backend ready${NC}"
+            break
+        fi
+        sleep 1
+    done
+
+    # Start frontend UI
+    echo "Starting frontend UI..."
+    npm run dev:client > /tmp/maifarm-ui.log 2>&1 &
+
+    # Wait for frontend to be ready
+    echo "Waiting for frontend..."
+    for i in {1..30}; do
+        if curl -s http://localhost:3000 > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ Frontend ready${NC}"
+            break
+        fi
+        sleep 1
+    done
+
+    echo ""
+    echo -e "${GREEN}✅ MaiFarm is running${NC}"
+    echo -e "${CYAN}Dashboard: http://localhost:3000${NC}"
+    echo -e "${CYAN}API:       http://localhost:4567${NC}"
+    echo ""
+
+    # Always show the big welcome banner with ASCII art and commands
+    show_welcome_banner
+
+    # Check if this is first run
+    if check_initialization; then
+        echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║${NC}                                                                       ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}  ${CYAN}🌟  First-Time Setup Detected${NC}                                       ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}                                                                       ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}  Welcome to MaiFarm! It looks like this is your first time.          ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}  The web interface will guide you through:                           ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}                                                                       ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}  ${GREEN}✓${NC} Creating your administrator account                               ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}  ${GREEN}✓${NC} Setting up preferences                                            ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}  ${GREEN}✓${NC} Configuring AI engines                                            ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}  ${GREEN}✓${NC} Creating your first farm                                          ${YELLOW}║${NC}"
+        echo -e "${YELLOW}║${NC}                                                                       ${YELLOW}║${NC}"
+        echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${MAGENTA}Opening your browser to begin setup...${NC}"
+        echo ""
+        # Try to open browser to initialization page
+        if command -v open > /dev/null 2>&1; then
+            sleep 2
+            open "http://localhost:3000/initialization"
+        elif command -v xdg-open > /dev/null 2>&1; then
+            sleep 2
+            xdg-open "http://localhost:3000/initialization"
+        fi
+    fi
+}
+
+# Function to stop MaiFarm
+stop_maifarm() {
+    echo -e "${BLUE}Stopping MaiFarm...${NC}"
+
+    local backend_running=false
+    local frontend_running=false
+    local killed_any=false
+
+    # First, check if PM2 is managing MaiFarm and stop it there
+    if command -v pm2 &> /dev/null; then
+        # Check if PM2 has any MaiFarm processes
+        if pm2 list 2>/dev/null | grep -q "maifarm"; then
+            pm2 stop all &>/dev/null || true
+            pm2 delete all &>/dev/null || true
+            killed_any=true
+            sleep 2
+        fi
+    fi
+
+    # Check if backend is running (port 4567)
+    if lsof -ti:4567 > /dev/null 2>&1; then
+        backend_running=true
+    fi
+
+    # Check if frontend is running (port 3000)
+    if lsof -ti:3000 > /dev/null 2>&1; then
+        frontend_running=true
+    fi
+
+    # Also check for tsx/vite processes running MaiFarm
+    local maifarm_processes=$(ps aux | grep -E 'tsx.*apps/api/src/index.ts|vite.*apps/dashboard' | grep -v grep | awk '{print $2}')
+
+    if [ "$backend_running" = false ] && [ "$frontend_running" = false ] && [ -z "$maifarm_processes" ] && [ "$killed_any" = false ]; then
+        echo -e "${YELLOW}MaiFarm is not running${NC}"
+        return 0
+    fi
+
+    # Kill backend (port 4567) - kill ALL processes on this port
+    if [ "$backend_running" = true ]; then
+        for pid in $(lsof -ti:4567); do
+            kill -9 $pid 2>/dev/null && killed_any=true || true
+        done
+    fi
+
+    # Kill frontend (port 3000) - kill ALL processes on this port
+    if [ "$frontend_running" = true ]; then
+        for pid in $(lsof -ti:3000); do
+            kill -9 $pid 2>/dev/null && killed_any=true || true
+        done
+    fi
+
+    # Kill any remaining MaiFarm processes (tsx, vite, etc)
+    if [ -n "$maifarm_processes" ]; then
+        for pid in $maifarm_processes; do
+            kill -9 $pid 2>/dev/null && killed_any=true || true
+        done
+    fi
+
+    # Wait a moment for processes to terminate
+    sleep 2
+
+    # Double-check and force kill any stragglers
+    for pid in $(lsof -ti:4567 2>/dev/null); do
+        kill -9 $pid 2>/dev/null || true
+    done
+    for pid in $(lsof -ti:3000 2>/dev/null); do
+        kill -9 $pid 2>/dev/null || true
+    done
+
+    # Final verification
+    if ! lsof -ti:4567 > /dev/null 2>&1 && ! lsof -ti:3000 > /dev/null 2>&1; then
+        echo -e "${GREEN}✅ MaiFarm stopped successfully${NC}"
+    else
+        echo -e "${RED}⚠️ Some MaiFarm processes may still be running${NC}"
+        echo -e "Run '${YELLOW}lsof -i :4567${NC}' and '${YELLOW}lsof -i :3000${NC}' to check"
+        return 1
+    fi
+}
+
+# Function to restart MaiFarm
+restart_maifarm() {
+    echo -e "${BLUE}Restarting MaiFarm...${NC}"
+    stop_maifarm
+    sleep 2
+    start_maifarm
+}
+
+# Function to check status
+check_status() {
+    echo -e "${BLUE}MaiFarm Production Status${NC}"
+    echo ""
+
+    if is_running; then
+        echo -e "Status: ${GREEN}Running${NC}"
+        echo -e "Port: ${GREEN}4567${NC}"
+        echo -e "URL: ${GREEN}http://localhost:4567${NC}"
+        echo ""
+
+        # Try to get health status
+        if command -v curl &> /dev/null; then
+            echo -e "${BLUE}Health Check:${NC}"
+            curl -s http://localhost:4567/api/health 2>/dev/null | head -10 || echo "Unable to fetch health status"
+        fi
+    else
+        echo -e "Status: ${RED}Not Running${NC}"
+        echo ""
+        echo -e "Use '${GREEN}farm start${NC}' to start MaiFarm"
+    fi
+}
+
+# Function to view logs
+view_logs() {
+    echo -e "${BLUE}MaiFarm Production Logs${NC}"
+    echo -e "${YELLOW}Press Ctrl+C to exit${NC}"
+    echo ""
+
+    # Check if PM2 is being used
+    if command -v pm2 &> /dev/null; then
+        pm2 logs maifarm 2>/dev/null || echo "No PM2 logs found. Starting with npm..."
+        npm run start:prod 2>&1
+    else
+        npm run start:prod 2>&1
+    fi
+}
+
+# Function to build production
+build_production() {
+    echo -e "${BLUE}Building MaiFarm Production Assets...${NC}"
+    npm run build
+    echo -e "${GREEN}Build complete!${NC}"
+}
+
+# [DEPRECATED] Development mode function - kept for reference
+# start_development() {
+#     echo -e "${BLUE}Starting MaiFarm Development Mode...${NC}"
+#     # ... development mode code ...
+# }
+
+# CLI commands that should be routed to the farm CLI tool
+# Note: Easter egg commands (fart, konami, secrets) are also included but hidden from usage/help
+CLI_COMMANDS=("cli" "create" "plant" "list" "ls" "watch" "monitor" "harvest" "reap" "health" "quick" "qt" "wild" "gw" "barn" "stats" "dashboard" "tips" "interactive" "i" "incubate" "fart" "konami" "secrets")
+
+# Check if command is a CLI command
+is_cli_command() {
+    local cmd="$1"
+    for cli_cmd in "${CLI_COMMANDS[@]}"; do
+        if [ "$cmd" = "$cli_cmd" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Function to mark initialization as complete
+mark_initialized() {
+    # Create markers to skip initialization next time
+    mkdir -p "$MAIFARM_DIR/maibarn" 2>/dev/null
+    mkdir -p "$HOME/.maifarm" 2>/dev/null
+    touch "$MAIFARM_DIR/maibarn/.initialized"
+    touch "$HOME/.maifarm/initialized"
+    echo -e "${GREEN}✓ MaiFarm initialization marked as complete${NC}"
+}
+
+# Function to reset initialization (for testing or reinstallation)
+reset_initialization() {
+    rm -f "$MAIFARM_DIR/maibarn/.initialized"
+    rm -f "$HOME/.maifarm/initialized"
+    echo -e "${YELLOW}⚠ MaiFarm initialization markers cleared${NC}"
+    echo -e "Next time you run 'farm', you'll be guided through setup again."
+}
+
+# Main command handler
+# Default to 'start' when no command is provided
+COMMAND="${1:-start}"
+
+# Route to CLI tool if it's a CLI command
+if is_cli_command "$COMMAND"; then
+    # Special case: 'farm cli' with no args starts interactive mode
+    if [ "$COMMAND" = "cli" ] && [ $# -eq 1 ]; then
+        exec node cli/dist/index.js interactive
+    elif [ "$COMMAND" = "cli" ]; then
+        # 'farm cli <subcommand>' passes the subcommand
+        shift
+        exec node cli/dist/index.js "$@"
+    else
+        # Direct command: 'farm create', 'farm list', etc.
+        exec node cli/dist/index.js "$@"
+    fi
+fi
+
+# Otherwise, handle server management commands
+case "$COMMAND" in
+    start|"")
+        start_maifarm
+        ;;
+    stop)
+        stop_maifarm
+        ;;
+    restart)
+        restart_maifarm
+        ;;
+    status)
+        check_status
+        ;;
+    logs)
+        view_logs
+        ;;
+    build)
+        build_production
+        ;;
+    help|--help|-h)
+        usage
+        ;;
+    *)
+        echo -e "${RED}Unknown command: $1${NC}"
+        echo ""
+        usage
+        exit 1
+        ;;
+esac

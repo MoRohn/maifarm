@@ -177,9 +177,9 @@ async function testServiceIntegration() {
   try {
     // Test that key services use the path configuration
     const services = [
-      './server/services/harvestFileCollector.js',
-      './server/services/barnService.js',
-      './server/services/coordinationService.js'
+      '../../../apps/api/src/services/harvestFileCollector.js',
+      '../../../apps/api/src/services/barnService.js',
+      '../../../apps/api/src/services/coordinationService.js'
     ];
     
     for (const servicePath of services) {

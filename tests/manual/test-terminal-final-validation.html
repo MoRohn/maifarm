@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MaiFarm Terminal Streaming - Final Validation</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .status-bar {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #4ade80;
+        }
+
+        .status-indicator.disconnected {
+            background: #ef4444;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .terminal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .terminal-container {
+            background: rgba(0,0,0,0.9);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .terminal-header {
+            background: linear-gradient(90deg, #4ade80 0%, #22d3ee 100%);
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .terminal-title {
+            font-weight: 600;
+            color: #000;
+        }
+
+        .terminal-content {
+            padding: 20px;
+            height: 400px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #4ade80;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+
+        .terminal-content::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .terminal-content::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .terminal-content::-webkit-scrollbar-thumb {
+            background: rgba(74, 222, 128, 0.3);
+            border-radius: 5px;
+        }
+
+        .terminal-line {
+            margin: 2px 0;
+            padding: 2px 5px;
+            transition: all 0.3s;
+            word-wrap: break-word;
+        }
+
+        .terminal-line:hover {
+            background: rgba(74, 222, 128, 0.1);
+        }
+
+        .terminal-line.new {
+            animation: highlight 1s;
+        }
+
+        @keyframes highlight {
+            0% {
+                background: rgba(74, 222, 128, 0.3);
+                transform: translateX(-5px);
+            }
+            100% {
+                background: transparent;
+                transform: translateX(0);
+            }
+        }
+
+        .validation-results {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 25px;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+
+        .validation-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin: 10px 0;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+        }
+
+        .validation-item.pass {
+            border-left: 4px solid #4ade80;
+        }
+
+        .validation-item.fail {
+            border-left: 4px solid #ef4444;
+        }
+
+        .validation-icon {
+            font-size: 24px;
+            margin-right: 15px;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .metric-card {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #4ade80;
+        }
+
+        .metric-label {
+            margin-top: 5px;
+            opacity: 0.8;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 MaiFarm Terminal Streaming - Final Validation</h1>
+
+        <div class="status-bar">
+            <div>
+                <span class="status-indicator disconnected" id="status-indicator"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+            <div id="farm-info">Farm ID: b5e40088-6875-44bc-b2ec-089ce0233e1f</div>
+        </div>
+
+        <div class="terminal-grid" id="terminals">
+            <!-- Terminals will be dynamically added here -->
+        </div>
+
+        <div class="validation-results">
+            <h2>Validation Checklist</h2>
+            <div id="validation-list">
+                <!-- Validation items will be added here -->
+            </div>
+
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="message-count">0</div>
+                    <div class="metric-label">Messages Received</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="agent-count">0</div>
+                    <div class="metric-label">Active Agents</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="latency">0ms</div>
+                    <div class="metric-label">Latency</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="stream-rate">0/s</div>
+                    <div class="metric-label">Stream Rate</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const farmId = 'b5e40088-6875-44bc-b2ec-089ce0233e1f';
+        const sessionId = `farm-${farmId.substring(0, 8)}`;
+
+        let socket;
+        let messageCount = 0;
+        let agentOutputs = {};
+        let validationStatus = {
+            connected: false,
+            joined: false,
+            receivedOutput: false,
+            multipleAgents: false,
+            autoScroll: false,
+            realTimeUpdate: false
+        };
+
+        function updateValidationStatus(key, status) {
+            validationStatus[key] = status;
+            renderValidation();
+        }
+
+        function renderValidation() {
+            const validationList = document.getElementById('validation-list');
+            validationList.innerHTML = '';
+
+            const checks = [
+                { key: 'connected', label: 'WebSocket Connected' },
+                { key: 'joined', label: 'Joined Terminal Room' },
+                { key: 'receivedOutput', label: 'Received Terminal Output' },
+                { key: 'multipleAgents', label: 'Multiple Agents Detected' },
+                { key: 'autoScroll', label: 'Auto-Scroll Working' },
+                { key: 'realTimeUpdate', label: 'Real-Time Updates' }
+            ];
+
+            checks.forEach(check => {
+                const item = document.createElement('div');
+                item.className = `validation-item ${validationStatus[check.key] ? 'pass' : 'fail'}`;
+                item.innerHTML = `
+                    <span class="validation-icon">${validationStatus[check.key] ? '✅' : '❌'}</span>
+                    <span>${check.label}</span>
+                `;
+                validationList.appendChild(item);
+            });
+        }
+
+        function createTerminal(agentId) {
+            const terminalsDiv = document.getElementById('terminals');
+
+            if (document.getElementById(`terminal-${agentId}`)) {
+                return;
+            }
+
+            const terminalDiv = document.createElement('div');
+            terminalDiv.className = 'terminal-container';
+            terminalDiv.innerHTML = `
+                <div class="terminal-header">
+                    <span class="terminal-title">Agent ${agentId}</span>
+                    <span>Lines: <span id="line-count-${agentId}">0</span></span>
+                </div>
+                <div class="terminal-content" id="terminal-${agentId}"></div>
+            `;
+            terminalsDiv.appendChild(terminalDiv);
+
+            agentOutputs[agentId] = [];
+        }
+
+        function addLineToTerminal(agentId, line) {
+            const terminal = document.getElementById(`terminal-${agentId}`);
+            if (!terminal) {
+                createTerminal(agentId);
+                return addLineToTerminal(agentId, line);
+            }
+
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'terminal-line new';
+            lineDiv.textContent = line;
+            terminal.appendChild(lineDiv);
+
+            // Update line count
+            agentOutputs[agentId].push(line);
+            document.getElementById(`line-count-${agentId}`).textContent = agentOutputs[agentId].length;
+
+            // Auto-scroll
+            terminal.scrollTop = terminal.scrollHeight;
+            updateValidationStatus('autoScroll', true);
+
+            // Remove highlight after animation
+            setTimeout(() => {
+                lineDiv.classList.remove('new');
+            }, 1000);
+
+            // Keep only last 100 lines
+            while (terminal.children.length > 100) {
+                terminal.removeChild(terminal.firstChild);
+            }
+        }
+
+        function connect() {
+            console.log('Connecting to WebSocket server...');
+
+            socket = io('http://localhost:4567', {
+                transports: ['websocket'],
+                reconnection: true
+            });
+
+            socket.on('connect', () => {
+                console.log('✅ Connected to WebSocket');
+                document.getElementById('status-indicator').className = 'status-indicator connected';
+                document.getElementById('status-text').textContent = 'Connected';
+                updateValidationStatus('connected', true);
+
+                // Join terminal room
+                console.log(`Joining terminal room for ${sessionId}`);
+                socket.emit('terminal:join', {
+                    farmId: farmId,
+                    sessionId: sessionId
+                });
+            });
+
+            socket.on('disconnect', () => {
+                console.log('❌ Disconnected from WebSocket');
+                document.getElementById('status-indicator').className = 'status-indicator disconnected';
+                document.getElementById('status-text').textContent = 'Disconnected';
+                updateValidationStatus('connected', false);
+            });
+
+            socket.on('terminal:joined', (data) => {
+                console.log('✅ Joined terminal room:', data);
+                updateValidationStatus('joined', true);
+            });
+
+            socket.on('terminal:output', (data) => {
+                console.log('📝 Terminal output received:', data);
+
+                const agentId = data.agentId !== undefined ? data.agentId : 0;
+                const lines = data.lines || (data.output ? data.output.split('\n') : []);
+
+                lines.forEach(line => {
+                    if (line && line.trim()) {
+                        addLineToTerminal(agentId, line);
+                    }
+                });
+
+                messageCount++;
+                document.getElementById('message-count').textContent = messageCount;
+
+                updateValidationStatus('receivedOutput', true);
+                updateValidationStatus('realTimeUpdate', true);
+
+                // Check for multiple agents
+                if (Object.keys(agentOutputs).length > 1) {
+                    updateValidationStatus('multipleAgents', true);
+                }
+
+                // Update agent count
+                document.getElementById('agent-count').textContent = Object.keys(agentOutputs).length;
+
+                // Update latency
+                if (data.timestamp) {
+                    const latency = Date.now() - new Date(data.timestamp).getTime();
+                    document.getElementById('latency').textContent = `${Math.abs(latency)}ms`;
+                }
+            });
+
+            socket.on('error', (error) => {
+                console.error('WebSocket error:', error);
+            });
+        }
+
+        // Calculate stream rate
+        let lastMessageCount = 0;
+        setInterval(() => {
+            const rate = messageCount - lastMessageCount;
+            document.getElementById('stream-rate').textContent = `${rate}/s`;
+            lastMessageCount = messageCount;
+        }, 1000);
+
+        // Initialize validation display
+        renderValidation();
+
+        // Connect on load
+        window.addEventListener('load', () => {
+            connect();
+        });
+    </script>
+</body>
+</html>

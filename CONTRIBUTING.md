@@ -29,9 +29,9 @@ We use GitHub to host code, to track issues and feature requests, as well as acc
 
 In short, when you submit code changes, your submissions are understood to be under the same [MIT License](http://choosealicense.com/licenses/mit/) that covers the project. Feel free to contact the maintainers if that's a concern.
 
-## Report bugs using Github's [issue tracker](https://github.com/yourusername/maifarm/issues)
+## Report bugs using Github's [issue tracker](https://github.com/MoRohn/maifarm/issues)
 
-We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/yourusername/maifarm/issues/new); it's that easy!
+We use GitHub issues to track public bugs. Report a bug by [opening a new issue](https://github.com/MoRohn/maifarm/issues/new); it's that easy!
 
 ## Write bug reports with detail, background, and sample code
 
@@ -47,25 +47,23 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 
 ## Development Setup
 
-1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/maifarm.git
+git clone https://github.com/MoRohn/maifarm.git
 cd maifarm
-```
-
-2. Install dependencies
-```bash
-npm install
-```
-
-3. Copy the environment file
-```bash
-cp .env.example .env
-```
-
-4. Start the development server
-```bash
+cp .env.example .env.development
+npm run setup:all
 npm run dev
+```
+
+See [docs/development/SETUP.md](docs/development/SETUP.md) for the full guide.
+
+## Before Opening a Pull Request
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+make ci          # only if you changed apps/orchestrator
 ```
 
 ## Code Style

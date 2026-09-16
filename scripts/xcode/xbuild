@@ -1,0 +1,6 @@
+#!/bin/bash
+# xbuild - Short alias for xcode-build-cli
+# Install: ln -sf "$(pwd)"/scripts/xcode/xbuild /usr/local/bin/xbuild
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$SCRIPT_DIR/xcode-build-cli.sh" "$@"

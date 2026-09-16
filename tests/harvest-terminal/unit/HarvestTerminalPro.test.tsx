@@ -6,14 +6,14 @@ import '@testing-library/jest-dom';
 import { HarvestTerminalPro } from '../../../src/components/Harvest/HarvestTerminalPro';
 import { ThemeProvider } from '../../../src/components/Harvest/themes/ThemeProvider';
 import { EnhancedWebSocketService } from '../../../src/services/websocket/EnhancedWebSocketService';
-import { CloudflareTunnelManager } from '../../../server/services/cloudflareTunnel';
+import { CloudflareTunnelManager } from '../../../apps/api/src/services/cloudflareTunnel';
 
 // Mock dependencies
 jest.mock('../../../src/services/websocket/EnhancedWebSocketService', () => ({
   EnhancedWebSocketService: jest.requireActual('../../../tests/__mocks__/EnhancedWebSocketService').EnhancedWebSocketService
 }));
 
-jest.mock('../../../server/services/cloudflareTunnel', () => ({
+jest.mock('../../../apps/api/src/services/cloudflareTunnel', () => ({
   CloudflareTunnelManager: jest.requireActual('../../../tests/__mocks__/CloudflareTunnelManager').CloudflareTunnelManager
 }));
 
