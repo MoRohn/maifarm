@@ -44,16 +44,19 @@ class RunEngine:
         _logger.info("runengine_started", workers=self.worker_count)
 
     async def stop(self) -> None:
-        if not self._running:
-            return
-        self._running = False
-        # Cancel inline tasks first
+        # Cancel inline tasks first. The memory backend runs inline without
+        # ever calling start(), so this must happen even when not running.
         inline_tasks_snapshot = list(self._inline_tasks)
         for task in inline_tasks_snapshot:
             task.cancel()
         if inline_tasks_snapshot:
             await asyncio.gather(*inline_tasks_snapshot, return_exceptions=True)
         self._inline_tasks.clear()
+        if not self._running:
+            if inline_tasks_snapshot:
+                _logger.info("runengine_stopped", cancelled_inline=len(inline_tasks_snapshot))
+            return
+        self._running = False
         # Cancel worker tasks
         for task in self._workers:
             task.cancel()

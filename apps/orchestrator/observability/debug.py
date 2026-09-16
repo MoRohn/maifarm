@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from structlog.types import EventDict, WrappedLogger
 
 # Trace ID context for request correlation
 trace_id_var: ContextVar[str | None] = ContextVar("trace_id", default=None)
@@ -61,7 +62,7 @@ class DebugFileHandler(logging.Handler):
         super().close()
 
 
-def add_trace_id(logger: Any, method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+def add_trace_id(logger: WrappedLogger, method_name: str, event_dict: EventDict) -> EventDict:
     """Structlog processor to inject trace_id into log events."""
     tid = get_trace_id()
     if tid:
